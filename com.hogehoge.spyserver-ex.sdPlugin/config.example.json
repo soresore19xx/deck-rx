@@ -1,0 +1,31 @@
+{
+  "host": "192.168.0.142",
+  "port": 8888,
+  "audioEnabled": false,
+  "demodMode": 1,
+  "iqDecimation": 2,
+  "audioDecimate": 4,
+  "gain": 0,
+  "audioOutput": "ffmpeg",
+  "ffmpeg": {
+    "mode": "local",
+    "deviceName": "default",
+    "icecastUrl": "icecast://source:changeme@example.com:8000/spyserver",
+    "bitrate": "128k"
+  },
+  "fm": {
+    "deemphasis": "50us",
+    "ifnr": false,
+    "highPass": true,
+    "lowPass": true,
+    "stereo": false
+  },
+  "am": {
+    "bandwidth": 9000,
+    "carrierAgc": true,
+    "agcAttack": 0.05,
+    "agcDecay": 0.0005
+  },
+  "volume": 1.0,
+  "muted": false
+}

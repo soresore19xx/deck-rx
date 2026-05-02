@@ -1,0 +1,88 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.hogehoge.spyserver-ex",
+  "Name": "SpyServer",
+  "Version": "0.1.0.0",
+  "Author": "hogehoge",
+  "Description": "SpyServer frequency controller for Stream Deck.",
+  "Category": "SpyServer",
+  "CategoryIcon": "imgs/category-icon",
+  "CodePath": "bin/index.js",
+  "Icon": "imgs/category-icon",
+  "Actions": [
+    {
+      "UUID": "com.hogehoge.spyserver-ex.tune",
+      "Name": "SpyServer Tune",
+      "Icon": "imgs/actions/tune/action",
+      "Tooltip": "Tune SpyServer to a preset frequency",
+      "PropertyInspectorPath": "ui/tune/inspector.html",
+      "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/actions/tune/action", "Title": "" }]
+    },
+    {
+      "UUID": "com.hogehoge.spyserver-ex.dial-tune",
+      "Name": "SpyServer Dial",
+      "Icon": "imgs/actions/tune/action",
+      "Tooltip": "VFO tuning dial for SpyServer",
+      "PropertyInspectorPath": "ui/dial-tune/inspector.html",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/tune/action", "Title": "VFO" }],
+      "Encoder": {
+        "layout": "layouts/dial-tune.json",
+        "TriggerDescription": { "Rotate": "Tune frequency", "Push": "", "LongTouch": "" }
+      }
+    },
+    {
+      "UUID": "com.hogehoge.spyserver-ex.dial-options",
+      "Name": "SpyServer Options",
+      "Icon": "imgs/actions/tune/action",
+      "Tooltip": "FM demodulation options",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/tune/action", "Title": "Opts" }],
+      "Encoder": {
+        "layout": "layouts/dial-options.json",
+        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
+      }
+    },
+    {
+      "UUID": "com.hogehoge.spyserver-ex.dial-am-options",
+      "Name": "SpyServer AM Options",
+      "Icon": "imgs/actions/tune/action",
+      "Tooltip": "AM bandwidth and Carrier AGC settings",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/tune/action", "Title": "AM" }],
+      "Encoder": {
+        "layout": "layouts/dial-am-options.json",
+        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
+      }
+    },
+    {
+      "UUID": "com.hogehoge.spyserver-ex.dial-volume",
+      "Name": "SpyServer Volume",
+      "Icon": "imgs/actions/tune/action",
+      "Tooltip": "Audio volume / mute",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/tune/action", "Title": "Vol" }],
+      "Encoder": {
+        "layout": "layouts/dial-volume.json",
+        "TriggerDescription": { "Rotate": "Adjust volume", "Push": "Toggle mute", "LongTouch": "" }
+      }
+    },
+    {
+      "UUID": "com.hogehoge.spyserver-ex.dial-status",
+      "Name": "SpyServer Status",
+      "Icon": "imgs/actions/tune/action",
+      "Tooltip": "SpyServer connection and device status",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/tune/action", "Title": "Status" }],
+      "Encoder": {
+        "layout": "layouts/dial-status.json",
+        "TriggerDescription": { "Rotate": "", "Push": "", "LongTouch": "" }
+      }
+    }
+  ],
+  "OS": [{ "Platform": "mac", "MinimumVersion": "10.15" }],
+  "Software": { "MinimumVersion": "6.6" },
+  "SDKVersion": 2,
+  "Nodejs": { "Version": "20", "Debug": "enabled" }
+}

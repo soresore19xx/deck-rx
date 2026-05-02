@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: -apple-system, sans-serif; font-size: 13px; color: #ccc; background: transparent; margin: 0; padding: 8px; }
+    .row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
+    label { min-width: 60px; color: #bbb; }
+    select { flex: 1; background: #2a2a2a; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 4px 6px; font-size: 13px; }
+    .status { color: #aaa; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="row"><label>Station</label><select id="slotSelect"><option value="">-- Loading... --</option></select></div>
+  <div class="row"><span class="status" id="status"></span></div>
+</body>
+<script>
+  var websocket, uuid, actionInfo, savedSlot = 1;
+  var MODES = ['NFM','WFM','AM','DSB','USB','CW','LSB','RAW'];
+  function fmtFreq(hz) {
+    if (hz >= 30000000) return (hz/1000000).toFixed(3)+' MHz';
+    if (hz >= 1000000)  return (hz/1000).toFixed(1)+' kHz';
+    return (hz/1000).toFixed(2)+' kHz';
+  }
+  function connectElgatoStreamDeckSocket(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+    uuid = inUUID; actionInfo = JSON.parse(inActionInfo);
+    websocket = new WebSocket('ws://127.0.0.1:' + inPort);
+    websocket.onopen = function() {
+      websocket.send(JSON.stringify({ event: inRegisterEvent, uuid: inUUID }));
+      websocket.send(JSON.stringify({ event: 'getSettings', context: uuid }));
+      sendToPlugin({ action: 'getPresets' });
+    };
+    websocket.onmessage = function(evt) {
+      var msg = JSON.parse(evt.data);
+      if (msg.event === 'didReceiveSettings') savedSlot = msg.payload.settings.slot || 1;
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'presets') buildList(msg.payload.presets, savedSlot);
+    };
+  }
+  function sendToPlugin(payload) {
+    websocket.send(JSON.stringify({ event: 'sendToPlugin', action: actionInfo.action, context: uuid, payload: payload }));
+  }
+  function buildList(presets, selected) {
+    var sel = document.getElementById('slotSelect');
+    sel.innerHTML = '';
+    presets.forEach(function(p, i) {
+      if (!p.freq) return;
+      var opt = document.createElement('option');
+      opt.value = String(i+1);
+      opt.text = fmtFreq(p.freq)+'  '+(MODES[p.mode]||String(p.mode))+'  '+p.name;
+      sel.appendChild(opt);
+    });
+    sel.value = String(selected);
+    document.getElementById('status').textContent = presets.length+' stations (SDR++)';
+  }
+  document.getElementById('slotSelect').addEventListener('change', function() {
+    savedSlot = parseInt(this.value, 10);
+    websocket.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: { slot: savedSlot } }));
+  });
+</script>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: -apple-system, sans-serif; font-size: 13px; color: #ccc; background: transparent; margin: 0; padding: 8px; }
+    .row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
+    label { min-width: 60px; color: #bbb; }
+    select { flex: 1; background: #2a2a2a; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 4px 6px; font-size: 13px; }
+    .status { color: #aaa; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="row"><label>Mode</label><select id="modeSelect"><option value="preset">Preset scroll</option><option value="vfo">VFO step</option></select></div>
+  <div class="row" id="presetRow"><label>Station</label><select id="slotSelect"><option value="">-- Loading... --</option></select></div>
+  <div class="row" id="vfoRow" style="display:none"><label>Step</label>
+    <select id="stepSelect">
+      <option value="1">1 Hz</option><option value="10">10 Hz</option><option value="100">100 Hz</option>
+      <option value="1000">1 kHz</option><option value="5000">5 kHz</option>
+      <option value="9000">9 kHz (MW Japan)</option><option value="10000">10 kHz (MW Americas)</option>
+      <option value="25000">25 kHz</option><option value="50000">50 kHz</option>
+      <option value="100000">100 kHz</option><option value="200000">200 kHz</option>
+      <option value="500000">500 kHz</option><option value="1000000">1 MHz</option>
+    </select>
+  </div>
+  <div class="row"><label>Border</label><select id="borderSelect"><option value="none">None</option><option value="left">Left</option><option value="right">Right</option><option value="center">Center</option></select></div>
+  <hr style="border-color:#444;margin:8px 0"/>
+  <div class="row"><label>Audio</label>
+    <label style="min-width:auto;display:flex;align-items:center;gap:4px">
+      <input type="checkbox" id="audioEnabled"> Enabled
+    </label>
+  </div>
+  <div class="row" id="deviceRow"><label>Device</label>
+    <select id="deviceSelect"><option value="-1">-- Loading... --</option></select>
+  </div>
+  <div class="row"><span class="status" id="status"></span></div>
+</body>
+<script>
+  var websocket, uuid, actionInfo;
+  var MODES = ['NFM','WFM','AM','DSB','USB','CW','LSB','RAW'];
+  function fmtFreq(hz) {
+    if (hz >= 30000000) return (hz/1000000).toFixed(3)+' MHz';
+    if (hz >= 1000000)  return (hz/1000).toFixed(1)+' kHz';
+    return (hz/1000).toFixed(2)+' kHz';
+  }
+  function connectElgatoStreamDeckSocket(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+    uuid = inUUID; actionInfo = JSON.parse(inActionInfo);
+    websocket = new WebSocket('ws://127.0.0.1:' + inPort);
+    websocket.onopen = function() {
+      websocket.send(JSON.stringify({ event: inRegisterEvent, uuid: inUUID }));
+      websocket.send(JSON.stringify({ event: 'getSettings', context: uuid }));
+      sendToPlugin({ action: 'getPresets' });
+      sendToPlugin({ action: 'getAudioDevices' });
+    };
+    websocket.onmessage = function(evt) {
+      var msg = JSON.parse(evt.data);
+      if (msg.event === 'didReceiveSettings') {
+        var s = msg.payload.settings;
+        document.getElementById('modeSelect').value = s.mode || 'preset';
+        document.getElementById('stepSelect').value = String(s.stepHz || 9000);
+        document.getElementById('borderSelect').value = s.borderSide || 'none';
+        updateModeVisibility(s.mode || 'preset');
+        if (s.slotIndex !== undefined) document.getElementById('slotSelect').value = String(s.slotIndex);
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'presets') {
+        var s2 = JSON.parse(websocket._lastSettings || '{}');
+        buildList(msg.payload.presets, s2.slotIndex || 0);
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'audioDevices') {
+        buildDeviceList(msg.payload.devices, msg.payload.current, msg.payload.savedName);
+        document.getElementById('audioEnabled').checked = !!msg.payload.audioEnabled;
+      }
+    };
+  }
+  function sendToPlugin(payload) {
+    websocket.send(JSON.stringify({ event: 'sendToPlugin', action: actionInfo.action, context: uuid, payload: payload }));
+  }
+  function updateModeVisibility(mode) {
+    document.getElementById('presetRow').style.display = mode === 'preset' ? 'flex' : 'none';
+    document.getElementById('vfoRow').style.display    = mode === 'vfo'    ? 'flex' : 'none';
+  }
+  function buildList(presets, selectedIdx) {
+    var sel = document.getElementById('slotSelect');
+    sel.innerHTML = '';
+    presets.forEach(function(p, i) {
+      if (!p.freq) return;
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.text = fmtFreq(p.freq)+'  '+(MODES[p.mode]||String(p.mode))+'  '+p.name;
+      sel.appendChild(opt);
+    });
+    sel.value = String(selectedIdx);
+    document.getElementById('status').textContent = presets.length+' stations (SDR++)';
+  }
+  function saveSettings() {
+    var payload = {
+      mode: document.getElementById('modeSelect').value,
+      stepHz: parseInt(document.getElementById('stepSelect').value, 10),
+      slotIndex: parseInt(document.getElementById('slotSelect').value || '0', 10),
+      borderSide: document.getElementById('borderSelect').value,
+    };
+    websocket.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: payload }));
+  }
+  function buildDeviceList(devices, current, savedName) {
+    var sel = document.getElementById('deviceSelect');
+    sel.innerHTML = '<option value="default">System Default (' + (current || '?') + ')</option>';
+    devices.forEach(function(d) {
+      var opt = document.createElement('option');
+      opt.value = d.name;
+      opt.text = d.name;
+      sel.appendChild(opt);
+    });
+    if (savedName) sel.value = savedName;
+  }
+  function saveAudioConfig() {
+    var enabled = document.getElementById('audioEnabled').checked;
+    var name = document.getElementById('deviceSelect').value;
+    sendToPlugin({ action: 'setAudioConfig', audioEnabled: enabled, deviceName: name });
+  }
+  document.getElementById('modeSelect').addEventListener('change', function() { updateModeVisibility(this.value); saveSettings(); });
+  document.getElementById('slotSelect').addEventListener('change', saveSettings);
+  document.getElementById('stepSelect').addEventListener('change', saveSettings);
+  document.getElementById('borderSelect').addEventListener('change', saveSettings);
+  document.getElementById('audioEnabled').addEventListener('change', saveAudioConfig);
+  document.getElementById('deviceSelect').addEventListener('change', saveAudioConfig);
+</script>
+</html>

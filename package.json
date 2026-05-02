@@ -1,0 +1,22 @@
+{
+  "name": "spyserver-ex",
+  "version": "0.1.0",
+  "description": "SpyServer frequency controller for Stream Deck",
+  "scripts": {
+    "build": "rollup -c --bundleConfigAsCjs",
+    "postbuild": "node -e \"const fs=require('fs'),p=require('os').homedir()+'/Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.spyserver-ex.sdPlugin';try{if(!fs.lstatSync(p).isSymbolicLink()){console.error('ERROR: Plugins entry is not a symlink! Run: ln -s $(pwd)/com.hogehoge.spyserver-ex.sdPlugin \\\"'+p+'\\\"');process.exit(1)}}catch(e){console.error('ERROR: Plugin not installed as symlink:',e.message);process.exit(1)}\""
+  },
+  "dependencies": {
+    "naudiodon": "^2.3.6"
+  },
+  "devDependencies": {
+    "@elgato/streamdeck": "^2.0.4",
+    "@rollup/plugin-commonjs": "^26.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-typescript": "^11.0.0",
+    "@types/node": "^22.0.0",
+    "rollup": "^4.0.0",
+    "tslib": "^2.0.0",
+    "typescript": "^5.0.0"
+  }
+}

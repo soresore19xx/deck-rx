@@ -1,0 +1,15 @@
+# Build output
+com.hogehoge.spyserver-ex.sdPlugin/bin/
+node_modules/
+
+# Plugin runtime logs
+com.hogehoge.spyserver-ex.sdPlugin/logs/
+
+# Local config (per-user, contains host/device-specific values)
+com.hogehoge.spyserver-ex.sdPlugin/config.json
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp

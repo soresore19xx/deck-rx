@@ -1,0 +1,8 @@
+{
+  "id": "dial-tune-layout",
+  "items": [
+    { "key": "border",       "type": "pixmap", "rect": [0,0,200,100], "zOrder": 0 },
+    { "key": "header",       "type": "pixmap", "rect": [0,0,200,16],  "zOrder": 1 },
+    { "key": "freq-display", "type": "pixmap", "rect": [0,16,200,74], "zOrder": 2 }
+  ]
+}

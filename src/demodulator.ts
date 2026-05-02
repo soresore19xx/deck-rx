@@ -36,6 +36,7 @@ export class Demodulator {
   reset(): void {
     this.prevI = 0; this.prevQ = 0;
     this.amDc = 0;
+    this.amAgcGain = 1.0;  // critical: stale gain from previous station starves weak ones
     this.deempY = this.deempL = this.deempR = 0;
     this.lpf.reset(); this.hpf.reset();
     this.lprLpf.reset(); this.lmrLpf.reset();

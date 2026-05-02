@@ -32,12 +32,17 @@ export class FfmpegOutput implements AudioOutput {
   constructor(private cfg: FfmpegConfig) {}
 
   async start(sampleRate: number, channels: number): Promise<void> {
+    // Resample to 48 kHz before AudioToolbox output. Some virtual / Loopback
+    // devices misbehave on non-standard rates (e.g., 57 kHz) after running for
+    // a while, causing audio to drop out silently.
+    const OUT_RATE = 48000;
     const args = [
       '-hide_banner', '-loglevel', 'error',
       '-fflags', 'nobuffer', '-flags', 'low_delay',
       '-f', 's16le', '-ar', String(sampleRate), '-ac', String(channels),
       '-i', 'pipe:0',
       '-af', 'aresample=async=0',
+      '-ar', String(OUT_RATE),
     ];
     if (this.cfg.mode === 'local') {
       // macOS AudioToolbox: resolve device NAME to current ffmpeg index every

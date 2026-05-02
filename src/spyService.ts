@@ -392,6 +392,7 @@ class SpyService {
 
     // Attach IQ data listener BEFORE enabling streaming
     let iqCount = 0;
+    let lastDiag = 0;
     this.iqListener = (p: IQPacket) => {
       if (iqCount < 3) { streamDeck.logger.info(`[spyService] iqData fmt=${p.format} len=${p.body.length} gainDb=${p.gainDb}`); iqCount++; }
       // RSSI + SNR from IQ samples (INT16 LE: 4 bytes per I,Q pair).
@@ -432,6 +433,15 @@ class SpyService {
           : this.demod.processWFM(p.body, dec);
       } else {
         pcm = this.demod.processFM(p.body, dec);
+      }
+      // Diagnostic log every 3 s: detect silent output from DSP issues.
+      const _now = Date.now();
+      if (_now - lastDiag > 3000) {
+        let pcmSumSq = 0;
+        for (let i = 0; i < pcm.length; i++) pcmSumSq += pcm[i] * pcm[i];
+        const pcmRms = Math.sqrt(pcmSumSq / Math.max(1, pcm.length));
+        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} vol=${this.volume.toFixed(2)} muted=${this.muted} muteUntil=${Math.max(0, this.muteUntil - _now)}ms`);
+        lastDiag = _now;
       }
       if (Date.now() < this.muteUntil || this.muted) {
         pcm.fill(0);

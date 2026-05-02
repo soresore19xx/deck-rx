@@ -99,8 +99,13 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
 
   override onDialDown(_ev: DialDownEvent<Settings>): void {}
   override onDialUp(_ev: DialUpEvent<Settings>): void {
-    this.editMode = !this.editMode;
-    this.focused = true;
+    if (this.editMode) {
+      this.editMode = false;
+      this.focused = false;
+    } else {
+      this.editMode = true;
+      this.focused = true;
+    }
     this.render();
   }
 

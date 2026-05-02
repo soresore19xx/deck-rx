@@ -11,13 +11,38 @@ export function tuneSvg(): string {
   </svg>`;
 }
 
+// Metallic dial-knob image (ATS-Mini style): toothed rim + radial gradient body
+// + position indicator dot at top.
 export function knobSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="72" height="72">
-    <rect width="72" height="72" fill="#1a1a2e"/>
-    <circle cx="36" cy="36" r="28" fill="#2a2a4a" stroke="#00cc44" stroke-width="2"/>
-    <circle cx="36" cy="36" r="18" fill="#1a1a3a"/>
-    <line x1="36" y1="36" x2="36" y2="12" stroke="#00FF41" stroke-width="3" stroke-linecap="round"/>
-  </svg>`;
+  const cx = 36, cy = 36, N = 60;
+  const outerR = 34, toothH = 4, toothW = 2.2;
+  const innerR = outerR - toothH;
+  let teeth = '';
+  for (let i = 0; i < N; i++) {
+    const deg = i * 360 / N;
+    const rad = deg * Math.PI / 180;
+    const tx = cx + innerR * Math.sin(rad);
+    const ty = cy - innerR * Math.cos(rad);
+    teeth += `<rect x="${(tx - toothW / 2).toFixed(2)}" y="${(ty - toothH / 2).toFixed(2)}" width="${toothW}" height="${toothH}" rx="0.5" fill="#3a3a3a" transform="rotate(${deg.toFixed(1)},${tx.toFixed(2)},${ty.toFixed(2)})"/>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72">
+<defs>
+  <radialGradient id="kg" cx="38%" cy="32%" r="65%">
+    <stop offset="0%" stop-color="#505050"/>
+    <stop offset="60%" stop-color="#2a2a2a"/>
+    <stop offset="100%" stop-color="#141414"/>
+  </radialGradient>
+  <radialGradient id="ks" cx="50%" cy="50%" r="50%">
+    <stop offset="70%" stop-color="transparent"/>
+    <stop offset="100%" stop-color="#000000" stop-opacity="0.5"/>
+  </radialGradient>
+</defs>
+<circle cx="${cx}" cy="${cy}" r="35" fill="#0d0d0d"/>
+${teeth}
+<circle cx="${cx}" cy="${cy}" r="${innerR - 0.5}" fill="url(#kg)"/>
+<circle cx="${cx}" cy="${cy}" r="${innerR - 0.5}" fill="url(#ks)"/>
+<circle cx="${cx}" cy="13" r="2" fill="white" opacity="0.85"/>
+</svg>`;
 }
 
 const BLUE = '#00aaff';

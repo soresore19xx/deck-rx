@@ -19,16 +19,18 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 ### Implemented
 
 - **SpyServer Tune** (button) — tune to a preset frequency from SDR++ bookmark file
-- **SpyServer Dial** (encoder) — VFO / preset scrolling with 7-segment LCD display, FM stereo lock indicator
+- **SpyServer Dial** (encoder) — VFO / preset scrolling, 7-segment LCD, FM stereo lock badge, ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars
 - **SpyServer Volume** (encoder) — rotate to adjust 0–150 %, push to mute
 - **SpyServer Options** (encoder) — De-emphasis (off/50µs/75µs), IFNR, HiPass, LoPass, Stereo
 - **SpyServer AM Options** (encoder) — Bandwidth (4/6/9/12 kHz), Carrier AGC, Attack, Decay
 - **SpyServer Status** (encoder) — Conn / Host / Device / Frequency / Sample-rate readout
-- WFM stereo decoder (19 kHz pilot squaring + 38 kHz BPF + matrix)
+- WFM stereo decoder (19 kHz pilot squaring + 38 kHz BPF + matrix, with `2(L−R)` matrix correction)
 - AM envelope detector with running DC removal, post-envelope LPF, asymmetric attack/decay AGC
 - 50 µs / 75 µs FM de-emphasis (single-pole IIR)
+- IQ-derived RSSI (RMS power, gain-compensated dBFS) and SNR (instantaneous-power variance ratio) — computed locally since SpyServer does not expose chip-level meters
 - Dynamic mute on retune / startup to suppress pop noise
 - Audio device selection by **name** (resilient against ffmpeg re-numbering)
+- ATS-Mini-style metallic dial knob graphic (toothed rim, radial gradient, position dot)
 
 ## Repository layout
 
@@ -86,6 +88,7 @@ Copy `com.hogehoge.spyserver-ex.sdPlugin/config.example.json` to `config.json` a
 - **Volume**: in-memory state updates instantly; disk persistence is debounced 300 ms. Encoder rotation uses progressive acceleration (2 % / 3 % / 5 % per tick depending on spin speed).
 - **Stereo decode**: 19 kHz pilot is bandpass-filtered, squared, then bandpass-filtered at 38 kHz to recover the subcarrier reference. The reference is amplitude-normalised by the smoothed pilot power (so it stays unit-magnitude regardless of signal level) before mixing with the FM-demodulated signal to recover L−R. The matrix uses `L = (L+R) + 2(L−R), R = (L+R) − 2(L−R)` to compensate for the half-amplitude DSB-SC mixer loss.
 - **AM AGC**: asymmetric IIR tracks `|envelope|` with a fast attack and slow decay, dividing the signal by the tracker to normalise toward a fixed target amplitude.
+- **Signal-strength bars** (Dial LCD bottom): direct port of the ATS-Mini plugin's segmented bar (30 segments, 4 px wide × 1 px gap, green `#00ff00` / red `#ff0000`). RSSI maps `−100..−20 dBFS → 0..100 %` so a moderate FM station shows red on a few top segments at the 10/17 split, mirroring the ATS-Mini S9 boundary. SNR is all-green like ATS-Mini's. Note: an Airspy HF+ via SpyServer is a direct-conversion receiver — there is no chip-level RSSI/SNR register; both meters are computed from the IQ stream and will not perfectly match a SI4732-class superhet receiver.
 
 ## License
 

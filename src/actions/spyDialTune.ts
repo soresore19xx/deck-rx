@@ -5,7 +5,7 @@ import { getAudioOutputDevices, getCurrentAudioOutput } from '../audioDevices.js
 import { spyService } from '../spyService.js';
 import { SyncInfo } from '../SpyClient.js';
 import { svgB64, knobSvg } from '../icons.js';
-import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts } from '../dialDisplay.js';
+import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
 import { loadPresets, Preset } from './spyTune.js';
 
 type DialTuneSettings = {
@@ -150,8 +150,23 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private async updateDisplay(action: unknown): Promise<void> {
     if (!action) return;
     const a = action as { setFeedback: (f: Record<string, unknown>) => Promise<void> };
-    // Stereo lock: pilot power ~0.02 for stereo broadcasts, ~<0.001 for mono.
     const stereoLock = spyService.getPilotPower() > 0.005;
+    const rssiDbfs = spyService.getRssiDbfs();
+    const snrDb    = spyService.getSnrDb();
+    // RSSI: -100..-20 dBFS → 0..100 %. Red threshold (10/17 ≈ 59 %) ≈ -53 dBFS.
+    // Tuned so a "moderate FM station" (~−50 dBFS via Airspy HF+) shows a few red
+    // segments — matching ATS-Mini's S9 visual feedback.
+    const rssiPct = Math.max(0, Math.min(100, (rssiDbfs + 100) * 100 / 80));
+    // SNR: 0..50 dB → 0..100 %.
+    const snrPct  = Math.max(0, Math.min(100, snrDb * 100 / 50));
+    const snrNum  = snrDb > 0.5 ? `${Math.round(snrDb)}` : '-';
+    const rssiNum = rssiDbfs > -119 ? `${Math.round(rssiDbfs)}` : '-';
+    const meters: Record<string, unknown> = {
+      'snr-bar':  snrBarSvg(snrPct),
+      'snr-num':  snrNum,
+      'rssi-bar': rssiBandSvg(rssiPct),
+      'rssi-num': rssiNum,
+    };
     if (this.dialMode === 'preset') {
       const p = this.presets[this.slotIndex];
       const freq = p?.freq ?? 0;
@@ -160,16 +175,18 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const header = p ? `${modeStr}  ${p.name}` : 'No presets';
       const isFM = p?.mode === 1;
       await a.setFeedback({
+        ...meters,
         header:        makeHeaderSvg(header, isFM && stereoLock),
-        'freq-display': svgB64(seg7svg(num, unit, 200, 74)),
+        'freq-display': svgB64(seg7svg(num, unit, 200, 55)),
         border:         makeBorderSvg(this.borderSide),
       });
     } else {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       const { num, unit } = freqParts(freq);
       await a.setFeedback({
+        ...meters,
         header:        makeHeaderSvg(`VFO  step:${formatStep(this.stepHz)}`, stereoLock),
-        'freq-display': svgB64(seg7svg(num, unit, 200, 74)),
+        'freq-display': svgB64(seg7svg(num, unit, 200, 55)),
         border:         makeBorderSvg(this.borderSide),
       });
     }

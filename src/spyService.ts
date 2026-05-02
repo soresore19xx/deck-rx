@@ -105,6 +105,11 @@ class SpyService {
   private currentAudioRate = 0;
   private currentDemodMode = 1; // 0=NFM 1=WFM 2=AM
   private currentAudioDecimate = 1;
+  // RSSI tracking: smoothed RMS power (dBFS, gain-compensated)
+  private rssiSmoothed = -120; // dBFS, very low default
+  // SNR tracking: derived from instantaneous power variance
+  // (mean²/variance is high for stable carriers, low for noise-dominated signals)
+  private snrSmoothed = 0;     // dB
   private muteUntil = 0;  // ms epoch — output silence until this time
 
   get currentFreq(): number { return this._currentFreq; }
@@ -286,6 +291,10 @@ class SpyService {
   getCurrentIQRate(): number { return this.currentIQRate; }
   /** WFM pilot power (smoothed). Use with a threshold to detect stereo broadcasts. */
   getPilotPower(): number { return this.demod.getPilotPower(); }
+  /** Smoothed signal level in dBFS, gain-compensated. Range typically -120..0. */
+  getRssiDbfs(): number { return this.rssiSmoothed; }
+  /** Smoothed SNR estimate in dB, derived from instantaneous power variance. */
+  getSnrDb(): number { return this.snrSmoothed; }
 
   // ── Volume / Mute ─────────────────────────────────────────────────────
   private persistVolumeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -383,13 +392,34 @@ class SpyService {
 
     // Attach IQ data listener BEFORE enabling streaming
     let iqCount = 0;
-    let lastDiag = 0;
     this.iqListener = (p: IQPacket) => {
       if (iqCount < 3) { streamDeck.logger.info(`[spyService] iqData fmt=${p.format} len=${p.body.length} gainDb=${p.gainDb}`); iqCount++; }
-      const now = Date.now();
-      if (now - lastDiag > 2000) {
-        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} vol=${this.volume.toFixed(2)} muted=${this.muted}`);
-        lastDiag = now;
+      // RSSI + SNR from IQ samples (INT16 LE: 4 bytes per I,Q pair).
+      // Powers normalised to int16 full-scale to keep within JS double precision.
+      if (p.format === 'int16') {
+        const NORM = 32767 * 32767;
+        let sumP = 0, sumP2 = 0;
+        const N = p.body.length >> 2;
+        for (let i = 0; i < N; i++) {
+          const I = p.body.readInt16LE(i * 4);
+          const Q = p.body.readInt16LE(i * 4 + 2);
+          const power = (I * I + Q * Q) / NORM;  // 0..~2 typical
+          sumP  += power;
+          sumP2 += power * power;
+        }
+        const meanP  = sumP  / Math.max(1, N);
+        const meanP2 = sumP2 / Math.max(1, N);
+        // RSSI: RMS power → dBFS, gain-compensated
+        const dbfs = meanP > 0 ? 10 * Math.log10(meanP) : -120;
+        const corrected = dbfs - p.gainDb;
+        this.rssiSmoothed = 0.9 * this.rssiSmoothed + 0.1 * corrected;
+        // SNR: mean²/variance of instantaneous power. Pure carrier → very high,
+        // pure noise → ~0 dB. Useful for FM (constant envelope); noisy for AM.
+        const varP = Math.max(1e-9, meanP2 - meanP * meanP);
+        const snrLin = (meanP * meanP) / varP;
+        const snrDbRaw = 10 * Math.log10(snrLin);
+        const snrDb = Math.max(-10, Math.min(60, snrDbRaw));
+        this.snrSmoothed = 0.9 * this.snrSmoothed + 0.1 * snrDb;
       }
       if (!this.audioOutput) return;
       const dec = this.currentAudioDecimate;

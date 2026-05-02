@@ -89,6 +89,40 @@ export function makeHeaderSvg(label: string, stereo = false): string {
     `${badge}</svg>`);
 }
 
+// Direct port of ATS-Mini plugin's bar parameters (src/dialDisplay.ts).
+const SEG_W = 4, SEG_GAP = 1, SEG_STEP = SEG_W + SEG_GAP;
+const N_SEGS = 30;
+
+/**
+ * RSSI bar — green up to ~76% (S9-equivalent for our wider dynamic range), red beyond.
+ * pct: 0..100 (caller maps dB to 0..100).
+ */
+export function rssiBandSvg(pct: number): string {
+  const W = 150, H = 6;
+  const filled = Math.round(Math.max(0, Math.min(100, pct)) / 100 * N_SEGS);
+  const split = Math.round(10 / 17 * N_SEGS);  // 59% — matches ATS-Mini S9 boundary
+  let out = `<rect width="${W}" height="${H}" fill="#111111"/>`;
+  for (let i = 0; i < N_SEGS; i++) {
+    const x = i * SEG_STEP;
+    const color = i < filled ? (i < split ? '#00ff00' : '#ff0000') : '#2a2a2a';
+    out += `<rect x="${x}" y="0" width="${SEG_W}" height="${H}" fill="${color}"/>`;
+  }
+  return svgB64(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${out}</svg>`);
+}
+
+/** SNR bar — all green, no split. */
+export function snrBarSvg(pct: number): string {
+  const W = 150, H = 6;
+  const filled = Math.round(Math.max(0, Math.min(100, pct)) / 100 * N_SEGS);
+  let out = `<rect width="${W}" height="${H}" fill="#111111"/>`;
+  for (let i = 0; i < N_SEGS; i++) {
+    const x = i * SEG_STEP;
+    const color = i < filled ? '#00ff00' : '#2a2a2a';
+    out += `<rect x="${x}" y="0" width="${SEG_W}" height="${H}" fill="${color}"/>`;
+  }
+  return svgB64(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${out}</svg>`);
+}
+
 /** ATS-Mini style horizontal volume bar (filled portion in cyan-blue). */
 export function volBarSvg(pct: number, muted = false): string {
   const W = 168, H = 8;

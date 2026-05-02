@@ -6,10 +6,31 @@ import { knobSvg, optionsPanelSvg, OptionsPanelRow } from '../icons.js';
 
 type Settings = { borderSide?: 'left' | 'right' | 'center' | 'none' };
 
+// Bandwidth: still discrete (4/6/9/12 kHz are standard AM channel widths).
 const BW_CYCLE = [4000, 6000, 9000, 12000];
-// Attack/Decay are presented as discrete steps (slow/medium/fast)
-const ATTACK_CYCLE = [0.01, 0.02, 0.05, 0.1, 0.2];
-const DECAY_CYCLE  = [0.0001, 0.0005, 0.001, 0.005, 0.01];
+
+// SDR++ ranges: Attack 1-200 ms, Decay 1-20 ms (per-sample IIR factor at 57 kHz).
+//   α = 1 − exp(−T/τ),  T = 1/57000
+const ATK_MIN = 0.0000877;  // 200 ms TC
+const ATK_MAX = 0.01736;    //   1 ms TC
+const DEC_MIN = 0.000876;   //  20 ms TC
+const DEC_MAX = 0.01736;    //   1 ms TC
+const TICK_FACTOR = 1.1;    // 10% per tick
+
+function adjustLog(cur: number, ticks: number, min: number, max: number): number {
+  const factor = Math.pow(TICK_FACTOR, ticks);
+  return Math.max(min, Math.min(max, cur * factor));
+}
+
+// Convert per-sample IIR factor → time constant in ms (SDR++ display convention).
+//   α = 1 − exp(−T/τ)   T = 1/fs (s)
+//   τ(s)  = −1 / (fs · ln(1−α))
+//   τ(ms) = −1000 / (fs(Hz) · ln(1−α))  =  −1 / (fs(kHz) · ln(1−α))
+// fs = 57 kHz audio rate.
+function alphaToMs(alpha: number): number {
+  if (alpha <= 0 || alpha >= 1) return 0;
+  return -1 / (57 * Math.log(1 - alpha));
+}
 
 function fmtBw(hz: number): string {
   if (hz >= 1000) return (hz / 1000).toFixed(0) + 'k';
@@ -43,13 +64,15 @@ const OPTIONS: OptionDef[] = [
   },
   {
     label: 'Atk',
-    format: (o) => o.agcAttack.toFixed(3),
-    cycle: (o, t) => ({ agcAttack: nextInArray(ATTACK_CYCLE, o.agcAttack, t) }),
+    // SDR++ display: e.g. "200.000" — 3 integer digits + 3 decimals, padded.
+    format: (o) => alphaToMs(o.agcAttack).toFixed(3).padStart(7, ' '),
+    cycle: (o, t) => ({ agcAttack: adjustLog(o.agcAttack, -t, ATK_MIN, ATK_MAX) }),
   },
   {
     label: 'Dec',
-    format: (o) => o.agcDecay.toFixed(4),
-    cycle: (o, t) => ({ agcDecay: nextInArray(DECAY_CYCLE, o.agcDecay, t) }),
+    // Decay max is 20.000 — 2 integer digits + 3 decimals.
+    format: (o) => alphaToMs(o.agcDecay).toFixed(3).padStart(6, ' '),
+    cycle: (o, t) => ({ agcDecay: adjustLog(o.agcDecay, -t, DEC_MIN, DEC_MAX) }),
   },
 ];
 

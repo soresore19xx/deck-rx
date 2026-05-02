@@ -34,22 +34,42 @@ export async function getCurrentAudioOutput(): Promise<string> {
   return out.trim();
 }
 
+// Cache device list to avoid 3-second lookups on every ffmpeg respawn.
+let deviceMapCache: Map<string, number> | null = null;
+let deviceMapCacheTime = 0;
+
 /**
  * Build a name → ffmpeg-audiotoolbox-index map by querying ffmpeg.
- * ffmpeg's audiotoolbox output requires the numeric index from its own enumeration.
+ * Some devices report display name as "(null)"; in that case parse the UID
+ * (e.g., `AppleUSBAudioEngine:Topping:DX7s:8311000:1`) to recover a usable
+ * key matching what SwitchAudioSource exposes.
+ * Cached for 30 s.
  */
 export async function getFfmpegDeviceIndexMap(): Promise<Map<string, number>> {
+  if (deviceMapCache && Date.now() - deviceMapCacheTime < 30000) {
+    return deviceMapCache;
+  }
   const out = await runProc(FFMPEG, [
     '-f', 's16le', '-ar', '48000', '-ac', '1', '-i', '/dev/zero',
     '-f', 'audiotoolbox', '-list_devices', 'true', '',
   ], true);
   const map = new Map<string, number>();
-  const re = /\[AudioToolbox[^\]]*\] \[(\d+)\]\s+(.*?),\s/g;
+  // Format: [AudioToolbox @ ...] [N]  display_name, UID
+  const re = /\[AudioToolbox[^\]]*\] \[(\d+)\]\s+(.*?),\s+(\S+)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(out)) !== null) {
     const idx = parseInt(m[1], 10);
     const name = m[2].trim();
-    if (name && name !== '(null)') map.set(name, idx);
+    const uid = m[3].trim();
+    if (name && name !== '(null)') {
+      map.set(name, idx);
+    }
+    // Extract product name from UID for "(null)" entries:
+    //   AppleUSBAudioEngine:<Vendor>:<Product>:<Serial>:<Channel>
+    const um = uid.match(/AppleUSBAudioEngine:[^:]+:([^:]+):/);
+    if (um) map.set(um[1], idx);
   }
+  deviceMapCache = map;
+  deviceMapCacheTime = Date.now();
   return map;
 }

@@ -28,10 +28,21 @@ export interface FfmpegConfig {
 
 export class FfmpegOutput implements AudioOutput {
   private proc: ChildProcess | null = null;
+  private intentionalStop = false;
+  private lastSampleRate = 0;
+  private lastChannels = 0;
+  private respawnTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private cfg: FfmpegConfig) {}
 
   async start(sampleRate: number, channels: number): Promise<void> {
+    this.lastSampleRate = sampleRate;
+    this.lastChannels = channels;
+    this.intentionalStop = false;
+    return this.spawnFfmpeg(sampleRate, channels);
+  }
+
+  private async spawnFfmpeg(sampleRate: number, channels: number): Promise<void> {
     // Resample to 48 kHz before AudioToolbox output. Some virtual / Loopback
     // devices misbehave on non-standard rates (e.g., 57 kHz) after running for
     // a while, causing audio to drop out silently.
@@ -41,8 +52,10 @@ export class FfmpegOutput implements AudioOutput {
       '-fflags', 'nobuffer', '-flags', 'low_delay',
       '-f', 's16le', '-ar', String(sampleRate), '-ac', String(channels),
       '-i', 'pipe:0',
-      '-af', 'aresample=async=0',
-      '-ar', String(OUT_RATE),
+      // Async resampling tolerates input rate drift up to 1 second of samples
+      // before injecting silence/dropping samples. Avoids silent stalls when
+      // SpyServer's IQ rate slightly differs from nominal.
+      '-af', `aresample=${OUT_RATE}:async=${OUT_RATE}:first_pts=0`,
     ];
     if (this.cfg.mode === 'local') {
       // macOS AudioToolbox: resolve device NAME to current ffmpeg index every
@@ -80,6 +93,19 @@ export class FfmpegOutput implements AudioOutput {
     this.proc.on('exit', (code: number | null, signal: string | null) => {
       streamDeck.logger.warn(`[FfmpegOutput] exit code=${code} signal=${signal}`);
       this.proc = null;
+      // Auto-respawn if not intentionally stopped (covers crashes / kills).
+      if (!this.intentionalStop) {
+        if (this.respawnTimer) clearTimeout(this.respawnTimer);
+        this.respawnTimer = setTimeout(() => {
+          this.respawnTimer = null;
+          if (!this.intentionalStop && !this.proc) {
+            streamDeck.logger.info('[FfmpegOutput] auto-respawning');
+            this.spawnFfmpeg(this.lastSampleRate, this.lastChannels).catch((e) =>
+              streamDeck.logger.error(`[FfmpegOutput] respawn failed: ${e}`),
+            );
+          }
+        }, 500);
+      }
     });
     // Minimal silence prefill (40ms) — enough to suppress AudioToolbox first-
     // callback pop without adding noticeable end-to-end latency.
@@ -94,6 +120,8 @@ export class FfmpegOutput implements AudioOutput {
   }
 
   stop(): void {
+    this.intentionalStop = true;
+    if (this.respawnTimer) { clearTimeout(this.respawnTimer); this.respawnTimer = null; }
     try { this.proc?.stdin?.end(); } catch {}
     try { this.proc?.kill('SIGTERM'); } catch {}
     this.proc = null;

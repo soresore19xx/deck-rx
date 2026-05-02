@@ -42,15 +42,18 @@ export interface AMOptions {
 const DEFAULT_AM_OPTIONS: AMOptions = {
   bandwidth: 9000,
   carrierAgc: true,
-  agcAttack: 0.05,
-  agcDecay: 0.0005,
+  // Per-sample IIR factors at 57 kHz audio rate.
+  // 0.005 ≈ 3.5 ms attack, 0.00005 ≈ 350 ms decay — typical broadcast AGC.
+  agcAttack: 0.005,
+  agcDecay: 0.00005,
 };
 
 interface Config {
   host: string;
   port: number;
   audioEnabled?: boolean;
-  demodMode?: number;     // 0=NFM 1=WFM 2=AM
+  demodMode?: number;     // 0=NFM 1=WFM 2=AM (last-used)
+  lastFrequency?: number; // Hz; restored at startup
   iqDecimation?: number;  // SpyServer SETTING_IQ_DECIMATION stage offset
   audioDecimate?: number; // software decimation: audioRate = iqRate / audioDecimate
   gain?: number;          // device gain (0..maxGainIndex)
@@ -125,7 +128,10 @@ class SpyService {
       for (const fn of this.deviceListeners) fn(info);
     });
     this.client.on('sync', (s: SyncInfo) => {
-      this._currentFreq = s.iqCenterFreq;
+      // Don't overwrite _currentFreq from server-reported iqCenterFreq:
+      // the server's "current" freq is just an echo of our last setting.
+      // After our setFrequency, the server-side initial sync still echoes
+      // an older value, racing our config-restored _currentFreq.
       this.lastSync = s;
       streamDeck.logger.info(`[spyService] sync canControl=${s.canControl} gain=${s.gain} iqFreq=${s.iqCenterFreq} min=${s.minIQCenterFreq} max=${s.maxIQCenterFreq}`);
       for (const fn of this.syncListeners) fn(s);
@@ -167,11 +173,25 @@ class SpyService {
       }
       if (cfg.am) {
         this.amOptions = { ...DEFAULT_AM_OPTIONS, ...cfg.am };
+        // Clamp persisted alpha factors to the SDR++ ranges.
+        // Attack 1-200 ms → α 0.01736 .. 0.0000877
+        // Decay  1-20  ms → α 0.01736 .. 0.000876
+        const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+        this.amOptions.agcAttack = clamp(this.amOptions.agcAttack, 0.0000877, 0.01736);
+        this.amOptions.agcDecay  = clamp(this.amOptions.agcDecay,  0.000876,  0.01736);
         for (const fn of this.amOptionsListeners) fn(this.amOptions);
       }
       if (typeof cfg.volume === 'number') this.volume = Math.max(0, Math.min(1.5, cfg.volume));
       if (typeof cfg.muted  === 'boolean') this.muted  = cfg.muted;
       for (const fn of this.volumeListeners) fn(this.volume, this.muted);
+      // Restore last-used freq + mode so the radio is already on the right
+      // station when audio starts (without depending on any dial firing first).
+      if (typeof cfg.lastFrequency === 'number' && cfg.lastFrequency > 0) {
+        this._currentFreq = cfg.lastFrequency;
+      }
+      if (typeof cfg.demodMode === 'number') {
+        this.currentDemodMode = cfg.demodMode;
+      }
       this.host = cfg.host;
       this.port = cfg.port;
       streamDeck.logger.info(`[spyService] connecting ${cfg.host}:${cfg.port}`);
@@ -207,13 +227,52 @@ class SpyService {
     }, 5000);
   }
 
+  private freqDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingFreq = 0;
+  private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
   setFrequency(hz: number): void {
     this._currentFreq = hz;
-    // Mute output and reset demodulator to suppress pop on retune
     this.muteUntil = Date.now() + 100;
     this.demod.reset();
-    this.client.setFrequency(hz);
-    streamDeck.logger.info(`[spyService] setFrequency ${hz}`);
+    this.pendingFreq = hz;
+    if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);
+    this.freqDebounceTimer = setTimeout(() => {
+      this.freqDebounceTimer = null;
+      this.client.setFrequency(this.pendingFreq);
+      streamDeck.logger.info(`[spyService] sentFreq ${this.pendingFreq}`);
+    }, 50);
+    // Persist (debounced 500 ms) so next startup restores the same freq + mode
+    if (this.persistFreqTimer) clearTimeout(this.persistFreqTimer);
+    this.persistFreqTimer = setTimeout(() => {
+      this.persistFreqTimer = null;
+      this.persistFields({
+        lastFrequency: hz,
+        demodMode: this.currentDemodMode,
+      }).catch(() => {});
+    }, 500);
+  }
+  // Serialise config writes to prevent races (parallel persistField calls
+  // would race on read-modify-write and corrupt the JSON file).
+  private configWriteChain: Promise<void> = Promise.resolve();
+  private persistField(key: string, value: unknown): Promise<void> {
+    const next = this.configWriteChain.then(async () => {
+      const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
+      const cfg = JSON.parse(raw) as Record<string, unknown>;
+      cfg[key] = value;
+      await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    });
+    this.configWriteChain = next.catch(() => {});
+    return next;
+  }
+  private persistFields(updates: Record<string, unknown>): Promise<void> {
+    const next = this.configWriteChain.then(async () => {
+      const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
+      const cfg = JSON.parse(raw) as Record<string, unknown>;
+      Object.assign(cfg, updates);
+      await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    });
+    this.configWriteChain = next.catch(() => {});
+    return next;
   }
 
   getFMOptions(): FMOptions { return { ...this.fmOptions }; }
@@ -274,7 +333,7 @@ class SpyService {
   private applyAMOptions(): void {
     const am = this.amOptions;
     if (this.currentAudioRate > 0) {
-      this.demod.setAmBandwidth(this.currentAudioRate, am.bandwidth);
+      this.demod.setAmBandwidth(this.currentAudioRate, am.bandwidth, this.currentIQRate);
     }
     this.demod.setAmAgc(am.carrierAgc, am.agcAttack, am.agcDecay);
     streamDeck.logger.info(`[spyService] applyAMOptions ${JSON.stringify(am)}`);
@@ -326,11 +385,7 @@ class SpyService {
     }, 300);
   }
   private async persistVolumeNow(): Promise<void> {
-    const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
-    const cfg = JSON.parse(raw) as Record<string, unknown>;
-    cfg.volume = this.volume;
-    cfg.muted = this.muted;
-    await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    await this.persistFields({ volume: this.volume, muted: this.muted });
   }
 
   setDemodMode(mode: number): void {
@@ -339,6 +394,7 @@ class SpyService {
     this.muteUntil = Date.now() + 100;
     this.demod.reset();
     streamDeck.logger.info(`[spyService] setDemodMode ${mode}`);
+    this.persistField('demodMode', mode).catch(() => {});
   }
 
   async startAudio(cfg?: Config): Promise<void> {
@@ -358,9 +414,14 @@ class SpyService {
     const iqRate = Math.round(info.maxSampleRate / (1 << decStage));
     const audioDecimate = Math.max(1, cfg.audioDecimate ?? 1);
     const audioRate = Math.round(iqRate / audioDecimate);
-    this.currentDemodMode = cfg.demodMode ?? 1;
+    // Do NOT overwrite currentDemodMode here — it has already been set by
+    // connect-time hydration (cfg.demodMode) and may have been updated since
+    // by setDemodMode() (e.g., from a connectListener pushing a preset's mode).
     this.currentAudioDecimate = audioDecimate;
-    const gain = Math.max(0, Math.min(info.maxGainIndex, cfg.gain ?? 0));
+    // Default to MAX gain index. cfg.gain=0 used to mean "minimum" which is
+    // wrong for typical use (signals get crushed to near-zero IQ amplitude).
+    const gain = Math.max(0, Math.min(info.maxGainIndex,
+      typeof cfg.gain === 'number' && cfg.gain > 0 ? cfg.gain : info.maxGainIndex));
     const channels = 2; // always stereo PCM (mono modes duplicate L=R)
     this.currentAudioRate = audioRate;
     this.currentIQRate = iqRate;
@@ -440,7 +501,17 @@ class SpyService {
         let pcmSumSq = 0;
         for (let i = 0; i < pcm.length; i++) pcmSumSq += pcm[i] * pcm[i];
         const pcmRms = Math.sqrt(pcmSumSq / Math.max(1, pcm.length));
-        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} vol=${this.volume.toFixed(2)} muted=${this.muted} muteUntil=${Math.max(0, this.muteUntil - _now)}ms`);
+        // IQ-side stats to distinguish "no input signal" vs "DSP killed it".
+        let iqSumSq = 0;
+        const N = p.body.length >> 2;
+        for (let i = 0; i < N; i++) {
+          const I = p.body.readInt16LE(i * 4);
+          const Q = p.body.readInt16LE(i * 4 + 2);
+          iqSumSq += I * I + Q * Q;
+        }
+        const iqRms = Math.sqrt(iqSumSq / Math.max(1, N));
+        const pilotP = this.demod.getPilotPower();
+        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)}`);
         lastDiag = _now;
       }
       if (Date.now() < this.muteUntil || this.muted) {
@@ -493,6 +564,7 @@ class SpyService {
       port:          cfg.port          ?? 8888,
       audioEnabled:  cfg.audioEnabled  ?? false,
       demodMode:     cfg.demodMode     ?? 1,
+      lastFrequency: cfg.lastFrequency,
       iqDecimation:  cfg.iqDecimation  ?? 2,
       audioDecimate: cfg.audioDecimate ?? 1,
       gain:          cfg.gain          ?? 0,

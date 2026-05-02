@@ -55,15 +55,20 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     spyService.subscribe(this.syncListener);
 
     this.connectListener = () => {
-      // On (re)connect, push the displayed preset/frequency to SpyServer so
-      // the radio actually tunes to what the LCD shows.
       if (this.dialMode === 'preset' && this.presets.length > 0) {
         const p = this.presets[this.slotIndex];
         if (p?.freq) {
-          spyService.setDemodMode(p.mode);
-          spyService.setFrequency(p.freq);
+          if (spyService.currentFreq === 0) {
+            // First run, no persisted state — seed freq + mode.
+            spyService.setDemodMode(p.mode);
+            spyService.setFrequency(p.freq);
+          } else if (spyService.currentFreq === p.freq) {
+            // The restored freq is OUR preset — make sure mode matches it,
+            // covering older configs where demodMode lagged the freq change.
+            spyService.setDemodMode(p.mode);
+          }
         }
-      } else if (this.dialMode === 'vfo' && this.currentFreq > 0) {
+      } else if (this.dialMode === 'vfo' && this.currentFreq > 0 && spyService.currentFreq === 0) {
         spyService.setFrequency(this.currentFreq);
       }
       this.updateDisplay(this.lastAction).catch(() => {});

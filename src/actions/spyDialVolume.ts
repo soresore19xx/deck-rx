@@ -33,6 +33,7 @@ export class SpyDialVolume extends SingletonAction<Settings> {
   private deviceListener: ((d: DeviceInfo) => void) | null = null;
   private enabledListener: ((on: boolean) => void) | null = null;
   private audioStateListener: ((running: boolean, deviceName: string) => void) | null = null;
+  private connStateListener: ((c: boolean) => void) | null = null;
   private device: DeviceInfo | null = null;
   private connected = false;
   private enabled = true;
@@ -62,6 +63,8 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     // changes, leading to "-" sticking around for a while after connect.
     this.audioStateListener = () => this.render();
     spyService.subscribeAudioState(this.audioStateListener);
+    this.connStateListener = (c) => { this.connected = c; this.render(); };
+    spyService.subscribeConnectionState(this.connStateListener);
 
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialVolume] ${e}`));
     await ev.action.setImage(svgB64(knobSvg()));
@@ -74,6 +77,7 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     if (this.connectListener) { spyService.offConnect(this.connectListener);       this.connectListener = null; }
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
     if (this.audioStateListener) { spyService.unsubscribeAudioState(this.audioStateListener); this.audioStateListener = null; }
+    if (this.connStateListener)  { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
     this.act = null;
   }
 
@@ -114,19 +118,23 @@ export class SpyDialVolume extends SingletonAction<Settings> {
 
     const aout = spyService.getAudioDeviceName() || '-';
     const rows: OptionsPanelRow[] = [
-      {
-        label: 'Vol',
-        value: m ? 'Muted' : `${pct}%`,
-        bar: m ? 0 : Math.min(100, pct),
-        barMuted: m,
-      },
       { label: 'Conn', value: conn, valueColor: connColor },
       { label: 'Host', value: srv.host || '-' },
       { label: 'Dev',  value: d ? `${deviceName(d.deviceType)} ${iqRate > 0 ? fmtFreq(iqRate) : ''}` : '-' },
       { label: 'AOut', value: aout },
+      {
+        label: 'Vol',
+        value: m ? 'Muted' : `${pct}%`,
+        // Pass the unclamped percentage (up to 150) so the bar can grow into
+        // the >100 % overdrive zone — the panel's bar renderer scales fill to
+        // BAR_MAX_PCT and switches colour past 100.
+        bar: m ? 0 : pct,
+        barMuted: m,
+      },
     ];
+    const dim = !this.enabled || !this.connected;
     this.act.setFeedback({
-      'vol-display': svgB64(dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide), !this.enabled)),
+      'vol-display': svgB64(dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide), dim)),
     }).catch(() => {});
   }
 }

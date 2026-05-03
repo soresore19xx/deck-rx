@@ -8,8 +8,10 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 
 | Item | Status |
 |---|---|
-| Volume | ✅ |
+| Volume | ✅ (0–150 %, bar shows overdrive zone past 100 % unity mark) |
 | Master ON/OFF (Dial PUSH) | ✅ (full UI dim while OFF, persisted) |
+| Connection resilience | ✅ (TCP-connect timeout, app-level watchdog for cable-pull detection, full-dial dim + `LINK` indicator + `-----` freq while offline, auto-reconnect with state restore) |
+| Server host / port via PI | ✅ (debounced live-apply: changing host/port tears down + reconnects without restart) |
 | AM/SW Bandwidth | ✅ (16th-order complex IF LPF on I/Q + 8th-order post-envelope LPF) |
 | Carrier AGC | ✅ |
 | AGC Attack | ✅ (1–200 ms, SDR++ display convention) |
@@ -21,11 +23,12 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 
-- **SpyServer Dial** — VFO / preset scrolling, 7-segment frequency LCD, FM stereo lock badge (only shown when stereo decode is enabled AND pilot is locked), ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars; **Push to toggle master ON/OFF** (the OFF state dims every dial and the header shows `OFF  <preset>`)
-- **SpyServer Volume + Status** — rotate adjusts 0–150 %, push toggles mute; the same panel shows `Conn` (`ONLINE` in red while streaming, `OFFLINE` otherwise), `Host`, `Dev` (device + IQ rate), `AOut` (audio output device name)
+- **SpyServer Dial** — VFO / preset scrolling, 7-segment frequency LCD, FM stereo lock badge (only shown when stereo decode is enabled AND pilot is locked), ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars (150 px wide, ~12 px insets each side to keep clear of the rounded frame); **Push to toggle master ON/OFF** (the OFF state dims every dial and the header shows `OFF <preset>`). When the SpyServer link is down the dial dims, the header shows `LINK <preset>` and the frequency switches to `-----` until the connection recovers. The Property Inspector exposes Mode / preset / step / audio enable / audio device AND the SpyServer host + port (changing host/port debounce-applies live without a plugin restart).
+- **SpyServer Volume + Status** — rotate adjusts 0–150 %, push toggles mute; the same panel shows `Conn` (`ONLINE` in red while streaming, `OFFLINE` while offline), `Host`, `Dev` (device + IQ rate), `AOut` (audio output device name) and `Vol` with an inline gauge bar (volume bar covers the full 0–150 % range with a faint tick at the 100 % unity mark and an orange fill colour beyond it for the overdrive zone). The bar's bottom edge is pinned to y = 91 so it lines up exactly with the Tune dial's RSSI bar across the bezel gap.
 - **SpyServer Options** (FM/NFM) — De-emphasis (off / 50 µs / 75 µs), IFNR placeholder, HiPass, LoPass, Stereo, **Gain** (RF gain index, only shown while a non-AM mode is the active demod)
 - **SpyServer AM Options** — Bandwidth (4 / 6 / 9 / 12 kHz), Carrier AGC, Attack, Decay (continuous 10 % per tick log adjustment), **Gain** (only shown while AM is active)
-- All panel-style dials use a unified compact font (rowH = 14, font 11 / 12) so AM Options, FM Options and Volume look identical
+- All panel-style dials use a unified compact font (rowH = 14, font 11 / 12) and a rounded grey frame (R = 4) drawn over every other element so AM Options, FM Options, Volume + Status and the Tune dial all share the same outer styling. Rows are vertically centred in the 100 px LCD area; columns inset from each LCD edge so adjacent panels don't visually run into each other across the bezel.
+- Focus highlight (selected row in AM/FM Options): soft mid-blue background `#3a5a85`, deep yellow label `#d4b800` + bright yellow value `#ffee00` in navigate mode; orange label + yellow value in edit mode.
 
 ### Signal-path implementation
 
@@ -45,6 +48,8 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 - Serialised config writes (chained promises) — prevents JSON corruption from concurrent persist calls
 - ATS-Mini-style metallic dial knob graphic (toothed rim, radial gradient, position dot)
 - **Diagnostic spectrum probes** in the plugin log: `spec/raw` (raw IQ at fixed offsets), `spec/filt` (a state-isolated copy of the IF LPF applied to current IQ, so theoretical attenuation can be confirmed without disturbing the production filter) and `spec/prod` (the actual production-side IF LPF output, captured per packet) — used to distinguish DSP issues from upstream hardware IMD when adjacent-channel bleed appears
+- **Connection resilience** (TCP-side): `client.connect()` has a 5 s timeout (so an unreachable host doesn't block the reconnect loop on the OS's ~75 s SYN retry), and once connected an application-level watchdog declares the link dead if no bytes arrive for 5 s. This catches LAN-cable-pull within the watchdog window — the TCP stack alone wouldn't notice for hours since macOS keepalive defaults to 2 h idle. On declared-dead, the demod is reset, audio stops, every dial dims with the Tune dial flipping to `LINK` header + `-----` freq, and a 5 s reconnect cycle starts. Recovery restores the same station / mode / per-mode gain via persisted state and resumes audio automatically.
+- **Server host/port live-edit**: the Tune dial Property Inspector exposes editable Host (text) and Port (number) fields. On change, an 800 ms debounce fires `setServerConfig`, which persists the value AND tears the current TCP/audio chain down + reconnects the SpyClient at the new endpoint. No plugin restart needed.
 
 ## Repository layout
 
@@ -111,6 +116,11 @@ Copy `com.hogehoge.spyserver-ex.sdPlugin/config.example.json` to `config.json` a
 - **Persistence**: `lastFrequency`, `demodMode`, `enabled`, `amGain`, `fmGain` are debounced-saved (500 ms) on every change. `connect()` restores them so the radio comes up on the same station / mode / gain as before. Multiple SpyDialTune actions in the same plugin instance no longer fight over the initial tune — only the dial whose preset matches the restored frequency pushes a `setDemodMode`, others just refresh their display. Legacy single-`gain` config field is auto-migrated into `amGain`.
 - **Signal-strength bars** (Dial LCD bottom): direct port of the ATS-Mini plugin's segmented bar (30 segments, 4 px wide × 1 px gap, green `#00ff00` / red `#ff0000`). RSSI maps `−100..−20 dBFS → 0..100 %` so a moderate FM station shows red on a few top segments at the 10/17 split, mirroring the ATS-Mini S9 boundary. SNR is all-green like ATS-Mini's. Note: an Airspy HF+ via SpyServer is a direct-conversion receiver — there is no chip-level RSSI/SNR register; both meters are computed from the IQ stream and will not perfectly match a SI4732-class superhet receiver.
 - **Diagnostic spectrum probes**: when AM mode is active, every 2 seconds the plugin logs three lines per IQ packet — `spec/raw` (single-bin DFT of the raw IQ stream at fixed offsets ±9k / ±18k / ±27k / ±36k / ±45k / ±54k / ±72k / ±96k / ±108k Hz from baseband 0), `spec/filt` (the same offsets after the IQ goes through an *independent state-isolated* copy of the IF LPF, used to verify theoretical attenuation without disturbing the production filter) and `spec/prod` (the actual production-side IF LPF output captured per packet). Comparing `spec/raw` vs `spec/prod` confirms the IF chain is delivering its design attenuation in steady state, and bin-level numbers help distinguish DSP issues from front-end IMD when crosstalk appears.
+- **Connection resilience**: two layers of dead-link detection, since neither alone is sufficient on macOS:
+   1. `client.connect()` (Node `net.Socket.connect`) wraps the OS call with an explicit 5 s timeout. Without this, an unreachable host (firewall drop / no route) blocks on the OS SYN-retry timeout (~75 s on Darwin), stalling the whole reconnect loop.
+   2. After connect, an application-level watchdog timer (1 s tick) tracks the timestamp of the last received byte. If 5 s elapse with no data, the watchdog destroys the socket and emits `disconnect`. This handles LAN-cable-pull / Wi-Fi disconnect / VPN drop where TCP itself wouldn't notice for 2 hours (default macOS keepalive idle).
+   Both paths funnel into the same listener chain: `setConnectedState(false)` notifies all `subscribeConnectionState` subscribers, every dial dims, the Tune dial swaps freq → `-----` and header → `LINK <preset>`, audio stops cleanly, and `scheduleReconnect()` runs the 5 s reconnect cadence (which respects the master ON/OFF switch). On recovery, the client re-establishes, hydrates state from the persisted config, and resumes audio at the same station / mode / gain.
+- **Editable host/port (PI)**: the Tune dial Property Inspector hosts a `<input type="text">` for host and `<input type="number">` for port (default values populated from current config via `getServerConfig` round-trip on PI open). Edits debounce 800 ms before sending `setServerConfig`, which calls `spyService.updateServerConfig({ host, port })` — that persists the new endpoint, tears down the current SpyClient, and (if the master switch is ON) reconnects to the new endpoint. No plugin restart needed.
 
 ## License
 

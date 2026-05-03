@@ -81,49 +81,114 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // Fixed compact metrics: rowH 14 / font 11/12. Used for ALL panel-style
   // dials so AM Options, FM Options and Volume+Status share identical
   // typography regardless of how many rows each happens to render.
+  const SVG_H = 100;
   const rowH = 14;
-  const startY = 14;
   const labelFs = 11;
   const valueFs = 12;
   const bgPad = rowH - 3;  // background bar height = rowH - small gap
+  // Row vertical placement:
+  //  - panels ending in a bar row (Volume) pin the LAST row's baseline at
+  //    y=91 (= bar bottom = Tune dial RSSI bar bottom) and centre the upper
+  //    rows in the area ABOVE the bar (~y 0..82). This visually separates
+  //    the volume gauge as a distinct bottom section.
+  //  - panels without a bar row centre all rows vertically in the SVG.
+  const lastRowHasBar = typeof rows[rows.length - 1]?.bar === 'number';
+  const textH = 12;
+  const lastBarY = SVG_H - 9;  // = 91, used only when lastRowHasBar
+  // upperArea ends a few px above the bar so there's breathing room.
+  const upperAreaH = lastBarY - textH - 8;
+  let startY: number;
+  if (lastRowHasBar) {
+    const upperRows = rows.length - 1;
+    if (upperRows > 0) {
+      const upperSpan = textH + (upperRows - 1) * rowH;
+      const topMargin = Math.max(2, Math.floor((upperAreaH - upperSpan) / 2));
+      startY = topMargin + textH;
+    } else {
+      startY = lastBarY;
+    }
+  } else {
+    const contentSpan = textH + (rows.length - 1) * rowH;
+    const topMargin = Math.max(2, Math.floor((SVG_H - contentSpan) / 2));
+    startY = topMargin + textH;
+  }
+  // Panel-wide column positions: panels containing an inline bar (Volume) keep
+  // the original wide layout (label flush left, value flush right of the bar)
+  // so all rows align with the bar's natural columns. Pure label/value panels
+  // (Options / AM Options) pull both columns inward so label↔value gaps stay
+  // tight and the focus highlight is balanced.
+  const panelHasBar = rows.some(r => typeof r.bar === 'number');
+  // Bar-style panels (Volume) push columns out near the frame edges to match
+  // the Tune dial's S/N gauge layout (label x≈4, num right-anchor x≈196).
+  // Pure label/value panels stay tighter so the focus highlight is balanced.
+  const panelLabelX = panelHasBar ? 4 : 40;
+  const panelValueX = panelHasBar ? 196 : 150;
   const items = rows.map((row, i) => {
     const { label, value, bar: barPct, barMuted, valueColor: valueColorOverride } = row;
-    const y = startY + i * rowH;
+    // Bar row baseline is pinned (y=lastBarY=91) regardless of where the
+    // upper-row stack would have placed it.
+    const isBarRow = lastRowHasBar && i === rows.length - 1;
+    const y = isBarRow ? lastBarY : (startY + i * rowH);
     const isSelected = i === selectedRow;
     const isEdit = isSelected && editMode;
     const accent = isEdit ? '#ffaa55' : BLUE;
-    const bg  = isSelected ? `<rect x="0" y="${y - bgPad}" width="200" height="${rowH}" fill="#222222"/>` : '';
+    // Focus highlight: soft mid-blue background. When focused (navigate
+    // mode), both label and value light up yellow against the blue bg so the
+    // active row pops as a unit. Edit mode swaps to an orange label + white
+    // value so the user can tell at a glance that they're inside the row.
+    const bg  = isSelected ? `<rect x="0" y="${y - bgPad}" width="200" height="${rowH}" fill="#3a5a85"/>` : '';
     const sideBar = isSelected ? `<rect x="0" y="${y - bgPad}" width="3" height="${rowH}" fill="${accent}"/>` : '';
-    const valueColor = isSelected && !isEdit ? '#ffee00' : (valueColorOverride ?? 'white');
-    // Inline progress bar between label and value (used for Volume row).
+    // Focus colours:
+    //  - nav mode  : label deep yellow (#d4b800), value yellow (#ffee00)
+    //  - edit mode : label orange (accent),       value yellow (#ffee00)
+    // The value stays yellow in both modes so it remains visually anchored as
+    // "the focused datum"; the mode (navigate vs edit) is conveyed by the
+    // label colour and the left-side accent rail.
+    const labelColor = isSelected ? (isEdit ? accent : '#d4b800') : 'white';
+    const valueColor = isSelected ? '#ffee00' : (valueColorOverride ?? 'white');
+    // Inline progress bar (Volume row). Position is intentionally NOT tied to
+    // the row baseline — it's pinned to a fixed bottom y so it visually lines
+    // up with the Tune dial's RSSI bar (y=85, h=6, bottom=91 in the dial
+    // layout). Vol bar is 1 px thinner and shares the same bottom edge.
     let barSvg = '';
     if (typeof barPct === 'number') {
-      const barX = 50, barW = 110;
-      const barH = Math.max(4, rowH - 8);
-      const barY = y - bgPad + (rowH - barH) / 2;
-      const filled = Math.max(0, Math.min(100, barPct)) * barW / 100;
+      // Bar starts at x=22 (matching the Tune dial S/N gauge start). Width
+      // 140 ends at x=162 — extra clearance to value text right-anchored at
+      // x=196.
+      const barX = 22, barW = 140, barH = 5;
+      const barY = SVG_H - barH - 9;  // bottom edge at SVG_H - 9 = 91 (matches Dial RSSI)
+      // Bar covers the full 0-150 % volume range. 100 % lands at 2/3 of the
+      // bar, 150 % fills it. A faint tick at the 100 % mark gives the user a
+      // visual reference for "unity" vs the overdrive zone above it.
+      const BAR_MAX_PCT = 150;
+      const clamped = Math.max(0, Math.min(BAR_MAX_PCT, barPct));
+      const filled = clamped * barW / BAR_MAX_PCT;
       const fillColor = barMuted ? '#666666' : (barPct > 100 ? '#ff7733' : '#55aaff');
+      const unityX = barX + (100 / BAR_MAX_PCT) * barW;
       barSvg =
         `<rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" fill="#333333" rx="1"/>` +
-        (filled > 0 ? `<rect x="${barX}" y="${barY}" width="${filled.toFixed(1)}" height="${barH}" fill="${fillColor}" rx="1"/>` : '');
+        (filled > 0 ? `<rect x="${barX}" y="${barY}" width="${filled.toFixed(1)}" height="${barH}" fill="${fillColor}" rx="1"/>` : '') +
+        `<line x1="${unityX.toFixed(1)}" y1="${(barY - 1).toFixed(1)}" x2="${unityX.toFixed(1)}" y2="${(barY + barH + 1).toFixed(1)}" stroke="#888888" stroke-width="0.6"/>`;
     }
+    // Use the panel-wide columns (decided once above based on whether the
+    // panel contains any bar row). All rows in a panel align consistently.
     return `${bg}${sideBar}${barSvg}
-<text x="8" y="${y}" fill="${isSelected ? accent : 'white'}" font-size="${labelFs}" font-family="monospace">${label}</text>
-<text x="192" y="${y}" fill="${valueColor}" font-size="${valueFs}" font-family="monospace" text-anchor="end">${value}</text>`;
+<text x="${panelLabelX}" y="${y}" fill="${labelColor}" font-size="${labelFs}" font-family="monospace">${label}</text>
+<text x="${panelValueX}" y="${y}" fill="${valueColor}" font-size="${valueFs}" font-family="monospace" text-anchor="end">${value}</text>`;
   }).join('\n');
+  // Rounded grey frame around the whole panel (replaces the previous
+  // borderSide-driven top/bottom/side lines). 0.5 inset keeps the 1 px stroke
+  // pixel-aligned. The borderSide param is left in the signature for caller
+  // compatibility but no longer drives any extra geometry.
+  void borderSide;
   const C = '#888888';
-  const vertLines = borderSide === 'left'  ? `<line x1="0" y1="0" x2="0" y2="92" stroke="${C}" stroke-width="1"/>`
-                  : borderSide === 'right' ? `<line x1="199" y1="0" x2="199" y2="92" stroke="${C}" stroke-width="1"/>`
-                  : '';
-  const border = borderSide === 'none' ? '' : [
-    `<line x1="0" y1="0" x2="200" y2="0" stroke="${C}" stroke-width="1"/>`,
-    `<line x1="0" y1="91" x2="200" y2="91" stroke="${C}" stroke-width="1"/>`,
-    vertLines,
-  ].join('');
-  return `<svg width="200" height="92" xmlns="http://www.w3.org/2000/svg">
-<rect width="200" height="92" fill="#000000"/>
-<line x1="80" y1="6" x2="80" y2="87" stroke="#2a2a2a" stroke-width="1"/>
+  // SVG now matches the layout pixmap (200×100) so the Vol bar can land at the
+  // exact same y as the Tune dial's RSSI bar without scaling. Frame bottom is
+  // pulled up 1 px (height 99→98) to avoid device-edge clipping.
+  const frame = `<rect x="0.5" y="0.5" width="199" height="98" rx="4" ry="4" fill="none" stroke="${C}" stroke-width="1"/>`;
+  return `<svg width="200" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
+<rect width="200" height="${SVG_H}" fill="#000000"/>
 ${items}
-${border}
+${frame}
 </svg>`;
 }

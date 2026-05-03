@@ -135,15 +135,17 @@ export function volBarSvg(pct: number, muted = false): string {
 }
 
 export function makeBorderSvg(side: 'left' | 'right' | 'center' | 'none'): string {
-  if (side === 'none') return svgB64(`<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg"></svg>`);
+  // Rounded grey frame matching optionsPanelSvg's panel border. The `side`
+  // param is kept for caller compatibility but no longer changes the result —
+  // every Stream Deck + LCD now wears the same R=4 frame for a uniform look.
+  void side;
   const C = '#888888';
-  const top  = `<line x1="0" y1="0" x2="200" y2="0" stroke="${C}" stroke-width="1"/>`;
-  const bot  = `<line x1="0" y1="99" x2="200" y2="99" stroke="${C}" stroke-width="1"/>`;
-  const vert = side === 'left'
-    ? `<line x1="0" y1="0" x2="0" y2="100" stroke="${C}" stroke-width="1"/>`
-    : side === 'right'
-    ? `<line x1="199" y1="0" x2="199" y2="100" stroke="${C}" stroke-width="1"/>`
-    : '';
-  return svgB64(`<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">${top}${vert}${bot}</svg>`);
+  // Bottom edge nudged up 1 px (height 99 → 98) — at h=99 the line landed at
+  // y=99.5 which the device clips, leaving the frame open at the bottom.
+  return svgB64(
+    `<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect x="0.5" y="0.5" width="199" height="98" rx="4" ry="4" fill="none" stroke="${C}" stroke-width="1"/>` +
+    `</svg>`,
+  );
 }
 

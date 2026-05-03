@@ -6,7 +6,13 @@
     body { font-family: -apple-system, sans-serif; font-size: 13px; color: #ccc; background: transparent; margin: 0; padding: 8px; }
     .row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
     label { min-width: 60px; color: #bbb; }
-    select { flex: 1; background: #2a2a2a; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 4px 6px; font-size: 13px; }
+    select, input[type="text"], input[type="number"] {
+      background: #2a2a2a; color: #fff; border: 1px solid #555; border-radius: 4px;
+      padding: 4px 6px; font-size: 13px;
+    }
+    select { flex: 1; }
+    input[type="text"] { flex: 1; }
+    input[type="number"] { width: 80px; }
     .status { color: #aaa; font-size: 11px; }
   </style>
 </head>
@@ -33,6 +39,11 @@
   <div class="row" id="deviceRow"><label>Device</label>
     <select id="deviceSelect"><option value="-1">-- Loading... --</option></select>
   </div>
+  <hr style="border-color:#444;margin:8px 0"/>
+  <div class="row"><label>Server</label>
+    <input type="text" id="hostInput" placeholder="192.168.0.142" />
+    <input type="number" id="portInput" placeholder="8888" min="1" max="65535" />
+  </div>
   <div class="row"><span class="status" id="status"></span></div>
 </body>
 <script>
@@ -51,6 +62,7 @@
       websocket.send(JSON.stringify({ event: 'getSettings', context: uuid }));
       sendToPlugin({ action: 'getPresets' });
       sendToPlugin({ action: 'getAudioDevices' });
+      sendToPlugin({ action: 'getServerConfig' });
     };
     websocket.onmessage = function(evt) {
       var msg = JSON.parse(evt.data);
@@ -69,6 +81,10 @@
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'audioDevices') {
         buildDeviceList(msg.payload.devices, msg.payload.current, msg.payload.savedName);
         document.getElementById('audioEnabled').checked = !!msg.payload.audioEnabled;
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'serverConfig') {
+        document.getElementById('hostInput').value = msg.payload.host || '';
+        document.getElementById('portInput').value = msg.payload.port ? String(msg.payload.port) : '';
       }
     };
   }
@@ -123,5 +139,23 @@
   document.getElementById('borderSelect').addEventListener('change', saveSettings);
   document.getElementById('audioEnabled').addEventListener('change', saveAudioConfig);
   document.getElementById('deviceSelect').addEventListener('change', saveAudioConfig);
+
+  // Host/Port: debounce while user is typing so we don't tear down + reconnect
+  // on every keystroke. Apply 800 ms after the last edit.
+  var serverTimer = null;
+  function scheduleSaveServer() {
+    if (serverTimer) clearTimeout(serverTimer);
+    serverTimer = setTimeout(function() {
+      serverTimer = null;
+      var host = document.getElementById('hostInput').value.trim();
+      var port = parseInt(document.getElementById('portInput').value, 10);
+      var payload = { action: 'setServerConfig' };
+      if (host) payload.host = host;
+      if (port >= 1 && port <= 65535) payload.port = port;
+      if (payload.host || payload.port) sendToPlugin(payload);
+    }, 800);
+  }
+  document.getElementById('hostInput').addEventListener('input', scheduleSaveServer);
+  document.getElementById('portInput').addEventListener('input', scheduleSaveServer);
 </script>
 </html>

@@ -76,27 +76,73 @@ export class SpyClient extends EventEmitter {
   private socket: net.Socket | null = null;
   private buf = Buffer.alloc(0);
   private intentionalClose = false;
+  // Application-level dead-connection watchdog: yanking the LAN cable leaves
+  // the TCP socket nominally open from our side (the OS won't notice for ~2 h
+  // by default), so disconnect/error never fires. We track the timestamp of
+  // the last received byte and declare the link dead if nothing arrives for
+  // WATCHDOG_TIMEOUT_MS while streaming. SpyServer sends IQ + sync packets
+  // continuously when active so 5 s without anything is unambiguous death.
+  private lastRxMs = 0;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly WATCHDOG_TIMEOUT_MS = 5000;
+  private static readonly WATCHDOG_INTERVAL_MS = 1000;
 
-  connect(host: string, port: number): Promise<void> {
+  connect(host: string, port: number, timeoutMs = 5000): Promise<void> {
     return new Promise((resolve, reject) => {
       this.intentionalClose = false;
       const sock = new net.Socket();
-      const onErr = (e: Error) => reject(e);
+      let settled = false;
+      const settle = (fn: () => void) => { if (!settled) { settled = true; fn(); } };
+      const onErr = (e: Error) => settle(() => { try { sock.destroy(); } catch {} reject(e); });
       sock.once('error', onErr);
+      // Explicit TCP-connect timeout — without this, an unreachable host
+      // (firewall drop / no route) would block on the OS SYN-retry timeout
+      // (~75 s), stalling the reconnect loop the same length.
+      const timer = setTimeout(() => {
+        settle(() => { try { sock.destroy(); } catch {} reject(new Error(`TCP connect timeout (${timeoutMs} ms)`)); });
+      }, timeoutMs);
       sock.connect(port, host, () => {
-        sock.off('error', onErr);
-        this.socket = sock;
-        sock.on('data', (c: Buffer) => this.onData(c));
-        sock.on('error', (e: Error) => this.emit('error', e));
-        sock.on('close', () => { if (!this.intentionalClose) this.emit('disconnect'); });
-        this.sendHello();
-        resolve();
+        clearTimeout(timer);
+        settle(() => {
+          sock.off('error', onErr);
+          this.socket = sock;
+          // OS-level keepalive as a slow safety net (kicks in after the OS
+          // default idle, ~2 h on macOS — useful only for genuinely silent
+          // links that bypass the app-level watchdog below).
+          try { sock.setKeepAlive(true, 30_000); } catch {}
+          sock.on('data', (c: Buffer) => this.onData(c));
+          sock.on('error', (e: Error) => this.emit('error', e));
+          sock.on('close', () => { this.stopWatchdog(); if (!this.intentionalClose) this.emit('disconnect'); });
+          this.sendHello();
+          this.startWatchdog();
+          resolve();
+        });
       });
     });
   }
 
+  private startWatchdog(): void {
+    this.lastRxMs = Date.now();
+    this.stopWatchdog();
+    this.watchdogTimer = setInterval(() => {
+      if (Date.now() - this.lastRxMs > SpyClient.WATCHDOG_TIMEOUT_MS) {
+        this.stopWatchdog();
+        // Force-close the socket so any subsequent writes fail fast, then
+        // surface as a disconnect (mirrors what 'close' would emit if the OS
+        // had detected the dead link itself).
+        try { this.socket?.destroy(); } catch {}
+        this.socket = null;
+        if (!this.intentionalClose) this.emit('disconnect');
+      }
+    }, SpyClient.WATCHDOG_INTERVAL_MS);
+  }
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) { clearInterval(this.watchdogTimer); this.watchdogTimer = null; }
+  }
+
   disconnect(): void {
     this.intentionalClose = true;
+    this.stopWatchdog();
     this.socket?.destroy();
     this.socket = null;
     this.buf = Buffer.alloc(0);
@@ -134,6 +180,7 @@ export class SpyClient extends EventEmitter {
   }
 
   private onData(chunk: Buffer): void {
+    this.lastRxMs = Date.now();  // watchdog feed
     this.buf = Buffer.concat([this.buf, chunk]);
     while (this.buf.length >= MSG_HDR_SIZE) {
       // Header: ProtocolID(0) | MessageType(4) | StreamType(8) | SequenceNumber(12) | BodySize(16)

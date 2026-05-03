@@ -44,7 +44,9 @@ export class SpyDialOptions extends SingletonAction<Settings> {
   private gainListener: ((g: number, max: number) => void) | null = null;
   private enabledListener: ((on: boolean) => void) | null = null;
   private demodListener: ((mode: number) => void) | null = null;
+  private connStateListener: ((c: boolean) => void) | null = null;
   private enabled = true;
+  private connected = false;
   private isFmMode = true;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
@@ -65,6 +67,8 @@ export class SpyDialOptions extends SingletonAction<Settings> {
       this.render();
     };
     spyService.subscribeDemodMode(this.demodListener);
+    this.connStateListener = (c) => { this.connected = c; this.render(); };
+    spyService.subscribeConnectionState(this.connStateListener);
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialOptions] ${e}`));
     await ev.action.setImage(svgB64(knobSvg()));
     this.render();
@@ -75,6 +79,7 @@ export class SpyDialOptions extends SingletonAction<Settings> {
     if (this.gainListener)    { spyService.unsubscribeFmGain(this.gainListener);     this.gainListener    = null; }
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
     if (this.demodListener)   { spyService.unsubscribeDemodMode(this.demodListener); this.demodListener = null; }
+    if (this.connStateListener) { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
     this.act = null;
   }
 
@@ -129,8 +134,9 @@ export class SpyDialOptions extends SingletonAction<Settings> {
       rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
     }
     const sel = this.focused ? this.selectedIdx : -1;
+    const dim = !this.enabled || !this.connected;
     this.act.setFeedback({
-      'options-display': svgB64(dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), !this.enabled)),
+      'options-display': svgB64(dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), dim)),
     }).catch(() => {});
   }
 }

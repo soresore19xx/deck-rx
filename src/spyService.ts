@@ -83,6 +83,7 @@ type EnabledListener  = (enabled: boolean) => void;
 type GainListener     = (gain: number, maxGain: number) => void;
 type DemodModeListener = (mode: number) => void;
 type AudioStateListener = (running: boolean, deviceName: string) => void;
+type ConnectionStateListener = (connected: boolean) => void;
 
 class SpyService {
   private client = new SpyClient();
@@ -140,6 +141,7 @@ class SpyService {
   private fmGainListeners = new Set<GainListener>();
   private demodModeListeners = new Set<DemodModeListener>();
   private audioStateListeners = new Set<AudioStateListener>();
+  private connectionStateListeners = new Set<ConnectionStateListener>();
   // Debounced SpyServer apply for rapid dial rotations.
   private gainApplyTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingGainScope: 'am' | 'fm' | null = null;
@@ -254,7 +256,7 @@ class SpyService {
       await this.client.connect(cfg.host, cfg.port);
       streamDeck.logger.info('[spyService] tcp connected, awaiting deviceInfo');
       await this.waitForDeviceInfo(3000);
-      this.connected = true;
+      this.setConnectedState(true);
       streamDeck.logger.info('[spyService] handshake complete');
       for (const fn of this.connectListeners) fn();
       if (cfg.audioEnabled) {
@@ -272,7 +274,7 @@ class SpyService {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
-    this.connected = false;
+    this.setConnectedState(false);
     this.deviceInfo = null;
     if (!this.enabled) return;  // do not reconnect when user has switched off
     this.reconnectTimer = setTimeout(async () => {
@@ -306,7 +308,7 @@ class SpyService {
       if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
       this.stopAudio();
       try { this.client.disconnect(); } catch {}
-      this.connected = false;
+      this.setConnectedState(false);
       this.deviceInfo = null;
     } else {
       // Going ON: kick off a fresh connect (existing client already disconnected
@@ -824,6 +826,40 @@ class SpyService {
     };
   }
 
+  /** Persisted SpyServer host + port (used by PI to populate the form fields). */
+  async getServerConfigPersisted(): Promise<{ host: string; port: number }> {
+    const cfg = await this.loadConfig();
+    return { host: cfg.host, port: cfg.port };
+  }
+
+  /**
+   * Persist a new SpyServer host/port and apply it live: tear down the current
+   * client, replace it with a fresh one pointing at the new endpoint, and
+   * reconnect (unless the master switch is OFF, in which case only the
+   * persisted value is updated). Validates port is in 1..65535.
+   */
+  async updateServerConfig({ host, port }: { host?: string; port?: number }): Promise<void> {
+    const updates: Record<string, unknown> = {};
+    if (typeof host === 'string' && host.trim().length > 0) updates.host = host.trim();
+    if (typeof port === 'number' && port >= 1 && port <= 65535) updates.port = port;
+    if (Object.keys(updates).length === 0) return;
+    await this.persistFields(updates);
+    // Apply live: only re-establish if there was an active or pending connection.
+    const wasActive = this.connected || this.connecting || !!this.reconnectTimer;
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    this.stopAudio();
+    try { this.client.disconnect(); } catch {}
+    this.setConnectedState(false);
+    this.connecting = false;
+    this.deviceInfo = null;
+    streamDeck.logger.info(`[spyService] updateServerConfig ${JSON.stringify(updates)}`);
+    if (wasActive && this.enabled) {
+      this.client = new SpyClient();
+      this.hookClient();
+      await this.connect();
+    }
+  }
+
   async updateAudioConfig(updates: Partial<Config>): Promise<void> {
     const current = await this.loadConfig();
     const merged: Config = { ...current, ...updates,
@@ -852,6 +888,18 @@ class SpyService {
   }
   offConnect(fn: ConnectListener): void { this.connectListeners.delete(fn); }
   isConnected(): boolean { return this.connected; }
+  /** Subscribe to TCP connection state changes (true=connected handshake done,
+   *  false=disconnected). Replays current state immediately. */
+  subscribeConnectionState(fn: ConnectionStateListener): void {
+    this.connectionStateListeners.add(fn);
+    fn(this.connected);
+  }
+  unsubscribeConnectionState(fn: ConnectionStateListener): void { this.connectionStateListeners.delete(fn); }
+  private setConnectedState(connected: boolean): void {
+    if (this.connected === connected) return;
+    this.connected = connected;
+    for (const fn of this.connectionStateListeners) fn(connected);
+  }
 }
 
 export const spyService = new SpyService();

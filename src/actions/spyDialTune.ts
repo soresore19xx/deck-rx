@@ -33,7 +33,9 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private syncListener: ((s: SyncInfo) => void) | null = null;
   private connectListener: (() => void) | null = null;
   private enabledListener: ((on: boolean) => void) | null = null;
+  private connStateListener: ((c: boolean) => void) | null = null;
   private enabled = true;
+  private connected = false;
   private tuneTimer: ReturnType<typeof setTimeout> | null = null;
   private lastAction: unknown = null;
   private presets: Preset[] = [];
@@ -83,6 +85,12 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     };
     spyService.subscribeEnabled(this.enabledListener);
 
+    this.connStateListener = (c: boolean) => {
+      this.connected = c;
+      this.updateDisplay(this.lastAction).catch(() => {});
+    };
+    spyService.subscribeConnectionState(this.connStateListener);
+
     await ev.action.setImage(svgB64(knobSvg()));
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialTune] ${e}`));
     // Periodically refresh footer (stereo-lock indicator updates from pilot power)
@@ -94,6 +102,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     if (this.syncListener) { spyService.unsubscribe(this.syncListener); this.syncListener = null; }
     if (this.connectListener) { spyService.offConnect(this.connectListener); this.connectListener = null; }
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
+    if (this.connStateListener) { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
     if (this.tuneTimer) { clearTimeout(this.tuneTimer); this.tuneTimer = null; }
     if (this.footerTimer) { clearInterval(this.footerTimer); this.footerTimer = null; }
     this.lastAction = null;
@@ -162,6 +171,19 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         ffmpeg: deviceName ? { deviceName } : undefined,
       }).catch((e) => streamDeck.logger.error(`[spyDialTune] updateAudioConfig: ${e}`));
     }
+    if (ev.payload['action'] === 'getServerConfig') {
+      const cfg = await spyService.getServerConfigPersisted();
+      await streamDeck.ui.sendToPropertyInspector({
+        action: 'serverConfig',
+        host: cfg.host,
+        port: cfg.port,
+      });
+    }
+    if (ev.payload['action'] === 'setServerConfig') {
+      const { host, port } = ev.payload as { host?: string; port?: number };
+      await spyService.updateServerConfig({ host, port })
+        .catch((e) => streamDeck.logger.error(`[spyDialTune] updateServerConfig: ${e}`));
+    }
   }
 
   private async updateDisplay(action: unknown): Promise<void> {
@@ -180,54 +202,65 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     const rssiNum = rssiDbfs > -119 ? `${Math.round(rssiDbfs)}` : '-';
     // When master OFF, blank the meters and ignore stereo lock — the radio
     // is fully torn down so any cached values are stale.
-    const dim = !this.enabled;
+    // Dim the whole dial when either the master switch is OFF or the SpyServer
+    // TCP link is down (so a brief network blip greys the panel until reconnect).
+    const dim = !this.enabled || !this.connected;
+    const offline = this.enabled && !this.connected;
     const D = (s: string) => dimSvg(s, dim);
     // Layout-side text items (s-label, n-label, snr-num, rssi-num) aren't part
     // of any SVG so dimSvg can't reach them — override their colour explicitly
     // via setFeedback so the meter labels and numerics dim alongside the bars.
     const T = (txt: string) => ({ value: txt, color: dim ? '#4d4d4d' : '#ffffff' });
-    const meters: Record<string, unknown> = this.enabled ? {
+    // Live values are only meaningful when the radio is actually receiving —
+    // master OFF or TCP-down show zero bars + "-" numerics. dim wraps both
+    // bars (SVG) and numerics (text) consistently.
+    const live = this.enabled && this.connected;
+    const meters: Record<string, unknown> = {
       'n-label':  T('N'),
       's-label':  T('S'),
-      'snr-bar':  snrBarSvg(snrPct),
-      'snr-num':  T(snrNum),
-      'rssi-bar': rssiBandSvg(rssiPct),
-      'rssi-num': T(rssiNum),
-    } : {
-      'n-label':  T('N'),
-      's-label':  T('S'),
-      'snr-bar':  D(snrBarSvg(0)),
-      'snr-num':  T('-'),
-      'rssi-bar': D(rssiBandSvg(0)),
-      'rssi-num': T('-'),
+      'snr-bar':  D(snrBarSvg(live ? snrPct : 0)),
+      'snr-num':  T(live ? snrNum : '-'),
+      'rssi-bar': D(rssiBandSvg(live ? rssiPct : 0)),
+      'rssi-num': T(live ? rssiNum : '-'),
     };
     // Only show the STEREO badge when the user actually has stereo decoding
     // enabled — otherwise we're outputting mono and the badge is misleading
     // (pilot lock detection still runs regardless of the option).
     const showStereo = this.enabled && stereoLock && spyService.getFMOptions().stereo;
+    // While offline (TCP link down with master ON), show "-----" instead of
+    // the freq digits — the dial otherwise shows a frequency that isn't really
+    // being received. Master OFF keeps the freq visible (it's where we'll
+    // resume when re-enabled).
+    const offlineSvg = svgB64(seg7svg('-----', '', 200, 55));
     if (this.dialMode === 'preset') {
       const p = this.presets[this.slotIndex];
       const freq = p?.freq ?? 0;
       const { num, unit } = freqParts(freq);
       const modeStr = p ? (MODES[p.mode] ?? '') : '';
       const baseHeader = p ? `${modeStr}  ${p.name}` : 'No presets';
-      const header = this.enabled ? baseHeader : `OFF  ${baseHeader}`;
+      const header = !this.enabled ? `OFF  ${baseHeader}`
+                   : offline        ? `LINK  ${baseHeader}`
+                   : baseHeader;
       const isFM = p?.mode === 1;
+      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55));
       await a.setFeedback({
         ...meters,
         header:        D(makeHeaderSvg(header, isFM && showStereo)),
-        'freq-display': D(svgB64(seg7svg(num, unit, 200, 55))),
+        'freq-display': D(freqSvg),
         border:         makeBorderSvg(this.borderSide),
       });
     } else {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       const { num, unit } = freqParts(freq);
       const baseHeader = `VFO  step:${formatStep(this.stepHz)}`;
-      const header = this.enabled ? baseHeader : `OFF  ${baseHeader}`;
+      const header = !this.enabled ? `OFF  ${baseHeader}`
+                   : offline        ? `LINK  ${baseHeader}`
+                   : baseHeader;
+      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55));
       await a.setFeedback({
         ...meters,
         header:        D(makeHeaderSvg(header, showStereo)),
-        'freq-display': D(svgB64(seg7svg(num, unit, 200, 55))),
+        'freq-display': D(freqSvg),
         border:         makeBorderSvg(this.borderSide),
       });
     }

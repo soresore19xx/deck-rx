@@ -60,24 +60,12 @@
       "UUID": "com.hogehoge.spyserver-ex.dial-volume",
       "Name": "SpyServer Volume",
       "Icon": "imgs/actions/tune/action",
-      "Tooltip": "Audio volume / mute",
+      "Tooltip": "Audio volume / mute + connection status",
       "Controllers": ["Encoder"],
       "States": [{ "Image": "imgs/actions/tune/action", "Title": "Vol" }],
       "Encoder": {
         "layout": "layouts/dial-volume.json",
         "TriggerDescription": { "Rotate": "Adjust volume", "Push": "Toggle mute", "LongTouch": "" }
-      }
-    },
-    {
-      "UUID": "com.hogehoge.spyserver-ex.dial-status",
-      "Name": "SpyServer Status",
-      "Icon": "imgs/actions/tune/action",
-      "Tooltip": "SpyServer connection and device status",
-      "Controllers": ["Encoder"],
-      "States": [{ "Image": "imgs/actions/tune/action", "Title": "Status" }],
-      "Encoder": {
-        "layout": "layouts/dial-status.json",
-        "TriggerDescription": { "Rotate": "", "Push": "", "LongTouch": "" }
       }
     }
   ],

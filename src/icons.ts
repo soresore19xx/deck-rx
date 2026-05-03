@@ -1,5 +1,22 @@
 export { svgB64 } from './dialDisplay.js';
 
+/** Wrap an SVG's contents in a low-opacity <g> when `dim` is true. Accepts
+ *  either a raw SVG string or a `data:image/svg+xml;base64,…` URL (which is
+ *  what most of the dial-display helpers return). Used to visually
+ *  deactivate every dial panel while the master ON/OFF is OFF. */
+export function dimSvg(svg: string, dim: boolean): string {
+  if (!dim) return svg;
+  const wrap = (s: string) => s
+    .replace(/<svg([^>]*)>/, '<svg$1><g opacity="0.30">')
+    .replace(/<\/svg>\s*$/, '</g></svg>');
+  const prefix = 'data:image/svg+xml;base64,';
+  if (svg.startsWith(prefix)) {
+    const inner = Buffer.from(svg.slice(prefix.length), 'base64').toString('utf8');
+    return prefix + Buffer.from(wrap(inner)).toString('base64');
+  }
+  return wrap(svg);
+}
+
 export function tuneSvg(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="72" height="72">
     <rect width="72" height="72" fill="#1a1a2e"/>
@@ -47,22 +64,52 @@ ${teeth}
 
 const BLUE = '#00aaff';
 
-export interface OptionsPanelRow { label: string; value: string; }
+export interface OptionsPanelRow {
+  label: string;
+  value: string;
+  /** Optional inline horizontal bar (0..100) rendered between label and value
+   *  text. Used by the Volume+Status panel to show the volume level. */
+  bar?: number;
+  /** When bar is present, switch the fill colour to a muted/disabled tone. */
+  barMuted?: boolean;
+  /** Override the value-text colour (e.g. ONLINE indicator). The selected /
+   *  edit-mode highlight still wins. */
+  valueColor?: string;
+}
 
 export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editMode = false, borderSide: 'left' | 'right' | 'center' | 'none' = 'none'): string {
-  const rowH = 17;
-  const startY = 17;
-  const items = rows.map(({ label, value }, i) => {
+  // Fixed compact metrics: rowH 14 / font 11/12. Used for ALL panel-style
+  // dials so AM Options, FM Options and Volume+Status share identical
+  // typography regardless of how many rows each happens to render.
+  const rowH = 14;
+  const startY = 14;
+  const labelFs = 11;
+  const valueFs = 12;
+  const bgPad = rowH - 3;  // background bar height = rowH - small gap
+  const items = rows.map((row, i) => {
+    const { label, value, bar: barPct, barMuted, valueColor: valueColorOverride } = row;
     const y = startY + i * rowH;
     const isSelected = i === selectedRow;
     const isEdit = isSelected && editMode;
     const accent = isEdit ? '#ffaa55' : BLUE;
-    const bg  = isSelected ? `<rect x="0" y="${y - 14}" width="200" height="${rowH}" fill="#222222"/>` : '';
-    const bar = isSelected ? `<rect x="0" y="${y - 14}" width="3" height="${rowH}" fill="${accent}"/>` : '';
-    const valueColor = isSelected && !isEdit ? '#ffee00' : 'white';
-    return `${bg}${bar}
-<text x="8" y="${y}" fill="${isSelected ? accent : 'white'}" font-size="12" font-family="monospace">${label}</text>
-<text x="192" y="${y}" fill="${valueColor}" font-size="14" font-family="monospace" text-anchor="end">${value}</text>`;
+    const bg  = isSelected ? `<rect x="0" y="${y - bgPad}" width="200" height="${rowH}" fill="#222222"/>` : '';
+    const sideBar = isSelected ? `<rect x="0" y="${y - bgPad}" width="3" height="${rowH}" fill="${accent}"/>` : '';
+    const valueColor = isSelected && !isEdit ? '#ffee00' : (valueColorOverride ?? 'white');
+    // Inline progress bar between label and value (used for Volume row).
+    let barSvg = '';
+    if (typeof barPct === 'number') {
+      const barX = 50, barW = 110;
+      const barH = Math.max(4, rowH - 8);
+      const barY = y - bgPad + (rowH - barH) / 2;
+      const filled = Math.max(0, Math.min(100, barPct)) * barW / 100;
+      const fillColor = barMuted ? '#666666' : (barPct > 100 ? '#ff7733' : '#55aaff');
+      barSvg =
+        `<rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" fill="#333333" rx="1"/>` +
+        (filled > 0 ? `<rect x="${barX}" y="${barY}" width="${filled.toFixed(1)}" height="${barH}" fill="${fillColor}" rx="1"/>` : '');
+    }
+    return `${bg}${sideBar}${barSvg}
+<text x="8" y="${y}" fill="${isSelected ? accent : 'white'}" font-size="${labelFs}" font-family="monospace">${label}</text>
+<text x="192" y="${y}" fill="${valueColor}" font-size="${valueFs}" font-family="monospace" text-anchor="end">${value}</text>`;
   }).join('\n');
   const C = '#888888';
   const vertLines = borderSide === 'left'  ? `<line x1="0" y1="0" x2="0" y2="92" stroke="${C}" stroke-width="1"/>`

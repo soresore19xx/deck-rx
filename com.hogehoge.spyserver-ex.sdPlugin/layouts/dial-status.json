@@ -1,6 +1,0 @@
-{
-  "id": "dial-status-layout",
-  "items": [
-    { "key": "status-display", "type": "pixmap", "rect": [0,0,200,100], "zOrder": 0 }
-  ]
-}

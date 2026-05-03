@@ -4,7 +4,7 @@ import type { JsonObject } from '@elgato/streamdeck';
 import { getAudioOutputDevices, getCurrentAudioOutput } from '../audioDevices.js';
 import { spyService } from '../spyService.js';
 import { SyncInfo } from '../SpyClient.js';
-import { svgB64, knobSvg } from '../icons.js';
+import { svgB64, knobSvg, dimSvg } from '../icons.js';
 import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
 import { loadPresets, Preset } from './spyTune.js';
 
@@ -32,6 +32,8 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private borderSide: 'left'|'right'|'center'|'none' = 'none';
   private syncListener: ((s: SyncInfo) => void) | null = null;
   private connectListener: (() => void) | null = null;
+  private enabledListener: ((on: boolean) => void) | null = null;
+  private enabled = true;
   private tuneTimer: ReturnType<typeof setTimeout> | null = null;
   private lastAction: unknown = null;
   private presets: Preset[] = [];
@@ -75,6 +77,12 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     };
     spyService.onConnect(this.connectListener);
 
+    this.enabledListener = (on: boolean) => {
+      this.enabled = on;
+      this.updateDisplay(this.lastAction).catch(() => {});
+    };
+    spyService.subscribeEnabled(this.enabledListener);
+
     await ev.action.setImage(svgB64(knobSvg()));
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialTune] ${e}`));
     // Periodically refresh footer (stereo-lock indicator updates from pilot power)
@@ -85,6 +93,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   override onWillDisappear(_ev: WillDisappearEvent<DialTuneSettings>): void {
     if (this.syncListener) { spyService.unsubscribe(this.syncListener); this.syncListener = null; }
     if (this.connectListener) { spyService.offConnect(this.connectListener); this.connectListener = null; }
+    if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
     if (this.tuneTimer) { clearTimeout(this.tuneTimer); this.tuneTimer = null; }
     if (this.footerTimer) { clearInterval(this.footerTimer); this.footerTimer = null; }
     this.lastAction = null;
@@ -121,7 +130,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   }
 
   override onDialDown(_ev: DialDownEvent<DialTuneSettings>): void {}
-  override onDialUp(_ev: DialUpEvent<DialTuneSettings>): void {}
+  override async onDialUp(_ev: DialUpEvent<DialTuneSettings>): Promise<void> {
+    // Master ON/OFF: tear down or bring up the SpyServer connection.
+    await spyService.toggleEnabled();
+  }
 
   override async onSendToPlugin(ev: SendToPluginEvent<JsonObject, DialTuneSettings>): Promise<void> {
     if (ev.payload['action'] === 'getPresets') {
@@ -166,32 +178,56 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     const snrPct  = Math.max(0, Math.min(100, snrDb * 100 / 50));
     const snrNum  = snrDb > 0.5 ? `${Math.round(snrDb)}` : '-';
     const rssiNum = rssiDbfs > -119 ? `${Math.round(rssiDbfs)}` : '-';
-    const meters: Record<string, unknown> = {
+    // When master OFF, blank the meters and ignore stereo lock — the radio
+    // is fully torn down so any cached values are stale.
+    const dim = !this.enabled;
+    const D = (s: string) => dimSvg(s, dim);
+    // Layout-side text items (s-label, n-label, snr-num, rssi-num) aren't part
+    // of any SVG so dimSvg can't reach them — override their colour explicitly
+    // via setFeedback so the meter labels and numerics dim alongside the bars.
+    const T = (txt: string) => ({ value: txt, color: dim ? '#4d4d4d' : '#ffffff' });
+    const meters: Record<string, unknown> = this.enabled ? {
+      'n-label':  T('N'),
+      's-label':  T('S'),
       'snr-bar':  snrBarSvg(snrPct),
-      'snr-num':  snrNum,
+      'snr-num':  T(snrNum),
       'rssi-bar': rssiBandSvg(rssiPct),
-      'rssi-num': rssiNum,
+      'rssi-num': T(rssiNum),
+    } : {
+      'n-label':  T('N'),
+      's-label':  T('S'),
+      'snr-bar':  D(snrBarSvg(0)),
+      'snr-num':  T('-'),
+      'rssi-bar': D(rssiBandSvg(0)),
+      'rssi-num': T('-'),
     };
+    // Only show the STEREO badge when the user actually has stereo decoding
+    // enabled — otherwise we're outputting mono and the badge is misleading
+    // (pilot lock detection still runs regardless of the option).
+    const showStereo = this.enabled && stereoLock && spyService.getFMOptions().stereo;
     if (this.dialMode === 'preset') {
       const p = this.presets[this.slotIndex];
       const freq = p?.freq ?? 0;
       const { num, unit } = freqParts(freq);
       const modeStr = p ? (MODES[p.mode] ?? '') : '';
-      const header = p ? `${modeStr}  ${p.name}` : 'No presets';
+      const baseHeader = p ? `${modeStr}  ${p.name}` : 'No presets';
+      const header = this.enabled ? baseHeader : `OFF  ${baseHeader}`;
       const isFM = p?.mode === 1;
       await a.setFeedback({
         ...meters,
-        header:        makeHeaderSvg(header, isFM && stereoLock),
-        'freq-display': svgB64(seg7svg(num, unit, 200, 55)),
+        header:        D(makeHeaderSvg(header, isFM && showStereo)),
+        'freq-display': D(svgB64(seg7svg(num, unit, 200, 55))),
         border:         makeBorderSvg(this.borderSide),
       });
     } else {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       const { num, unit } = freqParts(freq);
+      const baseHeader = `VFO  step:${formatStep(this.stepHz)}`;
+      const header = this.enabled ? baseHeader : `OFF  ${baseHeader}`;
       await a.setFeedback({
         ...meters,
-        header:        makeHeaderSvg(`VFO  step:${formatStep(this.stepHz)}`, stereoLock),
-        'freq-display': svgB64(seg7svg(num, unit, 200, 55)),
+        header:        D(makeHeaderSvg(header, showStereo)),
+        'freq-display': D(svgB64(seg7svg(num, unit, 200, 55))),
         border:         makeBorderSvg(this.borderSide),
       });
     }

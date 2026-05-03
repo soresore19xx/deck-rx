@@ -51,12 +51,15 @@ const DEFAULT_AM_OPTIONS: AMOptions = {
 interface Config {
   host: string;
   port: number;
+  enabled?: boolean;      // master ON/OFF (user-toggled via dial push)
   audioEnabled?: boolean;
   demodMode?: number;     // 0=NFM 1=WFM 2=AM (last-used)
   lastFrequency?: number; // Hz; restored at startup
   iqDecimation?: number;  // SpyServer SETTING_IQ_DECIMATION stage offset
   audioDecimate?: number; // software decimation: audioRate = iqRate / audioDecimate
-  gain?: number;          // device gain (0..maxGainIndex)
+  gain?: number;          // legacy single-gain field (migrated to amGain on first load)
+  amGain?: number;        // RF gain index used while in AM mode
+  fmGain?: number;        // RF gain index used while in NFM/WFM (and other non-AM)
   audioOutput?: 'naudiodon' | 'ffmpeg';
   naudiodon?: { deviceId?: number };
   ffmpeg?: {
@@ -76,6 +79,10 @@ type ConnectListener  = () => void;
 type OptionsListener  = (o: FMOptions) => void;
 type AMOptionsListener = (o: AMOptions) => void;
 type DeviceListener   = (d: DeviceInfo) => void;
+type EnabledListener  = (enabled: boolean) => void;
+type GainListener     = (gain: number, maxGain: number) => void;
+type DemodModeListener = (mode: number) => void;
+type AudioStateListener = (running: boolean, deviceName: string) => void;
 
 class SpyService {
   private client = new SpyClient();
@@ -88,6 +95,11 @@ class SpyService {
   private amOptionsListeners = new Set<AMOptionsListener>();
   private deviceListeners  = new Set<DeviceListener>();
   private volumeListeners  = new Set<(v: number, muted: boolean) => void>();
+  private enabledListeners = new Set<EnabledListener>();
+  // Master ON/OFF: when false, connect()/scheduleReconnect() are no-ops and
+  // any active connection is torn down. Default true (existing users keep
+  // current behavior); persisted to config so toggle survives restarts.
+  private enabled = true;
   private fmOptions: FMOptions = { ...DEFAULT_FM_OPTIONS };
   private amOptions: AMOptions = { ...DEFAULT_AM_OPTIONS };
   private host = '';
@@ -101,6 +113,7 @@ class SpyService {
   private lastSync: SyncInfo | null = null;
 
   private audioOutput: AudioOutput | null = null;
+  private currentAudioDeviceName: string = '';
   private demod = new Demodulator();
   private audioRunning = false;
   private iqListener: ((p: IQPacket) => void) | null = null;
@@ -114,6 +127,22 @@ class SpyService {
   // (mean²/variance is high for stable carriers, low for noise-dominated signals)
   private snrSmoothed = 0;     // dB
   private muteUntil = 0;  // ms epoch — output silence until this time
+  // Live RF gain control — held separately for AM and non-AM (FM/NFM/etc)
+  // because the strong-signal IMD problem on the AM band requires lower gain
+  // than is comfortable on FM. undefined means "not yet hydrated" — set to
+  // maxGainIndex when deviceInfo arrives. currentDecStage is captured from
+  // the most recent startAudio so set*Gain() can recompute digital gain.
+  private amGain: number | undefined = undefined;
+  private fmGain: number | undefined = undefined;
+  private maxGain = 0;
+  private currentDecStage = 0;
+  private amGainListeners = new Set<GainListener>();
+  private fmGainListeners = new Set<GainListener>();
+  private demodModeListeners = new Set<DemodModeListener>();
+  private audioStateListeners = new Set<AudioStateListener>();
+  // Debounced SpyServer apply for rapid dial rotations.
+  private gainApplyTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingGainScope: 'am' | 'fm' | null = null;
 
   get currentFreq(): number { return this._currentFreq; }
 
@@ -123,6 +152,14 @@ class SpyService {
     this.client.on('deviceInfo', (info: DeviceInfo) => {
       this.deviceInfo = info;
       streamDeck.logger.info(`[spyService] deviceInfo type=${info.deviceType} maxRate=${info.maxSampleRate} stages=${info.decimationStages} minDec=${info.minIQDecimation} maxGain=${info.maxGainIndex} forcedFmt=${info.forcedIQFormat}`);
+      this.maxGain = info.maxGainIndex;
+      // First-time hydration: if no persisted gain, default to max. Then clamp.
+      if (this.amGain === undefined) this.amGain = info.maxGainIndex;
+      if (this.fmGain === undefined) this.fmGain = info.maxGainIndex;
+      this.amGain = Math.max(0, Math.min(this.maxGain, this.amGain));
+      this.fmGain = Math.max(0, Math.min(this.maxGain, this.fmGain));
+      for (const fn of this.amGainListeners) fn(this.amGain, this.maxGain);
+      for (const fn of this.fmGainListeners) fn(this.fmGain, this.maxGain);
       const waiters = this.deviceInfoWaiters.splice(0);
       for (const w of waiters) w(info);
       for (const fn of this.deviceListeners) fn(info);
@@ -166,6 +203,14 @@ class SpyService {
     this.connecting = true;
     try {
       const cfg = await this.loadConfig();
+      // Hydrate enabled flag from config and bail if user has it OFF.
+      // Done before any side-effects so a disabled plugin stays fully idle.
+      if (typeof cfg.enabled === 'boolean') this.enabled = cfg.enabled;
+      for (const fn of this.enabledListeners) fn(this.enabled);
+      if (!this.enabled) {
+        streamDeck.logger.info('[spyService] connect: disabled, staying offline');
+        return;
+      }
       // First connect: hydrate fmOptions from persisted config
       if (cfg.fm) {
         this.fmOptions = { ...DEFAULT_FM_OPTIONS, ...cfg.fm };
@@ -191,6 +236,17 @@ class SpyService {
       }
       if (typeof cfg.demodMode === 'number') {
         this.currentDemodMode = cfg.demodMode;
+      }
+      // Hydrate per-mode gains. Legacy `cfg.gain` is migrated into `amGain`
+      // (where IMD problems first surfaced) so the user keeps their tuned-down
+      // value across the upgrade.
+      if (typeof cfg.amGain === 'number') {
+        this.amGain = Math.max(0, cfg.amGain);
+      } else if (typeof cfg.gain === 'number') {
+        this.amGain = Math.max(0, cfg.gain);
+      }
+      if (typeof cfg.fmGain === 'number') {
+        this.fmGain = Math.max(0, cfg.fmGain);
       }
       this.host = cfg.host;
       this.port = cfg.port;
@@ -218,6 +274,7 @@ class SpyService {
     if (this.reconnectTimer) return;
     this.connected = false;
     this.deviceInfo = null;
+    if (!this.enabled) return;  // do not reconnect when user has switched off
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       this.client.disconnect();
@@ -227,17 +284,118 @@ class SpyService {
     }, 5000);
   }
 
+  // ── Master ON/OFF ─────────────────────────────────────────────────────
+  isEnabled(): boolean { return this.enabled; }
+  subscribeEnabled(fn: EnabledListener): void {
+    this.enabledListeners.add(fn);
+    fn(this.enabled);
+  }
+  unsubscribeEnabled(fn: EnabledListener): void { this.enabledListeners.delete(fn); }
+  /** Toggle master ON/OFF. Persists, then connects or tears down. */
+  async setEnabled(b: boolean): Promise<void> {
+    const next = !!b;
+    if (next === this.enabled) return;
+    this.enabled = next;
+    streamDeck.logger.info(`[spyService] setEnabled ${next}`);
+    for (const fn of this.enabledListeners) fn(this.enabled);
+    // Await the persist BEFORE reconnect: connect() re-hydrates cfg.enabled
+    // from disk, so a not-yet-flushed write would silently revert us to OFF.
+    await this.persistField('enabled', this.enabled).catch(() => {});
+    if (!next) {
+      // Going OFF: cancel any pending reconnect, tear down audio + TCP.
+      if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+      this.stopAudio();
+      try { this.client.disconnect(); } catch {}
+      this.connected = false;
+      this.deviceInfo = null;
+    } else {
+      // Going ON: kick off a fresh connect (existing client already disconnected
+      // or never opened — replace to drop any stale listeners cleanly).
+      this.client = new SpyClient();
+      this.hookClient();
+      await this.connect();
+    }
+  }
+  async toggleEnabled(): Promise<void> { await this.setEnabled(!this.enabled); }
+
+  // ── RF Gain (per demod-mode) ─────────────────────────────────────────
+  getAmGain(): number { return this.amGain ?? 0; }
+  getFmGain(): number { return this.fmGain ?? 0; }
+  getMaxGain(): number { return this.maxGain; }
+  subscribeAmGain(fn: GainListener): void {
+    this.amGainListeners.add(fn);
+    fn(this.amGain ?? 0, this.maxGain);
+  }
+  unsubscribeAmGain(fn: GainListener): void { this.amGainListeners.delete(fn); }
+  subscribeFmGain(fn: GainListener): void {
+    this.fmGainListeners.add(fn);
+    fn(this.fmGain ?? 0, this.maxGain);
+  }
+  unsubscribeFmGain(fn: GainListener): void { this.fmGainListeners.delete(fn); }
+  /** Set the AM-mode gain. Live-applied if currently in AM and streaming. */
+  async setAmGain(g: number): Promise<void> { await this.setGainInternal('am', g); }
+  /** Set the FM-mode gain. Live-applied if currently in FM/NFM and streaming. */
+  async setFmGain(g: number): Promise<void> { await this.setGainInternal('fm', g); }
+  private async setGainInternal(scope: 'am' | 'fm', g: number): Promise<void> {
+    if (this.maxGain <= 0) return;
+    const clamped = Math.max(0, Math.min(this.maxGain, Math.round(g)));
+    const prev = scope === 'am' ? this.amGain : this.fmGain;
+    if (clamped === prev) return;
+    if (scope === 'am') this.amGain = clamped; else this.fmGain = clamped;
+    const listeners = scope === 'am' ? this.amGainListeners : this.fmGainListeners;
+    for (const fn of listeners) fn(clamped, this.maxGain);
+    // Only push to SpyServer if THIS scope matches the active demod mode.
+    const isActive = scope === 'am' ? this.currentDemodMode === 2 : this.currentDemodMode !== 2;
+    if (isActive && this.connected && this.audioRunning && this.deviceInfo) {
+      // Changing LNA gain causes an IQ-amplitude step + SpyServer-side AGC
+      // settling: without masking, a loud pop punches through. We mute for
+      // long enough to cover both the debounce wait and the post-apply
+      // settling. Debounce groups rapid dial ticks into one apply.
+      this.muteUntil = Date.now() + 200;
+      this.demod.reset();
+      this.pendingGainScope = scope;
+      if (this.gainApplyTimer) clearTimeout(this.gainApplyTimer);
+      this.gainApplyTimer = setTimeout(() => {
+        this.gainApplyTimer = null;
+        const sc = this.pendingGainScope;
+        this.pendingGainScope = null;
+        if (!sc || !this.deviceInfo) return;
+        const finalGain = sc === 'am' ? this.amGain : this.fmGain;
+        if (finalGain === undefined) return;
+        const digitalGain = computeDigitalGain(
+          this.deviceInfo.deviceType, finalGain, this.currentDecStage, this.deviceInfo.maxGainIndex,
+        );
+        // Re-mute + reset around the actual apply so the post-step transient
+        // is masked even after the debounce window has elapsed.
+        this.muteUntil = Math.max(this.muteUntil, Date.now() + 150);
+        this.demod.reset();
+        this.client.setSetting(SETTING_GAIN, finalGain);
+        this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
+        streamDeck.logger.info(`[spyService] set${sc === 'am' ? 'Am' : 'Fm'}Gain ${finalGain} digitalGain=${digitalGain}`);
+      }, 80);
+    }
+    await this.persistField(scope === 'am' ? 'amGain' : 'fmGain', clamped).catch(() => {});
+  }
+
   private freqDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingFreq = 0;
   private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
   setFrequency(hz: number): void {
     this._currentFreq = hz;
-    this.muteUntil = Date.now() + 100;
+    // Initial long mute covers the debounce + the start of SpyServer's
+    // retune. Re-muted again from the apply timer for the rest of the
+    // settling window (new station carrier amplitude, amDc convergence).
+    this.muteUntil = Date.now() + 200;
     this.demod.reset();
     this.pendingFreq = hz;
     if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);
     this.freqDebounceTimer = setTimeout(() => {
       this.freqDebounceTimer = null;
+      // Refresh mute + demod state around the actual SpyServer command —
+      // server retune (~50-100 ms) + new-station IQ packet arrival pop is
+      // the main loud transient we need to mask.
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + 250);
+      this.demod.reset();
       this.client.setFrequency(this.pendingFreq);
       streamDeck.logger.info(`[spyService] sentFreq ${this.pendingFreq}`);
     }, 50);
@@ -348,6 +506,15 @@ class SpyService {
   getDeviceInfo(): DeviceInfo | null { return this.deviceInfo; }
   getServerAddress(): { host: string; port: number } { return { host: this.host, port: this.port }; }
   getCurrentIQRate(): number { return this.currentIQRate; }
+  /** Active audio output target ("DX7s", "default", "icecast", "naudiodon#N", or empty if not yet started). */
+  getAudioDeviceName(): string { return this.currentAudioDeviceName; }
+  /** Subscribe to audio start/stop events. The callback fires immediately
+   *  with the current state (replay), then on every subsequent change. */
+  subscribeAudioState(fn: AudioStateListener): void {
+    this.audioStateListeners.add(fn);
+    fn(this.audioRunning, this.currentAudioDeviceName);
+  }
+  unsubscribeAudioState(fn: AudioStateListener): void { this.audioStateListeners.delete(fn); }
   /** WFM pilot power (smoothed). Use with a threshold to detect stereo broadcasts. */
   getPilotPower(): number { return this.demod.getPilotPower(); }
   /** Smoothed signal level in dBFS, gain-compensated. Range typically -120..0. */
@@ -388,13 +555,37 @@ class SpyService {
     await this.persistFields({ volume: this.volume, muted: this.muted });
   }
 
+  getDemodMode(): number { return this.currentDemodMode; }
+  subscribeDemodMode(fn: DemodModeListener): void {
+    this.demodModeListeners.add(fn);
+    fn(this.currentDemodMode);
+  }
+  unsubscribeDemodMode(fn: DemodModeListener): void { this.demodModeListeners.delete(fn); }
   setDemodMode(mode: number): void {
     if (this.currentDemodMode === mode) return;
+    const prevMode = this.currentDemodMode;
     this.currentDemodMode = mode;
     this.muteUntil = Date.now() + 100;
     this.demod.reset();
     streamDeck.logger.info(`[spyService] setDemodMode ${mode}`);
     this.persistField('demodMode', mode).catch(() => {});
+    for (const fn of this.demodModeListeners) fn(mode);
+    // If we crossed the AM ↔ non-AM boundary, the gain to send changes too.
+    const wasAm = prevMode === 2;
+    const isAm = mode === 2;
+    if (wasAm !== isAm && this.connected && this.audioRunning && this.deviceInfo) {
+      // Extend the existing mode-change mute (set to +100 above) for the
+      // gain transient too — the LNA step plus SpyServer-side AGC settling
+      // is the loudest pop in the system.
+      this.muteUntil = Date.now() + 250;
+      const newGain = (isAm ? this.amGain : this.fmGain) ?? this.deviceInfo.maxGainIndex;
+      const digitalGain = computeDigitalGain(
+        this.deviceInfo.deviceType, newGain, this.currentDecStage, this.deviceInfo.maxGainIndex,
+      );
+      this.client.setSetting(SETTING_GAIN, newGain);
+      this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
+      streamDeck.logger.info(`[spyService] mode→gain ${isAm ? 'AM' : 'FM'} ${newGain} digitalGain=${digitalGain}`);
+    }
   }
 
   async startAudio(cfg?: Config): Promise<void> {
@@ -418,10 +609,13 @@ class SpyService {
     // connect-time hydration (cfg.demodMode) and may have been updated since
     // by setDemodMode() (e.g., from a connectListener pushing a preset's mode).
     this.currentAudioDecimate = audioDecimate;
-    // Default to MAX gain index. cfg.gain=0 used to mean "minimum" which is
-    // wrong for typical use (signals get crushed to near-zero IQ amplitude).
-    const gain = Math.max(0, Math.min(info.maxGainIndex,
-      typeof cfg.gain === 'number' && cfg.gain > 0 ? cfg.gain : info.maxGainIndex));
+    // Pick the gain index for the current demod mode. AM uses amGain (typically
+    // lowered to dodge IMD from strong MW stations), other modes use fmGain.
+    const useAm = this.currentDemodMode === 2;
+    const stored = useAm ? this.amGain : this.fmGain;
+    const gain = Math.max(0, Math.min(info.maxGainIndex, stored ?? info.maxGainIndex));
+    if (useAm) this.amGain = gain; else this.fmGain = gain;
+    this.currentDecStage = decStage;
     const channels = 2; // always stereo PCM (mono modes duplicate L=R)
     this.currentAudioRate = audioRate;
     this.currentIQRate = iqRate;
@@ -436,6 +630,7 @@ class SpyService {
     // Build audio output
     if (cfg.audioOutput === 'naudiodon') {
       this.audioOutput = new NaudiodonOutput(cfg.naudiodon ?? {});
+      this.currentAudioDeviceName = `naudiodon#${cfg.naudiodon?.deviceId ?? -1}`;
     } else {
       this.audioOutput = new FfmpegOutput({
         mode:        cfg.ffmpeg?.mode        ?? 'local',
@@ -443,6 +638,9 @@ class SpyService {
         icecastUrl:  cfg.ffmpeg?.icecastUrl,
         bitrate:     cfg.ffmpeg?.bitrate,
       });
+      this.currentAudioDeviceName = cfg.ffmpeg?.mode === 'icecast'
+        ? 'icecast'
+        : (cfg.ffmpeg?.deviceName || 'default');
     }
     await this.audioOutput.start(audioRate, channels);
     this.demod.reset();
@@ -454,6 +652,18 @@ class SpyService {
     // Attach IQ data listener BEFORE enabling streaming
     let iqCount = 0;
     let lastDiag = 0;
+    // AM-mode spectrum probe: every 2 s log per-bin dBFS at fixed offsets so
+    // we can see exactly which neighbour station is leaking through.
+    let lastSpec = 0;
+    // Wide-range spectrum probe (within ±Nyquist of IQ rate 228 kHz = ±114 kHz).
+    // Includes potential alias offsets so we can spot signals folded back from
+    // far-away strong stations (e.g. 954 kHz @ tune 1314 → folds to +96 kHz if
+    // SpyServer's anti-alias is weak).
+    const SPEC_OFFSETS = [
+      -108000, -96000, -72000, -54000,
+      -45000, -36000, -27000, -18000, -9000, 0, 9000, 18000, 27000, 36000, 45000,
+      54000, 72000, 96000, 108000,
+    ];
     this.iqListener = (p: IQPacket) => {
       if (iqCount < 3) { streamDeck.logger.info(`[spyService] iqData fmt=${p.format} len=${p.body.length} gainDb=${p.gainDb}`); iqCount++; }
       // RSSI + SNR from IQ samples (INT16 LE: 4 bytes per I,Q pair).
@@ -511,8 +721,28 @@ class SpyService {
         }
         const iqRms = Math.sqrt(iqSumSq / Math.max(1, N));
         const pilotP = this.demod.getPilotPower();
-        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)}`);
+        const ifd = this.demod.getAmDiag();
+        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)} ifPre=${ifd.pre.toFixed(0)} ifPost=${ifd.post.toFixed(0)}`);
         lastDiag = _now;
+      }
+      // AM spectrum probe (only meaningful for AM mode). Emits two lines:
+      //   spec/raw   — power per bin in the original IQ stream
+      //   spec/filt  — same bins after passing through an independent copy of
+      //                the IF LPF (16th-order Butterworth at am.bandwidth/2)
+      // Bin-by-bin difference = effective LPF attenuation.
+      if (this.currentDemodMode === 2 && _now - lastSpec > 2000 && this.currentIQRate > 0) {
+        const raw  = this.demod.measureChannelPowers(p.body, this.currentIQRate, SPEC_OFFSETS);
+        const filt = this.demod.measureFilteredChannelPowers(p.body, this.currentIQRate, this.amOptions.bandwidth, SPEC_OFFSETS);
+        const prod = this.demod.measurePostIfChannelPowers(this.currentIQRate, SPEC_OFFSETS);
+        const fmt = (vals: number[]) => SPEC_OFFSETS.map((f, i) => {
+          const k = f === 0 ? '  0k' : `${f >= 0 ? '+' : ''}${(f / 1000).toFixed(0)}k`.padStart(4);
+          return `${k}=${vals[i].toFixed(0).padStart(4)}`;
+        }).join(' ');
+        const tuned = this._currentFreq;
+        streamDeck.logger.info(`[spyService] spec/raw  freq=${tuned} ${fmt(raw)}`);
+        streamDeck.logger.info(`[spyService] spec/filt freq=${tuned} ${fmt(filt)}`);
+        streamDeck.logger.info(`[spyService] spec/prod freq=${tuned} ${fmt(prod)}`);
+        lastSpec = _now;
       }
       if (Date.now() < this.muteUntil || this.muted) {
         pcm.fill(0);
@@ -541,6 +771,7 @@ class SpyService {
 
     this.audioRunning = true;
     streamDeck.logger.info(`[spyService] audio started mode=${this.currentDemodMode} iqRate=${iqRate} audioRate=${audioRate} freq=${freqHz} digitalGain=${digitalGain}`);
+    for (const fn of this.audioStateListeners) fn(true, this.currentAudioDeviceName);
   }
 
   stopAudio(): void {
@@ -551,7 +782,11 @@ class SpyService {
     try { this.client.stopStreaming(); } catch {}
     try { this.audioOutput?.stop(); } catch {}
     this.audioOutput = null;
+    const wasRunning = this.audioRunning;
     this.audioRunning = false;
+    if (wasRunning) {
+      for (const fn of this.audioStateListeners) fn(false, this.currentAudioDeviceName);
+    }
   }
 
   isAudioRunning(): boolean { return this.audioRunning; }
@@ -562,12 +797,15 @@ class SpyService {
     return {
       host:          cfg.host          ?? '192.168.0.142',
       port:          cfg.port          ?? 8888,
+      enabled:       cfg.enabled       ?? true,
       audioEnabled:  cfg.audioEnabled  ?? false,
       demodMode:     cfg.demodMode     ?? 1,
       lastFrequency: cfg.lastFrequency,
       iqDecimation:  cfg.iqDecimation  ?? 2,
       audioDecimate: cfg.audioDecimate ?? 1,
-      gain:          cfg.gain          ?? 0,
+      gain:          cfg.gain,
+      amGain:        cfg.amGain,
+      fmGain:        cfg.fmGain,
       audioOutput:   cfg.audioOutput   ?? 'ffmpeg',
       naudiodon:     cfg.naudiodon,
       ffmpeg:        cfg.ffmpeg,

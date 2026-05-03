@@ -3,7 +3,6 @@ import streamDeck from '@elgato/streamdeck';
 import { SpyTune } from './actions/spyTune.js';
 import { SpyDialTune } from './actions/spyDialTune.js';
 import { SpyDialOptions } from './actions/spyDialOptions.js';
-import { SpyDialStatus } from './actions/spyDialStatus.js';
 import { SpyDialVolume } from './actions/spyDialVolume.js';
 import { SpyDialAmOptions } from './actions/spyDialAmOptions.js';
 
@@ -28,7 +27,6 @@ process.on('unhandledRejection', (r)  => { safeLog(`[spyserver-ex] unhandledReje
 streamDeck.actions.registerAction(new SpyTune());
 streamDeck.actions.registerAction(new SpyDialTune());
 streamDeck.actions.registerAction(new SpyDialOptions());
-streamDeck.actions.registerAction(new SpyDialStatus());
 streamDeck.actions.registerAction(new SpyDialVolume());
 streamDeck.actions.registerAction(new SpyDialAmOptions());
 streamDeck.connect();

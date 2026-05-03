@@ -2,7 +2,7 @@ import { action, DialDownEvent, DialRotateEvent, DialUpEvent, SingletonAction, W
 import streamDeck from '@elgato/streamdeck';
 import { spyService, AMOptions } from '../spyService.js';
 import { svgB64 } from '../dialDisplay.js';
-import { knobSvg, optionsPanelSvg, OptionsPanelRow } from '../icons.js';
+import { knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
 type Settings = { borderSide?: 'left' | 'right' | 'center' | 'none' };
 
@@ -76,6 +76,12 @@ const OPTIONS: OptionDef[] = [
   },
 ];
 
+// "Gain" is a synthetic row appended after the AM-specific options. It only
+// appears while AM is the currently active demod mode — adjusting it on the
+// FM Options dial when in AM (or vice versa) wouldn't take effect anyway,
+// and showing both at once led to "two Gain rows visible" confusion.
+const GAIN_ROW_INDEX = OPTIONS.length;
+
 @action({ UUID: 'com.hogehoge.spyserver-ex.dial-am-options' })
 export class SpyDialAmOptions extends SingletonAction<Settings> {
   private selectedIdx = 0;
@@ -84,12 +90,31 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
   private borderSide: 'left' | 'right' | 'center' | 'none' = 'none';
   private act: { setImage: (s: string) => Promise<void>; setFeedback: (f: Record<string, unknown>) => Promise<void> } | null = null;
   private listener: ((o: AMOptions) => void) | null = null;
+  private gainListener: ((g: number, max: number) => void) | null = null;
+  private enabledListener: ((on: boolean) => void) | null = null;
+  private demodListener: ((mode: number) => void) | null = null;
+  private enabled = true;
+  private isAmMode = true;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     this.act = ev.action as unknown as typeof this.act;
     this.borderSide = ev.payload.settings.borderSide ?? 'none';
     this.listener = () => this.render();
     spyService.subscribeAMOptions(this.listener);
+    this.gainListener = () => this.render();
+    spyService.subscribeAmGain(this.gainListener);
+    this.enabledListener = (on) => { this.enabled = on; this.render(); };
+    spyService.subscribeEnabled(this.enabledListener);
+    this.demodListener = (mode) => {
+      const wasAm = this.isAmMode;
+      this.isAmMode = mode === 2;
+      // If we lost the Gain row by switching out of AM, snap selection back.
+      if (wasAm && !this.isAmMode && this.selectedIdx >= OPTIONS.length) {
+        this.selectedIdx = OPTIONS.length - 1;
+      }
+      this.render();
+    };
+    spyService.subscribeDemodMode(this.demodListener);
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialAmOptions] ${e}`));
     await ev.action.setImage(svgB64(knobSvg()));
     this.render();
@@ -97,6 +122,9 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
 
   override onWillDisappear(_ev: WillDisappearEvent<Settings>): void {
     if (this.listener) { spyService.unsubscribeAMOptions(this.listener); this.listener = null; }
+    if (this.gainListener) { spyService.unsubscribeAmGain(this.gainListener); this.gainListener = null; }
+    if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
+    if (this.demodListener)   { spyService.unsubscribeDemodMode(this.demodListener); this.demodListener = null; }
     this.act = null;
   }
 
@@ -107,15 +135,20 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
 
   override async onDialRotate(ev: DialRotateEvent<Settings>): Promise<void> {
     const ticks = ev.payload.ticks;
+    const totalRows = OPTIONS.length + (this.isAmMode ? 1 : 0);
     if (this.editMode) {
-      const cur = spyService.getAMOptions();
-      const updates = OPTIONS[this.selectedIdx].cycle(cur, ticks);
-      for (const [k, v] of Object.entries(updates)) {
-        await spyService.setAMOption(k as keyof AMOptions, v as never);
+      if (this.isAmMode && this.selectedIdx === GAIN_ROW_INDEX) {
+        await spyService.setAmGain(spyService.getAmGain() + ticks);
+      } else {
+        const cur = spyService.getAMOptions();
+        const updates = OPTIONS[this.selectedIdx].cycle(cur, ticks);
+        for (const [k, v] of Object.entries(updates)) {
+          await spyService.setAMOption(k as keyof AMOptions, v as never);
+        }
       }
     } else {
       this.focused = true;
-      this.selectedIdx = ((this.selectedIdx + (ticks > 0 ? 1 : -1)) + OPTIONS.length) % OPTIONS.length;
+      this.selectedIdx = ((this.selectedIdx + (ticks > 0 ? 1 : -1)) + totalRows) % totalRows;
       this.render();
     }
   }
@@ -135,10 +168,17 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
   private render(): void {
     if (!this.act) return;
     const o = spyService.getAMOptions();
-    const rows: OptionsPanelRow[] = OPTIONS.map((d) => ({ label: d.label, value: d.format(o) }));
+    const gain = spyService.getAmGain();
+    const maxGain = spyService.getMaxGain();
+    const rows: OptionsPanelRow[] = [
+      ...OPTIONS.map((d) => ({ label: d.label, value: d.format(o) })),
+    ];
+    if (this.isAmMode) {
+      rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
+    }
     const sel = this.focused ? this.selectedIdx : -1;
     this.act.setFeedback({
-      'options-display': svgB64(optionsPanelSvg(rows, sel, this.editMode, this.borderSide)),
+      'options-display': svgB64(dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), !this.enabled)),
     }).catch(() => {});
   }
 }

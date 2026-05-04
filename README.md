@@ -100,6 +100,24 @@ Copy `com.hogehoge.deck-rx.sdPlugin/config.example.json` to `config.json` and ad
 - `ffmpeg.deviceName` — output device name from `SwitchAudioSource -t output -a`, or `"default"`
 - `ffmpeg.mode` — `"local"` for AudioToolbox, `"icecast"` for streaming
 
+Audio output mode is also switchable from the **Tune dial Property Inspector**
+without editing `config.json`:
+
+- `Output: Local Device` — pick a CoreAudio device from the dropdown
+- `Output: Icecast Stream` — fill in the source URL (e.g.
+  `icecast://source@host:port/mount`) and the icecast `source-password` (the
+  PI uses `<input type="password">` so the value is masked). The plugin
+  stores the URL and the password as separate fields in `config.json`
+  (`ffmpeg.icecastUrl` / `ffmpeg.icecastPassword`) and only re-combines them
+  on the ffmpeg command line at spawn. icecast 2 stock requires a non-empty
+  source-password — there is no truly anonymous source mode.
+
+Switching Output between Local and Icecast tears the previous ffmpeg child
+down and **awaits its exit** (Promise-based `stop()`) before spawning the
+new one, so AudioToolbox isn't claimed by two processes at once and the
+sample-rate negotiation doesn't get stuck at the device default (which
+would otherwise make the audio play back at the wrong speed).
+
 ## Server-side setup (SpyServer on Linux ARM/aarch64)
 
 The plugin talks to a running SpyServer. The reference deployment is an

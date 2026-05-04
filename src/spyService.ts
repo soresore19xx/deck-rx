@@ -72,6 +72,7 @@ interface Config {
     mode?: 'local' | 'icecast';
     deviceName?: string;
     icecastUrl?: string;
+    icecastPassword?: string;
     bitrate?: string;
   };
   fm?: Partial<FMOptions>;
@@ -206,12 +207,12 @@ class SpyService {
     });
     this.client.on('error', (e: unknown) => {
       streamDeck.logger.error(`[spyService] error: ${e}`);
-      this.stopAudio();
+      this.stopAudio().catch(() => {});
       this.scheduleReconnect();
     });
     this.client.on('disconnect', () => {
       streamDeck.logger.warn('[spyService] disconnected');
-      this.stopAudio();
+      this.stopAudio().catch(() => {});
       this.scheduleReconnect();
     });
   }
@@ -350,7 +351,7 @@ class SpyService {
     if (!next) {
       // Going OFF: cancel any pending reconnect, tear down audio + TCP.
       if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-      this.stopAudio();
+      await this.stopAudio();
       try { this.client.disconnect(); } catch {}
       this.setConnectedState(false);
       this.deviceInfo = null;
@@ -668,7 +669,7 @@ class SpyService {
   }
 
   async startAudio(cfg?: Config): Promise<void> {
-    if (this.audioRunning) this.stopAudio();
+    if (this.audioRunning) await this.stopAudio();
     if (!cfg) cfg = await this.loadConfig();
     if (!cfg.audioEnabled) return;
     if (!this.deviceInfo) {
@@ -712,10 +713,11 @@ class SpyService {
       this.currentAudioDeviceName = `naudiodon#${cfg.naudiodon?.deviceId ?? -1}`;
     } else {
       this.audioOutput = new FfmpegOutput({
-        mode:        cfg.ffmpeg?.mode        ?? 'local',
-        deviceName:  cfg.ffmpeg?.deviceName,
-        icecastUrl:  cfg.ffmpeg?.icecastUrl,
-        bitrate:     cfg.ffmpeg?.bitrate,
+        mode:            cfg.ffmpeg?.mode        ?? 'local',
+        deviceName:      cfg.ffmpeg?.deviceName,
+        icecastUrl:      cfg.ffmpeg?.icecastUrl,
+        icecastPassword: cfg.ffmpeg?.icecastPassword,
+        bitrate:         cfg.ffmpeg?.bitrate,
       });
       this.currentAudioDeviceName = cfg.ffmpeg?.mode === 'icecast'
         ? 'icecast'
@@ -865,14 +867,15 @@ class SpyService {
     for (const fn of this.audioStateListeners) fn(true, this.currentAudioDeviceName);
   }
 
-  stopAudio(): void {
+  async stopAudio(): Promise<void> {
     if (this.iqListener) {
       this.client.off('iqData', this.iqListener);
       this.iqListener = null;
     }
     try { this.client.stopStreaming(); } catch {}
-    try { this.audioOutput?.stop(); } catch {}
+    const out = this.audioOutput;
     this.audioOutput = null;
+    if (out) { try { await out.stop(); } catch {} }
     const wasRunning = this.audioRunning;
     this.audioRunning = false;
     if (wasRunning) {
@@ -907,11 +910,31 @@ class SpyService {
     };
   }
 
-  async getAudioPersistedConfig(): Promise<{ audioEnabled: boolean; deviceName: string }> {
+  async getAudioPersistedConfig(): Promise<{
+    audioEnabled: boolean;
+    deviceName: string;
+    outputMode: 'local' | 'icecast';
+    icecastUrl: string;
+    icecastPassword: string;
+    bitrate: string;
+  }> {
     const cfg = await this.loadConfig();
+    // Split any embedded password out of icecastUrl so the PI can hand the
+    // URL (no creds) and password (masked field) separately. Migration: if
+    // the user pasted icecast://u:pass@host/m before the split landed, we
+    // pull the password out here and surface it as icecastPassword.
+    const rawUrl = cfg.ffmpeg?.icecastUrl ?? '';
+    const explicitPwd = cfg.ffmpeg?.icecastPassword ?? '';
+    const m = rawUrl.match(/^(\w+:\/\/[^:@/]+):([^@]*)@(.*)$/);
+    const urlClean = m ? `${m[1]}@${m[3]}` : rawUrl;
+    const pwd = explicitPwd || (m ? m[2] : '');
     return {
-      audioEnabled: !!cfg.audioEnabled,
-      deviceName:   cfg.ffmpeg?.deviceName ?? 'default',
+      audioEnabled:    !!cfg.audioEnabled,
+      deviceName:      cfg.ffmpeg?.deviceName ?? 'default',
+      outputMode:      (cfg.ffmpeg?.mode === 'icecast' ? 'icecast' : 'local'),
+      icecastUrl:      urlClean,
+      icecastPassword: pwd,
+      bitrate:         cfg.ffmpeg?.bitrate ?? '128k',
     };
   }
 
@@ -936,7 +959,7 @@ class SpyService {
     // Apply live: only re-establish if there was an active or pending connection.
     const wasActive = this.connected || this.connecting || !!this.reconnectTimer;
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-    this.stopAudio();
+    await this.stopAudio();
     try { this.client.disconnect(); } catch {}
     this.setConnectedState(false);
     this.connecting = false;
@@ -957,7 +980,7 @@ class SpyService {
     };
     await writeFile(CONFIG_PATH, JSON.stringify(merged, null, 2));
     if (this.audioRunning || merged.audioEnabled) {
-      this.stopAudio();
+      await this.stopAudio();
       if (merged.audioEnabled && this.connected) {
         await this.startAudio(merged).catch((e) =>
           streamDeck.logger.error(`[spyService] restartAudio failed: ${e}`)

@@ -190,14 +190,31 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         devices: devices as unknown as JsonObject[],
         current,
         savedName,
-        audioEnabled: audioCfg.audioEnabled,
+        audioEnabled:    audioCfg.audioEnabled,
+        outputMode:      audioCfg.outputMode,
+        icecastUrl:      audioCfg.icecastUrl,
+        icecastPassword: audioCfg.icecastPassword,
+        bitrate:         audioCfg.bitrate,
       });
     }
     if (ev.payload['action'] === 'setAudioConfig') {
-      const { audioEnabled, deviceName } = ev.payload as { audioEnabled?: boolean; deviceName?: string };
+      const p = ev.payload as {
+        audioEnabled?: boolean;
+        deviceName?: string;
+        outputMode?: 'local' | 'icecast';
+        icecastUrl?: string;
+        icecastPassword?: string;
+        bitrate?: string;
+      };
+      const ffmpeg: Record<string, unknown> = {};
+      if (p.deviceName !== undefined)      ffmpeg.deviceName = p.deviceName;
+      if (p.outputMode !== undefined)      ffmpeg.mode = p.outputMode;
+      if (p.icecastUrl !== undefined)      ffmpeg.icecastUrl = p.icecastUrl;
+      if (p.icecastPassword !== undefined) ffmpeg.icecastPassword = p.icecastPassword;
+      if (p.bitrate !== undefined)         ffmpeg.bitrate = p.bitrate;
       await spyService.updateAudioConfig({
-        audioEnabled,
-        ffmpeg: deviceName ? { deviceName } : undefined,
+        audioEnabled: p.audioEnabled,
+        ffmpeg: Object.keys(ffmpeg).length > 0 ? ffmpeg : undefined,
       }).catch((e) => streamDeck.logger.error(`[spyDialTune] updateAudioConfig: ${e}`));
     }
     if (ev.payload['action'] === 'getServerConfig') {

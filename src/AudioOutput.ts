@@ -14,16 +14,29 @@ const FFMPEG = (() => {
 export interface AudioOutput {
   start(sampleRate: number, channels: number): Promise<void>;
   write(pcm: Int16Array): void;
-  stop(): void;
+  /** Stop and wait for the underlying audio sink to fully release its
+   *  device. Required so a subsequent start() can grab AudioToolbox at
+   *  the right sample rate without racing the previous ffmpeg. */
+  stop(): Promise<void>;
 }
 
 // ──── ffmpeg ─────────────────────────────────────────────────────────────────
 
 export interface FfmpegConfig {
   mode: 'local' | 'icecast';
-  deviceName?: string;    // macOS device name (resolved to index at start time)
-  icecastUrl?: string;    // icecast://source:pass@host:port/mount
-  bitrate?: string;       // e.g. "128k"
+  deviceName?: string;     // macOS device name (resolved to index at start time)
+  icecastUrl?: string;     // icecast://user@host:port/mount  (no password; combined at spawn)
+  icecastPassword?: string;// kept separate so the PI can mask it (type="password")
+  bitrate?: string;        // e.g. "128k"
+}
+
+/** Build the final icecast URL passed to ffmpeg by injecting `password` into
+ *  `urlBase`. Accepts both bare-user URLs (icecast://user@host/...) and
+ *  legacy URLs that already embed a password (icecast://user:old@host/...);
+ *  the embedded one is replaced when `password` is non-empty. */
+export function buildIcecastUrl(urlBase: string, password?: string): string {
+  if (!password) return urlBase;
+  return urlBase.replace(/^(\w+:\/\/[^:@/]+)(?::[^@]*)?@/, `$1:${password}@`);
 }
 
 export class FfmpegOutput implements AudioOutput {
@@ -73,12 +86,15 @@ export class FfmpegOutput implements AudioOutput {
       }
       args.push('-f', 'audiotoolbox', dev);
     } else {
-      // ICECAST via MP3
+      // ICECAST via MP3. Password is held separately and injected here so
+      // it never appears in the persisted icecastUrl (PI masks it via
+      // type="password").
+      const url = buildIcecastUrl(this.cfg.icecastUrl!, this.cfg.icecastPassword);
       args.push(
         '-acodec', 'libmp3lame',
         '-b:a', this.cfg.bitrate ?? '128k',
         '-f', 'mp3',
-        this.cfg.icecastUrl!,
+        url,
       );
     }
     streamDeck.logger.info(`[FfmpegOutput] spawn ${FFMPEG} ${args.join(' ')}`);
@@ -119,12 +135,23 @@ export class FfmpegOutput implements AudioOutput {
     this.proc.stdin.write(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
   }
 
-  stop(): void {
+  stop(): Promise<void> {
     this.intentionalStop = true;
     if (this.respawnTimer) { clearTimeout(this.respawnTimer); this.respawnTimer = null; }
-    try { this.proc?.stdin?.end(); } catch {}
-    try { this.proc?.kill('SIGTERM'); } catch {}
+    const proc = this.proc;
     this.proc = null;
+    if (!proc) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const finish = () => { resolve(); };
+      // Most ffmpeg shutdowns finish < 100 ms after SIGTERM, but a stuck
+      // child shouldn't block start() forever — escalate to SIGKILL after
+      // 800 ms so AudioToolbox is guaranteed released before the next spawn.
+      const escalate = setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 800);
+      const timeout  = setTimeout(() => { clearTimeout(escalate); finish(); }, 1500);
+      proc.once('exit', () => { clearTimeout(escalate); clearTimeout(timeout); finish(); });
+      try { proc.stdin?.end(); } catch {}
+      try { proc.kill('SIGTERM'); } catch { clearTimeout(escalate); clearTimeout(timeout); finish(); }
+    });
   }
 }
 
@@ -159,7 +186,7 @@ export class NaudiodonOutput implements AudioOutput {
     this.ai.write(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     try { this.ai?.quit(); } catch {}
     this.ai = null;
   }

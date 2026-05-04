@@ -36,8 +36,23 @@
       <input type="checkbox" id="audioEnabled"> Enabled
     </label>
   </div>
+  <div class="row"><label>Output</label>
+    <select id="outputMode">
+      <option value="local">Local Device</option>
+      <option value="icecast">Icecast Stream</option>
+    </select>
+  </div>
   <div class="row" id="deviceRow"><label>Device</label>
     <select id="deviceSelect"><option value="-1">-- Loading... --</option></select>
+  </div>
+  <div class="row" id="icecastUrlRow" style="display:none"><label>URL</label>
+    <input type="text" id="icecastUrl" placeholder="icecast://source@host:port/mount" />
+  </div>
+  <div class="row" id="icecastPwdRow" style="display:none"><label>Password</label>
+    <input type="password" id="icecastPassword" placeholder="icecast source-password" />
+  </div>
+  <div class="row" id="icecastBitrateRow" style="display:none"><label>Bitrate</label>
+    <input type="text" id="icecastBitrate" placeholder="128k" style="flex:0 0 80px" />
   </div>
   <hr style="border-color:#444;margin:8px 0"/>
   <div class="row"><label>Server</label>
@@ -81,6 +96,12 @@
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'audioDevices') {
         buildDeviceList(msg.payload.devices, msg.payload.current, msg.payload.savedName);
         document.getElementById('audioEnabled').checked = !!msg.payload.audioEnabled;
+        var mode = msg.payload.outputMode || 'local';
+        document.getElementById('outputMode').value = mode;
+        document.getElementById('icecastUrl').value = msg.payload.icecastUrl || '';
+        document.getElementById('icecastPassword').value = msg.payload.icecastPassword || '';
+        document.getElementById('icecastBitrate').value = msg.payload.bitrate || '128k';
+        updateOutputVisibility(mode);
       }
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'serverConfig') {
         document.getElementById('hostInput').value = msg.payload.host || '';
@@ -94,6 +115,12 @@
   function updateModeVisibility(mode) {
     document.getElementById('presetRow').style.display = mode === 'preset' ? 'flex' : 'none';
     document.getElementById('vfoRow').style.display    = mode === 'vfo'    ? 'flex' : 'none';
+  }
+  function updateOutputVisibility(mode) {
+    document.getElementById('deviceRow').style.display         = mode === 'local'   ? 'flex' : 'none';
+    document.getElementById('icecastUrlRow').style.display     = mode === 'icecast' ? 'flex' : 'none';
+    document.getElementById('icecastPwdRow').style.display     = mode === 'icecast' ? 'flex' : 'none';
+    document.getElementById('icecastBitrateRow').style.display = mode === 'icecast' ? 'flex' : 'none';
   }
   function buildList(presets, selectedIdx) {
     var sel = document.getElementById('slotSelect');
@@ -131,7 +158,26 @@
   function saveAudioConfig() {
     var enabled = document.getElementById('audioEnabled').checked;
     var name = document.getElementById('deviceSelect').value;
-    sendToPlugin({ action: 'setAudioConfig', audioEnabled: enabled, deviceName: name });
+    var outputMode = document.getElementById('outputMode').value;
+    var icecastUrl = document.getElementById('icecastUrl').value.trim();
+    var icecastPassword = document.getElementById('icecastPassword').value;
+    var bitrate = document.getElementById('icecastBitrate').value.trim() || '128k';
+    sendToPlugin({
+      action: 'setAudioConfig',
+      audioEnabled: enabled,
+      deviceName: name,
+      outputMode: outputMode,
+      icecastUrl: icecastUrl,
+      icecastPassword: icecastPassword,
+      bitrate: bitrate,
+    });
+  }
+  // Debounce text-input changes (URL / bitrate) so we don't tear down audio
+  // on every keystroke. 800 ms after last edit, save.
+  var audioTimer = null;
+  function scheduleSaveAudio() {
+    if (audioTimer) clearTimeout(audioTimer);
+    audioTimer = setTimeout(function() { audioTimer = null; saveAudioConfig(); }, 800);
   }
   document.getElementById('modeSelect').addEventListener('change', function() { updateModeVisibility(this.value); saveSettings(); });
   document.getElementById('slotSelect').addEventListener('change', saveSettings);
@@ -139,6 +185,10 @@
   document.getElementById('borderSelect').addEventListener('change', saveSettings);
   document.getElementById('audioEnabled').addEventListener('change', saveAudioConfig);
   document.getElementById('deviceSelect').addEventListener('change', saveAudioConfig);
+  document.getElementById('outputMode').addEventListener('change', function() { updateOutputVisibility(this.value); saveAudioConfig(); });
+  document.getElementById('icecastUrl').addEventListener('input', scheduleSaveAudio);
+  document.getElementById('icecastPassword').addEventListener('input', scheduleSaveAudio);
+  document.getElementById('icecastBitrate').addEventListener('input', scheduleSaveAudio);
 
   // Host/Port: debounce while user is typing so we don't tear down + reconnect
   // on every keystroke. Apply 800 ms after the last edit.

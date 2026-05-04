@@ -7,6 +7,8 @@ import {
   computeDigitalGain,
 } from './SpyClient.js';
 import { Demodulator } from './demodulator.js';
+import { Ifnr } from './ifnr.js';
+import { IqNr, DemodMode } from './iqnr.js';
 import { AudioOutput, FfmpegOutput, NaudiodonOutput } from './AudioOutput.js';
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
@@ -116,6 +118,12 @@ class SpyService {
   private audioOutput: AudioOutput | null = null;
   private currentAudioDeviceName: string = '';
   private demod = new Demodulator();
+  // IF-domain NR — operates on the complex IQ stream before demodulation.
+  // The audio-domain Ifnr instances are kept around for potential A/B
+  // comparison but currently disabled in the iqListener path.
+  private iqnr = new IqNr();
+  private ifnrL = new Ifnr();
+  private ifnrR = new Ifnr();
   private audioRunning = false;
   private iqListener: ((p: IQPacket) => void) | null = null;
   private currentIQRate = 0;
@@ -354,7 +362,7 @@ class SpyService {
       // long enough to cover both the debounce wait and the post-apply
       // settling. Debounce groups rapid dial ticks into one apply.
       this.muteUntil = Date.now() + 200;
-      this.demod.reset();
+      this.demod.reset(); this.iqnr.reset(); this.ifnrL.reset(); this.ifnrR.reset();
       this.pendingGainScope = scope;
       if (this.gainApplyTimer) clearTimeout(this.gainApplyTimer);
       this.gainApplyTimer = setTimeout(() => {
@@ -370,7 +378,7 @@ class SpyService {
         // Re-mute + reset around the actual apply so the post-step transient
         // is masked even after the debounce window has elapsed.
         this.muteUntil = Math.max(this.muteUntil, Date.now() + 150);
-        this.demod.reset();
+        this.demod.reset(); this.iqnr.reset(); this.ifnrL.reset(); this.ifnrR.reset();
         this.client.setSetting(SETTING_GAIN, finalGain);
         this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
         streamDeck.logger.info(`[spyService] set${sc === 'am' ? 'Am' : 'Fm'}Gain ${finalGain} digitalGain=${digitalGain}`);
@@ -397,7 +405,7 @@ class SpyService {
       // server retune (~50-100 ms) + new-station IQ packet arrival pop is
       // the main loud transient we need to mask.
       this.muteUntil = Math.max(this.muteUntil, Date.now() + 250);
-      this.demod.reset();
+      this.demod.reset(); this.iqnr.reset(); this.ifnrL.reset(); this.ifnrR.reset();
       this.client.setFrequency(this.pendingFreq);
       streamDeck.logger.info(`[spyService] sentFreq ${this.pendingFreq}`);
     }, 50);
@@ -569,6 +577,7 @@ class SpyService {
     this.currentDemodMode = mode;
     this.muteUntil = Date.now() + 100;
     this.demod.reset();
+    this.iqnr.setMode(mode as DemodMode, this.currentIQRate);
     streamDeck.logger.info(`[spyService] setDemodMode ${mode}`);
     this.persistField('demodMode', mode).catch(() => {});
     for (const fn of this.demodModeListeners) fn(mode);
@@ -647,6 +656,7 @@ class SpyService {
     await this.audioOutput.start(audioRate, channels);
     this.demod.reset();
     this.currentIQRate = iqRate;
+    this.iqnr.setMode(this.currentDemodMode as DemodMode, iqRate);
     // Mute initial period to suppress ffmpeg/AudioToolbox startup pop and
     // demodulator transient (atan2 with near-zero prev I/Q, AM DC settling).
     this.muteUntil = Date.now() + 500;
@@ -697,15 +707,22 @@ class SpyService {
       }
       if (!this.audioOutput) return;
       const dec = this.currentAudioDecimate;
+      // IF-domain NR — when enabled, run the full IQ buffer through IqNr
+      // BEFORE demodulation. This is the proper "IF noise reduction": we
+      // operate on the broadband complex stream where there are real
+      // noise-only frequency bins to estimate the floor from. Output is a
+      // new Buffer of the same length / format that we feed into the
+      // existing demod functions unchanged.
+      const iqBody = this.fmOptions.ifnr ? this.iqnr.processBuffer(p.body) : p.body;
       let pcm: Int16Array;
       if (this.currentDemodMode === 2) {
-        pcm = this.demod.processAM(p.body, dec);
+        pcm = this.demod.processAM(iqBody, dec);
       } else if (this.currentDemodMode === 1) {
         pcm = this.fmOptions.stereo
-          ? this.demod.processWFMStereo(p.body, dec)
-          : this.demod.processWFM(p.body, dec);
+          ? this.demod.processWFMStereo(iqBody, dec)
+          : this.demod.processWFM(iqBody, dec);
       } else {
-        pcm = this.demod.processFM(p.body, dec);
+        pcm = this.demod.processFM(iqBody, dec);
       }
       // Diagnostic log every 3 s: detect silent output from DSP issues.
       const _now = Date.now();
@@ -724,7 +741,8 @@ class SpyService {
         const iqRms = Math.sqrt(iqSumSq / Math.max(1, N));
         const pilotP = this.demod.getPilotPower();
         const ifd = this.demod.getAmDiag();
-        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)} ifPre=${ifd.pre.toFixed(0)} ifPost=${ifd.post.toFixed(0)}`);
+        const nrG = this.fmOptions.ifnr ? `nrG=${this.iqnr.getAvgGain().toFixed(3)}` : '';
+        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)} ifPre=${ifd.pre.toFixed(0)} ifPost=${ifd.post.toFixed(0)} ${nrG}`);
         lastDiag = _now;
       }
       // AM spectrum probe (only meaningful for AM mode). Emits two lines:

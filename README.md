@@ -19,13 +19,13 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | FM Stereo PLL (true phase lock) | ✅ |
 | Per-mode RF Gain (AM / FM separate) | ✅ (live-applied, debounced, pop-suppressed) |
 | Frequency / mode persistence | ✅ (restored at startup) |
-| IFNR (IF Noise Reduction) | ❌ Not implemented (UI toggle only) |
+| IFNR (IF Noise Reduction) | ✅ FM/NFM only (SDR++ FMIF tracking-filter port) |
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 
 - **SpyServer Dial** — VFO / preset scrolling, 7-segment frequency LCD, FM stereo lock badge (only shown when stereo decode is enabled AND pilot is locked), ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars (150 px wide, ~12 px insets each side to keep clear of the rounded frame); **Push to toggle master ON/OFF** (the OFF state dims every dial and the header shows `OFF <preset>`). When the SpyServer link is down the dial dims, the header shows `LINK <preset>` and the frequency switches to `-----` until the connection recovers. The Property Inspector exposes Mode / preset / step / audio enable / audio device AND the SpyServer host + port (changing host/port debounce-applies live without a plugin restart).
 - **SpyServer Volume + Status** — rotate adjusts 0–150 %, push toggles mute; the same panel shows `Conn` (`ONLINE` in red while streaming, `OFFLINE` while offline), `Host`, `Dev` (device + IQ rate), `AOut` (audio output device name) and `Vol` with an inline gauge bar (volume bar covers the full 0–150 % range with a faint tick at the 100 % unity mark and an orange fill colour beyond it for the overdrive zone). The bar's bottom edge is pinned to y = 91 so it lines up exactly with the Tune dial's RSSI bar across the bezel gap.
-- **SpyServer Options** (FM/NFM) — De-emphasis (off / 50 µs / 75 µs), IFNR placeholder, HiPass, LoPass, Stereo, **Gain** (RF gain index, only shown while a non-AM mode is the active demod)
+- **SpyServer Options** (FM/NFM) — De-emphasis (off / 50 µs / 75 µs), IFNR (SDR++ FMIF tracking filter, FM/NFM only), HiPass, LoPass, Stereo, **Gain** (RF gain index, only shown while a non-AM mode is the active demod)
 - **SpyServer AM Options** — Bandwidth (4 / 6 / 9 / 12 kHz), Carrier AGC, Attack, Decay (continuous 10 % per tick log adjustment), **Gain** (only shown while AM is active)
 - All panel-style dials use a unified compact font (rowH = 14, font 11 / 12) and a rounded grey frame (R = 4) drawn over every other element so AM Options, FM Options, Volume + Status and the Tune dial all share the same outer styling. Rows are vertically centred in the 100 px LCD area; columns inset from each LCD edge so adjacent panels don't visually run into each other across the bezel.
 - Focus highlight (selected row in AM/FM Options): soft mid-blue background `#3a5a85`, deep yellow label `#d4b800` + bright yellow value `#ffee00` in navigate mode; orange label + yellow value in edit mode.
@@ -35,6 +35,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 - WFM stereo decoder with **2nd-order Costas-style PLL** locked to 19 kHz pilot, hysteretic lock detection, mono fallback when unlocked
 - AM envelope detector with two cascaded sharp filters: **16th-order Butterworth complex IF LPF on I/Q (8 cascaded biquads, ~−96 dB/oct stopband)** for adjacent-channel and aliased-station rejection, then **8th-order Butterworth post-envelope audio LPF** (4 cascaded biquads) and asymmetric attack/decay carrier AGC
 - 50 µs / 75 µs FM de-emphasis (single-pole IIR)
+- **IF Noise Reduction (FMIF tracking filter)** — port of SDR++ `dsp::noise_reduction::FMIF`. Per-sample sliding Nuttall-windowed FFT (32 bins for WFM, 15 for NFM) over the complex IQ stream; for each output sample we keep only the bin with the largest magnitude and discard the rest, tracking the FM signal's instantaneous frequency and rejecting broadband IF noise. The inverse FFT's centre tap is computed analytically (`X[idx] · (-1)^idx / N`) so we run only one FFT per sample. Disabled for AM/SSB/CW (mirrors SDR++'s `getFMIFNRAllowed()` policy — those modes have continuous-amplitude carriers that this algorithm would mangle)
 - Per-channel L/R audio LPF/HPF (independent Biquad instances — sharing one across channels would mix internal state and destroy stereo separation)
 - IQ-derived RSSI (RMS power, gain-compensated dBFS) and SNR (instantaneous-power variance ratio) — computed locally since SpyServer does not expose chip-level meters
 - **Per-mode RF gain** persisted as `amGain` / `fmGain` (legacy `gain` field auto-migrated into `amGain`); the active mode's value is sent to SpyServer at startup AND when crossing the AM ↔ non-AM mode boundary

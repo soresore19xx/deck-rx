@@ -6,7 +6,7 @@ import { SpyDialOptions } from './actions/spyDialOptions.js';
 import { SpyDialVolume } from './actions/spyDialVolume.js';
 import { SpyDialAmOptions } from './actions/spyDialAmOptions.js';
 
-const PID_FILE = '/tmp/spyserver-ex.pid';
+const PID_FILE = '/tmp/deck-rx.pid';
 (function claimSingleInstance() {
   try {
     const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8').trim(), 10);
@@ -21,8 +21,8 @@ const PID_FILE = '/tmp/spyserver-ex.pid';
 process.stdout.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE') throw err; });
 process.stderr.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE') throw err; });
 const safeLog = (msg: string) => { try { process.stderr.write(msg + '\n'); } catch {} };
-process.on('uncaughtException', (err) => { safeLog(`[spyserver-ex] uncaughtException: ${err}`); });
-process.on('unhandledRejection', (r)  => { safeLog(`[spyserver-ex] unhandledRejection: ${r}`); });
+process.on('uncaughtException', (err) => { safeLog(`[deck-rx] uncaughtException: ${err}`); });
+process.on('unhandledRejection', (r)  => { safeLog(`[deck-rx] unhandledRejection: ${r}`); });
 
 streamDeck.actions.registerAction(new SpyTune());
 streamDeck.actions.registerAction(new SpyDialTune());

@@ -39,21 +39,25 @@ export interface AMOptions {
   carrierAgc: boolean;
   agcAttack: number;   // 0..1 (per-sample IIR factor) — larger = faster
   agcDecay: number;    // 0..1
+  sync: boolean;       // PLL-based synchronous AM detection (DSB)
 }
 
 const DEFAULT_AM_OPTIONS: AMOptions = {
   bandwidth: 9000,
   carrierAgc: true,
-  // Per-sample IIR factors at 57 kHz audio rate.
-  // 0.005 ≈ 3.5 ms attack, 0.00005 ≈ 350 ms decay — typical broadcast AGC.
-  agcAttack: 0.005,
-  agcDecay: 0.00005,
+  // SDR++ slider convention (matches dsp::demod::AM init args). Value =
+  // attack rate in 1/τ_seconds, range 1..200 for attack and 1..20 for decay.
+  // The applyAMOptions() bridge converts rate → per-sample α via α = rate / fs
+  // (where fs is the AGC sample rate, our audio rate after decimation).
+  agcAttack: 50,
+  agcDecay: 5,
+  sync: false,
 };
 
 interface Config {
   host: string;
   port: number;
-  enabled?: boolean;      // master ON/OFF (user-toggled via dial push)
+  enabled?: boolean;      // master ON/OFF (user-toggled via 2-second long press on the Tune dial)
   audioEnabled?: boolean;
   demodMode?: number;     // 0=NFM 1=WFM 2=AM (last-used)
   lastFrequency?: number; // Hz; restored at startup
@@ -74,6 +78,8 @@ interface Config {
   am?: Partial<AMOptions>;
   volume?: number;
   muted?: boolean;
+  tuneMode?: 'preset' | 'vfo';
+  tuneStepHz?: number;
 }
 
 type SyncListener     = (s: SyncInfo) => void;
@@ -86,6 +92,14 @@ type GainListener     = (gain: number, maxGain: number) => void;
 type DemodModeListener = (mode: number) => void;
 type AudioStateListener = (running: boolean, deviceName: string) => void;
 type ConnectionStateListener = (connected: boolean) => void;
+export type TuneMode = 'preset' | 'vfo';
+type TuneModeListener = (mode: TuneMode) => void;
+type TuneStepListener = (stepHz: number) => void;
+// Step values exposed in the dial cycler (mirrors PI dial-tune Step menu).
+export const TUNE_STEP_VALUES: number[] = [
+  1, 10, 100, 1000, 5000, 9000, 10000,
+  25000, 50000, 100000, 200000, 500000, 1000000,
+];
 
 class SpyService {
   private client = new SpyClient();
@@ -150,6 +164,13 @@ class SpyService {
   private demodModeListeners = new Set<DemodModeListener>();
   private audioStateListeners = new Set<AudioStateListener>();
   private connectionStateListeners = new Set<ConnectionStateListener>();
+  // Tune dial mode + VFO step: global so the FM/AM Options panels can adjust
+  // them without per-dial PI configuration. Replaces the previously per-dial
+  // settings.mode / settings.stepHz.
+  private tuneMode: TuneMode = 'preset';
+  private tuneStepHz: number = 9000;
+  private tuneModeListeners = new Set<TuneModeListener>();
+  private tuneStepListeners = new Set<TuneStepListener>();
   // Debounced SpyServer apply for rapid dial rotations.
   private gainApplyTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingGainScope: 'am' | 'fm' | null = null;
@@ -228,12 +249,19 @@ class SpyService {
       }
       if (cfg.am) {
         this.amOptions = { ...DEFAULT_AM_OPTIONS, ...cfg.am };
-        // Clamp persisted alpha factors to the SDR++ ranges.
-        // Attack 1-200 ms → α 0.01736 .. 0.0000877
-        // Decay  1-20  ms → α 0.01736 .. 0.000876
         const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
-        this.amOptions.agcAttack = clamp(this.amOptions.agcAttack, 0.0000877, 0.01736);
-        this.amOptions.agcDecay  = clamp(this.amOptions.agcDecay,  0.000876,  0.01736);
+        // Migrate pre-2026-05-04 configs that stored agcAttack/Decay as
+        // per-sample α (always < 1) instead of SDR++ rate (1..200 / 1..20).
+        // Convert α → rate = -fs · ln(1 − α) at our 57 kHz audio rate.
+        const FS = 57000;
+        if (this.amOptions.agcAttack < 1) {
+          this.amOptions.agcAttack = -FS * Math.log(1 - this.amOptions.agcAttack);
+        }
+        if (this.amOptions.agcDecay < 1) {
+          this.amOptions.agcDecay = -FS * Math.log(1 - this.amOptions.agcDecay);
+        }
+        this.amOptions.agcAttack = clamp(this.amOptions.agcAttack, 1, 200);
+        this.amOptions.agcDecay  = clamp(this.amOptions.agcDecay,  1, 20);
         for (const fn of this.amOptionsListeners) fn(this.amOptions);
       }
       if (typeof cfg.volume === 'number') this.volume = Math.max(0, Math.min(1.5, cfg.volume));
@@ -247,6 +275,14 @@ class SpyService {
       if (typeof cfg.demodMode === 'number') {
         this.currentDemodMode = cfg.demodMode;
       }
+      if (cfg.tuneMode === 'preset' || cfg.tuneMode === 'vfo') {
+        this.tuneMode = cfg.tuneMode;
+      }
+      if (typeof cfg.tuneStepHz === 'number' && cfg.tuneStepHz > 0) {
+        this.tuneStepHz = cfg.tuneStepHz;
+      }
+      for (const fn of this.tuneModeListeners) fn(this.tuneMode);
+      for (const fn of this.tuneStepListeners) fn(this.tuneStepHz);
       // Hydrate per-mode gains. Legacy `cfg.gain` is migrated into `amGain`
       // (where IMD problems first surfaced) so the user keeps their tuned-down
       // value across the upgrade.
@@ -361,8 +397,8 @@ class SpyService {
       // settling: without masking, a loud pop punches through. We mute for
       // long enough to cover both the debounce wait and the post-apply
       // settling. Debounce groups rapid dial ticks into one apply.
-      this.muteUntil = Date.now() + 200;
-      this.demod.reset(); this.iqnr.reset(); this.ifnrL.reset(); this.ifnrR.reset();
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + 200);
+      this.demod.reset();
       this.pendingGainScope = scope;
       if (this.gainApplyTimer) clearTimeout(this.gainApplyTimer);
       this.gainApplyTimer = setTimeout(() => {
@@ -378,7 +414,7 @@ class SpyService {
         // Re-mute + reset around the actual apply so the post-step transient
         // is masked even after the debounce window has elapsed.
         this.muteUntil = Math.max(this.muteUntil, Date.now() + 150);
-        this.demod.reset(); this.iqnr.reset(); this.ifnrL.reset(); this.ifnrR.reset();
+        this.demod.reset();
         this.client.setSetting(SETTING_GAIN, finalGain);
         this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
         streamDeck.logger.info(`[spyService] set${sc === 'am' ? 'Am' : 'Fm'}Gain ${finalGain} digitalGain=${digitalGain}`);
@@ -395,17 +431,17 @@ class SpyService {
     // Initial long mute covers the debounce + the start of SpyServer's
     // retune. Re-muted again from the apply timer for the rest of the
     // settling window (new station carrier amplitude, amDc convergence).
-    this.muteUntil = Date.now() + 200;
+    this.muteUntil = Math.max(this.muteUntil, Date.now() + 200);
     this.demod.reset();
     this.pendingFreq = hz;
     if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);
     this.freqDebounceTimer = setTimeout(() => {
       this.freqDebounceTimer = null;
       // Refresh mute + demod state around the actual SpyServer command —
-      // server retune (~50-100 ms) + new-station IQ packet arrival pop is
-      // the main loud transient we need to mask.
+      // server retune (~50-100 ms) + new-station IQ packet arrival pop +
+      // amDc / AGC re-convergence in the demodulator.
       this.muteUntil = Math.max(this.muteUntil, Date.now() + 250);
-      this.demod.reset(); this.iqnr.reset(); this.ifnrL.reset(); this.ifnrR.reset();
+      this.demod.reset();
       this.client.setFrequency(this.pendingFreq);
       streamDeck.logger.info(`[spyService] sentFreq ${this.pendingFreq}`);
     }, 50);
@@ -503,7 +539,14 @@ class SpyService {
     if (this.currentAudioRate > 0) {
       this.demod.setAmBandwidth(this.currentAudioRate, am.bandwidth, this.currentIQRate);
     }
-    this.demod.setAmAgc(am.carrierAgc, am.agcAttack, am.agcDecay);
+    // Convert SDR++ rate (per-second) → per-sample α at our audio rate. The
+    // demod operates the AGC at the decimated audio rate (carrierAmp is
+    // sampled in pass 2 of processAM at i += decimate).
+    const fs = this.currentAudioRate > 0 ? this.currentAudioRate : 57000;
+    const attackAlpha = am.agcAttack / fs;
+    const decayAlpha  = am.agcDecay  / fs;
+    this.demod.setAmAgc(am.carrierAgc, attackAlpha, decayAlpha);
+    this.demod.setAmSync(am.sync, fs);
     streamDeck.logger.info(`[spyService] applyAMOptions ${JSON.stringify(am)}`);
   }
 
@@ -565,6 +608,31 @@ class SpyService {
     await this.persistFields({ volume: this.volume, muted: this.muted });
   }
 
+  getTuneMode(): TuneMode { return this.tuneMode; }
+  getTuneStepHz(): number { return this.tuneStepHz; }
+  subscribeTuneMode(fn: TuneModeListener): void {
+    this.tuneModeListeners.add(fn);
+    fn(this.tuneMode);
+  }
+  unsubscribeTuneMode(fn: TuneModeListener): void { this.tuneModeListeners.delete(fn); }
+  subscribeTuneStep(fn: TuneStepListener): void {
+    this.tuneStepListeners.add(fn);
+    fn(this.tuneStepHz);
+  }
+  unsubscribeTuneStep(fn: TuneStepListener): void { this.tuneStepListeners.delete(fn); }
+  setTuneMode(mode: TuneMode): void {
+    if (this.tuneMode === mode) return;
+    this.tuneMode = mode;
+    for (const fn of this.tuneModeListeners) fn(mode);
+    this.persistField('tuneMode', mode).catch(() => {});
+  }
+  setTuneStepHz(hz: number): void {
+    if (!(hz > 0) || this.tuneStepHz === hz) return;
+    this.tuneStepHz = hz;
+    for (const fn of this.tuneStepListeners) fn(hz);
+    this.persistField('tuneStepHz', hz).catch(() => {});
+  }
+
   getDemodMode(): number { return this.currentDemodMode; }
   subscribeDemodMode(fn: DemodModeListener): void {
     this.demodModeListeners.add(fn);
@@ -575,7 +643,7 @@ class SpyService {
     if (this.currentDemodMode === mode) return;
     const prevMode = this.currentDemodMode;
     this.currentDemodMode = mode;
-    this.muteUntil = Date.now() + 100;
+    this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
     this.demod.reset();
     this.iqnr.setMode(mode as DemodMode, this.currentIQRate);
     streamDeck.logger.info(`[spyService] setDemodMode ${mode}`);
@@ -588,7 +656,7 @@ class SpyService {
       // Extend the existing mode-change mute (set to +100 above) for the
       // gain transient too — the LNA step plus SpyServer-side AGC settling
       // is the loudest pop in the system.
-      this.muteUntil = Date.now() + 250;
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + 250);
       const newGain = (isAm ? this.amGain : this.fmGain) ?? this.deviceInfo.maxGainIndex;
       const digitalGain = computeDigitalGain(
         this.deviceInfo.deviceType, newGain, this.currentDecStage, this.deviceInfo.maxGainIndex,
@@ -659,7 +727,7 @@ class SpyService {
     this.iqnr.setMode(this.currentDemodMode as DemodMode, iqRate);
     // Mute initial period to suppress ffmpeg/AudioToolbox startup pop and
     // demodulator transient (atan2 with near-zero prev I/Q, AM DC settling).
-    this.muteUntil = Date.now() + 500;
+    this.muteUntil = Math.max(this.muteUntil, Date.now() + 500);
 
     // Attach IQ data listener BEFORE enabling streaming
     let iqCount = 0;
@@ -716,7 +784,10 @@ class SpyService {
       const iqBody = this.fmOptions.ifnr ? this.iqnr.processBuffer(p.body) : p.body;
       let pcm: Int16Array;
       if (this.currentDemodMode === 2) {
-        pcm = this.demod.processAM(iqBody, dec);
+        const maxG = this.deviceInfo?.maxGainIndex ?? 0;
+        const amG = this.amGain ?? 0;
+        const gainScale = maxG > 0 ? amG / maxG : 1;
+        pcm = this.demod.processAM(iqBody, dec, gainScale);
       } else if (this.currentDemodMode === 1) {
         pcm = this.fmOptions.stereo
           ? this.demod.processWFMStereo(iqBody, dec)

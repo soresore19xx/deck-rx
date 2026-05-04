@@ -1,35 +1,32 @@
 import { action, DialDownEvent, DialRotateEvent, DialUpEvent, SingletonAction, WillAppearEvent, WillDisappearEvent, DidReceiveSettingsEvent } from '@elgato/streamdeck';
 import streamDeck from '@elgato/streamdeck';
-import { spyService, AMOptions } from '../spyService.js';
+import { spyService, AMOptions, TuneMode, TUNE_STEP_VALUES } from '../spyService.js';
 import { svgB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
 type Settings = { borderSide?: 'left' | 'right' | 'center' | 'none' };
 
+function formatTuneStep(hz: number): string {
+  if (hz >= 1000000) return `${(hz / 1000000).toFixed(0)}M`;
+  if (hz >= 1000) return `${(hz / 1000).toFixed(0)}k`;
+  return `${hz}Hz`;
+}
+
 // Bandwidth: still discrete (4/6/9/12 kHz are standard AM channel widths).
 const BW_CYCLE = [4000, 6000, 9000, 12000];
 
-// SDR++ ranges: Attack 1-200 ms, Decay 1-20 ms (per-sample IIR factor at 57 kHz).
-//   α = 1 − exp(−T/τ),  T = 1/57000
-const ATK_MIN = 0.0000877;  // 200 ms TC
-const ATK_MAX = 0.01736;    //   1 ms TC
-const DEC_MIN = 0.000876;   //  20 ms TC
-const DEC_MAX = 0.01736;    //   1 ms TC
-const TICK_FACTOR = 1.1;    // 10% per tick
+// SDR++ slider ranges (radio_module / dsp::demod::AM): Attack 1..200,
+// Decay 1..20. Stored value = attack/decay rate in 1/τ_seconds. SpyService
+// converts to the per-sample α = rate / fs before passing to the demod.
+const ATK_MIN = 1;
+const ATK_MAX = 200;
+const DEC_MIN = 1;
+const DEC_MAX = 20;
+const TICK_FACTOR = 1.1;    // 10% per tick (continuous log adjust)
 
 function adjustLog(cur: number, ticks: number, min: number, max: number): number {
   const factor = Math.pow(TICK_FACTOR, ticks);
   return Math.max(min, Math.min(max, cur * factor));
-}
-
-// Convert per-sample IIR factor → time constant in ms (SDR++ display convention).
-//   α = 1 − exp(−T/τ)   T = 1/fs (s)
-//   τ(s)  = −1 / (fs · ln(1−α))
-//   τ(ms) = −1000 / (fs(Hz) · ln(1−α))  =  −1 / (fs(kHz) · ln(1−α))
-// fs = 57 kHz audio rate.
-function alphaToMs(alpha: number): number {
-  if (alpha <= 0 || alpha >= 1) return 0;
-  return -1 / (57 * Math.log(1 - alpha));
 }
 
 function fmtBw(hz: number): string {
@@ -63,16 +60,21 @@ const OPTIONS: OptionDef[] = [
     cycle: (o) => ({ carrierAgc: !o.carrierAgc }),
   },
   {
+    label: 'Sync',
+    format: (o) => o.sync ? 'On' : 'Off',
+    cycle: (o) => ({ sync: !o.sync }),
+  },
+  {
     label: 'Atk',
-    // SDR++ display: e.g. "200.000" — 3 integer digits + 3 decimals, padded.
-    format: (o) => alphaToMs(o.agcAttack).toFixed(3).padStart(7, ' '),
-    cycle: (o, t) => ({ agcAttack: adjustLog(o.agcAttack, -t, ATK_MIN, ATK_MAX) }),
+    // SDR++ slider value, max "200.000": 3 integer digits + 3 decimals.
+    format: (o) => o.agcAttack.toFixed(3).padStart(7, ' '),
+    cycle: (o, t) => ({ agcAttack: adjustLog(o.agcAttack, t, ATK_MIN, ATK_MAX) }),
   },
   {
     label: 'Dec',
-    // Decay max is 20.000 — 2 integer digits + 3 decimals.
-    format: (o) => alphaToMs(o.agcDecay).toFixed(3).padStart(6, ' '),
-    cycle: (o, t) => ({ agcDecay: adjustLog(o.agcDecay, -t, DEC_MIN, DEC_MAX) }),
+    // Max "20.000": 2 integer digits + 3 decimals.
+    format: (o) => o.agcDecay.toFixed(3).padStart(6, ' '),
+    cycle: (o, t) => ({ agcDecay: adjustLog(o.agcDecay, t, DEC_MIN, DEC_MAX) }),
   },
 ];
 
@@ -80,9 +82,13 @@ const OPTIONS: OptionDef[] = [
 // appears while AM is the currently active demod mode — adjusting it on the
 // FM Options dial when in AM (or vice versa) wouldn't take effect anyway,
 // and showing both at once led to "two Gain rows visible" confusion.
-const GAIN_ROW_INDEX = OPTIONS.length;
+// Synthetic rows after OPTIONS:
+//   [OPTIONS.length]:        Mode (Preset / VFO) — always shown
+//   [OPTIONS.length+1]:      Step — VFO only
+//   [last]:                  Gain — only while in AM mode
+const MODE_ROW_INDEX = OPTIONS.length;
 
-@action({ UUID: 'com.hogehoge.spyserver-ex.dial-am-options' })
+@action({ UUID: 'com.hogehoge.deck-rx.dial-am-options' })
 export class SpyDialAmOptions extends SingletonAction<Settings> {
   private selectedIdx = 0;
   private editMode = false;
@@ -94,6 +100,8 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
   private enabledListener: ((on: boolean) => void) | null = null;
   private demodListener: ((mode: number) => void) | null = null;
   private connStateListener: ((c: boolean) => void) | null = null;
+  private tuneModeListener: ((m: TuneMode) => void) | null = null;
+  private tuneStepListener: ((s: number) => void) | null = null;
   private enabled = true;
   private connected = false;
   private isAmMode = true;
@@ -119,6 +127,10 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     spyService.subscribeDemodMode(this.demodListener);
     this.connStateListener = (c) => { this.connected = c; this.render(); };
     spyService.subscribeConnectionState(this.connStateListener);
+    this.tuneModeListener = () => this.render();
+    spyService.subscribeTuneMode(this.tuneModeListener);
+    this.tuneStepListener = () => this.render();
+    spyService.subscribeTuneStep(this.tuneStepListener);
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialAmOptions] ${e}`));
     await ev.action.setImage(svgB64(knobSvg()));
     this.render();
@@ -130,6 +142,8 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
     if (this.demodListener)   { spyService.unsubscribeDemodMode(this.demodListener); this.demodListener = null; }
     if (this.connStateListener) { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
+    if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
+    if (this.tuneStepListener) { spyService.unsubscribeTuneStep(this.tuneStepListener); this.tuneStepListener = null; }
     this.act = null;
   }
 
@@ -140,16 +154,30 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
 
   override async onDialRotate(ev: DialRotateEvent<Settings>): Promise<void> {
     const ticks = ev.payload.ticks;
-    const totalRows = OPTIONS.length + (this.isAmMode ? 1 : 0);
+    const tuneMode = spyService.getTuneMode();
+    const showStep = tuneMode === 'vfo';
+    const stepRowIdx = MODE_ROW_INDEX + 1;
+    const gainRowIdx = MODE_ROW_INDEX + 1 + (showStep ? 1 : 0);
+    const totalRows = MODE_ROW_INDEX + 1 + (showStep ? 1 : 0) + (this.isAmMode ? 1 : 0);
     if (this.editMode) {
-      if (this.isAmMode && this.selectedIdx === GAIN_ROW_INDEX) {
-        await spyService.setAmGain(spyService.getAmGain() + ticks);
-      } else {
+      const idx = this.selectedIdx;
+      if (idx < OPTIONS.length) {
         const cur = spyService.getAMOptions();
-        const updates = OPTIONS[this.selectedIdx].cycle(cur, ticks);
+        const updates = OPTIONS[idx].cycle(cur, ticks);
         for (const [k, v] of Object.entries(updates)) {
           await spyService.setAMOption(k as keyof AMOptions, v as never);
         }
+      } else if (idx === MODE_ROW_INDEX) {
+        spyService.setTuneMode(tuneMode === 'preset' ? 'vfo' : 'preset');
+      } else if (showStep && idx === stepRowIdx) {
+        const cur = spyService.getTuneStepHz();
+        const list = TUNE_STEP_VALUES;
+        const ci = list.indexOf(cur);
+        const dir = ticks > 0 ? 1 : -1;
+        const ni = (((ci < 0 ? 0 : ci) + dir) + list.length) % list.length;
+        spyService.setTuneStepHz(list[ni]);
+      } else if (this.isAmMode && idx === gainRowIdx) {
+        await spyService.setAmGain(spyService.getAmGain() + ticks);
       }
     } else {
       this.focused = true;
@@ -175,12 +203,15 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     const o = spyService.getAMOptions();
     const gain = spyService.getAmGain();
     const maxGain = spyService.getMaxGain();
+    const tuneMode = spyService.getTuneMode();
+    const tuneStepHz = spyService.getTuneStepHz();
+    const showStep = tuneMode === 'vfo';
     const rows: OptionsPanelRow[] = [
       ...OPTIONS.map((d) => ({ label: d.label, value: d.format(o) })),
     ];
-    if (this.isAmMode) {
-      rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
-    }
+    rows.push({ label: 'Mode', value: tuneMode === 'preset' ? 'Preset' : 'VFO' });
+    if (showStep) rows.push({ label: 'Step', value: formatTuneStep(tuneStepHz) });
+    if (this.isAmMode) rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
     const sel = this.focused ? this.selectedIdx : -1;
     const dim = !this.enabled || !this.connected;
     this.act.setFeedback({

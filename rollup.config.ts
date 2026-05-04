@@ -6,7 +6,7 @@ import typescript from '@rollup/plugin-typescript';
 export default defineConfig({
   input: 'src/index.ts',
   output: {
-    file: 'com.hogehoge.spyserver-ex.sdPlugin/bin/index.js',
+    file: 'com.hogehoge.deck-rx.sdPlugin/bin/index.js',
     format: 'cjs',
     sourcemap: true,
   },

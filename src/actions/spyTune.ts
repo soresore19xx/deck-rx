@@ -48,7 +48,7 @@ function slotTitle(p: Preset | null, slot: number): string {
 // suppress unused import warning
 void MODES;
 
-@action({ UUID: 'com.hogehoge.spyserver-ex.tune' })
+@action({ UUID: 'com.hogehoge.deck-rx.tune' })
 export class SpyTune extends SingletonAction<TuneSettings> {
   override async onWillAppear(ev: WillAppearEvent<TuneSettings>): Promise<void> {
     const slot = ev.payload.settings.slot ?? 1;

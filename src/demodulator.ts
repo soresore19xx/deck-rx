@@ -1,5 +1,20 @@
 import { Biquad } from './dspFilters.js';
 
+// AM AGC tuning constants (SDR++ port). Equivalents of dsp::demod::AM init
+// args: setPoint (target |IQ|), maxGain (cap), maxOutputAmp (look-ahead
+// trigger threshold). Output threshold is 10× setPoint to mirror SDR++'s
+// (setPoint=1.0, maxOutputAmp=10.0) ratio — anything tighter would fire the
+// O(N) look-ahead scan on every modulation peak of a typical broadcast AM
+// (peak ≈ setPoint·1.8 at 80 % modulation), spiking CPU and producing
+// audible glitches.
+const AM_AGC_SET_POINT  = 16000;
+const AM_AGC_MAX_GAIN   = 1e6;
+const AM_AGC_MAX_OUTPUT = 160000;
+// Look-ahead horizon — bounded so even if the threshold is mis-tuned the
+// scan never grows beyond a fixed cost. 256 decimated samples ≈ 4.5 ms at
+// 57 kHz audio rate, plenty to catch any imminent peak that matters.
+const AM_AGC_LOOK_AHEAD_SAMPLES = 256;
+
 export class Demodulator {
   private prevI = 0;
   private prevQ = 0;
@@ -38,11 +53,32 @@ export class Demodulator {
   // filter state isn't disturbed by spectrum measurements.
   private diagIfLpfI: Biquad[] = Array.from({ length: 8 }, () => new Biquad());
   private diagIfLpfQ: Biquad[] = Array.from({ length: 8 }, () => new Biquad());
-  // AM Carrier AGC
+  // AM Carrier AGC — SDR++ port (dsp::loop::AGC + dsp::demod::AM CARRIER mode).
+  // Tracks |IQ| amplitude with asymmetric attack/decay EWMA, applies
+  // gain = setPoint/amp to the complex IQ stream BEFORE envelope detection.
+  // Look-ahead clipping prevention scans the remainder of the buffer when
+  // gain*amp would exceed AM_AGC_MAX_OUTPUT (e.g. AGC tracker far behind a
+  // sudden peak), then snaps amp to the upcoming max and recomputes gain.
   private amAgcEnabled = false;
-  private amAgcGain = 1.0;
-  private amAgcAttack = 0.05;   // fast rise (per-sample factor)
-  private amAgcDecay = 0.0005;  // slow fall
+  private amAgcAmp = 0;          // EWMA-tracked input |IQ|; 0 ⇒ first sample triggers look-ahead
+  private amAgcAttack = 50 / 57000;  // α per-sample at 57 kHz, default = SDR++ slider 50 (rate Hz)
+  private amAgcDecay  = 5  / 57000;  // default = SDR++ slider 5
+  // Synchronous AM detection (DSB sync). When enabled, a 2-nd order PLL
+  // tracks the AM carrier phase and we de-rotate the IQ stream to recover
+  // (1 + m(t))·amp directly on the I axis instead of the noisy
+  // |I + jQ| envelope. Eliminates selective-fading distortion (carrier
+  // dropout doesn't smear into the audio) and tolerates carrier-frequency
+  // offsets — critical for HF/SW listening. Default OFF; envelope detect
+  // remains the original path.
+  private amSyncEnabled = false;
+  private amSyncPhase = 0;       // PLL phase (rad)
+  private amSyncFreq  = 0;       // PLL freq offset (rad/sample)
+  private amSyncAlpha = 0;       // proportional loop coefficient (set per audioRate)
+  private amSyncBeta  = 0;       // integral loop coefficient
+  // Smoothed cos(phaseErr) for lock detection. 1 = perfectly locked, 0 = mid
+  // acquisition, near-0 = unlocked. Used to gate the audio output during
+  // pull-in so the loud carrier-baseband beat doesn't blast the speaker.
+  private amSyncCos = 0;
   // Stereo decode filters (run at IQ rate)
   private lprLpf = new Biquad();    // L+R lowpass 15 kHz
   private lmrLpf = new Biquad();    // L-R lowpass 15 kHz
@@ -96,7 +132,10 @@ export class Demodulator {
   reset(): void {
     this.prevI = 0; this.prevQ = 0;
     this.amDc = 0;
-    this.amAgcGain = 1.0;  // critical: stale gain from previous station starves weak ones
+    this.amAgcAmp = 0;  // 0 ⇒ first sample of new station triggers look-ahead, normalises immediately
+    this.amSyncPhase = 0;
+    this.amSyncFreq = 0;
+    this.amSyncCos = 0;
     this.deempY = this.deempL = this.deempR = 0;
     this.lpfL.reset(); this.hpfL.reset();
     this.lpfR.reset(); this.hpfR.reset();
@@ -151,12 +190,36 @@ export class Demodulator {
       }
     }
   }
-  /** Carrier AGC for AM. Attack/decay are per-sample IIR factors (0..1). */
+  /** Carrier AGC for AM. Attack/decay are per-sample IIR factors α (0..1).
+   *  Convert from SDR++ rate (1/τ_seconds) at the caller via α = rate / fs. */
   setAmAgc(enabled: boolean, attack?: number, decay?: number): void {
     this.amAgcEnabled = enabled;
     if (typeof attack === 'number') this.amAgcAttack = Math.max(0, Math.min(1, attack));
     if (typeof decay  === 'number') this.amAgcDecay  = Math.max(0, Math.min(1, decay));
-    if (!enabled) this.amAgcGain = 1.0;
+    if (!enabled) this.amAgcAmp = 0;
+  }
+
+  /** Synchronous AM detection. Configures a 2-nd order PLL with critically
+   *  damped 10 Hz natural frequency (slow enough to ignore audio modulation
+   *  > 50 Hz, fast enough for SW propagation drift). audioRate is the rate
+   *  at which processAM is called per output sample (i.e. the decimated
+   *  audio rate). */
+  setAmSync(enabled: boolean, audioRate: number): void {
+    const wasEnabled = this.amSyncEnabled;
+    this.amSyncEnabled = enabled;
+    if (audioRate > 0) {
+      // 30 Hz natural freq: fast enough to pull-in ±1 kHz offsets in
+      // ~1 second, slow enough to ignore the 50 Hz+ audio band on AM.
+      const wn = 2 * Math.PI * 30 / audioRate;  // rad/sample
+      const zeta = 0.707;
+      this.amSyncAlpha = 2 * zeta * wn;
+      this.amSyncBeta  = wn * wn;
+    }
+    if (!wasEnabled && enabled) {
+      this.amSyncPhase = 0;
+      this.amSyncFreq = 0;
+      this.amSyncCos = 0;
+    }
   }
 
   setAudioFilters(audioRate: number, lpfHz: number, hpfHz: number): void {
@@ -427,30 +490,41 @@ export class Demodulator {
     return out;
   }
 
-  // AM envelope detector with DC removal, optional bandwidth filter, AGC, and user filters.
-  processAM(iq: Buffer, decimate: number, gain = 8): Int16Array {
+  // AM envelope detector. Pipeline (with AGC ON):
+  //   IQ → 16-th order IF LPF → CARRIER AGC (gain to normalise |IQ|) →
+  //   envelope detect → DC blocker → AM LPF → user LPF/HPF → Int16
+  // The AGC runs BEFORE envelope detection (matching SDR++ CARRIER mode);
+  // operating on the complex amplitude makes weak/strong stations come out
+  // at the same loudness AND avoids the audio-domain clipping that the
+  // previous post-envelope AGC suffered from (initial overshoot when
+  // amAgcGain started at 1.0 → first big sample produced gain ≈ 10000).
+  // gainScale (0..1) lets the AGC OFF path act as a proper volume control
+  // off the user's amGain ratio. With AGC ON this parameter is ignored
+  // (the AGC normalises to setPoint regardless of input amplitude).
+  processAM(iq: Buffer, decimate: number, gainScale = 1): Int16Array {
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);
     const out = new Int16Array(outSamples * 2);
-    let oi = 0;
-    const alpha = 0.001;
-    // AGC ON path: tracks mean |v|, normalises to targetLevel. Peaks are ~3x
-    // mean for typical AM, so targetLevel=10000 keeps peaks within int16.
-    const targetLevel = 10000;
-    // AGC OFF path: now that the 16th-order IF LPF cleans the I/Q, post-
-    // envelope AC amplitude is small but predictable. ×32 brings the output
-    // level up to roughly match WFM/WFMStereo demod for typical broadcast
-    // signal strengths so a single Volume setting works across modes.
-    // Strong stations may clip on peaks; that's the trade-off for "no AGC".
-    const fixedGain = this.amAgcEnabled ? gain : 32;
-    // First pass at IQ rate: pre-envelope complex IF LPF (rejects off-center
-    // stations within the wide IQ passband). Runs every IQ sample.
+    const alphaDc = 0.001;
+    // AGC OFF path uses a fixed gain after envelope detection, scaled by
+    // the user's RF-gain ratio so the gain dial functions as a volume
+    // control (Airspy HF+ has on-chip AGC that smooths over LNA changes,
+    // so without this scaling the dial would have ~no audible effect).
+    // ×32 at full gain lands AM at roughly WFM loudness for a single
+    // Volume setting. Strong stations may clip on peaks — that's the
+    // intentional trade-off for "no AGC".
+    const gs = gainScale < 0 ? 0 : gainScale > 1 ? 1 : gainScale;
+    const fixedGain = this.amAgcEnabled ? 1 : 32 * gs;
     const ifFilter = this.amIfRate > 0;
-    let preSumSq = 0, postSumSq = 0;
     if (this.amDiagPostI.length !== inSamples) {
       this.amDiagPostI = new Float64Array(inSamples);
       this.amDiagPostQ = new Float64Array(inSamples);
     }
+
+    // Pass 1: IF LPF and population of amDiagPostI/Q. This must run in full
+    // before pass 2 because the AGC look-ahead in pass 2 reads forward into
+    // amDiagPostI/Q to pre-empt clipping when the tracker is far behind.
+    let preSumSq = 0, postSumSq = 0;
     for (let i = 0; i < inSamples; i++) {
       const Iraw = iq.readInt16LE(i * 4);
       const Qraw = iq.readInt16LE(i * 4 + 2);
@@ -465,33 +539,103 @@ export class Demodulator {
       this.amDiagPostI[i] = I;
       this.amDiagPostQ[i] = Q;
       postSumSq += I * I + Q * Q;
-      if (i % decimate === 0 && oi < outSamples) {
-        const mag = Math.sqrt(I * I + Q * Q);
-        this.amDc = this.amDc * (1 - alpha) + mag * alpha;
-        let v = (mag - this.amDc) * fixedGain;
-        // AM bandwidth limit (post-envelope LPF, cascaded for steeper rolloff).
-        if (this.amLpfEnabled) {
-          v = this.amLpf[0].step(v);
-          v = this.amLpf[1].step(v);
-          v = this.amLpf[2].step(v);
-          v = this.amLpf[3].step(v);
-        }
-        // Carrier AGC: track |v| with asymmetric attack/decay, normalize to target
-        if (this.amAgcEnabled) {
-          const absV = Math.abs(v) + 1;
-          const factor = absV > this.amAgcGain ? this.amAgcAttack : this.amAgcDecay;
-          this.amAgcGain += factor * (absV - this.amAgcGain);
-          v = v * (targetLevel / Math.max(1, this.amAgcGain));
-        }
-        if (this.lpfEnabled) v = this.lpfL.step(v);
-        if (this.hpfEnabled) v = this.hpfL.step(v);
-        const s = v >= 32767 ? 32767 : v <= -32767 ? -32767 : (v | 0);
-        out[oi * 2] = s; out[oi * 2 + 1] = s;
-        oi++;
-      }
     }
     this.amDiagPreRms  = Math.sqrt(preSumSq  / Math.max(1, inSamples));
     this.amDiagPostRms = Math.sqrt(postSumSq / Math.max(1, inSamples));
+
+    // Pass 2: AGC + envelope detect at the decimated audio rate.
+    const atk = this.amAgcAttack;
+    const dec = this.amAgcDecay;
+    const invAtk = 1 - atk;
+    const invDec = 1 - dec;
+    let oi = 0;
+    for (let i = 0; i < inSamples && oi < outSamples; i += decimate) {
+      let I = this.amDiagPostI[i];
+      let Q = this.amDiagPostQ[i];
+
+      if (this.amAgcEnabled) {
+        const carrierAmp = Math.sqrt(I * I + Q * Q);
+        if (carrierAmp !== 0) {
+          this.amAgcAmp = (carrierAmp > this.amAgcAmp)
+            ? this.amAgcAmp * invAtk + carrierAmp * atk
+            : this.amAgcAmp * invDec + carrierAmp * dec;
+        }
+        let agcGain = Math.min(
+          AM_AGC_SET_POINT / Math.max(this.amAgcAmp, 1e-3),
+          AM_AGC_MAX_GAIN,
+        );
+        // Look-ahead clipping prevention. When the tracker is behind reality
+        // (initial state, sudden amplitude jump), gain·carrierAmp can exceed
+        // the safe output ceiling. Scan a bounded window of upcoming samples
+        // to find the next peak, snap amAgcAmp to it, and recompute gain.
+        if (carrierAmp * agcGain > AM_AGC_MAX_OUTPUT) {
+          let maxAmp = carrierAmp;
+          const limit = Math.min(
+            inSamples,
+            i + AM_AGC_LOOK_AHEAD_SAMPLES * decimate,
+          );
+          for (let j = i + decimate; j < limit; j += decimate) {
+            const Ij = this.amDiagPostI[j];
+            const Qj = this.amDiagPostQ[j];
+            const a = Math.sqrt(Ij * Ij + Qj * Qj);
+            if (a > maxAmp) maxAmp = a;
+          }
+          this.amAgcAmp = maxAmp;
+          agcGain = Math.min(
+            AM_AGC_SET_POINT / Math.max(maxAmp, 1e-3),
+            AM_AGC_MAX_GAIN,
+          );
+        }
+        I *= agcGain;
+        Q *= agcGain;
+      }
+
+      let v: number;
+      if (this.amSyncEnabled) {
+        // PLL-driven sync detection: rotate IQ by -syncPhase to bring carrier
+        // to true 0 Hz, then take I (= (1 + m(t))·carrierAmp). amDc still
+        // tracks the carrier DC offset for subtraction.
+        const c = Math.cos(this.amSyncPhase);
+        const s = Math.sin(this.amSyncPhase);
+        const dI = I * c + Q * s;
+        const dQ = -I * s + Q * c;
+        const phaseErr = Math.atan2(dQ, dI);
+        this.amSyncFreq  += this.amSyncBeta * phaseErr;
+        this.amSyncPhase += this.amSyncFreq + this.amSyncAlpha * phaseErr;
+        if (this.amSyncPhase > Math.PI) this.amSyncPhase -= 2 * Math.PI;
+        else if (this.amSyncPhase < -Math.PI) this.amSyncPhase += 2 * Math.PI;
+        // Lock indicator: smoothed cos(phaseErr) with asymmetric attack/
+        // release. Rising (locking) follows fast (~5 ms TC) so the gate
+        // opens promptly once PLL acquires. Falling (unlocking) follows
+        // slowly (~500 ms TC) so a momentary phase wobble during SW
+        // selective fading doesn't drop the gate — audio keeps playing
+        // through brief fades and only mutes if the unlock persists.
+        const mag = Math.sqrt(dI * dI + dQ * dQ);
+        const cosErr = mag > 1e-3 ? dI / mag : 0;
+        const lockAlpha = cosErr > this.amSyncCos ? 0.0035 : 3.51e-5;
+        this.amSyncCos = (1 - lockAlpha) * this.amSyncCos + lockAlpha * cosErr;
+        const lockGate = Math.max(0, Math.min(1, (this.amSyncCos - 0.3) / 0.5));
+        this.amDc = this.amDc * (1 - alphaDc) + dI * alphaDc;
+        v = (dI - this.amDc) * fixedGain * lockGate;
+      } else {
+        const mag = Math.sqrt(I * I + Q * Q);
+        this.amDc = this.amDc * (1 - alphaDc) + mag * alphaDc;
+        v = (mag - this.amDc) * fixedGain;
+      }
+
+      if (this.amLpfEnabled) {
+        v = this.amLpf[0].step(v);
+        v = this.amLpf[1].step(v);
+        v = this.amLpf[2].step(v);
+        v = this.amLpf[3].step(v);
+      }
+      if (this.lpfEnabled) v = this.lpfL.step(v);
+      if (this.hpfEnabled) v = this.hpfL.step(v);
+
+      const s = v >= 32767 ? 32767 : v <= -32767 ? -32767 : (v | 0);
+      out[oi * 2] = s; out[oi * 2 + 1] = s;
+      oi++;
+    }
     return out;
   }
 }

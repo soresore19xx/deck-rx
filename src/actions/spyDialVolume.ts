@@ -23,7 +23,7 @@ function fmtFreq(hz: number): string {
   return String(hz);
 }
 
-@action({ UUID: 'com.hogehoge.spyserver-ex.dial-volume' })
+@action({ UUID: 'com.hogehoge.deck-rx.dial-volume' })
 export class SpyDialVolume extends SingletonAction<Settings> {
   private borderSide: 'left' | 'right' | 'center' | 'none' = 'none';
   private step = 2;

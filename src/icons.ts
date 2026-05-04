@@ -82,18 +82,18 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // dials so AM Options, FM Options and Volume+Status share identical
   // typography regardless of how many rows each happens to render.
   const SVG_H = 100;
-  const rowH = 14;
-  const labelFs = 11;
-  const valueFs = 12;
-  const bgPad = rowH - 3;  // background bar height = rowH - small gap
-  // Row vertical placement:
-  //  - panels ending in a bar row (Volume) pin the LAST row's baseline at
-  //    y=91 (= bar bottom = Tune dial RSSI bar bottom) and centre the upper
-  //    rows in the area ABOVE the bar (~y 0..82). This visually separates
-  //    the volume gauge as a distinct bottom section.
-  //  - panels without a bar row centre all rows vertically in the SVG.
+  // Non-bar panels (Options / AM Options) use a fixed rowH and startY so the
+  // top of the panel sits in the same place regardless of row count. This
+  // keeps FM Options and AM Options visually aligned even when one shows a
+  // mode-specific row (Gain/Stereo/etc) that the other doesn't. Bar panels
+  // (Volume) keep the previous taller rowH because their layout is anchored
+  // by the bar at y=91 and only has a few upper rows.
   const lastRowHasBar = typeof rows[rows.length - 1]?.bar === 'number';
-  const textH = 12;
+  const rowH = lastRowHasBar ? 14 : 12;
+  const labelFs = lastRowHasBar ? 11 : 10;
+  const valueFs = lastRowHasBar ? 12 : 11;
+  const bgPad = rowH - 3;
+  const textH = valueFs;
   const lastBarY = SVG_H - 9;  // = 91, used only when lastRowHasBar
   // upperArea ends a few px above the bar so there's breathing room.
   const upperAreaH = lastBarY - textH - 8;
@@ -108,9 +108,11 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
       startY = lastBarY;
     }
   } else {
-    const contentSpan = textH + (rows.length - 1) * rowH;
-    const topMargin = Math.max(2, Math.floor((SVG_H - contentSpan) / 2));
-    startY = topMargin + textH;
+    // Top-anchored, fixed first-baseline so panels with different row counts
+    // line up at the top. Vertical centring is intentionally NOT used here.
+    // rowH=12 lets up to 8 rows fit (last baseline 100 - just at frame edge);
+    // 7 rows leave breathing room at the bottom, 6 rows leave more.
+    startY = rowH + 4;
   }
   // Panel-wide column positions: panels containing an inline bar (Volume) keep
   // the original wide layout (label flush left, value flush right of the bar)
@@ -120,9 +122,10 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   const panelHasBar = rows.some(r => typeof r.bar === 'number');
   // Bar-style panels (Volume) push columns out near the frame edges to match
   // the Tune dial's S/N gauge layout (label x≈4, num right-anchor x≈196).
-  // Pure label/value panels stay tighter so the focus highlight is balanced.
-  const panelLabelX = panelHasBar ? 4 : 40;
-  const panelValueX = panelHasBar ? 196 : 150;
+  // Pure label/value panels left-align labels (x=8 — past the focus side
+  // bar at x=0..3) and right-anchor values inside the rounded frame.
+  const panelLabelX = panelHasBar ? 4 : 8;
+  const panelValueX = panelHasBar ? 196 : 120;
   const items = rows.map((row, i) => {
     const { label, value, bar: barPct, barMuted, valueColor: valueColorOverride } = row;
     // Bar row baseline is pinned (y=lastBarY=91) regardless of where the
@@ -132,11 +135,20 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
     const isSelected = i === selectedRow;
     const isEdit = isSelected && editMode;
     const accent = isEdit ? '#ffaa55' : BLUE;
-    // Focus highlight: soft mid-blue background. When focused (navigate
-    // mode), both label and value light up yellow against the blue bg so the
-    // active row pops as a unit. Edit mode swaps to an orange label + white
-    // value so the user can tell at a glance that they're inside the row.
-    const bg  = isSelected ? `<rect x="0" y="${y - bgPad}" width="200" height="${rowH}" fill="#3a5a85"/>` : '';
+    // Background:
+    //   - Focused row: faint translucent grey (opacity 0.12) so the active
+    //     row pops as a unit without screaming.
+    //   - Non-focused even rows (zebra): even fainter grey (opacity 0.04)
+    //     gives visual row separation without horizontal lines (which made
+    //     the panel feel cluttered at this density).
+    //   - Bar rows skip zebra so the bar visual stays clean.
+    const isBarRowZebra = typeof barPct === 'number';
+    let bg = '';
+    if (isSelected) {
+      bg = `<rect x="0" y="${y - bgPad}" width="200" height="${rowH}" fill="#ffffff" fill-opacity="0.22"/>`;
+    } else if (i % 2 === 0 && !isBarRowZebra) {
+      bg = `<rect x="0" y="${y - bgPad}" width="200" height="${rowH}" fill="#ffffff" fill-opacity="0.08"/>`;
+    }
     const sideBar = isSelected ? `<rect x="0" y="${y - bgPad}" width="3" height="${rowH}" fill="${accent}"/>` : '';
     // Focus colours:
     //  - nav mode  : label deep yellow (#d4b800), value yellow (#ffee00)
@@ -145,7 +157,7 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
     // "the focused datum"; the mode (navigate vs edit) is conveyed by the
     // label colour and the left-side accent rail.
     const labelColor = isSelected ? (isEdit ? accent : '#d4b800') : 'white';
-    const valueColor = isSelected ? '#ffee00' : (valueColorOverride ?? 'white');
+    const valueColor = isSelected ? '#aaff00' : (valueColorOverride ?? 'white');
     // Inline progress bar (Volume row). Position is intentionally NOT tied to
     // the row baseline — it's pinned to a fixed bottom y so it visually lines
     // up with the Tune dial's RSSI bar (y=85, h=6, bottom=91 in the dial

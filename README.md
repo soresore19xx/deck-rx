@@ -1,6 +1,6 @@
-# spyserver-ex
+# Deck RX
 
-Stream Deck + plugin to control a remote [SpyServer](https://airspy.com/) and listen to AM/FM radio directly from the Stream Deck encoder dials.
+Stream Deck + plugin to control a remote [SpyServer](https://airspy.com/) and listen to AM/SW/FM radio directly from the Stream Deck encoder dials.
 
 The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a NanoPi), pulls down INT16 IQ samples, demodulates them in TypeScript, and pipes the resulting PCM through `ffmpeg` to a chosen macOS CoreAudio device.
 
@@ -14,8 +14,8 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Server host / port via PI | ✅ (debounced live-apply: changing host/port tears down + reconnects without restart) |
 | AM/SW Bandwidth | ✅ (16th-order complex IF LPF on I/Q + 8th-order post-envelope LPF) |
 | Carrier AGC | ✅ |
-| AGC Attack | ✅ (1–200 ms, SDR++ display convention) |
-| AGC Decay | ✅ (1–20 ms) |
+| AGC Attack | ✅ (1–200, SDR++ slider convention = rate in 1/τ_seconds) |
+| AGC Decay | ✅ (1–20) |
 | FM Stereo PLL (true phase lock) | ✅ |
 | Per-mode RF Gain (AM / FM separate) | ✅ (live-applied, debounced, pop-suppressed) |
 | Frequency / mode persistence | ✅ (restored at startup) |
@@ -23,10 +23,10 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 
-- **SpyServer Dial** — VFO / preset scrolling, 7-segment frequency LCD, FM stereo lock badge (only shown when stereo decode is enabled AND pilot is locked), ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars (150 px wide, ~12 px insets each side to keep clear of the rounded frame); **Push to toggle master ON/OFF** (the OFF state dims every dial and the header shows `OFF <preset>`). When the SpyServer link is down the dial dims, the header shows `LINK <preset>` and the frequency switches to `-----` until the connection recovers. The Property Inspector exposes Mode / preset / step / audio enable / audio device AND the SpyServer host + port (changing host/port debounce-applies live without a plugin restart).
-- **SpyServer Volume + Status** — rotate adjusts 0–150 %, push toggles mute; the same panel shows `Conn` (`ONLINE` in red while streaming, `OFFLINE` while offline), `Host`, `Dev` (device + IQ rate), `AOut` (audio output device name) and `Vol` with an inline gauge bar (volume bar covers the full 0–150 % range with a faint tick at the 100 % unity mark and an orange fill colour beyond it for the overdrive zone). The bar's bottom edge is pinned to y = 91 so it lines up exactly with the Tune dial's RSSI bar across the bezel gap.
-- **SpyServer Options** (FM/NFM) — De-emphasis (off / 50 µs / 75 µs), IFNR (SDR++ FMIF tracking filter, FM/NFM only), HiPass, LoPass, Stereo, **Gain** (RF gain index, only shown while a non-AM mode is the active demod)
-- **SpyServer AM Options** — Bandwidth (4 / 6 / 9 / 12 kHz), Carrier AGC, Attack, Decay (continuous 10 % per tick log adjustment), **Gain** (only shown while AM is active)
+- **Deck RX Dial** — VFO / preset scrolling, 7-segment frequency LCD, FM stereo lock badge (only shown when stereo decode is enabled AND pilot is locked), ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars (150 px wide, ~12 px insets each side to keep clear of the rounded frame); **Long-press (≥ 2 s) to toggle master ON/OFF** — short press is intentionally a no-op so accidental encoder bumps don't power-cycle the radio (the OFF state dims every dial and the header shows `OFF <preset>`). When the SpyServer link is down the dial dims, the header shows `LINK <preset>` and the frequency switches to `-----` until the connection recovers. The Property Inspector exposes Mode / preset / step / audio enable / audio device AND the SpyServer host + port (changing host/port debounce-applies live without a plugin restart).
+- **Deck RX Volume + Status** — rotate adjusts 0–150 %, push toggles mute; the same panel shows `Conn` (`ONLINE` in red while streaming, `OFFLINE` while offline), `Host`, `Dev` (device + IQ rate), `AOut` (audio output device name) and `Vol` with an inline gauge bar (volume bar covers the full 0–150 % range with a faint tick at the 100 % unity mark and an orange fill colour beyond it for the overdrive zone). The bar's bottom edge is pinned to y = 91 so it lines up exactly with the Tune dial's RSSI bar across the bezel gap.
+- **Deck RX Options** (FM/NFM) — De-emphasis (off / 50 µs / 75 µs), IFNR (SDR++ FMIF tracking filter, FM/NFM only), HiPass, LoPass, Stereo, **Gain** (RF gain index, only shown while a non-AM mode is the active demod)
+- **Deck RX AM Options** — Bandwidth (4 / 6 / 9 / 12 kHz), Carrier AGC, Attack, Decay (continuous 10 % per tick log adjustment), **Gain** (only shown while AM is active)
 - All panel-style dials use a unified compact font (rowH = 14, font 11 / 12) and a rounded grey frame (R = 4) drawn over every other element so AM Options, FM Options, Volume + Status and the Tune dial all share the same outer styling. Rows are vertically centred in the 100 px LCD area; columns inset from each LCD edge so adjacent panels don't visually run into each other across the bezel.
 - Focus highlight (selected row in AM/FM Options): soft mid-blue background `#3a5a85`, deep yellow label `#d4b800` + bright yellow value `#ffee00` in navigate mode; orange label + yellow value in edit mode.
 
@@ -55,7 +55,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 ## Repository layout
 
 ```
-~/dev/spyserver-ex/
+~/dev/deck-rx/
 ├── src/                            # TypeScript source
 │   ├── SpyClient.ts                # SpyServer protocol (HELLO / SET_SETTING / IQ)
 │   ├── spyService.ts               # Singleton service, state, persistence
@@ -66,7 +66,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 │   ├── dialDisplay.ts              # 7-segment, header, footer, volume bar SVGs
 │   ├── icons.ts                    # Knob, options panel SVGs
 │   └── actions/                    # Stream Deck action classes
-└── com.hogehoge.spyserver-ex.sdPlugin/
+└── com.hogehoge.deck-rx.sdPlugin/
     ├── manifest.json
     ├── layouts/                    # Encoder LCD layouts
     ├── ui/                         # Property Inspector HTML
@@ -88,13 +88,13 @@ After the first build, symlink the plugin into Stream Deck's plugin directory **
 restarting Stream Deck (otherwise builds will not be reflected):
 
 ```sh
-ln -s "$(pwd)/com.hogehoge.spyserver-ex.sdPlugin" \
-      "$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.spyserver-ex.sdPlugin"
+ln -s "$(pwd)/com.hogehoge.deck-rx.sdPlugin" \
+      "$HOME/Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin"
 ```
 
 The `postbuild` script aborts if the plugin entry is not a symlink.
 
-Copy `com.hogehoge.spyserver-ex.sdPlugin/config.example.json` to `config.json` and adjust:
+Copy `com.hogehoge.deck-rx.sdPlugin/config.example.json` to `config.json` and adjust:
 
 - `host` / `port` — your SpyServer address
 - `ffmpeg.deviceName` — output device name from `SwitchAudioSource -t output -a`, or `"default"`
@@ -103,15 +103,15 @@ Copy `com.hogehoge.spyserver-ex.sdPlugin/config.example.json` to `config.json` a
 ## Architecture notes
 
 - **SpyServer protocol** (Airspy spec, version 2.0.1700) is implemented from scratch following SDR++'s `spyserver_client.cpp`. Order of `SET_SETTING` commands matters: `IQ_FORMAT → IQ_DECIMATION → IQ_FREQUENCY → STREAMING_MODE → GAIN → IQ_DIGITAL_GAIN → STREAMING_ENABLED`.
-- **Master ON/OFF**: `enabled` config field, toggled by the SpyServer Dial's PUSH (release). Going OFF cancels any pending reconnect timer, calls `client.disconnect()` and tears down audio. Going ON replaces the SpyClient with a fresh instance and starts a new connect cycle. While OFF, all four dial panels render with a 30 % opacity overlay (`<g opacity="0.30">` wrapper) and Stream Deck text-layout items (S/N labels, RSSI/SNR numerics) get an explicit dim colour override since those aren't covered by the SVG overlay.
+- **Master ON/OFF**: `enabled` config field, toggled by a **2-second long press** on the Deck RX Dial. Short presses are intentionally ignored to avoid accidental power-cycling on encoder bumps. Going OFF cancels any pending reconnect timer, calls `client.disconnect()` and tears down audio. Going ON replaces the SpyClient with a fresh instance and starts a new connect cycle. While OFF, all four dial panels render with a 30 % opacity overlay (`<g opacity="0.30">` wrapper) and Stream Deck text-layout items (S/N labels, RSSI/SNR numerics) get an explicit dim colour override since those aren't covered by the SVG overlay.
 - **Audio device by name**: `ffmpeg -f audiotoolbox <N>` indices change whenever a device is plugged in or removed. We persist the device **name** and resolve the current index every time `ffmpeg` is spawned, falling back to `default` if the named device is not found.
 - **Pop suppression**: ffmpeg stdin gets a 40 ms silence prefill at startup; the iq listener writes silent PCM whenever `Date.now() < muteUntil`. Three independent paths set `muteUntil`: startup (500 ms), retune (200 ms initial + 250 ms re-mute on apply), gain change (200 ms initial + 150 ms re-mute on apply). Both retune and gain change use an 80–120 ms debounce so rapid dial rotation groups into a single SpyServer command + one mute window. The demodulator skips `atan2(0,0)` when both vectors are near zero.
 - **Volume**: in-memory state updates instantly; disk persistence is debounced 300 ms. Encoder rotation uses progressive acceleration (2 % / 3 % / 5 % per tick depending on spin speed).
 - **Stereo decode**: 2nd-order Costas-style PLL locks VCO phase to the 19 kHz pilot extracted from the demodulated FM signal. Loop bandwidth ≈ 50 Hz, damping = 1/√2, integrator clamped to ±0.05 rad/sample to prevent runaway when no real pilot is present. The doubled VCO phase generates a phase-locked 38 kHz reference for L−R demodulation. Lock detection uses a smoothed phase-detector magnitude with hysteresis (3:1 ratio) so weak/intermittent pilots don't flap. When unlocked, L−R is forced to zero and output collapses cleanly to mono. The dial's STEREO badge is shown only when both `pilotLock && fmOptions.stereo` — turning the stereo option off in the FM Options panel hides the badge to match the actual mono audio output.
 - **AM IF LPF (16th-order Butterworth)**: 8 cascaded Biquads with per-stage Q values `[0.5024, 0.5226, 0.5669, 0.6471, 0.7882, 1.0607, 1.7224, 5.1011]` give a true 16th-order Butterworth response (~−96 dB/oct stopband) at cutoff = bandwidth / 2. This rejects off-centre carriers within the wide IQ passband AND any signals that would otherwise alias into baseband from beyond the SpyServer-side anti-alias's transition band. Without this, tuning to (e.g.) 1314 kHz would let the cross-modulation product of two strong stations fall on the desired frequency.
 - **AM post-envelope LPF (8th-order Butterworth)**: 4 cascaded Biquads at the audio rate, cutoff = bandwidth / 2 — limits the post-detection bandwidth and also serves as anti-imaging for any future low-IF reconstruction.
-- **AM AGC**: asymmetric IIR tracks `|envelope|` with adjustable attack/decay (SDR++ convention: 1–200 ms attack, 1–20 ms decay), dividing the signal by the tracker to normalise toward `targetLevel = 10000`. AGC OFF path uses a fixed ×32 multiplier, sized so typical broadcast envelope amplitudes give an output level comparable to WFM stereo; this lets a single Volume setting work across modes. Strong stations may clip on peaks in the AGC OFF path — that's the trade-off for "no AGC".
-- **Output-level matching across modes**: gain constants chosen so a single Volume setting yields similar loudness regardless of demod mode. WFM ×8000, WFM Stereo ×6000, NFM ×12000 (FM atan2 output is naturally peak-limited at ±π), AM AGC OFF ×32, AM AGC ON normalises to amplitude 10000.
+- **AM AGC** (port of SDR++ `dsp::loop::AGC` + `dsp::demod::AM` CARRIER mode): tracks `|IQ|` with asymmetric attack/decay EWMA, applies `gain = setPoint / amp` to the **complex IQ stream BEFORE envelope detection**. Attack/Decay storage = SDR++ slider value (rate in 1/τ_seconds, 1..200 / 1..20); spyService converts to per-sample α = rate / fs at apply time. Look-ahead clipping prevention scans the rest of the IQ buffer when the tracker is far behind a peak (initial state, sudden amplitude jump) and snaps `amp` to the upcoming max so the first big sample never overshoots. setPoint = 16000, max gain = 1e6, max output amp (look-ahead trigger) = 24000 in Int16 scale. AGC OFF path uses a fixed ×32 post-envelope multiplier, sized so typical broadcast envelope amplitudes give an output level comparable to WFM stereo; this lets a single Volume setting work across modes. Strong stations may clip on peaks in the AGC OFF path — intentional trade-off.
+- **Output-level matching across modes**: gain constants chosen so a single Volume setting yields similar loudness regardless of demod mode. WFM ×8000, WFM Stereo ×6000, NFM ×12000 (FM atan2 output is naturally peak-limited at ±π), AM AGC OFF ×32, AM AGC ON normalises `|IQ|` to setPoint = 16000 (envelope peak ≈ 16000 at 100 % modulation, AC after DC removal up to ±16000).
 - **Per-mode RF gain**: SpyServer's `SETTING_GAIN` is the dominant variable for adjacent-channel IMD on the AM band (strong local stations overload the LNA and produce intermod products that fall on the desired frequency). Storing AM and FM gain separately means a quiet-AM-station setup (e.g. gain = 4 to dodge IMD on Tokyo MW) doesn't penalise FM reception (gain = 8). The active mode's gain is re-sent when the user crosses the AM ↔ non-AM boundary via `setDemodMode`.
 - **Audio device routing**: lookup map is built from `ffmpeg -f audiotoolbox -list_devices true`. Devices that report a "(null)" display name (some USB DACs like Topping DX7s) are recovered by parsing the device UID (e.g. `AppleUSBAudioEngine:Topping:DX7s:8311000:1` → `DX7s`).
 - **Persistence**: `lastFrequency`, `demodMode`, `enabled`, `amGain`, `fmGain` are debounced-saved (500 ms) on every change. `connect()` restores them so the radio comes up on the same station / mode / gain as before. Multiple SpyDialTune actions in the same plugin instance no longer fight over the initial tune — only the dial whose preset matches the restored frequency pushes a `setDemodMode`, others just refresh their display. Legacy single-`gain` config field is auto-migrated into `amGain`.

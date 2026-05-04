@@ -1,13 +1,13 @@
 # Build output
-com.hogehoge.spyserver-ex.sdPlugin/bin/
+com.hogehoge.deck-rx.sdPlugin/bin/
 node_modules/
 
 # Plugin runtime logs
-com.hogehoge.spyserver-ex.sdPlugin/logs/
+com.hogehoge.deck-rx.sdPlugin/logs/
 
 # Local config (per-user, contains host/device-specific values)
-com.hogehoge.spyserver-ex.sdPlugin/config.json
-com.hogehoge.spyserver-ex.sdPlugin/config.json.*
+com.hogehoge.deck-rx.sdPlugin/config.json
+com.hogehoge.deck-rx.sdPlugin/config.json.*
 
 # Editor / OS
 .DS_Store

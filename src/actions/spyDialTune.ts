@@ -23,7 +23,7 @@ function formatStep(hz: number): string {
   return `${hz}`;
 }
 
-@action({ UUID: 'com.hogehoge.spyserver-ex.dial-tune' })
+@action({ UUID: 'com.hogehoge.deck-rx.dial-tune' })
 export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private dialMode: 'preset' | 'vfo' = 'preset';
   private currentFreq = 0;
@@ -40,15 +40,26 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private lastAction: unknown = null;
   private presets: Preset[] = [];
   private footerTimer: ReturnType<typeof setInterval> | null = null;
+  // Long-press master ON/OFF: 2-second hold required to toggle. Short
+  // presses do nothing — prevents accidental power-cycling when the user
+  // bumps the encoder.
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressFired = false;
+  private tuneModeListener: ((m: 'preset' | 'vfo') => void) | null = null;
+  private tuneStepListener: ((s: number) => void) | null = null;
 
   override async onWillAppear(ev: WillAppearEvent<DialTuneSettings>): Promise<void> {
-    this.dialMode   = ev.payload.settings.mode ?? 'preset';
-    this.stepHz     = ev.payload.settings.stepHz ?? 9000;
+    this.dialMode   = spyService.getTuneMode();
+    this.stepHz     = spyService.getTuneStepHz();
     this.slotIndex  = ev.payload.settings.slotIndex ?? 0;
     this.borderSide = ev.payload.settings.borderSide ?? 'none';
     this.lastAction = ev.action;
     this.presets = await loadPresets().catch(() => []);
     if (spyService.currentFreq > 0) this.currentFreq = spyService.currentFreq;
+    this.tuneModeListener = (m) => { this.dialMode = m; this.updateDisplay(ev.action).catch(() => {}); };
+    spyService.subscribeTuneMode(this.tuneModeListener);
+    this.tuneStepListener = (s) => { this.stepHz = s; this.updateDisplay(ev.action).catch(() => {}); };
+    spyService.subscribeTuneStep(this.tuneStepListener);
 
     this.syncListener = (s: SyncInfo) => {
       if (this.dialMode === 'vfo') {
@@ -103,14 +114,18 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     if (this.connectListener) { spyService.offConnect(this.connectListener); this.connectListener = null; }
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
     if (this.connStateListener) { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
+    if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
+    if (this.tuneStepListener) { spyService.unsubscribeTuneStep(this.tuneStepListener); this.tuneStepListener = null; }
     if (this.tuneTimer) { clearTimeout(this.tuneTimer); this.tuneTimer = null; }
     if (this.footerTimer) { clearInterval(this.footerTimer); this.footerTimer = null; }
     this.lastAction = null;
   }
 
   override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<DialTuneSettings>): Promise<void> {
-    this.dialMode   = ev.payload.settings.mode ?? 'preset';
-    this.stepHz     = ev.payload.settings.stepHz ?? 9000;
+    // Tune mode / step are global (set via Options panel) — ignore the
+    // per-dial Settings fields for these. slotIndex stays per-dial.
+    this.dialMode   = spyService.getTuneMode();
+    this.stepHz     = spyService.getTuneStepHz();
     this.slotIndex  = ev.payload.settings.slotIndex ?? 0;
     this.borderSide = ev.payload.settings.borderSide ?? 'none';
     this.presets = await loadPresets().catch(() => []);
@@ -138,10 +153,24 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     }
   }
 
-  override onDialDown(_ev: DialDownEvent<DialTuneSettings>): void {}
-  override async onDialUp(_ev: DialUpEvent<DialTuneSettings>): Promise<void> {
-    // Master ON/OFF: tear down or bring up the SpyServer connection.
-    await spyService.toggleEnabled();
+  override onDialDown(_ev: DialDownEvent<DialTuneSettings>): void {
+    this.longPressFired = false;
+    if (this.longPressTimer) clearTimeout(this.longPressTimer);
+    this.longPressTimer = setTimeout(() => {
+      this.longPressTimer = null;
+      this.longPressFired = true;
+      // Master ON/OFF: tear down or bring up the SpyServer connection.
+      spyService.toggleEnabled().catch(() => {});
+    }, 2000);
+  }
+  override onDialUp(_ev: DialUpEvent<DialTuneSettings>): void {
+    if (this.longPressTimer) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+    // If longPressFired, the toggle has already been issued from the timer.
+    // Short press (< 2 s) is intentionally a no-op to avoid accidental
+    // master ON/OFF.
   }
 
   override async onSendToPlugin(ev: SendToPluginEvent<JsonObject, DialTuneSettings>): Promise<void> {

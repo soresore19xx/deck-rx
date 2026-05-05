@@ -160,7 +160,19 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   // competing with the 7-seg digits. Renders even in offline mode so the
   // user always has a sense of time on the dial.
   if (clockHHMM) {
-    out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
+    // Clock above the freqDisplay's unit text (right-aligned). Menlo is
+    // a macOS system font available to both Stream Deck SDK (Core Text)
+    // and rsvg-convert (fontconfig resolves Menlo.ttc) — same physical
+    // font on both render paths.
+    //
+    // letter-spacing="-0.3" tightens the inter-glyph tracking. Pango
+    // (rsvg's text layout) renders Menlo with slightly more tracking
+    // than Core Text does, which made the dump's clock look stretched
+    // and crowd the right edge of the 7-seg digits. Empirically, -0.3
+    // pulls the dump leftmost ~10 px right (PNG x=280 -> x=260) and
+    // Core Text honours it as a small cosmetic tightening that's still
+    // readable on-device.
+    out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="Menlo,Liberation Mono,monospace" letter-spacing="-0.3" text-anchor="end">${clockHHMM}</text>`;
   }
 
   for (const c of numStr) {

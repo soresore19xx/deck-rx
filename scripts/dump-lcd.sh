@@ -4,13 +4,19 @@
 # Flow:
 #   1. wipe stale /tmp/deck-rx-lcd-*.svg
 #   2. enable the dump gate (touch /tmp/deck-rx-lcd-dump)
-#   3. bounce the plugin (Stream Deck respawns it within ~5 s)
+#   3. confirm the plugin is running (do NOT bounce — see note below)
 #   4. wait while the user switches through each LCD panel on the device
-#      — the visible action's WillAppear is what triggers the render that
-#        writes /tmp/deck-rx-lcd-<tag>.svg, so each panel must be shown once
+#      — the visible action's WillAppear / footerTimer triggers the render
+#        that writes /tmp/deck-rx-lcd-<tag>.svg, so each panel must be
+#        shown once
 #   5. rsvg-convert -z 2 each SVG -> ~/ICON/deck-rx-lcd-<tag>.png
 #   6. disable the dump gate so the plugin stops touching /tmp on every frame
-set -euo pipefail
+set -uo pipefail
+# NOTE: `set -e` is intentionally OFF — bash's `(( expr ))` returns exit 1
+# whenever the arithmetic expression evaluates to 0, so e.g.
+# `(( ready == ${#TAGS[@]} )) && break` would falsely trip `set -e` while
+# `ready` is still less than the number of tags, killing the script before
+# the wait loop could finish.
 
 OUT="${HOME}/ICON"
 FLAG=/tmp/deck-rx-lcd-dump
@@ -25,17 +31,20 @@ for t in "${TAGS[@]}"; do rm -f "/tmp/deck-rx-lcd-${t}.svg"; done
 echo ">> enabling dump gate ($FLAG)"
 touch "$FLAG"
 
-echo ">> bouncing plugin"
-# Use the plugin's own PID file rather than `pkill -f "<pattern>"`. With
-# pkill -f, the parent shell's COMMAND row (which contains this script's
-# full body, including the literal pattern) matches and gets SIGTERM'd
-# itself — that crashed the Claude Code TUI three times in a row before
-# we tracked it down (2026-05-05).
+echo ">> plugin status"
+# We deliberately do NOT bounce the plugin here. The render path checks
+# for the dump flag on every frame (see dialDisplay.ts dumpAndB64 /
+# dumpTuneLcd), so a fresh `touch` is enough to start dumping in the
+# already-running plugin. Bouncing would respawn the plugin and capture
+# its pre-SpyServer-connect frame (signal=0, header stale) — exactly the
+# regression that produced the white-bars / no-meter dump on 2026-05-05.
 PID_FILE=/tmp/deck-rx.pid
-if [[ -s "$PID_FILE" ]]; then
-  kill "$(cat "$PID_FILE")" 2>/dev/null || true
+if [[ -s "$PID_FILE" ]] && ps -p "$(cat "$PID_FILE")" >/dev/null 2>&1; then
+  echo "   plugin running (PID $(cat "$PID_FILE"))"
 else
-  echo "   (no $PID_FILE — plugin not running yet; Stream Deck will spawn it)"
+  echo "   WARNING: plugin not running — open Stream Deck app with the"
+  echo "   deck-rx panels in the active profile, otherwise capture will"
+  echo "   time out."
 fi
 
 cat <<EOF

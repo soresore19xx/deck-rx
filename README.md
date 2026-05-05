@@ -283,11 +283,17 @@ hook is a single `existsSync` check per render and adds no overhead, so it
 can be left in production builds.
 
 `scripts/dump-lcd.sh` runs the full capture loop: wipe stale dumps, set the
-flag, bounce the plugin, wait up to 120 s while you cycle through each panel
-on the device (Stream Deck only re-renders the *visible* action), then
-`rsvg-convert -z 2` into `~/ICON/deck-rx-lcd-<tag>.png` and clear the flag.
-Use this for README / store screenshots without having to crop a Stream
-Deck app window capture.
+flag, bounce the plugin (kills the PID in `/tmp/deck-rx.pid` rather than
+`pkill -f "<pattern>"` — see the script comment for why), wait up to 120 s
+while you cycle through each panel on the device (Stream Deck only
+re-renders the *visible* action), then `rsvg-convert -z 2` into
+`~/ICON/deck-rx-lcd-<tag>.png` and clear the flag. Use this for README /
+store screenshots without having to crop a Stream Deck app window capture.
+
+Forgotten flags from a previous session (`mtime > 10 min`) are GC'd at
+plugin startup, so the dump path can't stay armed across restarts. The
+script's touch-then-bounce flow keeps the flag fresh, so legitimate
+capture sessions are unaffected.
 
 ## License
 

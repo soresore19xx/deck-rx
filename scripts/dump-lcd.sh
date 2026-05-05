@@ -26,7 +26,17 @@ echo ">> enabling dump gate ($FLAG)"
 touch "$FLAG"
 
 echo ">> bouncing plugin"
-pkill -f "com.hogehoge.deck-rx.*index.js" || true
+# Use the plugin's own PID file rather than `pkill -f "<pattern>"`. With
+# pkill -f, the parent shell's COMMAND row (which contains this script's
+# full body, including the literal pattern) matches and gets SIGTERM'd
+# itself — that crashed the Claude Code TUI three times in a row before
+# we tracked it down (2026-05-05).
+PID_FILE=/tmp/deck-rx.pid
+if [[ -s "$PID_FILE" ]]; then
+  kill "$(cat "$PID_FILE")" 2>/dev/null || true
+else
+  echo "   (no $PID_FILE — plugin not running yet; Stream Deck will spawn it)"
+fi
 
 cat <<EOF
 

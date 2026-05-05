@@ -18,6 +18,19 @@ const PID_FILE = '/tmp/deck-rx.pid';
   process.on('exit', () => { try { fs.unlinkSync(PID_FILE); } catch {} });
 })();
 
+// GC a stale LCD-dump flag from a previous run. dump-lcd.sh touches the
+// flag right before bouncing the plugin, so a fresh mtime keeps it alive;
+// anything older than 10 minutes is treated as a leftover (forgotten /
+// abnormal shutdown) and removed so /tmp doesn't keep getting written on
+// every render.
+(function gcStaleDumpFlag() {
+  const FLAG = '/tmp/deck-rx-lcd-dump';
+  try {
+    const ageMs = Date.now() - fs.statSync(FLAG).mtimeMs;
+    if (ageMs > 10 * 60 * 1000) fs.unlinkSync(FLAG);
+  } catch { /* no flag → nothing to GC */ }
+})();
+
 process.stdout.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE') throw err; });
 process.stderr.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE') throw err; });
 const safeLog = (msg: string) => { try { process.stderr.write(msg + '\n'); } catch {} };

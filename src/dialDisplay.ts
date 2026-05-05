@@ -99,10 +99,10 @@ export function dumpTuneLcd(parts: {
       inlineNested(parts.freqDisplay, 0, 18, 200,  55) +
       inlineNested(parts.snrBar,     22, 77, 150,   6) +
       inlineNested(parts.rssiBar,    22, 85, 150,   6) +
-      `<text x="11"  y="82" fill="${parts.textColor}" font-size="10" font-family="-apple-system,sans-serif" text-anchor="middle">N</text>` +
-      `<text x="196" y="82" fill="${parts.textColor}" font-size="10" font-family="-apple-system,sans-serif" text-anchor="end">${xmlEsc(parts.snrNum)}</text>` +
-      `<text x="11"  y="91" fill="${parts.textColor}" font-size="9"  font-family="-apple-system,sans-serif" text-anchor="middle">S</text>` +
-      `<text x="196" y="91" fill="${parts.textColor}" font-size="9"  font-family="-apple-system,sans-serif" text-anchor="end">${xmlEsc(parts.rssiNum)}</text>` +
+      `<text x="11"  y="82" fill="${parts.textColor}" font-size="10" font-family="Helvetica,sans-serif" text-anchor="middle">N</text>` +
+      `<text x="196" y="82" fill="${parts.textColor}" font-size="10" font-family="Helvetica,sans-serif" text-anchor="end">${xmlEsc(parts.snrNum)}</text>` +
+      `<text x="11"  y="91" fill="${parts.textColor}" font-size="9"  font-family="Helvetica,sans-serif" text-anchor="middle">S</text>` +
+      `<text x="196" y="91" fill="${parts.textColor}" font-size="9"  font-family="Helvetica,sans-serif" text-anchor="end">${xmlEsc(parts.rssiNum)}</text>` +
       inlineRaw(parts.border) +
       `</svg>`;
     fs.writeFileSync('/tmp/deck-rx-lcd-tune.svg', svg);

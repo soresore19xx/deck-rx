@@ -67,8 +67,9 @@ missing=()
 for t in "${TAGS[@]}"; do
   src="/tmp/deck-rx-lcd-${t}.svg"
   if [[ ! -s "$src" ]]; then missing+=("$t"); continue; fi
+  cp "$src" "${OUT}/deck-rx-lcd-${t}.svg"
   rsvg-convert -z 2 "$src" -o "${OUT}/deck-rx-lcd-${t}.png"
-  printf "   OK  %s\n" "${OUT}/deck-rx-lcd-${t}.png"
+  printf "   OK  %s (.svg + .png)\n" "${OUT}/deck-rx-lcd-${t}"
 done
 
 if (( ${#missing[@]} > 0 )); then

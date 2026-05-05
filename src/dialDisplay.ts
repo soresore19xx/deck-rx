@@ -131,7 +131,7 @@ const SEGS: Record<string, string> = {
   'W': 'bcdef',
 };
 
-export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number, extraT = 0, scale = 1.0): string {
+export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number, extraT = 0, scale = 1.0, clockHHMM = ''): string {
   const n = (v: number) => v.toFixed(1);
   const DH  = svgH * 0.65 * scale;
   const DW  = DH * 0.56;
@@ -155,6 +155,13 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   let cx = (svgW - totalW) / 2;
   const oy = (svgH - DH) / 2;
   let out = `<rect width="${svgW}" height="${svgH}" fill="#000000"/>`;
+  // Optional clock above the frequency unit (MHz/kHz) — small grey HH:MM
+  // pinned to the right edge so it sits above the unit text without
+  // competing with the 7-seg digits. Renders even in offline mode so the
+  // user always has a sense of time on the dial.
+  if (clockHHMM) {
+    out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
+  }
 
   for (const c of numStr) {
     if (c === '.') {

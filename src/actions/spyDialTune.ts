@@ -24,6 +24,22 @@ function formatStep(hz: number): string {
   return `${hz}`;
 }
 
+function currentTimeHHMM(): string {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const tzRaw = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
+    .formatToParts(d).find(p => p.type === 'timeZoneName')?.value ?? '';
+  // ICU on Node often returns GMT-offset rather than a 3-letter abbrev.
+  // Map the host's likely zones to compact abbreviations.
+  const tzMap: Record<string, string> = {
+    'GMT+9': 'JST', 'GMT+8': 'CST', 'GMT+0': 'GMT', 'GMT-5': 'EST',
+    'GMT-4': 'EDT', 'GMT-7': 'PDT', 'GMT-8': 'PST',
+  };
+  const tz = tzMap[tzRaw] ?? tzRaw;
+  return tz ? `${hh}:${mm} ${tz}` : `${hh}:${mm}`;
+}
+
 @action({ UUID: 'com.hogehoge.deck-rx.dial-tune' })
 export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private dialMode: 'preset' | 'vfo' = 'preset';
@@ -278,7 +294,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     // the freq digits — the dial otherwise shows a frequency that isn't really
     // being received. Master OFF keeps the freq visible (it's where we'll
     // resume when re-enabled).
-    const offlineSvg = svgB64(seg7svg('-----', '', 200, 55));
+    const offlineSvg = svgB64(seg7svg('-----', '', 200, 55, 0, 1.0, currentTimeHHMM()));
     if (this.dialMode === 'preset') {
       const p = this.presets[this.slotIndex];
       const freq = p?.freq ?? 0;
@@ -289,7 +305,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
                    : offline        ? `LINK  ${baseHeader}`
                    : baseHeader;
       const isFM = p?.mode === 1;
-      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55));
+      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, currentTimeHHMM()));
       const headerImg = D(makeHeaderSvg(header, isFM && showStereo));
       const freqImg   = D(freqSvg);
       const borderImg = makeBorderSvg(this.borderSide);
@@ -314,7 +330,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const header = !this.enabled ? `OFF  ${baseHeader}`
                    : offline        ? `LINK  ${baseHeader}`
                    : baseHeader;
-      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55));
+      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, currentTimeHHMM()));
       const headerImg = D(makeHeaderSvg(header, showStereo));
       const freqImg   = D(freqSvg);
       const borderImg = makeBorderSvg(this.borderSide);

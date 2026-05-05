@@ -17,3 +17,6 @@ com.hogehoge.deck-rx.sdPlugin/config.json.*
 
 # Claude Code session continuation transcripts
 [0-9][0-9][0-9][0-9]-*-this-session-is-being-continued-from-a-previous-c*.txt
+
+# Personal developer notes (host paths / incident logs — keep out of public repo)
+docs/dev-notes.md

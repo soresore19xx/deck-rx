@@ -54,13 +54,29 @@ export function dumpTuneLcd(parts: {
     // overflow="visible" was ignored. <g transform> has no viewport, so the
     // body's geometry renders without clipping at the part's intended bounds.
     const PFX = 'data:image/svg+xml;base64,';
-    const inlineNested = (dataUrl: string, x: number, y: number, w: number, h: number): string => {
+    // Dump-only fixup for the seg7svg-emitted clock <text>.
+    // The on-device clock uses font-family="monospace" + x=svgW-4, which
+    // Core Text + Menlo render correctly (verified). rsvg-convert with
+    // Pango falls back to Liberation Mono, which tracks wider, so the
+    // same SVG renders with the clock crowding the 7-seg digits in the
+    // ~/ICON dump. Override font-family to explicitly Menlo (fc-match
+    // Menlo resolves /System/Library/Fonts/Menlo.ttc on macOS, matching
+    // the SDK's font) and shift the right edge by 2 px (svgW-2 = 198)
+    // to give breathing room. Applied ONLY when inlining freqDisplay
+    // for the dump SVG; seg7svg's output going to setFeedback is
+    // unchanged.
+    const fixupClockForDump = (svgBody: string): string =>
+      svgBody.replace(
+        /<text [^>]*>([0-9][0-9]:[0-9][0-9][^<]*)<\/text>/,
+        '<text x="189" y="20" fill="#ffffff" font-size="13" font-family="Menlo" letter-spacing="-2" text-anchor="end">$1</text>',
+      );
+    const inlineNested = (dataUrl: string, x: number, y: number, w: number, h: number, fixupClock = false): string => {
       if (!dataUrl || !dataUrl.startsWith(PFX)) return '';
       const inner = Buffer.from(dataUrl.slice(PFX.length), 'base64').toString('utf8');
       const m = inner.match(/^\s*<svg([^>]*)>([\s\S]*)<\/svg>\s*$/);
       if (!m) return '';
       const attrs = m[1];
-      const body = m[2];
+      const body = fixupClock ? fixupClockForDump(m[2]) : m[2];
       const wm = attrs.match(/\bwidth\s*=\s*"([^"]+)"/);
       const hm = attrs.match(/\bheight\s*=\s*"([^"]+)"/);
       const ow = parseFloat(wm ? wm[1] : String(w));
@@ -96,7 +112,7 @@ export function dumpTuneLcd(parts: {
       `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">` +
       `<rect width="200" height="100" fill="#000"/>` +
       inlineNested(parts.header,      0,  2, 200,  16) +
-      inlineNested(parts.freqDisplay, 0, 18, 200,  55) +
+      inlineNested(parts.freqDisplay, 0, 18, 200,  55, true /* fixup clock for dump */) +
       inlineNested(parts.snrBar,     22, 77, 150,   6) +
       inlineNested(parts.rssiBar,    22, 85, 150,   6) +
       `<text x="11"  y="82" fill="${parts.textColor}" font-size="10" font-family="Helvetica,sans-serif" text-anchor="middle">N</text>` +
@@ -160,19 +176,15 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   // competing with the 7-seg digits. Renders even in offline mode so the
   // user always has a sense of time on the dial.
   if (clockHHMM) {
-    // Clock above the freqDisplay's unit text (right-aligned). Menlo is
-    // a macOS system font available to both Stream Deck SDK (Core Text)
-    // and rsvg-convert (fontconfig resolves Menlo.ttc) — same physical
-    // font on both render paths.
-    //
-    // letter-spacing="-0.3" tightens the inter-glyph tracking. Pango
-    // (rsvg's text layout) renders Menlo with slightly more tracking
-    // than Core Text does, which made the dump's clock look stretched
-    // and crowd the right edge of the 7-seg digits. Empirically, -0.3
-    // pulls the dump leftmost ~10 px right (PNG x=280 -> x=260) and
-    // Core Text honours it as a small cosmetic tightening that's still
-    // readable on-device.
-    out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="Menlo,Liberation Mono,monospace" letter-spacing="-0.3" text-anchor="end">${clockHHMM}</text>`;
+    // Clock above the freqDisplay's unit text (right-aligned). This is
+    // the SDK on-device render — `monospace` maps to Menlo via macOS
+    // Core Text, x=svgW-4 verified visually OK on the device. The
+    // rsvg-convert dump path (~/ICON) needs different attributes
+    // because Pango's monospace fallback (Liberation Mono) tracks
+    // wider; dumpTuneLcd does that substitution on a copy of this
+    // SVG before writing the dump file. Do NOT change this <text> for
+    // dump-only reasons — touch dumpTuneLcd instead.
+    out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
   }
 
   for (const c of numStr) {

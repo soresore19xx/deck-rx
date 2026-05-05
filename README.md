@@ -23,7 +23,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 
-- **Deck RX Dial** — VFO / preset scrolling, 7-segment frequency LCD, FM stereo lock badge (only shown when stereo decode is enabled AND pilot is locked), ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars (150 px wide, ~12 px insets each side to keep clear of the rounded frame); **Long-press (≥ 2 s) to toggle master ON/OFF** — short press is intentionally a no-op so accidental encoder bumps don't power-cycle the radio (the OFF state dims every dial and the header shows `OFF <preset>`). When the SpyServer link is down the dial dims, the header shows `LINK <preset>` and the frequency switches to `-----` until the connection recovers. The Property Inspector exposes Mode / preset / step / audio enable / audio device AND the SpyServer host + port (changing host/port debounce-applies live without a plugin restart).
+- **Deck RX Dial** — VFO / preset scrolling, 7-segment frequency LCD, FM stereo lock badge (only shown when stereo decode is enabled AND pilot is locked), ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars (150 px wide, ~12 px insets each side to keep clear of the rounded frame); **Long-press (≥ 2 s) to toggle master ON/OFF** — short press is intentionally a no-op so accidental encoder bumps don't power-cycle the radio (the OFF state dims every dial and the header shows `OFF <preset>`). When the SpyServer link is down the dial dims, the header shows `LINK <preset>` and the frequency switches to `-----` until the connection recovers. A small **`HH:MM TZ` clock** is rendered in the top-right corner of the LCD, above the frequency unit (refreshes once per second via the existing footerTimer; system timezone abbreviation, e.g. `JST`, `PDT`). The Property Inspector exposes Mode / preset / step / audio enable / audio device AND the SpyServer host + port (changing host/port debounce-applies live without a plugin restart).
 - **Deck RX Volume + Status** — rotate adjusts 0–150 %, push toggles mute; the same panel shows `Conn` (`ONLINE` in red while streaming, `OFFLINE` while offline), `Host`, `Dev` (device + IQ rate), `AOut` (audio output device name) and `Vol` with an inline gauge bar (volume bar covers the full 0–150 % range with a faint tick at the 100 % unity mark and an orange fill colour beyond it for the overdrive zone). When `AOut == icecast` an extra `Pub` row reports publish health: green `OK` once the icecast source pipeline has stayed up ≥ 5 s, red `ERR <Auth|Network|Codec|Other>` after 3 fast-fail spawns within 3 s of launch (source-password mismatch, icecast host unreachable, codec rejected, etc.). The bar's bottom edge is pinned to y = 91 so it lines up exactly with the Tune dial's RSSI bar across the bezel gap.
 - **Deck RX Options** (FM/NFM) — De-emphasis (off / 50 µs / 75 µs), IFNR (SDR++ FMIF tracking filter, FM/NFM only), HiPass, LoPass, Stereo, **Gain** (RF gain index, only shown while a non-AM mode is the active demod)
 - **Deck RX AM Options** — Bandwidth (4 / 6 / 9 / 12 kHz), Carrier AGC, Attack, Decay (continuous 10 % per tick log adjustment), **Gain** (only shown while AM is active)
@@ -294,6 +294,33 @@ Forgotten flags from a previous session (`mtime > 10 min`) are GC'd at
 plugin startup, so the dump path can't stay armed across restarts. The
 script's touch-then-bounce flow keeps the flag fresh, so legitimate
 capture sessions are unaffected.
+
+`scripts/lint-lcd.py` parses the dump SVGs and reports overlapping
+`<text>` / `<polygon>` boxes (e.g. clock vs 7-seg digits in dial-tune).
+`scripts/compare-lcd.sh save` snapshots `~/ICON/` to `~/ICON-baseline/`,
+and `compare-lcd.sh` (no args) diffs current PNGs against that baseline
+via ImageMagick `compare -metric AE`, dumping diff overlays into
+`~/ICON-diff/` — handy when verifying that a render-side tweak only
+affected what you intended.
+
+### Dump vs on-device render — render-engine differences
+
+The dump path (rsvg-convert + Pango + fontconfig) and the on-device
+path (Stream Deck SDK + Core Text on macOS) draw the same SVG with
+**different glyph metrics**. Pango's monospace fallback (Liberation
+Mono on most fontconfig setups) tracks wider than Core Text's Menlo,
+so a `<text>` element that fits cleanly on-device may overlap an
+adjacent shape in the dump. `dumpTuneLcd` accepts this asymmetry as
+a fact of life and applies a **dump-only fixup** to the Tune dial's
+clock — when inlining freqDisplay's body for the dump SVG, it regex-
+swaps the clock `<text>`'s attributes (single-family `Menlo` to bypass
+Liberation Mono and avoid Illustrator "missing font" warnings,
+`letter-spacing="-2"` to compensate Pango's wider tracking,
+`x="189"` for visual centring against the digits). The on-device
+output (via `setFeedback`) keeps `seg7svg`'s unmodified `<text>` and
+is unaffected. If you ever add another tight-layout text element,
+extend the same regex pattern in `dumpTuneLcd` rather than touching
+`seg7svg` (which would shift the on-device render too).
 
 ## License
 

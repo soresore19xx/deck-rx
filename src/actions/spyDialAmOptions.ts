@@ -1,7 +1,7 @@
 import { action, DialDownEvent, DialRotateEvent, DialUpEvent, SingletonAction, WillAppearEvent, WillDisappearEvent, DidReceiveSettingsEvent } from '@elgato/streamdeck';
 import streamDeck from '@elgato/streamdeck';
 import { spyService, AMOptions, TuneMode, TUNE_STEP_VALUES } from '../spyService.js';
-import { svgB64 } from '../dialDisplay.js';
+import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
 type Settings = { borderSide?: 'left' | 'right' | 'center' | 'none' };
@@ -215,7 +215,7 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     const sel = this.focused ? this.selectedIdx : -1;
     const dim = !this.enabled || !this.connected;
     this.act.setFeedback({
-      'options-display': svgB64(dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), dim)),
+      'options-display': dumpAndB64('am-options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), dim)),
     }).catch(() => {});
   }
 }

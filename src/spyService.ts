@@ -9,7 +9,7 @@ import {
 import { Demodulator } from './demodulator.js';
 import { Ifnr } from './ifnr.js';
 import { IqNr, DemodMode } from './iqnr.js';
-import { AudioOutput, FfmpegOutput, NaudiodonOutput } from './AudioOutput.js';
+import { AudioOutput, FfmpegOutput, NaudiodonOutput, OutputErrorTag } from './AudioOutput.js';
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -165,6 +165,12 @@ class SpyService {
   private demodModeListeners = new Set<DemodModeListener>();
   private audioStateListeners = new Set<AudioStateListener>();
   private connectionStateListeners = new Set<ConnectionStateListener>();
+  // Output health: true when the icecast publish ffmpeg has failed 3× in
+  // quick succession (auth error / network unreachable). Cleared once a
+  // spawn survives long enough or the user toggles back to local output.
+  private audioOutputBroken = false;
+  private audioOutputErrorTag: OutputErrorTag | null = null;
+  private audioOutputBrokenListeners = new Set<(broken: boolean, tag: OutputErrorTag | null) => void>();
   // Tune dial mode + VFO step: global so the FM/AM Options panels can adjust
   // them without per-dial PI configuration. Replaces the previously per-dial
   // settings.mode / settings.stepHz.
@@ -569,6 +575,17 @@ class SpyService {
     fn(this.audioRunning, this.currentAudioDeviceName);
   }
   unsubscribeAudioState(fn: AudioStateListener): void { this.audioStateListeners.delete(fn); }
+  /** Whether the audio sink (icecast publish ffmpeg) is in repeated-failure
+   *  state — currently only meaningful for icecast mode. */
+  isAudioOutputBroken(): boolean { return this.audioOutputBroken; }
+  getAudioOutputErrorTag(): OutputErrorTag | null { return this.audioOutputErrorTag; }
+  subscribeAudioOutputState(fn: (broken: boolean, tag: OutputErrorTag | null) => void): void {
+    this.audioOutputBrokenListeners.add(fn);
+    fn(this.audioOutputBroken, this.audioOutputErrorTag);
+  }
+  unsubscribeAudioOutputState(fn: (broken: boolean, tag: OutputErrorTag | null) => void): void {
+    this.audioOutputBrokenListeners.delete(fn);
+  }
   /** WFM pilot power (smoothed). Use with a threshold to detect stereo broadcasts. */
   getPilotPower(): number { return this.demod.getPilotPower(); }
   /** Smoothed signal level in dBFS, gain-compensated. Range typically -120..0. */
@@ -670,6 +687,11 @@ class SpyService {
 
   async startAudio(cfg?: Config): Promise<void> {
     if (this.audioRunning) await this.stopAudio();
+    if (this.audioOutputBroken) {
+      this.audioOutputBroken = false;
+      this.audioOutputErrorTag = null;
+      for (const fn of this.audioOutputBrokenListeners) fn(false, null);
+    }
     if (!cfg) cfg = await this.loadConfig();
     if (!cfg.audioEnabled) return;
     if (!this.deviceInfo) {
@@ -712,13 +734,22 @@ class SpyService {
       this.audioOutput = new NaudiodonOutput(cfg.naudiodon ?? {});
       this.currentAudioDeviceName = `naudiodon#${cfg.naudiodon?.deviceId ?? -1}`;
     } else {
-      this.audioOutput = new FfmpegOutput({
+      const ffOut = new FfmpegOutput({
         mode:            cfg.ffmpeg?.mode        ?? 'local',
         deviceName:      cfg.ffmpeg?.deviceName,
         icecastUrl:      cfg.ffmpeg?.icecastUrl,
         icecastPassword: cfg.ffmpeg?.icecastPassword,
         bitrate:         cfg.ffmpeg?.bitrate,
       });
+      ffOut.setStateChangeHandler((broken, info) => {
+        if (this.audioOutputBroken === broken) return;
+        this.audioOutputBroken = broken;
+        this.audioOutputErrorTag = broken ? (info?.tag ?? 'Other') : null;
+        if (broken) streamDeck.logger.warn(`[spyService] audio output broken (${info?.tag}): ${info?.raw ?? '(no detail)'}`);
+        else streamDeck.logger.info('[spyService] audio output recovered');
+        for (const fn of this.audioOutputBrokenListeners) fn(broken, this.audioOutputErrorTag);
+      });
+      this.audioOutput = ffOut;
       this.currentAudioDeviceName = cfg.ffmpeg?.mode === 'icecast'
         ? 'icecast'
         : (cfg.ffmpeg?.deviceName || 'default');

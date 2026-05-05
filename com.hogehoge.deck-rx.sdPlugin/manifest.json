@@ -35,10 +35,10 @@
     {
       "UUID": "com.hogehoge.deck-rx.dial-options",
       "Name": "Deck RX Options",
-      "Icon": "imgs/actions/tune/action",
+      "Icon": "imgs/actions/options/action",
       "Tooltip": "FM demodulation options",
       "Controllers": ["Encoder"],
-      "States": [{ "Image": "imgs/actions/tune/action", "Title": "Opts" }],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "Opts" }],
       "Encoder": {
         "layout": "layouts/dial-options.json",
         "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
@@ -47,10 +47,10 @@
     {
       "UUID": "com.hogehoge.deck-rx.dial-am-options",
       "Name": "Deck RX AM Options",
-      "Icon": "imgs/actions/tune/action",
+      "Icon": "imgs/actions/options/action",
       "Tooltip": "AM bandwidth and Carrier AGC settings",
       "Controllers": ["Encoder"],
-      "States": [{ "Image": "imgs/actions/tune/action", "Title": "AM" }],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "AM" }],
       "Encoder": {
         "layout": "layouts/dial-am-options.json",
         "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
@@ -59,10 +59,10 @@
     {
       "UUID": "com.hogehoge.deck-rx.dial-volume",
       "Name": "Deck RX Volume",
-      "Icon": "imgs/actions/tune/action",
+      "Icon": "imgs/actions/volume/action",
       "Tooltip": "Audio volume / mute + connection status",
       "Controllers": ["Encoder"],
-      "States": [{ "Image": "imgs/actions/tune/action", "Title": "Vol" }],
+      "States": [{ "Image": "imgs/actions/volume/action", "Title": "Vol" }],
       "Encoder": {
         "layout": "layouts/dial-volume.json",
         "TriggerDescription": { "Rotate": "Adjust volume", "Push": "Toggle mute", "LongTouch": "" }

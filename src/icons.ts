@@ -1,4 +1,4 @@
-export { svgB64 } from './dialDisplay.js';
+export { svgB64, dumpAndB64 } from './dialDisplay.js';
 
 /** Wrap an SVG's contents in a low-opacity <g> when `dim` is true. Accepts
  *  either a raw SVG string or a `data:image/svg+xml;base64,…` URL (which is

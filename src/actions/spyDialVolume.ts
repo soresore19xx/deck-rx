@@ -1,8 +1,9 @@
 import { action, DialDownEvent, DialRotateEvent, DialUpEvent, SingletonAction, WillAppearEvent, WillDisappearEvent, DidReceiveSettingsEvent } from '@elgato/streamdeck';
 import streamDeck from '@elgato/streamdeck';
 import { spyService } from '../spyService.js';
+import type { OutputErrorTag } from '../AudioOutput.js';
 import { DeviceInfo, DEVICE_AIRSPY_ONE, DEVICE_AIRSPY_HF, DEVICE_RTLSDR } from '../SpyClient.js';
-import { svgB64 } from '../dialDisplay.js';
+import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
 type Settings = {
@@ -34,6 +35,9 @@ export class SpyDialVolume extends SingletonAction<Settings> {
   private enabledListener: ((on: boolean) => void) | null = null;
   private audioStateListener: ((running: boolean, deviceName: string) => void) | null = null;
   private connStateListener: ((c: boolean) => void) | null = null;
+  private audioOutputStateListener: ((broken: boolean, tag: OutputErrorTag | null) => void) | null = null;
+  private audioOutputBroken = false;
+  private audioOutputErrorTag: OutputErrorTag | null = null;
   private device: DeviceInfo | null = null;
   private connected = false;
   private enabled = true;
@@ -65,6 +69,12 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     spyService.subscribeAudioState(this.audioStateListener);
     this.connStateListener = (c) => { this.connected = c; this.render(); };
     spyService.subscribeConnectionState(this.connStateListener);
+    this.audioOutputStateListener = (broken, tag) => {
+      this.audioOutputBroken = broken;
+      this.audioOutputErrorTag = tag;
+      this.render();
+    };
+    spyService.subscribeAudioOutputState(this.audioOutputStateListener);
 
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialVolume] ${e}`));
     await ev.action.setImage(svgB64(knobSvg()));
@@ -78,6 +88,7 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
     if (this.audioStateListener) { spyService.unsubscribeAudioState(this.audioStateListener); this.audioStateListener = null; }
     if (this.connStateListener)  { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
+    if (this.audioOutputStateListener) { spyService.unsubscribeAudioOutputState(this.audioOutputStateListener); this.audioOutputStateListener = null; }
     this.act = null;
   }
 
@@ -117,11 +128,23 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     const connColor = isOnline ? '#ff3333' : undefined;
 
     const aout = spyService.getAudioDeviceName() || '-';
+    // "Pub" row: only meaningful in icecast mode. Reflects whether the
+    // ffmpeg → icecast publish has stabilised (OK) or is failing in a tight
+    // respawn loop (ERR — typical when source-password mismatches or the
+    // icecast host is unreachable).
+    const isIcecast = aout === 'icecast';
     const rows: OptionsPanelRow[] = [
       { label: 'Conn', value: conn, valueColor: connColor },
       { label: 'Host', value: srv.host || '-' },
       { label: 'Dev',  value: d ? `${deviceName(d.deviceType)} ${iqRate > 0 ? fmtFreq(iqRate) : ''}` : '-' },
       { label: 'AOut', value: aout },
+      ...(isIcecast ? [{
+        label: 'Pub',
+        value: this.audioOutputBroken
+          ? `ERR ${this.audioOutputErrorTag ?? 'Other'}`
+          : 'OK',
+        valueColor: this.audioOutputBroken ? '#ff3333' : '#33dd66',
+      }] : []),
       {
         label: 'Vol',
         value: m ? 'Muted' : `${pct}%`,
@@ -134,7 +157,7 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     ];
     const dim = !this.enabled || !this.connected;
     this.act.setFeedback({
-      'vol-display': svgB64(dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide), dim)),
+      'vol-display': dumpAndB64('volume', dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide), dim)),
     }).catch(() => {});
   }
 }

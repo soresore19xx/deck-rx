@@ -2,6 +2,113 @@ export function svgB64(svg: string): string {
   return 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
 }
 
+// LCD-dump debug hook. When the user `touch`es /tmp/deck-rx-lcd-dump, every
+// dialDumpAndB64() call writes the *raw* SVG (pre-base64) to
+// /tmp/deck-rx-lcd-<tag>.svg so the user can grab a clean SVG of any LCD
+// panel for documentation / screenshots without needing to crop a Stream
+// Deck app screen capture. Removing the flag file disables the writes.
+// fs is loaded lazily so the module stays usable in non-Node contexts too.
+let _fs: typeof import('fs') | null = null;
+function _loadFs(): typeof import('fs') {
+  if (!_fs) _fs = require('fs');  // eslint-disable-line @typescript-eslint/no-require-imports
+  return _fs;
+}
+const LCD_DUMP_FLAG = '/tmp/deck-rx-lcd-dump';
+export function dumpAndB64(tag: string, svg: string): string {
+  try {
+    const fs = _loadFs();
+    if (fs.existsSync(LCD_DUMP_FLAG)) {
+      fs.writeFileSync(`/tmp/deck-rx-lcd-${tag}.svg`, svg);
+    }
+  } catch { /* swallow — debug aid must never crash render */ }
+  return svgB64(svg);
+}
+
+/** Compose the Tune dial's full 200×100 LCD into one SVG by inlining each
+ *  pixmap layer at its layouts/dial-tune.json rect as a nested <svg> element
+ *  (decoded from the base64 data URL the LCD path uses). All layers and the
+ *  layout's text items (S/N labels + RSSI/SNR numerics) end up in a single
+ *  outer SVG so rsvg-convert rasterises everything in one pass — matching
+ *  the crispness of the device LCD. (The earlier <image href="data:..."/>
+ *  approach forced a per-layer SVG→bitmap step that anti-aliased twice and
+ *  read as visibly soft compared to the device.) Saved to
+ *  /tmp/deck-rx-lcd-tune.svg when the dump flag is present. */
+export function dumpTuneLcd(parts: {
+  border: string;
+  header: string;
+  freqDisplay: string;
+  snrBar: string;
+  rssiBar: string;
+  snrNum: string;
+  rssiNum: string;
+  textColor: string;
+}): void {
+  try {
+    const fs = _loadFs();
+    if (!fs.existsSync(LCD_DUMP_FLAG)) return;
+    const xmlEsc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Decode a data:image/svg+xml;base64,… URL and re-emit as a <g transform>
+    // group rather than a nested <svg>. The nested-svg approach triggered
+    // rsvg-convert's SVG 1.1 viewport clip, trimming border strokes that sit
+    // right at the edge (e.g. makeBorderSvg's rect at x=0.5/x=199.5).
+    // overflow="visible" was ignored. <g transform> has no viewport, so the
+    // body's geometry renders without clipping at the part's intended bounds.
+    const PFX = 'data:image/svg+xml;base64,';
+    const inlineNested = (dataUrl: string, x: number, y: number, w: number, h: number): string => {
+      if (!dataUrl || !dataUrl.startsWith(PFX)) return '';
+      const inner = Buffer.from(dataUrl.slice(PFX.length), 'base64').toString('utf8');
+      const m = inner.match(/^\s*<svg([^>]*)>([\s\S]*)<\/svg>\s*$/);
+      if (!m) return '';
+      const attrs = m[1];
+      const body = m[2];
+      const wm = attrs.match(/\bwidth\s*=\s*"([^"]+)"/);
+      const hm = attrs.match(/\bheight\s*=\s*"([^"]+)"/);
+      const ow = parseFloat(wm ? wm[1] : String(w));
+      const oh = parseFloat(hm ? hm[1] : String(h));
+      const sx = w / ow;
+      const sy = h / oh;
+      const t = (sx === 1 && sy === 1)
+        ? `translate(${x} ${y})`
+        : `translate(${x} ${y}) scale(${sx} ${sy})`;
+      return `<g transform="${t}">${body}</g>`;
+    };
+    // Border is spliced into the outer SVG raw — <g transform> (even
+    // translate(0,0)) shifts the 0.5-px stroke off integer pixels so the side
+    // edges anti-alias to #5F5F5F vs #888888 on top/bottom. The border SVG
+    // shares the outer 200×100 viewport so its body pastes in directly.
+    const inlineRaw = (dataUrl: string): string => {
+      if (!dataUrl || !dataUrl.startsWith(PFX)) return '';
+      const inner = Buffer.from(dataUrl.slice(PFX.length), 'base64').toString('utf8');
+      const m = inner.match(/^\s*<svg[^>]*>([\s\S]*)<\/svg>\s*$/);
+      return m ? m[1] : '';
+    };
+    // rect coordinates mirror layouts/dial-tune.json. Text baselines pinned
+    // near rect-bottom (y + h·0.85) for sans-serif glyphs to sit centred.
+    // No viewBox on the outer <svg>: with viewBox, rsvg-convert applies the
+    // SVG 1.1 overflow="hidden" viewport clip on the side edges, trimming
+    // the border's 0.5-px stroke at x=0.5/x=199.5. User-unit grid maps 1:1
+    // to the canvas without viewBox (matches optionsPanelSvg's outer SVG).
+    //
+    // Border is rendered LAST so it overlays the content. freqDisplay's
+    // 200×55 black background rect (translate(0,18)) would otherwise paint
+    // over the border's left/right strokes between y=18..73.
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">` +
+      `<rect width="200" height="100" fill="#000"/>` +
+      inlineNested(parts.header,      0,  2, 200,  16) +
+      inlineNested(parts.freqDisplay, 0, 18, 200,  55) +
+      inlineNested(parts.snrBar,     22, 77, 150,   6) +
+      inlineNested(parts.rssiBar,    22, 85, 150,   6) +
+      `<text x="11"  y="82" fill="${parts.textColor}" font-size="10" font-family="-apple-system,sans-serif" text-anchor="middle">N</text>` +
+      `<text x="196" y="82" fill="${parts.textColor}" font-size="10" font-family="-apple-system,sans-serif" text-anchor="end">${xmlEsc(parts.snrNum)}</text>` +
+      `<text x="11"  y="91" fill="${parts.textColor}" font-size="9"  font-family="-apple-system,sans-serif" text-anchor="middle">S</text>` +
+      `<text x="196" y="91" fill="${parts.textColor}" font-size="9"  font-family="-apple-system,sans-serif" text-anchor="end">${xmlEsc(parts.rssiNum)}</text>` +
+      inlineRaw(parts.border) +
+      `</svg>`;
+    fs.writeFileSync('/tmp/deck-rx-lcd-tune.svg', svg);
+  } catch { /* swallow */ }
+}
+
 export interface FreqParts { num: string; unit: string; }
 
 export function freqParts(hz: number): FreqParts {

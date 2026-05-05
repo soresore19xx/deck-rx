@@ -39,14 +39,45 @@ export function buildIcecastUrl(urlBase: string, password?: string): string {
   return urlBase.replace(/^(\w+:\/\/[^:@/]+)(?::[^@]*)?@/, `$1:${password}@`);
 }
 
+/** Tag carried with the "output broken" state change to let UIs render a
+ *  human-readable cause (`ERR Auth` / `ERR Network` / etc.). */
+export type OutputErrorTag = 'Auth' | 'Network' | 'Codec' | 'Other';
+
+/** Classify an ffmpeg stderr line into one of the known publish-failure
+ *  buckets. Anything that doesn't match a specific pattern collapses to
+ *  'Other'. */
+export function classifyFfmpegStderr(msg: string): OutputErrorTag {
+  const m = (msg || '').toLowerCase();
+  if (/(401|403|unauthorized|authoriz)/.test(m)) return 'Auth';
+  if (/(connection refused|connection reset|unreachable|timeout|network is|name or service|404 not found|getaddrinfo)/.test(m)) return 'Network';
+  if (/(422|invalid (data|format|argument)|codec|content[- ]type)/.test(m)) return 'Codec';
+  return 'Other';
+}
+
 export class FfmpegOutput implements AudioOutput {
   private proc: ChildProcess | null = null;
   private intentionalStop = false;
   private lastSampleRate = 0;
   private lastChannels = 0;
   private respawnTimer: ReturnType<typeof setTimeout> | null = null;
+  // Failure tracking for the upstream "output broken" indicator.
+  // We treat 3 consecutive ffmpeg exits within 3 seconds of spawn as a
+  // persistent error (typical for icecast 401 / network unreachable). One
+  // long stable run (≥ 5 s) clears the streak.
+  private spawnAt = 0;
+  private failStreak = 0;
+  private outputErrored = false;
+  private onStateChange?: (broken: boolean, info?: { tag: OutputErrorTag; raw: string }) => void;
 
   constructor(private cfg: FfmpegConfig) {}
+
+  /** Subscribe to output health transitions. Called with broken=true when
+   *  ffmpeg has failed 3× in a row within 3 s of spawn (info carries the
+   *  classified failure tag and the raw stderr line), broken=false once a
+   *  spawn survives ≥ 5 s. */
+  setStateChangeHandler(fn: (broken: boolean, info?: { tag: OutputErrorTag; raw: string }) => void): void {
+    this.onStateChange = fn;
+  }
 
   async start(sampleRate: number, channels: number): Promise<void> {
     this.lastSampleRate = sampleRate;
@@ -99,29 +130,55 @@ export class FfmpegOutput implements AudioOutput {
     }
     streamDeck.logger.info(`[FfmpegOutput] spawn ${FFMPEG} ${args.join(' ')}`);
     this.proc = spawn(FFMPEG, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    this.spawnAt = Date.now();
+    let lastStderr = '';
     this.proc.stderr?.on('data', (d: Buffer) => {
-      streamDeck.logger.warn(`[ffmpeg] ${d.toString().trim()}`);
+      const msg = d.toString().trim();
+      lastStderr = msg;
+      streamDeck.logger.warn(`[ffmpeg] ${msg}`);
     });
     this.proc.on('error', (e: Error) => {
       streamDeck.logger.error(`[FfmpegOutput] spawn error: ${e.message}`);
       this.proc = null;
     });
-    this.proc.on('exit', (code: number | null, signal: string | null) => {
-      streamDeck.logger.warn(`[FfmpegOutput] exit code=${code} signal=${signal}`);
-      this.proc = null;
-      // Auto-respawn if not intentionally stopped (covers crashes / kills).
-      if (!this.intentionalStop) {
-        if (this.respawnTimer) clearTimeout(this.respawnTimer);
-        this.respawnTimer = setTimeout(() => {
-          this.respawnTimer = null;
-          if (!this.intentionalStop && !this.proc) {
-            streamDeck.logger.info('[FfmpegOutput] auto-respawning');
-            this.spawnFfmpeg(this.lastSampleRate, this.lastChannels).catch((e) =>
-              streamDeck.logger.error(`[FfmpegOutput] respawn failed: ${e}`),
-            );
-          }
-        }, 500);
+    // Heartbeat: if the spawn survives 5 s, treat the output as healthy and
+    // clear the failure streak. Notify listeners so a previously-shown ERROR
+    // indicator can flip back to OK.
+    const stableTimer = setTimeout(() => {
+      if (this.proc && this.failStreak > 0) {
+        this.failStreak = 0;
+        if (this.outputErrored) {
+          this.outputErrored = false;
+          this.onStateChange?.(false);
+        }
       }
+    }, 5000);
+    this.proc.on('exit', (code: number | null, signal: string | null) => {
+      clearTimeout(stableTimer);
+      streamDeck.logger.warn(`[FfmpegOutput] exit code=${code} signal=${signal}`);
+      const lifetimeMs = Date.now() - this.spawnAt;
+      this.proc = null;
+      if (this.intentionalStop) return;
+      // Quick failure (≤ 3 s) → bump streak. Long-running but exited later
+      // doesn't count as a publish error (network blips, etc.).
+      if (lifetimeMs < 3000 && code !== 0) {
+        this.failStreak += 1;
+        if (this.failStreak >= 3 && !this.outputErrored) {
+          this.outputErrored = true;
+          const raw = lastStderr || `exit ${code}`;
+          this.onStateChange?.(true, { tag: classifyFfmpegStderr(raw), raw });
+        }
+      }
+      if (this.respawnTimer) clearTimeout(this.respawnTimer);
+      this.respawnTimer = setTimeout(() => {
+        this.respawnTimer = null;
+        if (!this.intentionalStop && !this.proc) {
+          streamDeck.logger.info('[FfmpegOutput] auto-respawning');
+          this.spawnFfmpeg(this.lastSampleRate, this.lastChannels).catch((e) =>
+            streamDeck.logger.error(`[FfmpegOutput] respawn failed: ${e}`),
+          );
+        }
+      }, 500);
     });
     // Minimal silence prefill (40ms) — enough to suppress AudioToolbox first-
     // callback pop without adding noticeable end-to-end latency.

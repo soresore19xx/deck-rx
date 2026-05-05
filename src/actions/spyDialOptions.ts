@@ -1,7 +1,7 @@
 import { action, DialDownEvent, DialRotateEvent, DialUpEvent, SingletonAction, WillAppearEvent, WillDisappearEvent, DidReceiveSettingsEvent } from '@elgato/streamdeck';
 import streamDeck from '@elgato/streamdeck';
 import { spyService, FMOptions, DeemphasisOpt, TuneMode, TUNE_STEP_VALUES } from '../spyService.js';
-import { svgB64, knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
+import { svgB64, dumpAndB64, knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
 function formatTuneStep(hz: number): string {
   if (hz >= 1000000) return `${(hz / 1000000).toFixed(0)}M`;
@@ -169,7 +169,7 @@ export class SpyDialOptions extends SingletonAction<Settings> {
     const sel = this.focused ? this.selectedIdx : -1;
     const dim = !this.enabled || !this.connected;
     this.act.setFeedback({
-      'options-display': svgB64(dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), dim)),
+      'options-display': dumpAndB64('options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), dim)),
     }).catch(() => {});
   }
 }

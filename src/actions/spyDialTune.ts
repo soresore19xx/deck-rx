@@ -5,6 +5,7 @@ import { getAudioOutputDevices, getCurrentAudioOutput } from '../audioDevices.js
 import { spyService } from '../spyService.js';
 import { SyncInfo } from '../SpyClient.js';
 import { svgB64, knobSvg, dimSvg } from '../icons.js';
+import { dumpTuneLcd } from '../dialDisplay.js';
 import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
 import { loadPresets, Preset } from './spyTune.js';
 
@@ -289,11 +290,22 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
                    : baseHeader;
       const isFM = p?.mode === 1;
       const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55));
+      const headerImg = D(makeHeaderSvg(header, isFM && showStereo));
+      const freqImg   = D(freqSvg);
+      const borderImg = makeBorderSvg(this.borderSide);
       await a.setFeedback({
         ...meters,
-        header:        D(makeHeaderSvg(header, isFM && showStereo)),
-        'freq-display': D(freqSvg),
-        border:         makeBorderSvg(this.borderSide),
+        header:        headerImg,
+        'freq-display': freqImg,
+        border:         borderImg,
+      });
+      dumpTuneLcd({
+        border: borderImg, header: headerImg, freqDisplay: freqImg,
+        snrBar: meters['snr-bar'] as string,
+        rssiBar: meters['rssi-bar'] as string,
+        snrNum: (meters['snr-num'] as { value: string }).value,
+        rssiNum: (meters['rssi-num'] as { value: string }).value,
+        textColor: dim ? '#4d4d4d' : '#ffffff',
       });
     } else {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
@@ -303,11 +315,22 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
                    : offline        ? `LINK  ${baseHeader}`
                    : baseHeader;
       const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55));
+      const headerImg = D(makeHeaderSvg(header, showStereo));
+      const freqImg   = D(freqSvg);
+      const borderImg = makeBorderSvg(this.borderSide);
       await a.setFeedback({
         ...meters,
-        header:        D(makeHeaderSvg(header, showStereo)),
-        'freq-display': D(freqSvg),
-        border:         makeBorderSvg(this.borderSide),
+        header:        headerImg,
+        'freq-display': freqImg,
+        border:         borderImg,
+      });
+      dumpTuneLcd({
+        border: borderImg, header: headerImg, freqDisplay: freqImg,
+        snrBar: meters['snr-bar'] as string,
+        rssiBar: meters['rssi-bar'] as string,
+        snrNum: (meters['snr-num'] as { value: string }).value,
+        rssiNum: (meters['rssi-num'] as { value: string }).value,
+        textColor: dim ? '#4d4d4d' : '#ffffff',
       });
     }
   }

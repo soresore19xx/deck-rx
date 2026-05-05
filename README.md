@@ -24,7 +24,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 
 - **Deck RX Dial** — VFO / preset scrolling, 7-segment frequency LCD, FM stereo lock badge (only shown when stereo decode is enabled AND pilot is locked), ATS-Mini-style 30-segment N (SNR) / S (RSSI) signal-strength bars (150 px wide, ~12 px insets each side to keep clear of the rounded frame); **Long-press (≥ 2 s) to toggle master ON/OFF** — short press is intentionally a no-op so accidental encoder bumps don't power-cycle the radio (the OFF state dims every dial and the header shows `OFF <preset>`). When the SpyServer link is down the dial dims, the header shows `LINK <preset>` and the frequency switches to `-----` until the connection recovers. The Property Inspector exposes Mode / preset / step / audio enable / audio device AND the SpyServer host + port (changing host/port debounce-applies live without a plugin restart).
-- **Deck RX Volume + Status** — rotate adjusts 0–150 %, push toggles mute; the same panel shows `Conn` (`ONLINE` in red while streaming, `OFFLINE` while offline), `Host`, `Dev` (device + IQ rate), `AOut` (audio output device name) and `Vol` with an inline gauge bar (volume bar covers the full 0–150 % range with a faint tick at the 100 % unity mark and an orange fill colour beyond it for the overdrive zone). The bar's bottom edge is pinned to y = 91 so it lines up exactly with the Tune dial's RSSI bar across the bezel gap.
+- **Deck RX Volume + Status** — rotate adjusts 0–150 %, push toggles mute; the same panel shows `Conn` (`ONLINE` in red while streaming, `OFFLINE` while offline), `Host`, `Dev` (device + IQ rate), `AOut` (audio output device name) and `Vol` with an inline gauge bar (volume bar covers the full 0–150 % range with a faint tick at the 100 % unity mark and an orange fill colour beyond it for the overdrive zone). When `AOut == icecast` an extra `Pub` row reports publish health: green `OK` once the icecast source pipeline has stayed up ≥ 5 s, red `ERR <Auth|Network|Codec|Other>` after 3 fast-fail spawns within 3 s of launch (source-password mismatch, icecast host unreachable, codec rejected, etc.). The bar's bottom edge is pinned to y = 91 so it lines up exactly with the Tune dial's RSSI bar across the bezel gap.
 - **Deck RX Options** (FM/NFM) — De-emphasis (off / 50 µs / 75 µs), IFNR (SDR++ FMIF tracking filter, FM/NFM only), HiPass, LoPass, Stereo, **Gain** (RF gain index, only shown while a non-AM mode is the active demod)
 - **Deck RX AM Options** — Bandwidth (4 / 6 / 9 / 12 kHz), Carrier AGC, Attack, Decay (continuous 10 % per tick log adjustment), **Gain** (only shown while AM is active)
 - All panel-style dials use a unified compact font (rowH = 14, font 11 / 12) and a rounded grey frame (R = 4) drawn over every other element so AM Options, FM Options, Volume + Status and the Tune dial all share the same outer styling. Rows are vertically centred in the 100 px LCD area; columns inset from each LCD edge so adjacent panels don't visually run into each other across the bezel.
@@ -66,6 +66,8 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 │   ├── dialDisplay.ts              # 7-segment, header, footer, volume bar SVGs
 │   ├── icons.ts                    # Knob, options panel SVGs
 │   └── actions/                    # Stream Deck action classes
+├── scripts/                        # Tooling helpers
+│   └── dump-lcd.sh                 # capture all 4 LCD panels as PNGs in ~/ICON/
 └── com.hogehoge.deck-rx.sdPlugin/
     ├── manifest.json
     ├── layouts/                    # Encoder LCD layouts
@@ -269,6 +271,23 @@ nc -zv <server-ip> 8888           # TCP connect smoke-test
    2. After connect, an application-level watchdog timer (1 s tick) tracks the timestamp of the last received byte. If 5 s elapse with no data, the watchdog destroys the socket and emits `disconnect`. This handles LAN-cable-pull / Wi-Fi disconnect / VPN drop where TCP itself wouldn't notice for 2 hours (default macOS keepalive idle).
    Both paths funnel into the same listener chain: `setConnectedState(false)` notifies all `subscribeConnectionState` subscribers, every dial dims, the Tune dial swaps freq → `-----` and header → `LINK <preset>`, audio stops cleanly, and `scheduleReconnect()` runs the 5 s reconnect cadence (which respects the master ON/OFF switch). On recovery, the client re-establishes, hydrates state from the persisted config, and resumes audio at the same station / mode / gain.
 - **Editable host/port (PI)**: the Tune dial Property Inspector hosts a `<input type="text">` for host and `<input type="number">` for port (default values populated from current config via `getServerConfig` round-trip on PI open). Edits debounce 800 ms before sending `setServerConfig`, which calls `spyService.updateServerConfig({ host, port })` — that persists the new endpoint, tears down the current SpyClient, and (if the master switch is ON) reconnects to the new endpoint. No plugin restart needed.
+
+## Debug helpers
+
+### LCD panel screenshots
+
+Touching `/tmp/deck-rx-lcd-dump` arms a render-time hook that writes the raw
+source SVG of each encoder LCD to `/tmp/deck-rx-lcd-<tag>.svg`
+(`tag` ∈ `tune` / `volume` / `options` / `am-options`). Without the flag the
+hook is a single `existsSync` check per render and adds no overhead, so it
+can be left in production builds.
+
+`scripts/dump-lcd.sh` runs the full capture loop: wipe stale dumps, set the
+flag, bounce the plugin, wait up to 120 s while you cycle through each panel
+on the device (Stream Deck only re-renders the *visible* action), then
+`rsvg-convert -z 2` into `~/ICON/deck-rx-lcd-<tag>.png` and clear the flag.
+Use this for README / store screenshots without having to crop a Stream
+Deck app window capture.
 
 ## License
 

@@ -10,8 +10,9 @@ import { Demodulator } from './demodulator.js';
 import { Ifnr } from './ifnr.js';
 import { IqNr, DemodMode } from './iqnr.js';
 import { AudioOutput, FfmpegOutput, NaudiodonOutput, OutputErrorTag } from './AudioOutput.js';
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, writeFile, rename, stat } from 'fs/promises';
 import { join } from 'path';
+import { clearEibiCache, eibiEntryCount, getEibiPath, parseEibiText } from './eibi.js';
 
 declare const __dirname: string;
 const CONFIG_PATH = join(__dirname, '..', 'config.json');
@@ -1000,6 +1001,65 @@ class SpyService {
       this.client = new SpyClient();
       this.hookClient();
       await this.connect();
+    }
+  }
+
+  /**
+   * Status of the locally cached EIBI database. PI populates the "Last update"
+   * line from this on open. `when` is the file's mtime (null if no file yet).
+   */
+  async getEibiStatus(): Promise<{ when: string | null; count: number }> {
+    try {
+      const st = await stat(getEibiPath());
+      return { when: st.mtime.toISOString(), count: eibiEntryCount() };
+    } catch {
+      return { when: null, count: 0 };
+    }
+  }
+
+  /**
+   * Pull the latest EIBI shortwave broadcaster schedule from upstream and
+   * replace the in-bundle copy. Sequence: fetch → ISO-8859-1 → UTF-8 →
+   * parse-validate (≥ 1000 entries) → backup current → atomic rename →
+   * invalidate cache. Aborts non-destructively if any step fails.
+   */
+  async updateEibi(): Promise<{ ok: true; count: number; when: string } | { ok: false; error: string }> {
+    const url = 'http://eibispace.de/dx/eibi.txt';
+    const path = getEibiPath();
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 30000);
+      let resp: Response;
+      try {
+        resp = await fetch(url, { signal: ctrl.signal });
+      } finally {
+        clearTimeout(t);
+      }
+      if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
+      const buf = Buffer.from(await resp.arrayBuffer());
+      if (buf.length < 100 * 1024) return { ok: false, error: `too small (${buf.length} bytes)` };
+      const text = buf.toString('latin1');
+      const parsed = parseEibiText(text);
+      if (parsed.length < 1000) return { ok: false, error: `too few entries (${parsed.length})` };
+
+      // Backup current file under CLAUDE.md's naming rule, then atomic-replace.
+      const ts = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const stamp =
+        `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}` +
+        `-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
+      try { await rename(path, `${path}.${stamp}`); } catch { /* no prior file */ }
+      const tmp = `${path}.tmp`;
+      await writeFile(tmp, text, 'utf-8');
+      await rename(tmp, path);
+      clearEibiCache();
+      const st = await stat(path);
+      streamDeck.logger.info(`[spyService] EIBI updated: ${parsed.length} entries (${buf.length} bytes)`);
+      return { ok: true, count: parsed.length, when: st.mtime.toISOString() };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      streamDeck.logger.error(`[spyService] updateEibi failed: ${msg}`);
+      return { ok: false, error: msg };
     }
   }
 

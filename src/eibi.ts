@@ -65,12 +65,7 @@ function load(): EibiEntry[] {
     entries = [];
     return entries;
   }
-  const list: EibiEntry[] = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.replace(/\r$/, '');
-    const e = parseLine(line);
-    if (e) list.push(e);
-  }
+  const list = parseEibiText(text);
   list.sort((a, b) => a.freqKhz - b.freqKhz);
   entries = list;
   return list;
@@ -195,4 +190,22 @@ export function lookupEibi(freqHz: number, when: Date = new Date()): EibiEntry |
 
 export function eibiEntryCount(): number {
   return load().length;
+}
+
+export function getEibiPath(): string {
+  return EIBI_PATH;
+}
+
+export function clearEibiCache(): void {
+  entries = null;
+}
+
+export function parseEibiText(text: string): EibiEntry[] {
+  const list: EibiEntry[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    const e = parseLine(line);
+    if (e) list.push(e);
+  }
+  return list;
 }

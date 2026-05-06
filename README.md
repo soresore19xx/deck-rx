@@ -20,7 +20,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Per-mode RF Gain (AM / FM separate) | ✅ (live-applied, debounced, pop-suppressed) |
 | Frequency / mode persistence | ✅ (restored at startup) |
 | IFNR (IF Noise Reduction) | ✅ FM/NFM only (SDR++ FMIF tracking-filter port) |
-| Auto station-name lookup | ✅ JP FM/MW (hand-curated) + EIBI SW DB (day/time/spur-aware) |
+| Auto station-name lookup | ✅ JP FM/MW (hand-curated) + EIBI SW DB (day/time/spur-aware), in-PI `Update Now` for EIBI |
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 
@@ -191,7 +191,7 @@ list_in_directory = 1
 maximum_clients  = 3
 allow_control    = 1
 device_type      = AirspyHF+
-device_serial    = 0x3B528D8035472590  # adjust to your device
+device_serial    = 0xXXXXXXXXXXXXXXXX  # adjust to your device
 fft_fps          = 20
 fft_bin_bits     = 16
 input_buffer_size_ms = 10
@@ -280,7 +280,7 @@ nc -zv <server-ip> 8888           # TCP connect smoke-test
 The Tune dial header replaces the user's preset name with the broadcaster's actual identity when the tuned frequency is recognised. Two databases are consulted in priority order, with the preset name as a final fallback:
 
 1. **`com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json`** — hand-curated Japanese FM (76–95 MHz) and MW (522–1710 kHz) stations, Tokyo Kanto focus plus the major MW DX targets (HBC Sapporo, MBS Osaka, RKB Fukuoka, etc.) that are reachable from Kanto at night. Source: 総務省 関東総合通信局 (`https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html`) cross-referenced with each broadcaster's official site. ASCII / Latin transliterations are used for Stream Deck LCD legibility. Match tolerance: ±50 kHz on FM (adjacent stations are 100 kHz apart), ±4 kHz on MW (9 kHz grid). Extend the file by editing it directly — eventually replaceable with output from a 総務省 scraper for nationwide coverage.
-2. **`com.hogehoge.deck-rx.sdPlugin/data/eibi.txt`** — the EIBI shortwave broadcaster schedule (`http://eibispace.de/dx/eibi.txt`, ISO-8859-1 source converted to UTF-8 in-place). ATS-Mini ships the same database; the parser here mirrors `EIBI.cpp`'s fixed-width columns (`%14c%9c%11c%24c` for freq / time / days+ITU / station). Only consulted for 16 kHz – 30 MHz (LF/MF/HF range covered by EIBI). Refresh seasonally (March / October — EIBI's "A" / "B" seasons): `curl -fsSL http://eibispace.de/dx/eibi.txt | iconv -f ISO-8859-1 -t UTF-8 > com.hogehoge.deck-rx.sdPlugin/data/eibi.txt`.
+2. **`com.hogehoge.deck-rx.sdPlugin/data/eibi.txt`** — the EIBI shortwave broadcaster schedule (`http://eibispace.de/dx/eibi.txt`, ISO-8859-1 source converted to UTF-8 in-place). ATS-Mini ships the same database; the parser here mirrors `EIBI.cpp`'s fixed-width columns (`%14c%9c%11c%24c` for freq / time / days+ITU / station). Only consulted for 16 kHz – 30 MHz (LF/MF/HF range covered by EIBI). Refresh seasonally (March / October — EIBI's "A" / "B" seasons) from the **Tune dial Property Inspector**: an `EIBI: [Update Now]` button fetches the upstream file, decodes ISO-8859-1 → UTF-8, parses-validates (≥ 1000 entries) and atomically replaces `data/eibi.txt`. The previous file is preserved as `eibi.txt.YYYY-MM-DD-HHMMSS`. The PI status line shows `Last update: YYYY-MM-DD  /  N entries` (sourced from file mtime + parsed-entry count) on open and after each update. Equivalent manual flow if the button is unusable: `curl -fsSL http://eibispace.de/dx/eibi.txt | iconv -f ISO-8859-1 -t UTF-8 > com.hogehoge.deck-rx.sdPlugin/data/eibi.txt`.
 
 EIBI lookup adds two filters that ATS-Mini's reference parser omits:
 

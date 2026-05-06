@@ -6,10 +6,13 @@
     body { font-family: -apple-system, sans-serif; font-size: 13px; color: #ccc; background: transparent; margin: 0; padding: 8px; }
     .row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
     label { min-width: 60px; color: #bbb; }
-    select, input[type="text"], input[type="number"] {
+    select, input[type="text"], input[type="number"], button {
       background: #2a2a2a; color: #fff; border: 1px solid #555; border-radius: 4px;
       padding: 4px 6px; font-size: 13px;
     }
+    button { cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .err { color: #ff6464; }
     select { flex: 1; }
     input[type="text"] { flex: 1; }
     input[type="number"] { width: 80px; }
@@ -59,6 +62,10 @@
     <input type="text" id="hostInput" placeholder="192.168.0.142" />
     <input type="number" id="portInput" placeholder="8888" min="1" max="65535" />
   </div>
+  <div class="row"><label>EIBI</label>
+    <button type="button" id="eibiUpdateBtn">Update Now</button>
+    <span class="status" id="eibiStatus"></span>
+  </div>
   <div class="row"><span class="status" id="status"></span></div>
 </body>
 <script>
@@ -78,6 +85,7 @@
       sendToPlugin({ action: 'getPresets' });
       sendToPlugin({ action: 'getAudioDevices' });
       sendToPlugin({ action: 'getServerConfig' });
+      sendToPlugin({ action: 'getEibiStatus' });
     };
     websocket.onmessage = function(evt) {
       var msg = JSON.parse(evt.data);
@@ -106,6 +114,19 @@
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'serverConfig') {
         document.getElementById('hostInput').value = msg.payload.host || '';
         document.getElementById('portInput').value = msg.payload.port ? String(msg.payload.port) : '';
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'eibiStatus') {
+        renderEibiStatus(msg.payload.when, msg.payload.count, null);
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'eibiUpdated') {
+        var btn = document.getElementById('eibiUpdateBtn');
+        btn.disabled = false;
+        btn.textContent = 'Update Now';
+        if (msg.payload.ok) {
+          renderEibiStatus(msg.payload.when, msg.payload.count, null);
+        } else {
+          renderEibiStatus(null, null, msg.payload.error || 'unknown error');
+        }
       }
     };
   }
@@ -207,5 +228,28 @@
   }
   document.getElementById('hostInput').addEventListener('input', scheduleSaveServer);
   document.getElementById('portInput').addEventListener('input', scheduleSaveServer);
+
+  function renderEibiStatus(whenIso, count, errMsg) {
+    var el = document.getElementById('eibiStatus');
+    if (errMsg) {
+      el.className = 'status err';
+      el.textContent = 'Failed: ' + errMsg;
+      return;
+    }
+    el.className = 'status';
+    if (!whenIso) { el.textContent = '(no local copy)'; return; }
+    var d = new Date(whenIso);
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    var dateStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    el.textContent = 'Last update: ' + dateStr + '  /  ' + count + ' entries';
+  }
+  document.getElementById('eibiUpdateBtn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Updating...';
+    document.getElementById('eibiStatus').className = 'status';
+    document.getElementById('eibiStatus').textContent = '';
+    sendToPlugin({ action: 'updateEibi' });
+  });
 </script>
 </html>

@@ -265,6 +265,21 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       await spyService.updateServerConfig({ host, port })
         .catch((e) => streamDeck.logger.error(`[spyDialTune] updateServerConfig: ${e}`));
     }
+    if (ev.payload['action'] === 'getEibiStatus') {
+      const st = await spyService.getEibiStatus();
+      await streamDeck.ui.sendToPropertyInspector({
+        action: 'eibiStatus',
+        when: st.when,
+        count: st.count,
+      });
+    }
+    if (ev.payload['action'] === 'updateEibi') {
+      const res = await spyService.updateEibi();
+      await streamDeck.ui.sendToPropertyInspector({
+        action: 'eibiUpdated',
+        ...res,
+      });
+    }
   }
 
   private async updateDisplay(action: unknown): Promise<void> {

@@ -1,5 +1,5 @@
 {
-  "_comment": "Hand-curated Japanese broadcast station list, Tokyo Kanto focus + major MW DX targets. Source: 総務省 関東総合通信局 (https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html) cross-referenced with each broadcaster's official site. Expand by editing this file directly or, eventually, by replacing it with output from a 総務省 scraper. Station names use each broadcaster's own branding — Latin for stations that promote a Latin brand (NACK5, J-WAVE, TOKYO FM, …), Kanji/Kana otherwise (TBSラジオ, 文化放送, NHKラジオ第1, …). Stream Deck LCDs render Kanji via Core Text font fallback (Hiragino) on macOS; the dump pipeline (rsvg-convert + fontconfig) needs Hiragino or Noto Sans CJK installed.",
+  "_comment": "Japanese broadcast station list. Two sources: (1) `stations` is overwritten by the Tune-dial PI 'Update JP Stations Now' button, which scrapes 関東総合通信局 ラジオ放送事業者一覧 (https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html) and produces ~150-200 entries covering AM 親局 + 中継局 (incl. FM補完), 超短波(FM) 親局 + 中継局, and コミュニティ放送 across 1都7県 (東京・神奈川・千葉・埼玉・茨城・栃木・群馬・山梨). (2) `manualStations` is hand-curated and never touched by the scraper — used for stations the 関東 page cannot see (NHK R2, AFN, MW DX targets in other regions). On freqHz collision, manualStations wins. Edit `manualStations` directly and restart the plugin (kill $(cat /tmp/deck-rx.pid)) to apply. Station names use each broadcaster's own branding — Latin where they promote a Latin brand, Kanji/Kana otherwise. Stream Deck LCDs render Kanji via Core Text font fallback (Hiragino) on macOS; the dump pipeline (rsvg-convert + fontconfig) needs Hiragino or Noto Sans CJK installed.",
   "stations": [
     { "freqHz":  78000000, "band": "FM", "name": "bayfm78" },
     { "freqHz":  78900000, "band": "FM", "name": "かつしかFM" },
@@ -16,19 +16,21 @@
     { "freqHz":  94600000, "band": "FM", "name": "LuckyFM" },
 
     { "freqHz":    594000, "band": "MW", "name": "NHKラジオ第1" },
-    { "freqHz":    693000, "band": "MW", "name": "NHKラジオ第2" },
-    { "freqHz":    810000, "band": "MW", "name": "AFN Eagle 810" },
     { "freqHz":    954000, "band": "MW", "name": "TBSラジオ" },
     { "freqHz":   1134000, "band": "MW", "name": "文化放送" },
-    { "freqHz":   1179000, "band": "MW", "name": "MBSラジオ" },
     { "freqHz":   1242000, "band": "MW", "name": "ニッポン放送" },
+    { "freqHz":   1422000, "band": "MW", "name": "ラジオ日本" }
+  ],
+  "manualStations": [
+    { "freqHz":    693000, "band": "MW", "name": "NHKラジオ第2" },
+    { "freqHz":    810000, "band": "MW", "name": "AFN Eagle 810" },
+    { "freqHz":   1179000, "band": "MW", "name": "MBSラジオ" },
     { "freqHz":   1260000, "band": "MW", "name": "TBCラジオ" },
     { "freqHz":   1278000, "band": "MW", "name": "RKB毎日放送" },
     { "freqHz":   1287000, "band": "MW", "name": "HBCラジオ" },
     { "freqHz":   1314000, "band": "MW", "name": "ラジオ大阪" },
     { "freqHz":   1332000, "band": "MW", "name": "東海ラジオ" },
     { "freqHz":   1350000, "band": "MW", "name": "RCCラジオ" },
-    { "freqHz":   1422000, "band": "MW", "name": "ラジオ日本" },
     { "freqHz":   1440000, "band": "MW", "name": "STVラジオ" }
   ]
 }

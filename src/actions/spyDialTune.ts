@@ -280,6 +280,21 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         ...res,
       });
     }
+    if (ev.payload['action'] === 'getJpStationsStatus') {
+      const st = await spyService.getJpStationsStatus();
+      await streamDeck.ui.sendToPropertyInspector({
+        action: 'jpStationsStatus',
+        when: st.when,
+        count: st.count,
+      });
+    }
+    if (ev.payload['action'] === 'updateJpStations') {
+      const res = await spyService.updateJpStations();
+      await streamDeck.ui.sendToPropertyInspector({
+        action: 'jpStationsUpdated',
+        ...res,
+      });
+    }
   }
 
   private async updateDisplay(action: unknown): Promise<void> {

@@ -13,6 +13,8 @@ import { AudioOutput, FfmpegOutput, NaudiodonOutput, OutputErrorTag } from './Au
 import { readFile, writeFile, rename, stat } from 'fs/promises';
 import { join } from 'path';
 import { clearEibiCache, eibiEntryCount, getEibiPath, parseEibiText } from './eibi.js';
+import { clearJpStationsCache, getJpStationsPath, jpStationCountAuto } from './japanStations.js';
+import { fetchJpStations } from './japanStationsScraper.js';
 
 declare const __dirname: string;
 const CONFIG_PATH = join(__dirname, '..', 'config.json');
@@ -1059,6 +1061,68 @@ class SpyService {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       streamDeck.logger.error(`[spyService] updateEibi failed: ${msg}`);
+      return { ok: false, error: msg };
+    }
+  }
+
+  /**
+   * Status of the locally cached JP-stations DB. PI populates the "Last
+   * update" line from this. `count` is just the auto-scraped section
+   * (manualStations are hand-curated and don't have an update timestamp).
+   */
+  async getJpStationsStatus(): Promise<{ when: string | null; count: number }> {
+    try {
+      const st = await stat(getJpStationsPath());
+      return { when: st.mtime.toISOString(), count: jpStationCountAuto() };
+    } catch {
+      return { when: null, count: 0 };
+    }
+  }
+
+  /**
+   * Pull the latest 関東総合通信局 ラジオ放送 list, parse it, and replace
+   * the `stations` array in jp-stations.json with the scraped result.
+   * `manualStations` is preserved verbatim (hand-curated entries the
+   * scraper cannot see — NHK R2, AFN, MW DX targets outside 関東). The
+   * previous file is backed up as `.YYYY-MM-DD-HHMMSS`. The in-memory
+   * cache is invalidated so the next lookupJpStation reads fresh data.
+   */
+  async updateJpStations(): Promise<{ ok: true; count: number; when: string } | { ok: false; error: string }> {
+    const path = getJpStationsPath();
+    try {
+      const scraped = await fetchJpStations();
+
+      // Read current file to preserve manualStations + _comment.
+      let manual: unknown = [];
+      let comment: unknown = undefined;
+      try {
+        const cur = JSON.parse(await readFile(path, 'utf-8')) as { _comment?: unknown; manualStations?: unknown };
+        manual = cur.manualStations ?? [];
+        comment = cur._comment;
+      } catch { /* fresh file */ }
+
+      const next: Record<string, unknown> = {};
+      if (comment !== undefined) next._comment = comment;
+      next.stations       = scraped;
+      next.manualStations = manual;
+
+      // Backup current file under CLAUDE.md's naming rule, then atomic-replace.
+      const ts = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const stamp =
+        `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}` +
+        `-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
+      try { await rename(path, `${path}.${stamp}`); } catch { /* no prior file */ }
+      const tmp = `${path}.tmp`;
+      await writeFile(tmp, JSON.stringify(next, null, 2) + '\n', 'utf-8');
+      await rename(tmp, path);
+      clearJpStationsCache();
+      const st = await stat(path);
+      streamDeck.logger.info(`[spyService] JP stations updated: ${scraped.length} entries`);
+      return { ok: true, count: scraped.length, when: st.mtime.toISOString() };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      streamDeck.logger.error(`[spyService] updateJpStations failed: ${msg}`);
       return { ok: false, error: msg };
     }
   }

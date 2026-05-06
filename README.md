@@ -20,7 +20,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Per-mode RF Gain (AM / FM separate) | ✅ (live-applied, debounced, pop-suppressed) |
 | Frequency / mode persistence | ✅ (restored at startup) |
 | IFNR (IF Noise Reduction) | ✅ FM/NFM only (SDR++ FMIF tracking-filter port) |
-| Auto station-name lookup | ✅ JP FM/MW (hand-curated) + EIBI SW DB (day/time/spur-aware), in-PI `Update Now` for EIBI |
+| Auto station-name lookup | ✅ JP FM/MW (1都7県 親局+中継局+CFM via 関東総通局 scrape) + manual overrides + EIBI SW DB (day/time/spur-aware); in-PI `Update Now` for both |
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 
@@ -279,7 +279,26 @@ nc -zv <server-ip> 8888           # TCP connect smoke-test
 
 The Tune dial header replaces the user's preset name with the broadcaster's actual identity when the tuned frequency is recognised. Two databases are consulted in priority order, with the preset name as a final fallback:
 
-1. **`com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json`** — hand-curated Japanese FM (76–95 MHz) and MW (522–1710 kHz) stations, Tokyo Kanto focus plus the major MW DX targets (HBCラジオ Sapporo, MBSラジオ Osaka, RKB毎日放送 Fukuoka, etc.) that are reachable from Kanto at night. Source: 総務省 関東総合通信局 (`https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html`) cross-referenced with each broadcaster's official site. Station names use each broadcaster's own branding — Latin for stations that promote a Latin brand (`NACK5`, `J-WAVE`, `TOKYO FM`, …) and Kanji/Kana for the rest (`TBSラジオ`, `文化放送`, `NHKラジオ第1`, …). On-device the Stream Deck app renders Kanji through Core Text's Hiragino fallback; the dump pipeline (rsvg-convert + fontconfig) needs Hiragino or Noto Sans CJK installed for `scripts/dump-lcd.sh` to render Kanji rather than tofu (`fc-list :lang=ja` confirms availability). Match tolerance: ±50 kHz on FM (adjacent stations are 100 kHz apart), ±4 kHz on MW (9 kHz grid). Extend the file by editing it directly — eventually replaceable with output from a 総務省 scraper for nationwide coverage.
+1. **`com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json`** — split into two arrays:
+   - **`stations`** — auto-overwritten by the **Tune dial PI `JP DB: Update Now` button**, which scrapes 関東総合通信局 ラジオ放送事業者一覧 (`https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html`) and produces ~150-200 entries covering AM 親局 + 中継局 (incl. FM補完中継局), 超短波(FM) 親局 + 中継局, and コミュニティ放送 (CFM) across **1都7県** (東京・神奈川・千葉・埼玉・茨城・栃木・群馬・山梨). The page is served as Shift_JIS — Node's built-in `TextDecoder('shift-jis')` handles the transcode. Parsing uses `node-html-parser` for DOM-level extraction (immune to the WebFetch-style "78.9 MHz misread as 89.2" hallucination class). Operator names are auto-cleaned: 法人形態 prefix (`株式会社`, `（株）`, etc.) stripped, parenthesised brand at end preferred (`葛飾エフエム放送株式会社（かつしかFM）` → `かつしかFM`), with a small alias table for `日本放送協会 → NHK`, `アール・エフ・ラジオ日本 → ラジオ日本`, `LuckyFM茨城放送 → LuckyFM`. The previous file is preserved as `jp-stations.json.YYYY-MM-DD-HHMMSS`. Sanity validation aborts non-destructively if the parse yields < 50 entries.
+   - **`manualStations`** — hand-curated, **never touched by the scraper**. Use it for stations the 関東 page cannot see: NHK R2 (no separate row in the AM table), AFN (US military, outside 総務省 jurisdiction), and MW DX targets licensed by other 総通局 regions (近畿・東北・北海道・東海・中国・九州 etc.). On `freqHz` collision with `stations`, `manualStations` wins so a hand-curated name always overrides a scraper entry.
+
+     **Add / remove / edit a manualStations entry:**
+
+     ```sh
+     # 1. Edit the JSON
+     $EDITOR com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json
+
+     # 2. Append/remove an entry inside the manualStations array, e.g.
+     #    { "freqHz": 1008000, "band": "MW", "name": "ABCラジオ" }
+
+     # 3. Restart the plugin so the cache reloads
+     kill $(cat /tmp/deck-rx.pid)
+     ```
+
+     The `JP DB: Update Now` PI button only rewrites `stations`; `manualStations` is preserved verbatim across updates.
+   
+   Station names use each broadcaster's own branding — Latin for stations that promote a Latin brand (`NACK5`, `J-WAVE`, `TOKYO FM`, …) and Kanji/Kana for the rest (`TBSラジオ`, `文化放送`, `NHKラジオ第1`, …). On-device the Stream Deck app renders Kanji through Core Text's Hiragino fallback; the dump pipeline (rsvg-convert + fontconfig) needs Hiragino or Noto Sans CJK installed for `scripts/dump-lcd.sh` to render Kanji rather than tofu (`fc-list :lang=ja` confirms availability). Match tolerance: ±50 kHz on FM (adjacent stations are 100 kHz apart), ±4 kHz on MW (9 kHz grid).
 2. **`com.hogehoge.deck-rx.sdPlugin/data/eibi.txt`** — the EIBI shortwave broadcaster schedule (`http://eibispace.de/dx/eibi.txt`, ISO-8859-1 source converted to UTF-8 in-place). ATS-Mini ships the same database; the parser here mirrors `EIBI.cpp`'s fixed-width columns (`%14c%9c%11c%24c` for freq / time / days+ITU / station). Only consulted for 16 kHz – 30 MHz (LF/MF/HF range covered by EIBI). Refresh seasonally (March / October — EIBI's "A" / "B" seasons) from the **Tune dial Property Inspector**: an `EIBI: [Update Now]` button fetches the upstream file, decodes ISO-8859-1 → UTF-8, parses-validates (≥ 1000 entries) and atomically replaces `data/eibi.txt`. The previous file is preserved as `eibi.txt.YYYY-MM-DD-HHMMSS`. The PI status line shows `Last update: YYYY-MM-DD  /  N entries` (sourced from file mtime + parsed-entry count) on open and after each update. Equivalent manual flow if the button is unusable: `curl -fsSL http://eibispace.de/dx/eibi.txt | iconv -f ISO-8859-1 -t UTF-8 > com.hogehoge.deck-rx.sdPlugin/data/eibi.txt`.
 
 EIBI lookup adds two filters that ATS-Mini's reference parser omits:

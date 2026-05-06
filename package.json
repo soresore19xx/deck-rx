@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "fft.js": "^4.0.4",
-    "naudiodon": "^2.3.6"
+    "naudiodon": "^2.3.6",
+    "node-html-parser": "^7.1.0"
   },
   "devDependencies": {
     "@elgato/streamdeck": "^2.0.4",

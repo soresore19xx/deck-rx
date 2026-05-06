@@ -210,6 +210,20 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}">${out}</svg>`;
 }
 
+// CJK full-width chars (CJK punctuation/symbols, hiragana, katakana, ideographs,
+// fullwidth ASCII variants) render at roughly Menlo-half-width × 1.7 in the
+// `monospace` fallback chain (Core Text → Hiragino on-device, fontconfig →
+// Hiragino/Noto CJK in the dump path). Plain `label.length` underestimates the
+// label width and would let the STEREO badge collide with the trailing
+// character (observed on "WFM ニッポン放送" before this fix). Halfwidth
+// katakana (FF61–FFEF) is excluded — those render narrow.
+const CJK_WIDE_RE = /[　-ヿ㐀-鿿＀-｠￠-￯]/;
+function effectiveCharCount(s: string): number {
+  let n = 0;
+  for (const ch of s) n += CJK_WIDE_RE.test(ch) ? 1.7 : 1;
+  return n;
+}
+
 export function makeHeaderSvg(label: string, stereo = false): string {
   // Adaptive header text sizing — keeps short labels at the original 14 px
   // monospace size, drops to 12 px when needed, and falls back to horizontal
@@ -224,7 +238,8 @@ export function makeHeaderSvg(label: string, stereo = false): string {
 
   const CHAR_W_14 = 8.5;
   const CHAR_W_12 = 7.3;  // ≈ 8.5 × 12/14
-  const naturalW14 = label.length * CHAR_W_14;
+  const charCount = effectiveCharCount(label);
+  const naturalW14 = charCount * CHAR_W_14;
 
   let fontSize: number;
   let renderedTextW: number;
@@ -234,7 +249,7 @@ export function makeHeaderSvg(label: string, stereo = false): string {
     renderedTextW = naturalW14;
   } else {
     fontSize = 12;
-    const naturalW12 = label.length * CHAR_W_12;
+    const naturalW12 = charCount * CHAR_W_12;
     if (naturalW12 <= maxTextW) {
       renderedTextW = naturalW12;
     } else {

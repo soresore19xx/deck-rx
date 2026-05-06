@@ -289,6 +289,8 @@ EIBI lookup adds two filters that ATS-Mini's reference parser omits:
 
 When multiple EIBI entries are simultaneously active at the same kHz, the **shortest time window** wins on the assumption that a narrowly programmed slot is more specific than a day-long allocation. When no real broadcaster matches (Mo-Fr-only window past its end, only-spur entries on the freq, etc.), the lookup returns null and the dial header falls back to the user's preset name.
 
+The Tune dial header has a fixed 200 px width and reserves 49 px on the right when the FM stereo lock badge is shown, leaving only 151 px for the label. To accommodate longer station names (e.g. `WFM Nippon Hoso (FM)` with the STEREO badge, or `VFO CNR 2 China Business R.` from EIBI), `makeHeaderSvg` adapts in three steps: (1) keep the original 14 px monospace size if the natural width fits; (2) drop to 12 px when 14 px overflows but 12 px would fit; (3) at 12 px combined with SVG `textLength` + `lengthAdjust="spacingAndGlyphs"` for horizontal squeeze when even 12 px still overflows. The mechanism lives entirely in the rendering function so it applies uniformly to JP-DB, EIBI, and preset-name labels.
+
 ## Debug helpers
 
 ### LCD panel screenshots

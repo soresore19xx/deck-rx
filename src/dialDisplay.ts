@@ -211,19 +211,51 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
 }
 
 export function makeHeaderSvg(label: string, stereo = false): string {
-  const charW = 8.5;
-  const textW = label.length * charW;
+  // Adaptive header text sizing — keeps short labels at the original 14 px
+  // monospace size, drops to 12 px when needed, and falls back to horizontal
+  // squeeze (SVG textLength + lengthAdjust="spacingAndGlyphs") only when even
+  // 12 px overflows. The STEREO badge reserves 49 px (44 + 5 gap) on the right
+  // when shown, so a long FM-band station label with the stereo lock badge
+  // (the worst case in practice) still fits without clipping at the LCD edge.
+  const W = 200;
   const BADGE_W = 44, GAP = 5;
-  const groupW = stereo ? textW + GAP + BADGE_W : textW;
-  const groupStart = 100 - groupW / 2;
-  const textX = (groupStart + textW / 2).toFixed(1);
-  const badgeX = Math.round(groupStart + textW + GAP);
+  const reservedForBadge = stereo ? GAP + BADGE_W : 0;
+  const maxTextW = W - reservedForBadge;
+
+  const CHAR_W_14 = 8.5;
+  const CHAR_W_12 = 7.3;  // ≈ 8.5 × 12/14
+  const naturalW14 = label.length * CHAR_W_14;
+
+  let fontSize: number;
+  let renderedTextW: number;
+  let lengthAttr = '';
+  if (naturalW14 <= maxTextW) {
+    fontSize = 14;
+    renderedTextW = naturalW14;
+  } else {
+    fontSize = 12;
+    const naturalW12 = label.length * CHAR_W_12;
+    if (naturalW12 <= maxTextW) {
+      renderedTextW = naturalW12;
+    } else {
+      renderedTextW = maxTextW;
+      lengthAttr = ` textLength="${renderedTextW.toFixed(1)}" lengthAdjust="spacingAndGlyphs"`;
+    }
+  }
+
+  const groupW = renderedTextW + reservedForBadge;
+  const groupStart = (W - groupW) / 2;
+  const textX = (groupStart + renderedTextW / 2).toFixed(1);
+  const badgeX = Math.round(groupStart + renderedTextW + GAP);
+  // Baseline shifts a hair when font drops to 12 — pull y up by 1 so the
+  // visual centre of the text stays roughly mid-row (16 px row height).
+  const textY = fontSize === 14 ? 13 : 12;
   const badge = stereo
     ? `<rect x="${badgeX}" y="1" width="${BADGE_W}" height="13" rx="3" fill="none" stroke="#ff3333" stroke-width="1.2"/>` +
       `<text x="${badgeX + BADGE_W / 2}" y="11" font-family="monospace" font-size="9" fill="#ff3333" text-anchor="middle">STEREO</text>`
     : '';
-  return svgB64(`<svg width="200" height="16" xmlns="http://www.w3.org/2000/svg">` +
-    `<text x="${textX}" y="13" font-family="monospace" font-size="14" fill="white" text-anchor="middle">${label}</text>` +
+  return svgB64(`<svg width="${W}" height="16" xmlns="http://www.w3.org/2000/svg">` +
+    `<text x="${textX}" y="${textY}" font-family="monospace" font-size="${fontSize}" fill="white" text-anchor="middle"${lengthAttr}>${label}</text>` +
     `${badge}</svg>`);
 }
 

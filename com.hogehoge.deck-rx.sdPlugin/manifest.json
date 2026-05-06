@@ -57,6 +57,18 @@
       }
     },
     {
+      "UUID": "com.hogehoge.deck-rx.dial-options-combo",
+      "Name": "Deck RX Combo Options",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "AM + FM options on a single dial; active column auto-tracks the demod mode",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "Opts" }],
+      "Encoder": {
+        "layout": "layouts/dial-options-combo.json",
+        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
+      }
+    },
+    {
       "UUID": "com.hogehoge.deck-rx.dial-volume",
       "Name": "Deck RX Volume",
       "Icon": "imgs/actions/volume/action",

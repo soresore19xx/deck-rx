@@ -20,7 +20,7 @@ set -uo pipefail
 
 OUT="${HOME}/ICON"
 FLAG=/tmp/deck-rx-lcd-dump
-TAGS=(tune volume options am-options)
+TAGS=(tune volume options am-options options-combo)
 TIMEOUT=120   # seconds to wait for the user to cycle through panels
 
 mkdir -p "$OUT"

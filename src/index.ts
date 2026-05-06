@@ -5,6 +5,7 @@ import { SpyDialTune } from './actions/spyDialTune.js';
 import { SpyDialOptions } from './actions/spyDialOptions.js';
 import { SpyDialVolume } from './actions/spyDialVolume.js';
 import { SpyDialAmOptions } from './actions/spyDialAmOptions.js';
+import { SpyDialOptionsCombo } from './actions/spyDialOptionsCombo.js';
 
 const PID_FILE = '/tmp/deck-rx.pid';
 (function claimSingleInstance() {
@@ -42,4 +43,5 @@ streamDeck.actions.registerAction(new SpyDialTune());
 streamDeck.actions.registerAction(new SpyDialOptions());
 streamDeck.actions.registerAction(new SpyDialVolume());
 streamDeck.actions.registerAction(new SpyDialAmOptions());
+streamDeck.actions.registerAction(new SpyDialOptionsCombo());
 streamDeck.connect();

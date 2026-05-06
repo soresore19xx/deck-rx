@@ -204,3 +204,85 @@ ${items}
 ${frame}
 </svg>`;
 }
+
+/**
+ * Side-by-side dual-column options panel for the combo dial. Each column is
+ * 100 px wide with its own header (AM ▶ / FM, ▶ marks the column whose rows
+ * are currently navigable), then 7 rows × 12 px. The selectedRow / editMode
+ * highlight only renders inside the active column; the inactive column shows
+ * read-only values (slightly dimmed so the user can see live state of the
+ * other mode without confusing it for the focus target).
+ */
+export function optionsPanelDualSvg(
+  amRows: OptionsPanelRow[],
+  fmRows: OptionsPanelRow[],
+  activeCol: 'AM' | 'FM',
+  selectedRow = -1,
+  editMode = false,
+): string {
+  const SVG_W = 200, SVG_H = 100;
+  const COL_W = SVG_W / 2;
+  const HEADER_H = 12;
+  const ROW_H = 12;
+  const FS = 10;
+  const FRAME_C = '#888888';
+  const DIVIDER_C = '#444444';
+  const accent = editMode ? '#ffaa55' : BLUE;
+
+  // Header — active column: bright white + ▶ marker; inactive: dim grey.
+  const amHdr = activeCol === 'AM' ? { color: '#ffffff', text: 'AM ▶' } : { color: '#666666', text: 'AM' };
+  const fmHdr = activeCol === 'FM' ? { color: '#ffffff', text: 'FM ▶' } : { color: '#666666', text: 'FM' };
+  const header =
+    `<text x="6" y="${HEADER_H - 2}" fill="${amHdr.color}" font-size="${FS}" font-family="monospace">${amHdr.text}</text>` +
+    `<text x="${COL_W + 6}" y="${HEADER_H - 2}" fill="${fmHdr.color}" font-size="${FS}" font-family="monospace">${fmHdr.text}</text>`;
+
+  const renderCol = (rows: OptionsPanelRow[], xOff: number, isActive: boolean): string => {
+    const out: string[] = [];
+    const labelX = xOff + 4;
+    const valueX = xOff + COL_W - 4;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      // Baseline for row i: header band (HEADER_H) + (i+1) * ROW_H. First row
+      // baseline = 12 + 12 = 24; last (i=6) = 12 + 7*12 = 96. bg rect sits
+      // (rowH - 2) px above the baseline so it visually centres on the text.
+      const y = HEADER_H + (i + 1) * ROW_H;
+      const isSelected = isActive && i === selectedRow;
+      const isEdit = isSelected && editMode;
+      const bgPad = ROW_H - 2;
+      let bg = '';
+      if (isSelected) {
+        bg = `<rect x="${xOff}" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.22"/>`;
+      } else if (i % 2 === 0) {
+        bg = `<rect x="${xOff}" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.06"/>`;
+      }
+      const sideBar = isSelected ? `<rect x="${xOff}" y="${y - bgPad}" width="3" height="${ROW_H}" fill="${accent}"/>` : '';
+      // Color rules:
+      //  - selected (active col): label deep yellow / orange (edit), value bright yellow
+      //  - active col, not selected: white text
+      //  - inactive col: light grey (#888) so values still readable but visibly secondary
+      const labelColor = isSelected ? (isEdit ? accent : '#d4b800') : (isActive ? 'white' : '#888888');
+      const valueColor = isSelected ? '#aaff00' : (r.valueColor ?? (isActive ? 'white' : '#888888'));
+      out.push(
+        `${bg}${sideBar}` +
+        `<text x="${labelX}" y="${y}" fill="${labelColor}" font-size="${FS}" font-family="monospace">${r.label}</text>` +
+        `<text x="${valueX}" y="${y}" fill="${valueColor}" font-size="${FS}" font-family="monospace" text-anchor="end">${r.value}</text>`,
+      );
+    }
+    return out.join('\n');
+  };
+
+  const amCol = renderCol(amRows, 0, activeCol === 'AM');
+  const fmCol = renderCol(fmRows, COL_W, activeCol === 'FM');
+  const divider = `<line x1="${COL_W}" y1="${HEADER_H + 1}" x2="${COL_W}" y2="${SVG_H - 4}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const headerSep = `<line x1="2" y1="${HEADER_H + 1}" x2="${SVG_W - 2}" y2="${HEADER_H + 1}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const frame = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
+  return `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
+<rect width="${SVG_W}" height="${SVG_H}" fill="#000000"/>
+${header}
+${headerSep}
+${amCol}
+${fmCol}
+${divider}
+${frame}
+</svg>`;
+}

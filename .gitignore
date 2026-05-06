@@ -15,8 +15,15 @@ com.hogehoge.deck-rx.sdPlugin/config.json.*
 .idea/
 *.swp
 
-# Claude Code session continuation transcripts
+2026-*.txt
+*.2026-*
+
+# Claude Code /export session transcripts
+conversation-*.txt
 [0-9][0-9][0-9][0-9]-*-this-session-is-being-continued-from-a-previous-c*.txt
+
+# Claude Code permission-mode startup logs
+**/*-permission-mode.txt
 
 # Personal developer notes (host paths / incident logs — keep out of public repo)
 docs/dev-notes.md

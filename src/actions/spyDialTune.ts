@@ -8,6 +8,24 @@ import { svgB64, knobSvg, dimSvg } from '../icons.js';
 import { dumpTuneLcd } from '../dialDisplay.js';
 import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
 import { loadPresets, Preset } from './spyTune.js';
+import { lookupEibi } from '../eibi.js';
+import { lookupJpStation } from '../japanStations.js';
+
+// Station-name auto-lookup priority:
+//   1. jp-stations.json — hand-curated Tokyo Kanto FM/MW. Wins for FM (EIBI has
+//      no entries above 30 MHz) and for MW (covers domestic Japanese stations
+//      EIBI doesn't list, e.g. NHK R1 594 kHz).
+//   2. EIBI — international SW + some MW DX entries with day/time-aware match.
+//   3. (caller falls back to the user's preset name when both return null.)
+function autoStationLabel(freqHz: number): string | null {
+  const jp = lookupJpStation(freqHz);
+  if (jp) return jp.name;
+  if (freqHz >= 16_000 && freqHz <= 30_000_000) {
+    const e = lookupEibi(freqHz);
+    if (e) return e.name;
+  }
+  return null;
+}
 
 type DialTuneSettings = {
   mode?: 'preset' | 'vfo';
@@ -300,7 +318,8 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const freq = p?.freq ?? 0;
       const { num, unit } = freqParts(freq);
       const modeStr = p ? (MODES[p.mode] ?? '') : '';
-      const baseHeader = p ? `${modeStr}  ${p.name}` : 'No presets';
+      const auto = p ? autoStationLabel(freq) : null;
+      const baseHeader = p ? `${modeStr}  ${auto ?? p.name}` : 'No presets';
       const header = !this.enabled ? `OFF  ${baseHeader}`
                    : offline        ? `LINK  ${baseHeader}`
                    : baseHeader;
@@ -326,7 +345,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     } else {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       const { num, unit } = freqParts(freq);
-      const baseHeader = `VFO  step:${formatStep(this.stepHz)}`;
+      const auto = autoStationLabel(freq);
+      const baseHeader = auto
+        ? `VFO  ${auto}`
+        : `VFO  step:${formatStep(this.stepHz)}`;
       const header = !this.enabled ? `OFF  ${baseHeader}`
                    : offline        ? `LINK  ${baseHeader}`
                    : baseHeader;

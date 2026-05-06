@@ -20,6 +20,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Per-mode RF Gain (AM / FM separate) | ✅ (live-applied, debounced, pop-suppressed) |
 | Frequency / mode persistence | ✅ (restored at startup) |
 | IFNR (IF Noise Reduction) | ✅ FM/NFM only (SDR++ FMIF tracking-filter port) |
+| Auto station-name lookup | ✅ JP FM/MW (hand-curated) + EIBI SW DB (day/time/spur-aware) |
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 
@@ -273,6 +274,20 @@ nc -zv <server-ip> 8888           # TCP connect smoke-test
    2. After connect, an application-level watchdog timer (1 s tick) tracks the timestamp of the last received byte. If 5 s elapse with no data, the watchdog destroys the socket and emits `disconnect`. This handles LAN-cable-pull / Wi-Fi disconnect / VPN drop where TCP itself wouldn't notice for 2 hours (default macOS keepalive idle).
    Both paths funnel into the same listener chain: `setConnectedState(false)` notifies all `subscribeConnectionState` subscribers, every dial dims, the Tune dial swaps freq → `-----` and header → `LINK <preset>`, audio stops cleanly, and `scheduleReconnect()` runs the 5 s reconnect cadence (which respects the master ON/OFF switch). On recovery, the client re-establishes, hydrates state from the persisted config, and resumes audio at the same station / mode / gain.
 - **Editable host/port (PI)**: the Tune dial Property Inspector hosts a `<input type="text">` for host and `<input type="number">` for port (default values populated from current config via `getServerConfig` round-trip on PI open). Edits debounce 800 ms before sending `setServerConfig`, which calls `spyService.updateServerConfig({ host, port })` — that persists the new endpoint, tears down the current SpyClient, and (if the master switch is ON) reconnects to the new endpoint. No plugin restart needed.
+
+## Station-name auto-lookup
+
+The Tune dial header replaces the user's preset name with the broadcaster's actual identity when the tuned frequency is recognised. Two databases are consulted in priority order, with the preset name as a final fallback:
+
+1. **`com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json`** — hand-curated Japanese FM (76–95 MHz) and MW (522–1710 kHz) stations, Tokyo Kanto focus plus the major MW DX targets (HBC Sapporo, MBS Osaka, RKB Fukuoka, etc.) that are reachable from Kanto at night. Source: 総務省 関東総合通信局 (`https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html`) cross-referenced with each broadcaster's official site. ASCII / Latin transliterations are used for Stream Deck LCD legibility. Match tolerance: ±50 kHz on FM (adjacent stations are 100 kHz apart), ±4 kHz on MW (9 kHz grid). Extend the file by editing it directly — eventually replaceable with output from a 総務省 scraper for nationwide coverage.
+2. **`com.hogehoge.deck-rx.sdPlugin/data/eibi.txt`** — the EIBI shortwave broadcaster schedule (`http://eibispace.de/dx/eibi.txt`, ISO-8859-1 source converted to UTF-8 in-place). ATS-Mini ships the same database; the parser here mirrors `EIBI.cpp`'s fixed-width columns (`%14c%9c%11c%24c` for freq / time / days+ITU / station). Only consulted for 16 kHz – 30 MHz (LF/MF/HF range covered by EIBI). Refresh seasonally (March / October — EIBI's "A" / "B" seasons): `curl -fsSL http://eibispace.de/dx/eibi.txt | iconv -f ISO-8859-1 -t UTF-8 > com.hogehoge.deck-rx.sdPlugin/data/eibi.txt`.
+
+EIBI lookup adds two filters that ATS-Mini's reference parser omits:
+
+- **Day-of-week filter**. The Days column (`Mo-Fr`, `SaSu`, `Su-Th`, `4May`, `1.Sa`, digit-strings like `157`) is parsed and only entries valid for the current UTC weekday / date apply. Without this, e.g. 6115 kHz on a Wednesday would surface `Radio SE-TA2` (whose entries are `4May` and `SaSu`) instead of `Radio Nikkei 2` (`Mo-Fr`).
+- **Spurious-emission drop**. EIBI tracks parasitic transmissions (intermod products / harmonics) with the `spur` flag — those are reference data, not actual broadcasts, and would show up as misleading "station names" if kept. They're filtered at parse time.
+
+When multiple EIBI entries are simultaneously active at the same kHz, the **shortest time window** wins on the assumption that a narrowly programmed slot is more specific than a day-long allocation. When no real broadcaster matches (Mo-Fr-only window past its end, only-spur entries on the freq, etc.), the lookup returns null and the dial header falls back to the user's preset name.
 
 ## Debug helpers
 

@@ -45,6 +45,17 @@ function stripHtml(s: string): string {
 
 function cleanOperatorName(raw: string): string {
   let s = stripHtml(raw).trim();
+  // The 法人名 cell sometimes carries an annotation on a second line —
+  // e.g. "InterFM897<br>（外国語放送）" — which after stripHtml becomes
+  // "InterFM897\n（外国語放送）". Keep only the first line so the
+  // annotation doesn't leak into the LCD label.
+  s = s.split(/[\r\n]+/)[0].trim();
+  // Some entries put the 法人形態 at the END instead of the start:
+  //   "横浜エフエム放送株式会社" → "横浜エフエム放送"
+  // Trim once from either end before the rest of the cleanup runs.
+  for (const p of ORG_PREFIXES) {
+    if (s.endsWith(p)) { s = s.slice(0, -p.length).trim(); break; }
+  }
   // CFM rows commonly carry a parenthesised brand at the end of the 法人名:
   //   "葛飾エフエム放送株式会社（かつしかFM）"  → "かつしかFM"
   //   "アクティブレイン(SKYWAVE FM)"          → "SKYWAVE FM"

@@ -1,36 +1,887 @@
 {
   "_comment": "Japanese broadcast station list. Two sources: (1) `stations` is overwritten by the Tune-dial PI 'Update JP Stations Now' button, which scrapes 関東総合通信局 ラジオ放送事業者一覧 (https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html) and produces ~150-200 entries covering AM 親局 + 中継局 (incl. FM補完), 超短波(FM) 親局 + 中継局, and コミュニティ放送 across 1都7県 (東京・神奈川・千葉・埼玉・茨城・栃木・群馬・山梨). (2) `manualStations` is hand-curated and never touched by the scraper — used for stations the 関東 page cannot see (NHK R2, AFN, MW DX targets in other regions). On freqHz collision, manualStations wins. Edit `manualStations` directly and restart the plugin (kill $(cat /tmp/deck-rx.pid)) to apply. Station names use each broadcaster's own branding — Latin where they promote a Latin brand, Kanji/Kana otherwise. Stream Deck LCDs render Kanji via Core Text font fallback (Hiragino) on macOS; the dump pipeline (rsvg-convert + fontconfig) needs Hiragino or Noto Sans CJK installed.",
   "stations": [
-    { "freqHz":  78000000, "band": "FM", "name": "bayfm78" },
-    { "freqHz":  78900000, "band": "FM", "name": "かつしかFM" },
-    { "freqHz":  79500000, "band": "FM", "name": "NACK5" },
-    { "freqHz":  80000000, "band": "FM", "name": "TOKYO FM" },
-    { "freqHz":  81300000, "band": "FM", "name": "J-WAVE" },
-    { "freqHz":  82500000, "band": "FM", "name": "NHK-FM" },
-    { "freqHz":  84700000, "band": "FM", "name": "FMヨコハマ" },
-    { "freqHz":  89700000, "band": "FM", "name": "InterFM897" },
-    { "freqHz":  90500000, "band": "FM", "name": "TBSラジオ" },
-    { "freqHz":  91600000, "band": "FM", "name": "文化放送" },
-    { "freqHz":  92400000, "band": "FM", "name": "ラジオ日本" },
-    { "freqHz":  93000000, "band": "FM", "name": "ニッポン放送" },
-    { "freqHz":  94600000, "band": "FM", "name": "LuckyFM" },
-
-    { "freqHz":    594000, "band": "MW", "name": "NHKラジオ第1" },
-    { "freqHz":    954000, "band": "MW", "name": "TBSラジオ" },
-    { "freqHz":   1134000, "band": "MW", "name": "文化放送" },
-    { "freqHz":   1242000, "band": "MW", "name": "ニッポン放送" },
-    { "freqHz":   1422000, "band": "MW", "name": "ラジオ日本" }
+    {
+      "freqHz": 594000,
+      "band": "MW",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 765000,
+      "band": "MW",
+      "name": "山梨放送"
+    },
+    {
+      "freqHz": 864000,
+      "band": "MW",
+      "name": "栃木放送"
+    },
+    {
+      "freqHz": 927000,
+      "band": "MW",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 954000,
+      "band": "MW",
+      "name": "TBSラジオ"
+    },
+    {
+      "freqHz": 1062000,
+      "band": "MW",
+      "name": "栃木放送"
+    },
+    {
+      "freqHz": 1134000,
+      "band": "MW",
+      "name": "文化放送"
+    },
+    {
+      "freqHz": 1197000,
+      "band": "MW",
+      "name": "LuckyFM"
+    },
+    {
+      "freqHz": 1242000,
+      "band": "MW",
+      "name": "ニッポン放送"
+    },
+    {
+      "freqHz": 1422000,
+      "band": "MW",
+      "name": "ラジオ日本"
+    },
+    {
+      "freqHz": 1458000,
+      "band": "MW",
+      "name": "LuckyFM"
+    },
+    {
+      "freqHz": 1485000,
+      "band": "MW",
+      "name": "ラジオ日本"
+    },
+    {
+      "freqHz": 1530000,
+      "band": "MW",
+      "name": "栃木放送"
+    },
+    {
+      "freqHz": 1584000,
+      "band": "MW",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 76100000,
+      "band": "FM",
+      "name": "FMわたらせ"
+    },
+    {
+      "freqHz": 76200000,
+      "band": "FM",
+      "name": "FMぱるるん"
+    },
+    {
+      "freqHz": 76200000,
+      "band": "FM",
+      "name": "ラジオ高崎"
+    },
+    {
+      "freqHz": 76300000,
+      "band": "FM",
+      "name": "エフエム甲府"
+    },
+    {
+      "freqHz": 76400000,
+      "band": "FM",
+      "name": "エフエム栃木"
+    },
+    {
+      "freqHz": 76500000,
+      "band": "FM",
+      "name": "InterFM897"
+    },
+    {
+      "freqHz": 76500000,
+      "band": "FM",
+      "name": "FM OZE"
+    },
+    {
+      "freqHz": 76700000,
+      "band": "FM",
+      "name": "エフエム東京"
+    },
+    {
+      "freqHz": 76700000,
+      "band": "FM",
+      "name": "エフエム群馬"
+    },
+    {
+      "freqHz": 76700000,
+      "band": "FM",
+      "name": "FMかしま"
+    },
+    {
+      "freqHz": 76700000,
+      "band": "FM",
+      "name": "エフエム太郎"
+    },
+    {
+      "freqHz": 76700000,
+      "band": "FM",
+      "name": "フラワーラジオ"
+    },
+    {
+      "freqHz": 76700000,
+      "band": "FM",
+      "name": "いちはらFM"
+    },
+    {
+      "freqHz": 76800000,
+      "band": "FM",
+      "name": "エフエムふじごこ"
+    },
+    {
+      "freqHz": 76900000,
+      "band": "FM",
+      "name": "いせさきFM"
+    },
+    {
+      "freqHz": 77300000,
+      "band": "FM",
+      "name": "ミヤラジ"
+    },
+    {
+      "freqHz": 77300000,
+      "band": "FM",
+      "name": "ラヂオななみ"
+    },
+    {
+      "freqHz": 77500000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 77500000,
+      "band": "FM",
+      "name": "エフエムナックファイブ"
+    },
+    {
+      "freqHz": 77500000,
+      "band": "FM",
+      "name": "FMだいご"
+    },
+    {
+      "freqHz": 77500000,
+      "band": "FM",
+      "name": "おーラジ"
+    },
+    {
+      "freqHz": 77500000,
+      "band": "FM",
+      "name": "ナナコライブリーエフエム"
+    },
+    {
+      "freqHz": 77500000,
+      "band": "FM",
+      "name": "Tokyo Star Radio"
+    },
+    {
+      "freqHz": 77600000,
+      "band": "FM",
+      "name": "FMふじやま"
+    },
+    {
+      "freqHz": 77700000,
+      "band": "FM",
+      "name": "ベイエフエム"
+    },
+    {
+      "freqHz": 77700000,
+      "band": "FM",
+      "name": "エフエムきりゅう"
+    },
+    {
+      "freqHz": 77700000,
+      "band": "FM",
+      "name": "FMチャッピー"
+    },
+    {
+      "freqHz": 77700000,
+      "band": "FM",
+      "name": "FMやまと"
+    },
+    {
+      "freqHz": 77800000,
+      "band": "FM",
+      "name": "エフエム群馬"
+    },
+    {
+      "freqHz": 78000000,
+      "band": "FM",
+      "name": "ベイエフエム"
+    },
+    {
+      "freqHz": 78200000,
+      "band": "FM",
+      "name": "むさしのFM"
+    },
+    {
+      "freqHz": 78300000,
+      "band": "FM",
+      "name": "エフエム栃木"
+    },
+    {
+      "freqHz": 78300000,
+      "band": "FM",
+      "name": "FM湘南ナパサ"
+    },
+    {
+      "freqHz": 78500000,
+      "band": "FM",
+      "name": "エフエム栃木"
+    },
+    {
+      "freqHz": 78500000,
+      "band": "FM",
+      "name": "FM・ブルー湘南"
+    },
+    {
+      "freqHz": 78600000,
+      "band": "FM",
+      "name": "エフエム富士"
+    },
+    {
+      "freqHz": 78900000,
+      "band": "FM",
+      "name": "かつしかFM"
+    },
+    {
+      "freqHz": 78900000,
+      "band": "FM",
+      "name": "湘南ビーチFM"
+    },
+    {
+      "freqHz": 79000000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 79000000,
+      "band": "FM",
+      "name": "ちちぶエフエム"
+    },
+    {
+      "freqHz": 79000000,
+      "band": "FM",
+      "name": "多摩レイクサイドFM"
+    },
+    {
+      "freqHz": 79100000,
+      "band": "FM",
+      "name": "エフエム栃木"
+    },
+    {
+      "freqHz": 79100000,
+      "band": "FM",
+      "name": "かわさきFM"
+    },
+    {
+      "freqHz": 79300000,
+      "band": "FM",
+      "name": "ベイエフエム"
+    },
+    {
+      "freqHz": 79400000,
+      "band": "FM",
+      "name": "エフエム群馬"
+    },
+    {
+      "freqHz": 79500000,
+      "band": "FM",
+      "name": "エフエムナックファイブ"
+    },
+    {
+      "freqHz": 79600000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 79700000,
+      "band": "FM",
+      "name": "ベイエフエム"
+    },
+    {
+      "freqHz": 80000000,
+      "band": "FM",
+      "name": "エフエム東京"
+    },
+    {
+      "freqHz": 80300000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 80400000,
+      "band": "FM",
+      "name": "横浜エフエム放送"
+    },
+    {
+      "freqHz": 80500000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 80500000,
+      "band": "FM",
+      "name": "エフエム東京"
+    },
+    {
+      "freqHz": 80500000,
+      "band": "FM",
+      "name": "エフエム富士"
+    },
+    {
+      "freqHz": 80700000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 81300000,
+      "band": "FM",
+      "name": "J−WAVE"
+    },
+    {
+      "freqHz": 81600000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 81900000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 82000000,
+      "band": "FM",
+      "name": "エフエム群馬"
+    },
+    {
+      "freqHz": 82200000,
+      "band": "FM",
+      "name": "エフエム群馬"
+    },
+    {
+      "freqHz": 82200000,
+      "band": "FM",
+      "name": "FMひたち"
+    },
+    {
+      "freqHz": 82200000,
+      "band": "FM",
+      "name": "エフエム八ヶ岳"
+    },
+    {
+      "freqHz": 82500000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 82600000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 82800000,
+      "band": "FM",
+      "name": "鎌倉エフエム"
+    },
+    {
+      "freqHz": 82900000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 83000000,
+      "band": "FM",
+      "name": "エフエム富士"
+    },
+    {
+      "freqHz": 83000000,
+      "band": "FM",
+      "name": "市川うららFM"
+    },
+    {
+      "freqHz": 83100000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 83100000,
+      "band": "FM",
+      "name": "レディオ湘南"
+    },
+    {
+      "freqHz": 83200000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 83400000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 83400000,
+      "band": "FM",
+      "name": "かずさエフエム"
+    },
+    {
+      "freqHz": 83400000,
+      "band": "FM",
+      "name": "エフエム世田谷"
+    },
+    {
+      "freqHz": 83500000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 83600000,
+      "band": "FM",
+      "name": "エフエム東京"
+    },
+    {
+      "freqHz": 83600000,
+      "band": "FM",
+      "name": "むらラジ やまラジ 836"
+    },
+    {
+      "freqHz": 83700000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 83700000,
+      "band": "FM",
+      "name": "Radio NARITA"
+    },
+    {
+      "freqHz": 83700000,
+      "band": "FM",
+      "name": "エフエム戸塚"
+    },
+    {
+      "freqHz": 83800000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 83800000,
+      "band": "FM",
+      "name": "調布FM"
+    },
+    {
+      "freqHz": 83900000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 83900000,
+      "band": "FM",
+      "name": "FM HOT 839"
+    },
+    {
+      "freqHz": 84000000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 84000000,
+      "band": "FM",
+      "name": "発するFM"
+    },
+    {
+      "freqHz": 84000000,
+      "band": "FM",
+      "name": "Radio City"
+    },
+    {
+      "freqHz": 84100000,
+      "band": "FM",
+      "name": "FMサルース"
+    },
+    {
+      "freqHz": 84200000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 84200000,
+      "band": "FM",
+      "name": "ラヂオつくば"
+    },
+    {
+      "freqHz": 84200000,
+      "band": "FM",
+      "name": "エフエム西東京"
+    },
+    {
+      "freqHz": 84200000,
+      "band": "FM",
+      "name": "FMカオン"
+    },
+    {
+      "freqHz": 84300000,
+      "band": "FM",
+      "name": "エフエム東京"
+    },
+    {
+      "freqHz": 84300000,
+      "band": "FM",
+      "name": "FMえどがわ"
+    },
+    {
+      "freqHz": 84400000,
+      "band": "FM",
+      "name": "エフエム栃木"
+    },
+    {
+      "freqHz": 84400000,
+      "band": "FM",
+      "name": "エフエムたちかわ"
+    },
+    {
+      "freqHz": 84500000,
+      "band": "FM",
+      "name": "M-wave"
+    },
+    {
+      "freqHz": 84700000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 84700000,
+      "band": "FM",
+      "name": "横浜エフエム放送"
+    },
+    {
+      "freqHz": 84800000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 84900000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 85100000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 85400000,
+      "band": "FM",
+      "name": "FM うしくうれしく放送"
+    },
+    {
+      "freqHz": 85400000,
+      "band": "FM",
+      "name": "TOKYO854くるめラ"
+    },
+    {
+      "freqHz": 85500000,
+      "band": "FM",
+      "name": "金沢シーサイドFM"
+    },
+    {
+      "freqHz": 85600000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 85600000,
+      "band": "FM",
+      "name": "FM Kawaguchi"
+    },
+    {
+      "freqHz": 85600000,
+      "band": "FM",
+      "name": "FM湘南マジックウエイブ"
+    },
+    {
+      "freqHz": 85700000,
+      "band": "FM",
+      "name": "FMくらら857"
+    },
+    {
+      "freqHz": 85700000,
+      "band": "FM",
+      "name": "コマラジ"
+    },
+    {
+      "freqHz": 85800000,
+      "band": "FM",
+      "name": "FMふくろう"
+    },
+    {
+      "freqHz": 85900000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 86000000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 86100000,
+      "band": "FM",
+      "name": "マリンFM"
+    },
+    {
+      "freqHz": 86300000,
+      "band": "FM",
+      "name": "エフエム群馬"
+    },
+    {
+      "freqHz": 86500000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 86600000,
+      "band": "FM",
+      "name": "エフエム東京"
+    },
+    {
+      "freqHz": 86800000,
+      "band": "FM",
+      "name": "ハローハッピー こしがやエフエム"
+    },
+    {
+      "freqHz": 87000000,
+      "band": "FM",
+      "name": "横浜エフエム放送"
+    },
+    {
+      "freqHz": 87100000,
+      "band": "FM",
+      "name": "エフエム群馬"
+    },
+    {
+      "freqHz": 87300000,
+      "band": "FM",
+      "name": "REDS WAVE"
+    },
+    {
+      "freqHz": 87400000,
+      "band": "FM",
+      "name": "ベイエフエム"
+    },
+    {
+      "freqHz": 87400000,
+      "band": "FM",
+      "name": "FMもおか"
+    },
+    {
+      "freqHz": 87400000,
+      "band": "FM",
+      "name": "ラジオフチューズ"
+    },
+    {
+      "freqHz": 87600000,
+      "band": "FM",
+      "name": "FMクマガヤ"
+    },
+    {
+      "freqHz": 87600000,
+      "band": "FM",
+      "name": "渋谷のラジオ"
+    },
+    {
+      "freqHz": 87900000,
+      "band": "FM",
+      "name": "FMゆうがお"
+    },
+    {
+      "freqHz": 87900000,
+      "band": "FM",
+      "name": "FMおだわら"
+    },
+    {
+      "freqHz": 88000000,
+      "band": "FM",
+      "name": "エフエム群馬"
+    },
+    {
+      "freqHz": 88100000,
+      "band": "FM",
+      "name": "LuckyFM"
+    },
+    {
+      "freqHz": 88300000,
+      "band": "FM",
+      "name": "J−WAVE"
+    },
+    {
+      "freqHz": 88300000,
+      "band": "FM",
+      "name": "FM DAMONO"
+    },
+    {
+      "freqHz": 88500000,
+      "band": "FM",
+      "name": "FMふっかちゃん"
+    },
+    {
+      "freqHz": 88500000,
+      "band": "FM",
+      "name": "大江戸放送局"
+    },
+    {
+      "freqHz": 88700000,
+      "band": "FM",
+      "name": "ラジオ川越"
+    },
+    {
+      "freqHz": 88900000,
+      "band": "FM",
+      "name": "FMしながわ"
+    },
+    {
+      "freqHz": 89000000,
+      "band": "FM",
+      "name": "NHK"
+    },
+    {
+      "freqHz": 89100000,
+      "band": "FM",
+      "name": "あいラジ"
+    },
+    {
+      "freqHz": 89200000,
+      "band": "FM",
+      "name": "SKYWAVE FM"
+    },
+    {
+      "freqHz": 89200000,
+      "band": "FM",
+      "name": "Hello FM"
+    },
+    {
+      "freqHz": 89200000,
+      "band": "FM",
+      "name": "EBOSHI RADIO STATION"
+    },
+    {
+      "freqHz": 89700000,
+      "band": "FM",
+      "name": "InterFM897"
+    },
+    {
+      "freqHz": 90500000,
+      "band": "FM",
+      "name": "TBSラジオ"
+    },
+    {
+      "freqHz": 90900000,
+      "band": "FM",
+      "name": "山梨放送"
+    },
+    {
+      "freqHz": 91100000,
+      "band": "FM",
+      "name": "栃木放送"
+    },
+    {
+      "freqHz": 91600000,
+      "band": "FM",
+      "name": "文化放送"
+    },
+    {
+      "freqHz": 92400000,
+      "band": "FM",
+      "name": "ラジオ日本"
+    },
+    {
+      "freqHz": 93000000,
+      "band": "FM",
+      "name": "ニッポン放送"
+    },
+    {
+      "freqHz": 93400000,
+      "band": "FM",
+      "name": "栃木放送"
+    },
+    {
+      "freqHz": 94100000,
+      "band": "FM",
+      "name": "栃木放送"
+    },
+    {
+      "freqHz": 94600000,
+      "band": "FM",
+      "name": "LuckyFM"
+    },
+    {
+      "freqHz": 94900000,
+      "band": "FM",
+      "name": "FM大師"
+    }
   ],
   "manualStations": [
-    { "freqHz":    693000, "band": "MW", "name": "NHKラジオ第2" },
-    { "freqHz":    810000, "band": "MW", "name": "AFN Eagle 810" },
-    { "freqHz":   1179000, "band": "MW", "name": "MBSラジオ" },
-    { "freqHz":   1260000, "band": "MW", "name": "TBCラジオ" },
-    { "freqHz":   1278000, "band": "MW", "name": "RKB毎日放送" },
-    { "freqHz":   1287000, "band": "MW", "name": "HBCラジオ" },
-    { "freqHz":   1314000, "band": "MW", "name": "ラジオ大阪" },
-    { "freqHz":   1332000, "band": "MW", "name": "東海ラジオ" },
-    { "freqHz":   1350000, "band": "MW", "name": "RCCラジオ" },
-    { "freqHz":   1440000, "band": "MW", "name": "STVラジオ" }
+    {
+      "freqHz": 693000,
+      "band": "MW",
+      "name": "NHKラジオ第2"
+    },
+    {
+      "freqHz": 810000,
+      "band": "MW",
+      "name": "AFN Eagle 810"
+    },
+    {
+      "freqHz": 1179000,
+      "band": "MW",
+      "name": "MBSラジオ"
+    },
+    {
+      "freqHz": 1260000,
+      "band": "MW",
+      "name": "TBCラジオ"
+    },
+    {
+      "freqHz": 1278000,
+      "band": "MW",
+      "name": "RKB毎日放送"
+    },
+    {
+      "freqHz": 1287000,
+      "band": "MW",
+      "name": "HBCラジオ"
+    },
+    {
+      "freqHz": 1314000,
+      "band": "MW",
+      "name": "ラジオ大阪"
+    },
+    {
+      "freqHz": 1332000,
+      "band": "MW",
+      "name": "東海ラジオ"
+    },
+    {
+      "freqHz": 1350000,
+      "band": "MW",
+      "name": "RCCラジオ"
+    },
+    {
+      "freqHz": 1440000,
+      "band": "MW",
+      "name": "STVラジオ"
+    }
   ]
 }

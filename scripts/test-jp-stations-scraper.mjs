@@ -30,6 +30,8 @@ const stripHtml = (s) => s
 
 function cleanOperatorName(raw) {
   let s = stripHtml(raw).trim();
+  s = s.split(/[\r\n]+/)[0].trim();
+  for (const p of ORG_PREFIXES) if (s.endsWith(p)) { s = s.slice(0, -p.length).trim(); break; }
   const parenMatch = s.match(/^.*?[（(]([^（）()]{1,30})[）)]\s*$/);
   if (parenMatch) {
     s = parenMatch[1].trim();

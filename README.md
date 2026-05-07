@@ -20,7 +20,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Per-mode RF Gain (AM / FM separate) | ✅ (live-applied, debounced, pop-suppressed) |
 | Frequency / mode persistence | ✅ (restored at startup) |
 | IFNR (IF Noise Reduction) | ✅ FM/NFM only (SDR++ FMIF tracking-filter port) |
-| Auto station-name lookup | ✅ JP FM/MW (1都7県 親局+中継局+CFM via 関東総通局 scrape) + manual overrides + EIBI SW DB (day/time/spur-aware); in-PI `Update Now` for both |
+| Auto station-name lookup | ✅ **Japan-area only** for the JP DB — JP FM/MW (1都7県 親局+中継局+CFM via 関東総通局 scrape) + manual overrides; the EIBI SW DB covers international shortwave (day/time/spur-aware); in-PI `Update Now` for both |
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 

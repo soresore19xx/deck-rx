@@ -7,17 +7,40 @@ const DATA_PATH = join(__dirname, '..', 'data', 'jp-stations.json');
 
 export type JpBand = 'FM' | 'MW';
 
+// JP DB regions. Each station scraped from a regional 総合通信局 page is
+// tagged with its region; lookup filters the auto-scraped pool by the user's
+// selected region so e.g. 90.5 MHz in 関東 doesn't surface 北海道's same-
+// frequency relay station. `manualStations` entries are NOT region-tagged —
+// they're consulted regardless of the active region (cross-region DX
+// targets, AFN, NHK R2 hand-curated overrides, etc.).
+export type JpRegion = 'kanto' | 'hokkaido' | 'kinki' | 'chugoku' | 'kyushu' | 'okinawa';
+export const JP_REGIONS: readonly JpRegion[] = ['kanto', 'hokkaido', 'kinki', 'chugoku', 'kyushu', 'okinawa'];
+export const JP_REGION_LABELS: Record<JpRegion, string> = {
+  kanto: '関東',
+  hokkaido: '北海道',
+  kinki: '近畿',
+  chugoku: '中国',
+  kyushu: '九州',
+  okinawa: '沖縄',
+};
+
+export function isJpRegion(s: unknown): s is JpRegion {
+  return typeof s === 'string' && (JP_REGIONS as readonly string[]).includes(s);
+}
+
 export interface JpStation {
   freqHz: number;
   band: JpBand;
   name: string;
+  region?: JpRegion;  // undefined for manualStations (always consulted, region-independent)
 }
 
 interface JpStationFile {
-  // Auto-scraped from 関東総合通信局 (PI Update Now button overwrites this).
+  // Auto-scraped from each 総合通信局 (PI Update Now button overwrites the
+  // entries tagged with the currently-selected region; other regions stay).
   stations?: JpStation[];
   // Hand-curated. Never touched by the scraper. Used for stations the scraper
-  // cannot see (NHK R2, AFN, MW DX targets outside the 関東 jurisdiction).
+  // cannot see (NHK R2, AFN, MW DX targets outside any 関東 jurisdiction).
   manualStations?: JpStation[];
 }
 
@@ -69,7 +92,7 @@ function scan(list: JpStation[], freqHz: number, band: JpBand, tol: number): { e
   return best ? { entry: best, delta: bestDelta } : null;
 }
 
-export function lookupJpStation(freqHz: number): JpStation | null {
+export function lookupJpStation(freqHz: number, activeRegion?: JpRegion): JpStation | null {
   const band: JpBand | null =
     freqHz >= 76_000_000 && freqHz <= 108_000_000 ? 'FM' :
     freqHz >=    522_000 && freqHz <=   1_710_000 ? 'MW' :
@@ -79,11 +102,20 @@ export function lookupJpStation(freqHz: number): JpStation | null {
   const tol = band === 'FM' ? FM_TOLERANCE_HZ : MW_TOLERANCE_HZ;
   const { auto, manual } = load();
 
+  // Region filter: when activeRegion is supplied, only consider auto entries
+  // tagged with that region. Untagged auto entries are also kept (defensive
+  // fallback for old files that pre-date the region field — they shouldn't
+  // exist after migration but we don't want a missing field to silently drop
+  // every result). manualStations is never filtered.
+  const filteredAuto = activeRegion
+    ? auto.filter(s => !s.region || s.region === activeRegion)
+    : auto;
+
   // manualStations wins on freqHz collision — those entries are deliberate
   // hand-curated overrides (e.g. "NHKラジオ第2" at 693 vs the scraper's
   // generic "NHK" naming, or a DX target outside the 関東 jurisdiction).
-  const m = scan(manual, freqHz, band, tol);
-  const a = scan(auto,   freqHz, band, tol);
+  const m = scan(manual,       freqHz, band, tol);
+  const a = scan(filteredAuto, freqHz, band, tol);
   if (m && a) return m.delta <= a.delta ? m.entry : a.entry;
   return (m ?? a)?.entry ?? null;
 }
@@ -95,4 +127,12 @@ export function jpStationCount(): number {
 
 export function jpStationCountAuto(): number {
   return load().auto.length;
+}
+
+export function jpStationCountForRegion(region: JpRegion): number {
+  return load().auto.filter(s => s.region === region).length;
+}
+
+export function jpStationCountManual(): number {
+  return load().manual.length;
 }

@@ -66,6 +66,16 @@
     <button type="button" id="eibiUpdateBtn">Update Now</button>
     <span class="status" id="eibiStatus"></span>
   </div>
+  <div class="row"><label>JP region</label>
+    <select id="jpRegionSelect">
+      <option value="kanto">関東</option>
+      <option value="hokkaido">北海道</option>
+      <option value="kinki">近畿</option>
+      <option value="chugoku">中国</option>
+      <option value="kyushu">九州</option>
+      <option value="okinawa">沖縄</option>
+    </select>
+  </div>
   <div class="row"><label>JP DB</label>
     <button type="button" id="jpUpdateBtn">Update Now</button>
     <span class="status" id="jpStatus"></span>
@@ -91,6 +101,7 @@
       sendToPlugin({ action: 'getServerConfig' });
       sendToPlugin({ action: 'getEibiStatus' });
       sendToPlugin({ action: 'getJpStationsStatus' });
+      sendToPlugin({ action: 'getJpRegion' });
     };
     websocket.onmessage = function(evt) {
       var msg = JSON.parse(evt.data);
@@ -134,16 +145,25 @@
         }
       }
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'jpStationsStatus') {
-        renderJpStatus(msg.payload.when, msg.payload.count, null);
+        renderJpStatus(msg.payload.when, msg.payload.count, null,
+                       msg.payload.region, msg.payload.manualCount, msg.payload.totalAuto);
       }
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'jpStationsUpdated') {
         var jbtn = document.getElementById('jpUpdateBtn');
         jbtn.disabled = false;
         jbtn.textContent = 'Update Now';
         if (msg.payload.ok) {
-          renderJpStatus(msg.payload.when, msg.payload.count, null);
+          // After successful update, ask for fresh status (count may include
+          // entries from other regions in the merged file).
+          sendToPlugin({ action: 'getJpStationsStatus' });
         } else {
-          renderJpStatus(null, null, msg.payload.error || 'unknown error');
+          renderJpStatus(null, null, msg.payload.error || 'unknown error',
+                         msg.payload.region, null, null);
+        }
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'jpRegion') {
+        if (msg.payload.region) {
+          document.getElementById('jpRegionSelect').value = msg.payload.region;
         }
       }
     };
@@ -270,7 +290,11 @@
     sendToPlugin({ action: 'updateEibi' });
   });
 
-  function renderJpStatus(whenIso, count, errMsg) {
+  var JP_REGION_LABELS = {
+    kanto: '関東', hokkaido: '北海道', kinki: '近畿',
+    chugoku: '中国', kyushu: '九州', okinawa: '沖縄',
+  };
+  function renderJpStatus(whenIso, count, errMsg, region, manualCount, totalAuto) {
     var el = document.getElementById('jpStatus');
     if (errMsg) {
       el.className = 'status err';
@@ -282,7 +306,13 @@
     var d = new Date(whenIso);
     var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
     var dateStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    el.textContent = 'Last update: ' + dateStr + '  /  ' + count + ' entries';
+    var label = (region && JP_REGION_LABELS[region]) ? JP_REGION_LABELS[region] : '';
+    var manualPart = (typeof manualCount === 'number' && manualCount > 0) ? ' + ' + manualCount + ' manual' : '';
+    var totalPart  = (typeof totalAuto === 'number' && typeof count === 'number' && totalAuto > count)
+      ? ' (file total ' + totalAuto + ')' : '';
+    el.textContent = 'Last update: ' + dateStr + ' / '
+      + (label ? label + ' ' : '') + (count != null ? count : '?') + ' entries'
+      + manualPart + totalPart;
   }
   document.getElementById('jpUpdateBtn').addEventListener('click', function() {
     var btn = this;
@@ -291,6 +321,9 @@
     document.getElementById('jpStatus').className = 'status';
     document.getElementById('jpStatus').textContent = '';
     sendToPlugin({ action: 'updateJpStations' });
+  });
+  document.getElementById('jpRegionSelect').addEventListener('change', function() {
+    sendToPlugin({ action: 'setJpRegion', region: this.value });
   });
 </script>
 </html>

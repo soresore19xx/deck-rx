@@ -1,7 +1,8 @@
 import { parse, HTMLElement } from 'node-html-parser';
-import type { JpStation } from './japanStations.js';
+import type { JpStation, JpRegion } from './japanStations.js';
+import { JP_REGION_LABELS } from './japanStations.js';
 
-const SOURCE_URL = 'https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html';
+const KANTO_SOURCE_URL = 'https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html';
 
 // Operator-name aliases for stations whose 総務省 法人名 is verbose or
 // otherwise less recognisable than a common brand. Applied after the generic
@@ -206,13 +207,14 @@ export function parseSoumuKantoHtml(html: string): JpStation[] {
 
 // Fetch the 関東 list page and return the parsed station array. The page is
 // served as Shift_JIS — Node's built-in TextDecoder('shift-jis') handles the
-// transcode without an extra dependency.
-export async function fetchJpStations(): Promise<JpStation[]> {
+// transcode without an extra dependency. Each entry is tagged with
+// region: 'kanto' so it can be filtered correctly at lookup time.
+async function fetchKantoStations(): Promise<JpStation[]> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 30000);
   let resp: Response;
   try {
-    resp = await fetch(SOURCE_URL, { signal: ctrl.signal });
+    resp = await fetch(KANTO_SOURCE_URL, { signal: ctrl.signal });
   } finally {
     clearTimeout(t);
   }
@@ -222,5 +224,32 @@ export async function fetchJpStations(): Promise<JpStation[]> {
   const html = new TextDecoder('shift-jis').decode(buf);
   const stations = parseSoumuKantoHtml(html);
   if (stations.length < 50) throw new Error(`too few entries parsed (${stations.length})`);
-  return stations;
+  return stations.map(s => ({ ...s, region: 'kanto' as const }));
+}
+
+/**
+ * Region-aware scraper dispatcher. Returns stations with region pre-tagged
+ * so the caller can merge results into the global stations[] without having
+ * to remember which region was just scraped.
+ *
+ * Currently only `'kanto'` is implemented; the other regions throw a
+ * descriptive "not yet implemented" error. The PI surfaces the error via
+ * the existing renderJpStatus failure path.
+ */
+export async function scrapeJpStations(region: JpRegion): Promise<JpStation[]> {
+  switch (region) {
+    case 'kanto':
+      return fetchKantoStations();
+    case 'hokkaido':
+    case 'kinki':
+    case 'chugoku':
+    case 'kyushu':
+    case 'okinawa':
+      throw new Error(`${JP_REGION_LABELS[region]} (${region}) scraper not yet implemented — coming in a follow-up release. ` +
+        `For now, add stations manually to manualStations[].`);
+    default: {
+      const _exhaustive: never = region;
+      throw new Error(`Unknown JP region: ${String(_exhaustive)}`);
+    }
+  }
 }

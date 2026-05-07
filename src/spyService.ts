@@ -13,8 +13,13 @@ import { AudioOutput, FfmpegOutput, NaudiodonOutput, OutputErrorTag } from './Au
 import { readFile, writeFile, rename, stat } from 'fs/promises';
 import { join } from 'path';
 import { clearEibiCache, eibiEntryCount, getEibiPath, parseEibiText } from './eibi.js';
-import { clearJpStationsCache, getJpStationsPath, jpStationCountAuto } from './japanStations.js';
-import { fetchJpStations } from './japanStationsScraper.js';
+import {
+  clearJpStationsCache, getJpStationsPath,
+  jpStationCountAuto, jpStationCountForRegion, jpStationCountManual,
+  isJpRegion,
+  type JpRegion, type JpStation,
+} from './japanStations.js';
+import { scrapeJpStations } from './japanStationsScraper.js';
 
 declare const __dirname: string;
 const CONFIG_PATH = join(__dirname, '..', 'config.json');
@@ -84,6 +89,7 @@ interface Config {
   muted?: boolean;
   tuneMode?: 'preset' | 'vfo';
   tuneStepHz?: number;
+  jpRegion?: JpRegion;    // Active region for JP DB lookup + Update Now scrape target
 }
 
 type SyncListener     = (s: SyncInfo) => void;
@@ -121,6 +127,12 @@ class SpyService {
   // any active connection is torn down. Default true (existing users keep
   // current behavior); persisted to config so toggle survives restarts.
   private enabled = true;
+  // Active JP region for station-name lookup. Default 関東 keeps the pre-region
+  // behaviour for users upgrading; persisted to config so a switch in PI
+  // survives restart. Listeners (Tune dial) re-render their header when this
+  // changes so the new region's lookup result shows up immediately.
+  private jpActiveRegion: JpRegion = 'kanto';
+  private jpRegionListeners = new Set<(r: JpRegion) => void>();
   private fmOptions: FMOptions = { ...DEFAULT_FM_OPTIONS };
   private amOptions: AMOptions = { ...DEFAULT_AM_OPTIONS };
   private host = '';
@@ -291,8 +303,12 @@ class SpyService {
       if (typeof cfg.tuneStepHz === 'number' && cfg.tuneStepHz > 0) {
         this.tuneStepHz = cfg.tuneStepHz;
       }
+      if (isJpRegion(cfg.jpRegion)) {
+        this.jpActiveRegion = cfg.jpRegion;
+      }
       for (const fn of this.tuneModeListeners) fn(this.tuneMode);
       for (const fn of this.tuneStepListeners) fn(this.tuneStepHz);
+      for (const fn of this.jpRegionListeners) fn(this.jpActiveRegion);
       // Hydrate per-mode gains. Legacy `cfg.gain` is migrated into `amGain`
       // (where IMD problems first surfaced) so the user keeps their tuned-down
       // value across the upgrade.
@@ -941,6 +957,7 @@ class SpyService {
       am:            cfg.am,
       volume:        cfg.volume,
       muted:         cfg.muted,
+      jpRegion:      isJpRegion(cfg.jpRegion) ? cfg.jpRegion : undefined,
     };
   }
 
@@ -1066,44 +1083,90 @@ class SpyService {
   }
 
   /**
-   * Status of the locally cached JP-stations DB. PI populates the "Last
-   * update" line from this. `count` is just the auto-scraped section
-   * (manualStations are hand-curated and don't have an update timestamp).
+   * Status of the locally cached JP-stations DB for the currently-active
+   * region. PI populates the "Last update" line from this. `count` is the
+   * number of auto-scraped entries tagged with the active region;
+   * `manualCount` is the region-independent hand-curated pool.
    */
-  async getJpStationsStatus(): Promise<{ when: string | null; count: number }> {
+  async getJpStationsStatus(): Promise<{
+    when: string | null; count: number;
+    region: JpRegion; manualCount: number; totalAuto: number;
+  }> {
     try {
       const st = await stat(getJpStationsPath());
-      return { when: st.mtime.toISOString(), count: jpStationCountAuto() };
+      return {
+        when:        st.mtime.toISOString(),
+        count:       jpStationCountForRegion(this.jpActiveRegion),
+        region:      this.jpActiveRegion,
+        manualCount: jpStationCountManual(),
+        totalAuto:   jpStationCountAuto(),
+      };
     } catch {
-      return { when: null, count: 0 };
+      return {
+        when: null, count: 0,
+        region: this.jpActiveRegion, manualCount: 0, totalAuto: 0,
+      };
     }
   }
 
-  /**
-   * Pull the latest 関東総合通信局 ラジオ放送 list, parse it, and replace
-   * the `stations` array in jp-stations.json with the scraped result.
-   * `manualStations` is preserved verbatim (hand-curated entries the
-   * scraper cannot see — NHK R2, AFN, MW DX targets outside 関東). The
-   * previous file is backed up as `.YYYY-MM-DD-HHMMSS`. The in-memory
-   * cache is invalidated so the next lookupJpStation reads fresh data.
-   */
-  async updateJpStations(): Promise<{ ok: true; count: number; when: string } | { ok: false; error: string }> {
-    const path = getJpStationsPath();
-    try {
-      const scraped = await fetchJpStations();
+  /** Active JP DB region (PI dropdown). Used by lookups + Update Now. */
+  getJpActiveRegion(): JpRegion { return this.jpActiveRegion; }
 
-      // Read current file to preserve manualStations + _comment.
+  /** Set the active JP region — persists to config and notifies listeners
+   * so dials re-render their header lookup. No-op if unchanged. */
+  async setJpActiveRegion(region: JpRegion): Promise<void> {
+    if (this.jpActiveRegion === region) return;
+    this.jpActiveRegion = region;
+    try {
+      const cfg = await this.loadConfig();
+      const merged = { ...cfg, jpRegion: region };
+      await writeFile(CONFIG_PATH, JSON.stringify(merged, null, 2));
+    } catch (e) {
+      streamDeck.logger.error(`[spyService] persist jpRegion failed: ${e}`);
+    }
+    for (const fn of this.jpRegionListeners) fn(region);
+  }
+
+  subscribeJpRegion(fn: (r: JpRegion) => void): void {
+    this.jpRegionListeners.add(fn);
+    fn(this.jpActiveRegion); // replay current value
+  }
+  unsubscribeJpRegion(fn: (r: JpRegion) => void): void {
+    this.jpRegionListeners.delete(fn);
+  }
+
+  /**
+   * Pull the latest 総合通信局 ラジオ放送 list for the active region, parse
+   * it, and merge the result into `stations[]` — entries from OTHER regions
+   * are preserved as-is, only this region's entries are replaced. This way
+   * a 関東 user who switches to 近畿 to grab that area's stations doesn't
+   * lose their 関東 entries on the way back. `manualStations` is also
+   * preserved verbatim (hand-curated, region-independent). The previous
+   * file is backed up as `.YYYY-MM-DD-HHMMSS`. The in-memory cache is
+   * invalidated so the next lookupJpStation reads fresh data.
+   */
+  async updateJpStations(): Promise<{ ok: true; count: number; when: string; region: JpRegion } | { ok: false; error: string; region: JpRegion }> {
+    const path = getJpStationsPath();
+    const region = this.jpActiveRegion;
+    try {
+      const scraped = await scrapeJpStations(region);
+
+      // Read current file: keep entries from OTHER regions + manualStations + _comment.
+      let existingOther: JpStation[] = [];
       let manual: unknown = [];
       let comment: unknown = undefined;
       try {
-        const cur = JSON.parse(await readFile(path, 'utf-8')) as { _comment?: unknown; manualStations?: unknown };
+        const cur = JSON.parse(await readFile(path, 'utf-8')) as { _comment?: unknown; stations?: JpStation[]; manualStations?: unknown };
+        existingOther = (cur.stations ?? []).filter(s => s.region !== region);
         manual = cur.manualStations ?? [];
         comment = cur._comment;
       } catch { /* fresh file */ }
 
+      const merged = [...existingOther, ...scraped].sort((a, b) => a.freqHz - b.freqHz);
+
       const next: Record<string, unknown> = {};
       if (comment !== undefined) next._comment = comment;
-      next.stations       = scraped;
+      next.stations       = merged;
       next.manualStations = manual;
 
       // Backup current file under CLAUDE.md's naming rule, then atomic-replace.
@@ -1118,12 +1181,12 @@ class SpyService {
       await rename(tmp, path);
       clearJpStationsCache();
       const st = await stat(path);
-      streamDeck.logger.info(`[spyService] JP stations updated: ${scraped.length} entries`);
-      return { ok: true, count: scraped.length, when: st.mtime.toISOString() };
+      streamDeck.logger.info(`[spyService] JP stations updated: region=${region}, ${scraped.length} new entries (total ${merged.length})`);
+      return { ok: true, count: scraped.length, when: st.mtime.toISOString(), region };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       streamDeck.logger.error(`[spyService] updateJpStations failed: ${msg}`);
-      return { ok: false, error: msg };
+      return { ok: false, error: msg, region };
     }
   }
 

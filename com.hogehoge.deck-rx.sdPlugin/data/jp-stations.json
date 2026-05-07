@@ -4,832 +4,998 @@
     {
       "freqHz": 594000,
       "band": "MW",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 765000,
       "band": "MW",
-      "name": "山梨放送"
+      "name": "山梨放送",
+      "region": "kanto"
     },
     {
       "freqHz": 864000,
       "band": "MW",
-      "name": "栃木放送"
+      "name": "栃木放送",
+      "region": "kanto"
     },
     {
       "freqHz": 927000,
       "band": "MW",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 954000,
       "band": "MW",
-      "name": "TBSラジオ"
+      "name": "TBSラジオ",
+      "region": "kanto"
     },
     {
       "freqHz": 1062000,
       "band": "MW",
-      "name": "栃木放送"
+      "name": "栃木放送",
+      "region": "kanto"
     },
     {
       "freqHz": 1134000,
       "band": "MW",
-      "name": "文化放送"
+      "name": "文化放送",
+      "region": "kanto"
     },
     {
       "freqHz": 1197000,
       "band": "MW",
-      "name": "LuckyFM"
+      "name": "LuckyFM",
+      "region": "kanto"
     },
     {
       "freqHz": 1242000,
       "band": "MW",
-      "name": "ニッポン放送"
+      "name": "ニッポン放送",
+      "region": "kanto"
     },
     {
       "freqHz": 1422000,
       "band": "MW",
-      "name": "ラジオ日本"
+      "name": "ラジオ日本",
+      "region": "kanto"
     },
     {
       "freqHz": 1458000,
       "band": "MW",
-      "name": "LuckyFM"
+      "name": "LuckyFM",
+      "region": "kanto"
     },
     {
       "freqHz": 1485000,
       "band": "MW",
-      "name": "ラジオ日本"
+      "name": "ラジオ日本",
+      "region": "kanto"
     },
     {
       "freqHz": 1530000,
       "band": "MW",
-      "name": "栃木放送"
+      "name": "栃木放送",
+      "region": "kanto"
     },
     {
       "freqHz": 1584000,
       "band": "MW",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 76100000,
       "band": "FM",
-      "name": "FMわたらせ"
+      "name": "FMわたらせ",
+      "region": "kanto"
     },
     {
       "freqHz": 76200000,
       "band": "FM",
-      "name": "FMぱるるん"
+      "name": "FMぱるるん",
+      "region": "kanto"
     },
     {
       "freqHz": 76200000,
       "band": "FM",
-      "name": "ラジオ高崎"
+      "name": "ラジオ高崎",
+      "region": "kanto"
     },
     {
       "freqHz": 76300000,
       "band": "FM",
-      "name": "エフエム甲府"
+      "name": "エフエム甲府",
+      "region": "kanto"
     },
     {
       "freqHz": 76400000,
       "band": "FM",
-      "name": "エフエム栃木"
+      "name": "エフエム栃木",
+      "region": "kanto"
     },
     {
       "freqHz": 76500000,
       "band": "FM",
-      "name": "InterFM897"
+      "name": "InterFM897",
+      "region": "kanto"
     },
     {
       "freqHz": 76500000,
       "band": "FM",
-      "name": "FM OZE"
+      "name": "FM OZE",
+      "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
-      "name": "エフエム東京"
+      "name": "エフエム東京",
+      "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
-      "name": "エフエム群馬"
+      "name": "エフエム群馬",
+      "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
-      "name": "FMかしま"
+      "name": "FMかしま",
+      "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
-      "name": "エフエム太郎"
+      "name": "エフエム太郎",
+      "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
-      "name": "フラワーラジオ"
+      "name": "フラワーラジオ",
+      "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
-      "name": "いちはらFM"
+      "name": "いちはらFM",
+      "region": "kanto"
     },
     {
       "freqHz": 76800000,
       "band": "FM",
-      "name": "エフエムふじごこ"
+      "name": "エフエムふじごこ",
+      "region": "kanto"
     },
     {
       "freqHz": 76900000,
       "band": "FM",
-      "name": "いせさきFM"
+      "name": "いせさきFM",
+      "region": "kanto"
     },
     {
       "freqHz": 77300000,
       "band": "FM",
-      "name": "ミヤラジ"
+      "name": "ミヤラジ",
+      "region": "kanto"
     },
     {
       "freqHz": 77300000,
       "band": "FM",
-      "name": "ラヂオななみ"
+      "name": "ラヂオななみ",
+      "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
-      "name": "エフエムナックファイブ"
+      "name": "エフエムナックファイブ",
+      "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
-      "name": "FMだいご"
+      "name": "FMだいご",
+      "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
-      "name": "おーラジ"
+      "name": "おーラジ",
+      "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
-      "name": "ナナコライブリーエフエム"
+      "name": "ナナコライブリーエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
-      "name": "Tokyo Star Radio"
+      "name": "Tokyo Star Radio",
+      "region": "kanto"
     },
     {
       "freqHz": 77600000,
       "band": "FM",
-      "name": "FMふじやま"
+      "name": "FMふじやま",
+      "region": "kanto"
     },
     {
       "freqHz": 77700000,
       "band": "FM",
-      "name": "ベイエフエム"
+      "name": "ベイエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 77700000,
       "band": "FM",
-      "name": "エフエムきりゅう"
+      "name": "エフエムきりゅう",
+      "region": "kanto"
     },
     {
       "freqHz": 77700000,
       "band": "FM",
-      "name": "FMチャッピー"
+      "name": "FMチャッピー",
+      "region": "kanto"
     },
     {
       "freqHz": 77700000,
       "band": "FM",
-      "name": "FMやまと"
+      "name": "FMやまと",
+      "region": "kanto"
     },
     {
       "freqHz": 77800000,
       "band": "FM",
-      "name": "エフエム群馬"
+      "name": "エフエム群馬",
+      "region": "kanto"
     },
     {
       "freqHz": 78000000,
       "band": "FM",
-      "name": "ベイエフエム"
+      "name": "ベイエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 78200000,
       "band": "FM",
-      "name": "むさしのFM"
+      "name": "むさしのFM",
+      "region": "kanto"
     },
     {
       "freqHz": 78300000,
       "band": "FM",
-      "name": "エフエム栃木"
+      "name": "エフエム栃木",
+      "region": "kanto"
     },
     {
       "freqHz": 78300000,
       "band": "FM",
-      "name": "FM湘南ナパサ"
+      "name": "FM湘南ナパサ",
+      "region": "kanto"
     },
     {
       "freqHz": 78500000,
       "band": "FM",
-      "name": "エフエム栃木"
+      "name": "エフエム栃木",
+      "region": "kanto"
     },
     {
       "freqHz": 78500000,
       "band": "FM",
-      "name": "FM・ブルー湘南"
+      "name": "FM・ブルー湘南",
+      "region": "kanto"
     },
     {
       "freqHz": 78600000,
       "band": "FM",
-      "name": "エフエム富士"
+      "name": "エフエム富士",
+      "region": "kanto"
     },
     {
       "freqHz": 78900000,
       "band": "FM",
-      "name": "かつしかFM"
+      "name": "かつしかFM",
+      "region": "kanto"
     },
     {
       "freqHz": 78900000,
       "band": "FM",
-      "name": "湘南ビーチFM"
+      "name": "湘南ビーチFM",
+      "region": "kanto"
     },
     {
       "freqHz": 79000000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 79000000,
       "band": "FM",
-      "name": "ちちぶエフエム"
+      "name": "ちちぶエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 79000000,
       "band": "FM",
-      "name": "多摩レイクサイドFM"
+      "name": "多摩レイクサイドFM",
+      "region": "kanto"
     },
     {
       "freqHz": 79100000,
       "band": "FM",
-      "name": "エフエム栃木"
+      "name": "エフエム栃木",
+      "region": "kanto"
     },
     {
       "freqHz": 79100000,
       "band": "FM",
-      "name": "かわさきFM"
+      "name": "かわさきFM",
+      "region": "kanto"
     },
     {
       "freqHz": 79300000,
       "band": "FM",
-      "name": "ベイエフエム"
+      "name": "ベイエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 79400000,
       "band": "FM",
-      "name": "エフエム群馬"
+      "name": "エフエム群馬",
+      "region": "kanto"
     },
     {
       "freqHz": 79500000,
       "band": "FM",
-      "name": "エフエムナックファイブ"
+      "name": "エフエムナックファイブ",
+      "region": "kanto"
     },
     {
       "freqHz": 79600000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 79700000,
       "band": "FM",
-      "name": "ベイエフエム"
+      "name": "ベイエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 80000000,
       "band": "FM",
-      "name": "エフエム東京"
+      "name": "エフエム東京",
+      "region": "kanto"
     },
     {
       "freqHz": 80300000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 80400000,
       "band": "FM",
-      "name": "横浜エフエム放送"
+      "name": "横浜エフエム放送",
+      "region": "kanto"
     },
     {
       "freqHz": 80500000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 80500000,
       "band": "FM",
-      "name": "エフエム東京"
+      "name": "エフエム東京",
+      "region": "kanto"
     },
     {
       "freqHz": 80500000,
       "band": "FM",
-      "name": "エフエム富士"
+      "name": "エフエム富士",
+      "region": "kanto"
     },
     {
       "freqHz": 80700000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 81300000,
       "band": "FM",
-      "name": "J−WAVE"
+      "name": "J−WAVE",
+      "region": "kanto"
     },
     {
       "freqHz": 81600000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 81900000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 82000000,
       "band": "FM",
-      "name": "エフエム群馬"
+      "name": "エフエム群馬",
+      "region": "kanto"
     },
     {
       "freqHz": 82200000,
       "band": "FM",
-      "name": "エフエム群馬"
+      "name": "エフエム群馬",
+      "region": "kanto"
     },
     {
       "freqHz": 82200000,
       "band": "FM",
-      "name": "FMひたち"
+      "name": "FMひたち",
+      "region": "kanto"
     },
     {
       "freqHz": 82200000,
       "band": "FM",
-      "name": "エフエム八ヶ岳"
+      "name": "エフエム八ヶ岳",
+      "region": "kanto"
     },
     {
       "freqHz": 82500000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 82600000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 82800000,
       "band": "FM",
-      "name": "鎌倉エフエム"
+      "name": "鎌倉エフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 82900000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 83000000,
       "band": "FM",
-      "name": "エフエム富士"
+      "name": "エフエム富士",
+      "region": "kanto"
     },
     {
       "freqHz": 83000000,
       "band": "FM",
-      "name": "市川うららFM"
+      "name": "市川うららFM",
+      "region": "kanto"
     },
     {
       "freqHz": 83100000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 83100000,
       "band": "FM",
-      "name": "レディオ湘南"
+      "name": "レディオ湘南",
+      "region": "kanto"
     },
     {
       "freqHz": 83200000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 83400000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 83400000,
       "band": "FM",
-      "name": "かずさエフエム"
+      "name": "かずさエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 83400000,
       "band": "FM",
-      "name": "エフエム世田谷"
+      "name": "エフエム世田谷",
+      "region": "kanto"
     },
     {
       "freqHz": 83500000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 83600000,
       "band": "FM",
-      "name": "エフエム東京"
+      "name": "エフエム東京",
+      "region": "kanto"
     },
     {
       "freqHz": 83600000,
       "band": "FM",
-      "name": "むらラジ やまラジ 836"
+      "name": "むらラジ やまラジ 836",
+      "region": "kanto"
     },
     {
       "freqHz": 83700000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 83700000,
       "band": "FM",
-      "name": "Radio NARITA"
+      "name": "Radio NARITA",
+      "region": "kanto"
     },
     {
       "freqHz": 83700000,
       "band": "FM",
-      "name": "エフエム戸塚"
+      "name": "エフエム戸塚",
+      "region": "kanto"
     },
     {
       "freqHz": 83800000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 83800000,
       "band": "FM",
-      "name": "調布FM"
+      "name": "調布FM",
+      "region": "kanto"
     },
     {
       "freqHz": 83900000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 83900000,
       "band": "FM",
-      "name": "FM HOT 839"
+      "name": "FM HOT 839",
+      "region": "kanto"
     },
     {
       "freqHz": 84000000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 84000000,
       "band": "FM",
-      "name": "発するFM"
+      "name": "発するFM",
+      "region": "kanto"
     },
     {
       "freqHz": 84000000,
       "band": "FM",
-      "name": "Radio City"
+      "name": "Radio City",
+      "region": "kanto"
     },
     {
       "freqHz": 84100000,
       "band": "FM",
-      "name": "FMサルース"
+      "name": "FMサルース",
+      "region": "kanto"
     },
     {
       "freqHz": 84200000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 84200000,
       "band": "FM",
-      "name": "ラヂオつくば"
+      "name": "ラヂオつくば",
+      "region": "kanto"
     },
     {
       "freqHz": 84200000,
       "band": "FM",
-      "name": "エフエム西東京"
+      "name": "エフエム西東京",
+      "region": "kanto"
     },
     {
       "freqHz": 84200000,
       "band": "FM",
-      "name": "FMカオン"
+      "name": "FMカオン",
+      "region": "kanto"
     },
     {
       "freqHz": 84300000,
       "band": "FM",
-      "name": "エフエム東京"
+      "name": "エフエム東京",
+      "region": "kanto"
     },
     {
       "freqHz": 84300000,
       "band": "FM",
-      "name": "FMえどがわ"
+      "name": "FMえどがわ",
+      "region": "kanto"
     },
     {
       "freqHz": 84400000,
       "band": "FM",
-      "name": "エフエム栃木"
+      "name": "エフエム栃木",
+      "region": "kanto"
     },
     {
       "freqHz": 84400000,
       "band": "FM",
-      "name": "エフエムたちかわ"
+      "name": "エフエムたちかわ",
+      "region": "kanto"
     },
     {
       "freqHz": 84500000,
       "band": "FM",
-      "name": "M-wave"
+      "name": "M-wave",
+      "region": "kanto"
     },
     {
       "freqHz": 84700000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 84700000,
       "band": "FM",
-      "name": "横浜エフエム放送"
+      "name": "横浜エフエム放送",
+      "region": "kanto"
     },
     {
       "freqHz": 84800000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 84900000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 85100000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 85400000,
       "band": "FM",
-      "name": "FM うしくうれしく放送"
+      "name": "FM うしくうれしく放送",
+      "region": "kanto"
     },
     {
       "freqHz": 85400000,
       "band": "FM",
-      "name": "TOKYO854くるめラ"
+      "name": "TOKYO854くるめラ",
+      "region": "kanto"
     },
     {
       "freqHz": 85500000,
       "band": "FM",
-      "name": "金沢シーサイドFM"
+      "name": "金沢シーサイドFM",
+      "region": "kanto"
     },
     {
       "freqHz": 85600000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 85600000,
       "band": "FM",
-      "name": "FM Kawaguchi"
+      "name": "FM Kawaguchi",
+      "region": "kanto"
     },
     {
       "freqHz": 85600000,
       "band": "FM",
-      "name": "FM湘南マジックウエイブ"
+      "name": "FM湘南マジックウエイブ",
+      "region": "kanto"
     },
     {
       "freqHz": 85700000,
       "band": "FM",
-      "name": "FMくらら857"
+      "name": "FMくらら857",
+      "region": "kanto"
     },
     {
       "freqHz": 85700000,
       "band": "FM",
-      "name": "コマラジ"
+      "name": "コマラジ",
+      "region": "kanto"
     },
     {
       "freqHz": 85800000,
       "band": "FM",
-      "name": "FMふくろう"
+      "name": "FMふくろう",
+      "region": "kanto"
     },
     {
       "freqHz": 85900000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 86000000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 86100000,
       "band": "FM",
-      "name": "マリンFM"
+      "name": "マリンFM",
+      "region": "kanto"
     },
     {
       "freqHz": 86300000,
       "band": "FM",
-      "name": "エフエム群馬"
+      "name": "エフエム群馬",
+      "region": "kanto"
     },
     {
       "freqHz": 86500000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 86600000,
       "band": "FM",
-      "name": "エフエム東京"
+      "name": "エフエム東京",
+      "region": "kanto"
     },
     {
       "freqHz": 86800000,
       "band": "FM",
-      "name": "ハローハッピー こしがやエフエム"
+      "name": "ハローハッピー こしがやエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 87000000,
       "band": "FM",
-      "name": "横浜エフエム放送"
+      "name": "横浜エフエム放送",
+      "region": "kanto"
     },
     {
       "freqHz": 87100000,
       "band": "FM",
-      "name": "エフエム群馬"
+      "name": "エフエム群馬",
+      "region": "kanto"
     },
     {
       "freqHz": 87300000,
       "band": "FM",
-      "name": "REDS WAVE"
+      "name": "REDS WAVE",
+      "region": "kanto"
     },
     {
       "freqHz": 87400000,
       "band": "FM",
-      "name": "ベイエフエム"
+      "name": "ベイエフエム",
+      "region": "kanto"
     },
     {
       "freqHz": 87400000,
       "band": "FM",
-      "name": "FMもおか"
+      "name": "FMもおか",
+      "region": "kanto"
     },
     {
       "freqHz": 87400000,
       "band": "FM",
-      "name": "ラジオフチューズ"
+      "name": "ラジオフチューズ",
+      "region": "kanto"
     },
     {
       "freqHz": 87600000,
       "band": "FM",
-      "name": "FMクマガヤ"
+      "name": "FMクマガヤ",
+      "region": "kanto"
     },
     {
       "freqHz": 87600000,
       "band": "FM",
-      "name": "渋谷のラジオ"
+      "name": "渋谷のラジオ",
+      "region": "kanto"
     },
     {
       "freqHz": 87900000,
       "band": "FM",
-      "name": "FMゆうがお"
+      "name": "FMゆうがお",
+      "region": "kanto"
     },
     {
       "freqHz": 87900000,
       "band": "FM",
-      "name": "FMおだわら"
+      "name": "FMおだわら",
+      "region": "kanto"
     },
     {
       "freqHz": 88000000,
       "band": "FM",
-      "name": "エフエム群馬"
+      "name": "エフエム群馬",
+      "region": "kanto"
     },
     {
       "freqHz": 88100000,
       "band": "FM",
-      "name": "LuckyFM"
+      "name": "LuckyFM",
+      "region": "kanto"
     },
     {
       "freqHz": 88300000,
       "band": "FM",
-      "name": "J−WAVE"
+      "name": "J−WAVE",
+      "region": "kanto"
     },
     {
       "freqHz": 88300000,
       "band": "FM",
-      "name": "FM DAMONO"
+      "name": "FM DAMONO",
+      "region": "kanto"
     },
     {
       "freqHz": 88500000,
       "band": "FM",
-      "name": "FMふっかちゃん"
+      "name": "FMふっかちゃん",
+      "region": "kanto"
     },
     {
       "freqHz": 88500000,
       "band": "FM",
-      "name": "大江戸放送局"
+      "name": "大江戸放送局",
+      "region": "kanto"
     },
     {
       "freqHz": 88700000,
       "band": "FM",
-      "name": "ラジオ川越"
+      "name": "ラジオ川越",
+      "region": "kanto"
     },
     {
       "freqHz": 88900000,
       "band": "FM",
-      "name": "FMしながわ"
+      "name": "FMしながわ",
+      "region": "kanto"
     },
     {
       "freqHz": 89000000,
       "band": "FM",
-      "name": "NHK"
+      "name": "NHK",
+      "region": "kanto"
     },
     {
       "freqHz": 89100000,
       "band": "FM",
-      "name": "あいラジ"
+      "name": "あいラジ",
+      "region": "kanto"
     },
     {
       "freqHz": 89200000,
       "band": "FM",
-      "name": "SKYWAVE FM"
+      "name": "SKYWAVE FM",
+      "region": "kanto"
     },
     {
       "freqHz": 89200000,
       "band": "FM",
-      "name": "Hello FM"
+      "name": "Hello FM",
+      "region": "kanto"
     },
     {
       "freqHz": 89200000,
       "band": "FM",
-      "name": "EBOSHI RADIO STATION"
+      "name": "EBOSHI RADIO STATION",
+      "region": "kanto"
     },
     {
       "freqHz": 89700000,
       "band": "FM",
-      "name": "InterFM897"
+      "name": "InterFM897",
+      "region": "kanto"
     },
     {
       "freqHz": 90500000,
       "band": "FM",
-      "name": "TBSラジオ"
+      "name": "TBSラジオ",
+      "region": "kanto"
     },
     {
       "freqHz": 90900000,
       "band": "FM",
-      "name": "山梨放送"
+      "name": "山梨放送",
+      "region": "kanto"
     },
     {
       "freqHz": 91100000,
       "band": "FM",
-      "name": "栃木放送"
+      "name": "栃木放送",
+      "region": "kanto"
     },
     {
       "freqHz": 91600000,
       "band": "FM",
-      "name": "文化放送"
+      "name": "文化放送",
+      "region": "kanto"
     },
     {
       "freqHz": 92400000,
       "band": "FM",
-      "name": "ラジオ日本"
+      "name": "ラジオ日本",
+      "region": "kanto"
     },
     {
       "freqHz": 93000000,
       "band": "FM",
-      "name": "ニッポン放送"
+      "name": "ニッポン放送",
+      "region": "kanto"
     },
     {
       "freqHz": 93400000,
       "band": "FM",
-      "name": "栃木放送"
+      "name": "栃木放送",
+      "region": "kanto"
     },
     {
       "freqHz": 94100000,
       "band": "FM",
-      "name": "栃木放送"
+      "name": "栃木放送",
+      "region": "kanto"
     },
     {
       "freqHz": 94600000,
       "band": "FM",
-      "name": "LuckyFM"
+      "name": "LuckyFM",
+      "region": "kanto"
     },
     {
       "freqHz": 94900000,
       "band": "FM",
-      "name": "FM大師"
+      "name": "FM大師",
+      "region": "kanto"
     }
   ],
   "manualStations": [

@@ -9,16 +9,17 @@ import { dumpTuneLcd } from '../dialDisplay.js';
 import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
 import { loadPresets, Preset } from './spyTune.js';
 import { lookupEibi } from '../eibi.js';
-import { lookupJpStation } from '../japanStations.js';
+import { lookupJpStation, isJpRegion, type JpRegion } from '../japanStations.js';
 
 // Station-name auto-lookup priority:
-//   1. jp-stations.json — hand-curated Tokyo Kanto FM/MW. Wins for FM (EIBI has
-//      no entries above 30 MHz) and for MW (covers domestic Japanese stations
-//      EIBI doesn't list, e.g. NHK R1 594 kHz).
+//   1. jp-stations.json — auto-scraped 総務省 region tables (filtered by the
+//      user's active region) + region-independent manualStations. Wins for FM
+//      (EIBI has no entries above 30 MHz) and for MW (covers domestic
+//      Japanese stations EIBI doesn't list, e.g. NHK R1 594 kHz).
 //   2. EIBI — international SW + some MW DX entries with day/time-aware match.
 //   3. (caller falls back to the user's preset name when both return null.)
-function autoStationLabel(freqHz: number): string | null {
-  const jp = lookupJpStation(freqHz);
+function autoStationLabel(freqHz: number, activeRegion: JpRegion): string | null {
+  const jp = lookupJpStation(freqHz, activeRegion);
   if (jp) return jp.name;
   if (freqHz >= 16_000 && freqHz <= 30_000_000) {
     const e = lookupEibi(freqHz);
@@ -82,6 +83,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private longPressFired = false;
   private tuneModeListener: ((m: 'preset' | 'vfo') => void) | null = null;
   private tuneStepListener: ((s: number) => void) | null = null;
+  private jpRegionListener: ((r: JpRegion) => void) | null = null;
 
   override async onWillAppear(ev: WillAppearEvent<DialTuneSettings>): Promise<void> {
     this.dialMode   = spyService.getTuneMode();
@@ -95,6 +97,8 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     spyService.subscribeTuneMode(this.tuneModeListener);
     this.tuneStepListener = (s) => { this.stepHz = s; this.updateDisplay(ev.action).catch(() => {}); };
     spyService.subscribeTuneStep(this.tuneStepListener);
+    this.jpRegionListener = () => { this.updateDisplay(this.lastAction).catch(() => {}); };
+    spyService.subscribeJpRegion(this.jpRegionListener);
 
     this.syncListener = (s: SyncInfo) => {
       if (this.dialMode === 'vfo') {
@@ -151,6 +155,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     if (this.connStateListener) { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
     if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
     if (this.tuneStepListener) { spyService.unsubscribeTuneStep(this.tuneStepListener); this.tuneStepListener = null; }
+    if (this.jpRegionListener) { spyService.unsubscribeJpRegion(this.jpRegionListener); this.jpRegionListener = null; }
     if (this.tuneTimer) { clearTimeout(this.tuneTimer); this.tuneTimer = null; }
     if (this.footerTimer) { clearInterval(this.footerTimer); this.footerTimer = null; }
     this.lastAction = null;
@@ -284,8 +289,11 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const st = await spyService.getJpStationsStatus();
       await streamDeck.ui.sendToPropertyInspector({
         action: 'jpStationsStatus',
-        when: st.when,
-        count: st.count,
+        when:        st.when,
+        count:       st.count,
+        region:      st.region,
+        manualCount: st.manualCount,
+        totalAuto:   st.totalAuto,
       });
     }
     if (ev.payload['action'] === 'updateJpStations') {
@@ -294,6 +302,31 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         action: 'jpStationsUpdated',
         ...res,
       });
+    }
+    if (ev.payload['action'] === 'getJpRegion') {
+      await streamDeck.ui.sendToPropertyInspector({
+        action: 'jpRegion',
+        region: spyService.getJpActiveRegion(),
+      });
+    }
+    if (ev.payload['action'] === 'setJpRegion') {
+      const r = (ev.payload as { region?: unknown }).region;
+      if (isJpRegion(r)) {
+        await spyService.setJpActiveRegion(r);
+        // PI status line should refresh now that the region changed (the
+        // count switches to the new region's pool).
+        const st = await spyService.getJpStationsStatus();
+        await streamDeck.ui.sendToPropertyInspector({
+          action: 'jpStationsStatus',
+          when:        st.when,
+          count:       st.count,
+          region:      st.region,
+          manualCount: st.manualCount,
+          totalAuto:   st.totalAuto,
+        });
+      } else {
+        streamDeck.logger.warn(`[spyDialTune] setJpRegion: invalid region ${String(r)}`);
+      }
     }
   }
 
@@ -348,7 +381,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const freq = p?.freq ?? 0;
       const { num, unit } = freqParts(freq);
       const modeStr = p ? (MODES[p.mode] ?? '') : '';
-      const auto = p ? autoStationLabel(freq) : null;
+      const auto = p ? autoStationLabel(freq, spyService.getJpActiveRegion()) : null;
       const baseHeader = p ? `${modeStr}  ${auto ?? p.name}` : 'No presets';
       const header = !this.enabled ? `OFF  ${baseHeader}`
                    : offline        ? `LINK  ${baseHeader}`
@@ -375,7 +408,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     } else {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       const { num, unit } = freqParts(freq);
-      const auto = autoStationLabel(freq);
+      const auto = autoStationLabel(freq, spyService.getJpActiveRegion());
       const baseHeader = auto
         ? `VFO  ${auto}`
         : `VFO  step:${formatStep(this.stepHz)}`;

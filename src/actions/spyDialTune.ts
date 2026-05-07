@@ -162,8 +162,23 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   }
 
   override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<DialTuneSettings>): Promise<void> {
-    // Tune mode / step are global (set via Options panel) — ignore the
-    // per-dial Settings fields for these. slotIndex stays per-dial.
+    // tuneMode / stepHz are global spyService state, but the PI persists them
+    // through the per-dial Settings (`{ mode, stepHz, ... }`). Mirror those
+    // into spyService here — without this, switching Mode in PI from Preset
+    // to VFO step would do nothing (PI saved the new value but the radio
+    // kept running in the previously-set tuneMode), and the Options-Combo
+    // dial would never see the change either since its tuneModeListener is
+    // only fired by spyService.setTuneMode().
+    const settingsMode = ev.payload.settings.mode;
+    if (settingsMode === 'preset' || settingsMode === 'vfo') {
+      if (settingsMode !== spyService.getTuneMode()) {
+        spyService.setTuneMode(settingsMode);
+      }
+    }
+    const settingsStepHz = ev.payload.settings.stepHz;
+    if (typeof settingsStepHz === 'number' && settingsStepHz > 0 && settingsStepHz !== spyService.getTuneStepHz()) {
+      spyService.setTuneStepHz(settingsStepHz);
+    }
     this.dialMode   = spyService.getTuneMode();
     this.stepHz     = spyService.getTuneStepHz();
     this.slotIndex  = ev.payload.settings.slotIndex ?? 0;
@@ -308,6 +323,21 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         action: 'jpRegion',
         region: spyService.getJpActiveRegion(),
       });
+    }
+    if (ev.payload['action'] === 'setTuneMode') {
+      // PI dispatches this whenever Mode / Step dropdowns change. We mirror
+      // into spyService here (the source of truth) so the change actually
+      // takes effect — relying on the per-dial setSettings round-trip alone
+      // is fragile because didReceiveSettings doesn't always echo back to
+      // the same dial that triggered it. Also notifies all subscribers
+      // (Options-Combo dial in particular) via setTuneMode/setTuneStepHz.
+      const p = ev.payload as { mode?: unknown; stepHz?: unknown };
+      if (p.mode === 'preset' || p.mode === 'vfo') {
+        if (p.mode !== spyService.getTuneMode()) spyService.setTuneMode(p.mode);
+      }
+      if (typeof p.stepHz === 'number' && p.stepHz > 0 && p.stepHz !== spyService.getTuneStepHz()) {
+        spyService.setTuneStepHz(p.stepHz);
+      }
     }
     if (ev.payload['action'] === 'setJpRegion') {
       const r = (ev.payload as { region?: unknown }).region;

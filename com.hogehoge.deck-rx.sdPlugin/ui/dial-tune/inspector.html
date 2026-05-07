@@ -202,6 +202,11 @@
       borderSide: document.getElementById('borderSelect').value,
     };
     websocket.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: payload }));
+    // Mode / stepHz are global spyService state. Push them explicitly so the
+    // change applies immediately — relying on the didReceiveSettings echo is
+    // unreliable (the SDK does not always round-trip per-dial settings back
+    // to the dial that triggered the save).
+    sendToPlugin({ action: 'setTuneMode', mode: payload.mode, stepHz: payload.stepHz });
   }
   function buildDeviceList(devices, current, savedName) {
     var sel = document.getElementById('deviceSelect');

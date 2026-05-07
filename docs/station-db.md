@@ -13,7 +13,7 @@ The JP DB is **region-aware**. The PI exposes a `JP region` dropdown (関東 / �
 
 The selection is persisted to `config.json` as `jpRegion` (default `kanto` for backward compat). `manualStations` is **region-independent** — those hand-curated entries are always consulted regardless of the active region.
 
-**Scraper implementation status**: 関東 only as of this writing. 北海道 / 近畿 / 中国 / 九州 / 沖縄 are surfaced in the dropdown but `Update Now` returns a "scraper not yet implemented" error for those regions — they'll be added in follow-up commits as each 総通局's HTML is parsed and lint-validated. Until then, use `manualStations` for non-関東 broadcasters.
+**Scraper implementation status**: **関東 + 沖縄** as of this writing. 北海道 / 近畿 / 中国 / 九州 are surfaced in the dropdown but `Update Now` returns a "scraper not yet implemented" error for those regions — they'll be added in follow-up commits as each 総通局's HTML is parsed and lint-validated. Until then, use `manualStations` for non-supported regions. The 沖縄 page (`https://www.soumu.go.jp/soutsu/okinawa/johotuusin/ho_rd_frequency.html`) has a different layout from 関東 — its 中波 (AM) table is **transposed** (rows = locations like 沖縄/名護/平良, columns = broadcaster names like NHK第一/琉球放送) and **inlines FM-補完中継局 frequencies with a `※` MHz marker** in the same AM cell (`738<br>※92.1` = AM 738 kHz + FM 92.1 MHz). The CFM table is 3-column (市町村名 / 局名 / 周波数) instead of 関東's 4-column. `parseSoumuOkinawaHtml` handles all three structures.
 
 ## Data sources
 

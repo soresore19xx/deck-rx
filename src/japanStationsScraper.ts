@@ -2,7 +2,8 @@ import { parse, HTMLElement } from 'node-html-parser';
 import type { JpStation, JpRegion } from './japanStations.js';
 import { JP_REGION_LABELS } from './japanStations.js';
 
-const KANTO_SOURCE_URL = 'https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html';
+const KANTO_SOURCE_URL   = 'https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html';
+const OKINAWA_SOURCE_URL = 'https://www.soumu.go.jp/soutsu/okinawa/johotuusin/ho_rd_frequency.html';
 
 // Operator-name aliases for stations whose 総務省 法人名 is verbose or
 // otherwise less recognisable than a common brand. Applied after the generic
@@ -205,26 +206,146 @@ export function parseSoumuKantoHtml(html: string): JpStation[] {
   return dedup(out).sort((a, b) => a.freqHz - b.freqHz);
 }
 
-// Fetch the 関東 list page and return the parsed station array. The page is
-// served as Shift_JIS — Node's built-in TextDecoder('shift-jis') handles the
-// transcode without an extra dependency. Each entry is tagged with
-// region: 'kanto' so it can be filtered correctly at lookup time.
-async function fetchKantoStations(): Promise<JpStation[]> {
+// Generic fetch + Shift_JIS decode. Each 総通局 page on www.soumu.go.jp ships
+// as Shift_JIS; this helper returns the decoded HTML so each region's parser
+// can run on a clean string. min-size guards against truncated/error responses
+// the regional pages run from ~15 KB (沖縄) up to ~300 KB+ (関東) so the floor
+// is intentionally loose.
+async function fetchAndDecodeShiftJis(url: string): Promise<string> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 30000);
   let resp: Response;
   try {
-    resp = await fetch(KANTO_SOURCE_URL, { signal: ctrl.signal });
+    resp = await fetch(url, { signal: ctrl.signal });
   } finally {
     clearTimeout(t);
   }
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const buf = Buffer.from(await resp.arrayBuffer());
-  if (buf.length < 30 * 1024) throw new Error(`response too small (${buf.length} bytes)`);
-  const html = new TextDecoder('shift-jis').decode(buf);
+  if (buf.length < 10 * 1024) throw new Error(`response too small (${buf.length} bytes)`);
+  return new TextDecoder('shift-jis').decode(buf);
+}
+
+// Fetch the 関東 list page and return the parsed station array. Each entry
+// is tagged with region: 'kanto' so it can be filtered correctly at lookup time.
+async function fetchKantoStations(): Promise<JpStation[]> {
+  const html = await fetchAndDecodeShiftJis(KANTO_SOURCE_URL);
   const stations = parseSoumuKantoHtml(html);
   if (stations.length < 50) throw new Error(`too few entries parsed (${stations.length})`);
   return stations.map(s => ({ ...s, region: 'kanto' as const }));
+}
+
+// 沖縄 中波 (AM) cell — may contain BOTH AM kHz and an FM-補完 ※-prefixed MHz
+// value, separated by <br>. The page caption literally says "※単位はMHz（FM）".
+//   "738<br>※92.1" → AM 738 kHz + FM 92.1 MHz
+//   "※82.6"        → FM 82.6 MHz only (no AM mainline at this site)
+//   "549"           → AM 549 kHz only
+//   "" or "　"      → empty (whitespace / NBSP)
+// Returns the (hz, band) pairs found in the cell.
+function parseOkinawaAmCell(html: string): { hz: number; band: 'FM' | 'MW' }[] {
+  const text = stripHtml(html);
+  const out: { hz: number; band: 'FM' | 'MW' }[] = [];
+  for (const piece of text.split(/[\s　\r\n]+/)) {
+    if (!piece) continue;
+    const isMHz = piece.startsWith('※');
+    const cleaned = piece.replace(/^※/, '');
+    const m = cleaned.match(/^(\d+\.\d+|\d{2,4})$/);
+    if (!m) continue;
+    const value = parseFloat(m[1]);
+    const hz = isMHz ? Math.round(value * 1_000_000) : Math.round(value * 1_000);
+    const band = classifyBand(hz);
+    if (!band) continue;
+    out.push({ hz, band });
+  }
+  return out;
+}
+
+// 沖縄 中波 / FM テーブル: header row carries station names across the columns,
+// each subsequent row's first <th> is a location (沖縄/名護/...), the rest are
+// freq cells indexed by the matching column header.
+//
+// `cellParser`: how to extract (hz, band) from a single freq cell. AM table
+// uses parseOkinawaAmCell (handles the ※ MHz inline marker); FM table uses
+// the generic parseFreqList with defaultUnit='MHz'.
+function parseOkinawaTransposedTable(
+  table: HTMLElement,
+  cellParser: (html: string) => { hz: number; band: 'FM' | 'MW' }[],
+): JpStation[] {
+  const trs = table.querySelectorAll('tr');
+  if (trs.length < 2) return [];
+  // Header row: first <th> is "局名" label, the remaining are station names.
+  const headerCells = trs[0].querySelectorAll('th');
+  const stationNames: string[] = [];
+  for (let i = 1; i < headerCells.length; i++) {
+    stationNames.push(cleanOperatorName(headerCells[i].innerHTML));
+  }
+  const out: JpStation[] = [];
+  for (let r = 1; r < trs.length; r++) {
+    const cells = trs[r].querySelectorAll('th, td');
+    // cells[0] = location <th>, cells[1..] = freq <td> per station column.
+    for (let i = 1; i < cells.length && i - 1 < stationNames.length; i++) {
+      const name = stationNames[i - 1];
+      if (!name) continue;
+      for (const f of cellParser(cells[i].innerHTML)) {
+        out.push({ freqHz: f.hz, band: f.band, name });
+      }
+    }
+  }
+  return out;
+}
+
+// 沖縄 コミュニティFM テーブル: 3 columns (市町村名, 局名, 周波数 MHz).
+// Slightly different shape from 関東's 4-col CFM table so we can't reuse
+// parseCfmTable directly.
+function parseOkinawaCfmTable(table: HTMLElement): JpStation[] {
+  const out: JpStation[] = [];
+  const trs = table.querySelectorAll('tr');
+  for (let r = 1; r < trs.length; r++) {  // skip header row
+    const cells = trs[r].querySelectorAll('th, td');
+    if (cells.length < 3) continue;
+    const name = cleanOperatorName(cells[1].innerHTML);
+    if (!name) continue;
+    for (const f of parseFreqList(cells[2].innerHTML, 'MHz')) {
+      out.push({ freqHz: f.hz, band: f.band, name });
+    }
+  }
+  return out;
+}
+
+/**
+ * Run the 沖縄 parse over already-decoded UTF-8 HTML. The page has three
+ * tables (all `<table class="tableList">`), distinguished by their captions:
+ *   1. 中波ラジオ放送局周波数一覧表（kHz）  — AM with inline ※ FM-補完 cells
+ *   2. FM放送局周波数一覧表（MHz）          — pure FM
+ *   3. コミュニティFM放送局周波数一覧表     — CFM
+ * Returns the merged + de-duplicated + freq-sorted station list.
+ */
+export function parseSoumuOkinawaHtml(html: string): JpStation[] {
+  const root = parse(html);
+  const tables = root.querySelectorAll('table.tableList');
+  const out: JpStation[] = [];
+  for (const t of tables) {
+    const caption = t.querySelector('caption')?.text ?? '';
+    if (caption.includes('中波ラジオ')) {
+      out.push(...parseOkinawaTransposedTable(t, parseOkinawaAmCell));
+    } else if (caption.includes('FM放送局') && !caption.includes('コミュニティ')) {
+      out.push(...parseOkinawaTransposedTable(t, h => parseFreqList(h, 'MHz')));
+    } else if (caption.includes('コミュニティFM')) {
+      out.push(...parseOkinawaCfmTable(t));
+    }
+  }
+  return dedup(out).sort((a, b) => a.freqHz - b.freqHz);
+}
+
+// Fetch + parse the 沖縄 page; tags every entry with region: 'okinawa'.
+async function fetchOkinawaStations(): Promise<JpStation[]> {
+  const html = await fetchAndDecodeShiftJis(OKINAWA_SOURCE_URL);
+  const stations = parseSoumuOkinawaHtml(html);
+  // 沖縄 has far fewer stations than 関東 (4 AM operators × 11 sites + a few
+  // FM main + ~10 CFM ≈ 30-60 entries). Floor at 5 just to catch a fully
+  // empty / structurally-broken parse.
+  if (stations.length < 5) throw new Error(`too few entries parsed (${stations.length})`);
+  return stations.map(s => ({ ...s, region: 'okinawa' as const }));
 }
 
 /**
@@ -240,11 +361,12 @@ export async function scrapeJpStations(region: JpRegion): Promise<JpStation[]> {
   switch (region) {
     case 'kanto':
       return fetchKantoStations();
+    case 'okinawa':
+      return fetchOkinawaStations();
     case 'hokkaido':
     case 'kinki':
     case 'chugoku':
     case 'kyushu':
-    case 'okinawa':
       throw new Error(`${JP_REGION_LABELS[region]} (${region}) scraper not yet implemented — coming in a follow-up release. ` +
         `For now, add stations manually to manualStations[].`);
     default: {

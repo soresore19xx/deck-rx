@@ -5,6 +5,38 @@ import { JP_REGION_LABELS } from './japanStations.js';
 const KANTO_SOURCE_URL   = 'https://www.soumu.go.jp/soutsu/kanto/bc/radio/list/index.html';
 const OKINAWA_SOURCE_URL = 'https://www.soumu.go.jp/soutsu/okinawa/johotuusin/ho_rd_frequency.html';
 
+// 全国民放FM局・ワイドFM局一覧 — single page that lists every commercial FM
+// broadcaster across all 47 prefectures, grouped under <div class="area_list">
+// blocks identified by an area class on the <h2 class="area_list_title <area>">.
+// We only pull the four regions whose 総通局 page does NOT itself have a
+// frequency list (北海道 / 近畿 / 中国 / 九州). 関東 + 沖縄 keep their dedicated
+// 総通局 scrapers since those pages also expose AM and CFM frequencies.
+//
+// Caveats of this source:
+//   - Commercial broadcasters only — NHK FM is NOT listed (use manualStations
+//     for the NHK FM frequencies in each region until a separate source lands).
+//   - AM is not present at all (manualStations covers a few major MW DX
+//     targets per region — MBS / TBC / RKB / HBC / RCC / STV — already).
+//   - Page-side typo: 中国 area class is `cyugoku`, not `chugoku`.
+const FM_LIST_URL = 'https://www.soumu.go.jp/menu_seisaku/ictseisaku/housou_suishin/fm-list.html';
+
+const FM_LIST_AREA_TO_REGION: Record<string, JpRegion> = {
+  hokkaido: 'hokkaido',
+  kinki:    'kinki',
+  cyugoku:  'chugoku',
+};
+
+// Prefectures inside the kyusyu_okinawa area block that belong to 九州.
+// 沖縄 is detected via id="okinawa" and routed to its own scraper instead.
+// Source-page caveat: prefecture order in the HTML is fukuoka / nagasaki /
+// kumamoto / oita / miyazaki / kagoshima / okinawa / saga — saga sits AFTER
+// okinawa in the DOM, so a naive "everything before id=okinawa" split would
+// drop saga. Tracking by explicit prefecture id keeps it in 九州.
+const KYUSHU_PREFECTURES = new Set([
+  'fukuoka', 'saga', 'nagasaki', 'kumamoto',
+  'oita', 'miyazaki', 'kagoshima',
+]);
+
 // Operator-name aliases for stations whose 総務省 法人名 is verbose or
 // otherwise less recognisable than a common brand. Applied after the generic
 // "株式会社" / "（株）" prefix strip and the parenthesised-brand extraction.
@@ -337,6 +369,68 @@ export function parseSoumuOkinawaHtml(html: string): JpStation[] {
   return dedup(out).sort((a, b) => a.freqHz - b.freqHz);
 }
 
+/**
+ * Parse the 全国民放FM局・ワイドFM局一覧 page for one of the four supported
+ * regions. The page layout: each region is a <div class="area_list"> with a
+ * <h2 class="area_list_title <area>"> header; inside, top-level <li> entries
+ * each contain a <ul class="housou"> whose first <li> is the operator name
+ * and remaining <li> items are "（地域名）xx.xMHz" frequency rows.
+ */
+export function parseFmListHtml(html: string, targetRegion: 'hokkaido' | 'kinki' | 'chugoku' | 'kyushu'): JpStation[] {
+  const root = parse(html);
+  const out: JpStation[] = [];
+  for (const areaList of root.querySelectorAll('div.area_list')) {
+    const titleEl = areaList.querySelector('h2.area_list_title');
+    if (!titleEl) continue;
+    const cls = titleEl.getAttribute('class') ?? '';
+    const areaClass = cls.split(/\s+/).find(c => c !== 'area_list_title') ?? '';
+    const isKyushuOkinawaArea = areaClass === 'kyusyu_okinawa';
+    const directRegion = FM_LIST_AREA_TO_REGION[areaClass];
+    // Skip area blocks irrelevant to the request.
+    if (!isKyushuOkinawaArea && directRegion !== targetRegion) continue;
+    if (isKyushuOkinawaArea && targetRegion !== 'kyushu') continue;
+    const topUl = areaList.querySelector('ul');
+    if (!topUl) continue;
+    // For non-shared areas every li counts; for kyusyu_okinawa we walk and
+    // flip a flag whenever we hit a prefecture <li id="...">.
+    let inKyushu = !isKyushuOkinawaArea;
+    for (const li of topUl.querySelectorAll('li')) {
+      if (li.parentNode !== topUl) continue;  // depth-1 only (skip nested .housou items)
+      if (isKyushuOkinawaArea) {
+        const id = li.getAttribute('id') ?? '';
+        if (id === 'okinawa') inKyushu = false;
+        else if (KYUSHU_PREFECTURES.has(id)) inKyushu = true;
+      }
+      if (!inKyushu) continue;
+      const housou = li.querySelector('ul.housou');
+      if (!housou) continue;
+      const items = housou.querySelectorAll('li');
+      if (items.length < 2) continue;
+      const operatorName = cleanOperatorName(items[0].innerHTML);
+      if (!operatorName) continue;
+      for (let i = 1; i < items.length; i++) {
+        const text = stripHtml(items[i].innerHTML);
+        const m = text.match(/(\d+\.\d+)\s*MHz/);
+        if (!m) continue;
+        const hz = Math.round(parseFloat(m[1]) * 1_000_000);
+        const band = classifyBand(hz);
+        if (band !== 'FM') continue;
+        out.push({ freqHz: hz, band, name: operatorName });
+      }
+    }
+  }
+  return dedup(out).sort((a, b) => a.freqHz - b.freqHz);
+}
+
+// Fetch + parse the 全国民放FM局一覧 for one of 北海道 / 近畿 / 中国 / 九州.
+// Tags every entry with the requested region.
+async function fetchFmListStations(region: 'hokkaido' | 'kinki' | 'chugoku' | 'kyushu'): Promise<JpStation[]> {
+  const html = await fetchAndDecodeShiftJis(FM_LIST_URL);
+  const stations = parseFmListHtml(html, region);
+  if (stations.length < 5) throw new Error(`too few entries parsed for ${region} (${stations.length})`);
+  return stations.map(s => ({ ...s, region: region as JpRegion }));
+}
+
 // Fetch + parse the 沖縄 page; tags every entry with region: 'okinawa'.
 async function fetchOkinawaStations(): Promise<JpStation[]> {
   const html = await fetchAndDecodeShiftJis(OKINAWA_SOURCE_URL);
@@ -367,8 +461,7 @@ export async function scrapeJpStations(region: JpRegion): Promise<JpStation[]> {
     case 'kinki':
     case 'chugoku':
     case 'kyushu':
-      throw new Error(`${JP_REGION_LABELS[region]} (${region}) scraper not yet implemented — coming in a follow-up release. ` +
-        `For now, add stations manually to manualStations[].`);
+      return fetchFmListStations(region);
     default: {
       const _exhaustive: never = region;
       throw new Error(`Unknown JP region: ${String(_exhaustive)}`);

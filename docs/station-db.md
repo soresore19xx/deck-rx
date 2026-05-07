@@ -13,7 +13,17 @@ The JP DB is **region-aware**. The PI exposes a `JP region` dropdown (関東 / �
 
 The selection is persisted to `config.json` as `jpRegion` (default `kanto` for backward compat). `manualStations` is **region-independent** — those hand-curated entries are always consulted regardless of the active region.
 
-**Scraper implementation status**: **関東 + 沖縄** as of this writing. 北海道 / 近畿 / 中国 / 九州 are surfaced in the dropdown but `Update Now` returns a "scraper not yet implemented" error for those regions — they'll be added in follow-up commits as each 総通局's HTML is parsed and lint-validated. Until then, use `manualStations` for non-supported regions. The 沖縄 page (`https://www.soumu.go.jp/soutsu/okinawa/johotuusin/ho_rd_frequency.html`) has a different layout from 関東 — its 中波 (AM) table is **transposed** (rows = locations like 沖縄/名護/平良, columns = broadcaster names like NHK第一/琉球放送) and **inlines FM-補完中継局 frequencies with a `※` MHz marker** in the same AM cell (`738<br>※92.1` = AM 738 kHz + FM 92.1 MHz). The CFM table is 3-column (市町村名 / 局名 / 周波数) instead of 関東's 4-column. `parseSoumuOkinawaHtml` handles all three structures.
+**Scraper implementation status**: all 6 regions covered, but **with different breadth**:
+
+| Region | Source | Coverage |
+|---|---|---|
+| 関東 | 関東総通局 ラジオ放送事業者一覧 | AM 親+中継 + FM 親+中継 + CFM (1都7県) |
+| 沖縄 | 沖縄総合通信事務所 ラジオ放送局チャンネル一覧 | AM (中波) + FM補完 (※ MHz inline) + FM + CFM |
+| 北海道 / 近畿 / 中国 / 九州 | 総務省 全国民放FM局・ワイドFM局一覧 (`fm-list.html`) | **民放 FM only** — NHK FM や AM や CFM は含まれない (manualStations で補完) |
+
+**Why the asymmetry**: 関東 / 沖縄 の 総通局ページには周波数 table が直接掲載されているが、北海道 / 近畿 / 中国 / 九州 の 総通局ページには周波数情報がほぼ無く（事業者一覧や中継局リストへのリンク集止まり）、スクレイプできない。代替として全国 FM 一括ページ (`fm-list.html`) を使用 — 1 ページで全国民放 FM をカバーし、`<div class="area_list">` の `<h2 class="area_list_title <area>">` クラスで region 区分け、`<ul class="housou">` で broadcaster + 周波数を抽出する。九州 (kyushu) と 沖縄 は同じ `kyusyu_okinawa` エリアブロックに同居しているが、各 broadcaster の `<li id="<prefecture>">` で振り分けて 沖縄 (=既存独自 scraper の領域) を除外する。沖縄ページ (`soumu.go.jp/soutsu/okinawa/johotuusin/ho_rd_frequency.html`) は関東と異なるレイアウト — 中波 (AM) table は **行=地域・列=局名で転置**され、FM-補完中継局の周波数は `※` MHz マーカーで AM セル内にインライン (`738<br>※92.1` = AM 738 kHz + FM 92.1 MHz)。CFM table は 3 列 (市町村名 / 局名 / 周波数)。`parseSoumuOkinawaHtml` がこれらを扱う。
+
+**北海道 / 近畿 / 中国 / 九州 で NHK FM や AM 局を欲しい場合**: `manualStations[]` に手書きで追加する（[後述](#add--remove--edit-a-manualstations-entry)）。既存の主要 MW DX 局 (MBSラジオ / TBCラジオ / RKB毎日放送 / HBCラジオ / RCCラジオ / STVラジオ など) は 関東 manualStations 共有プールに既に入っているので、region を切り替えても引き続き lookup される。
 
 ## Data sources
 

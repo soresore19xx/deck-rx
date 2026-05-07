@@ -13,11 +13,13 @@ export type JpBand = 'FM' | 'MW';
 // frequency relay station. `manualStations` entries are NOT region-tagged —
 // they're consulted regardless of the active region (cross-region DX
 // targets, AFN, NHK R2 hand-curated overrides, etc.).
-export type JpRegion = 'kanto' | 'hokkaido' | 'kinki' | 'chugoku' | 'kyushu' | 'okinawa';
-export const JP_REGIONS: readonly JpRegion[] = ['kanto', 'hokkaido', 'kinki', 'chugoku', 'kyushu', 'okinawa'];
+export type JpRegion = 'kanto' | 'hokkaido' | 'tohoku' | 'tokai' | 'kinki' | 'chugoku' | 'kyushu' | 'okinawa';
+export const JP_REGIONS: readonly JpRegion[] = ['kanto', 'hokkaido', 'tohoku', 'tokai', 'kinki', 'chugoku', 'kyushu', 'okinawa'];
 export const JP_REGION_LABELS: Record<JpRegion, string> = {
   kanto: '関東',
   hokkaido: '北海道',
+  tohoku: '東北',
+  tokai: '東海',
   kinki: '近畿',
   chugoku: '中国',
   kyushu: '九州',
@@ -102,20 +104,23 @@ export function lookupJpStation(freqHz: number, activeRegion?: JpRegion): JpStat
   const tol = band === 'FM' ? FM_TOLERANCE_HZ : MW_TOLERANCE_HZ;
   const { auto, manual } = load();
 
-  // Region filter: when activeRegion is supplied, only consider auto entries
-  // tagged with that region. Untagged auto entries are also kept (defensive
-  // fallback for old files that pre-date the region field — they shouldn't
-  // exist after migration but we don't want a missing field to silently drop
-  // every result). manualStations is never filtered.
-  const filteredAuto = activeRegion
-    ? auto.filter(s => !s.region || s.region === activeRegion)
-    : auto;
+  // Region filter: when activeRegion is supplied, both auto and manual pools
+  // are filtered to entries tagged with that region. Untagged entries (no
+  // region field) are kept — those are treated as truly global (e.g. a
+  // future entry that should hit regardless of which region the user
+  // selected). The asymmetry of the old design (manual = always global)
+  // caused 近畿 ABCラジオ etc. to leak into 関東 lookups; this filter fixes
+  // that while still allowing intentional global entries via untagged rows.
+  const inRegion = (s: JpStation): boolean =>
+    !activeRegion || !s.region || s.region === activeRegion;
+  const filteredAuto   = auto.filter(inRegion);
+  const filteredManual = manual.filter(inRegion);
 
   // manualStations wins on freqHz collision — those entries are deliberate
   // hand-curated overrides (e.g. "NHKラジオ第2" at 693 vs the scraper's
-  // generic "NHK" naming, or a DX target outside the 関東 jurisdiction).
-  const m = scan(manual,       freqHz, band, tol);
-  const a = scan(filteredAuto, freqHz, band, tol);
+  // generic "NHK" naming).
+  const m = scan(filteredManual, freqHz, band, tol);
+  const a = scan(filteredAuto,   freqHz, band, tol);
   if (m && a) return m.delta <= a.delta ? m.entry : a.entry;
   return (m ?? a)?.entry ?? null;
 }

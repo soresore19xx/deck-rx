@@ -957,6 +957,8 @@ class SpyService {
       am:            cfg.am,
       volume:        cfg.volume,
       muted:         cfg.muted,
+      tuneMode:      cfg.tuneMode === 'preset' || cfg.tuneMode === 'vfo' ? cfg.tuneMode : undefined,
+      tuneStepHz:    typeof cfg.tuneStepHz === 'number' && cfg.tuneStepHz > 0 ? cfg.tuneStepHz : undefined,
       jpRegion:      isJpRegion(cfg.jpRegion) ? cfg.jpRegion : undefined,
     };
   }
@@ -1113,17 +1115,16 @@ class SpyService {
   getJpActiveRegion(): JpRegion { return this.jpActiveRegion; }
 
   /** Set the active JP region — persists to config and notifies listeners
-   * so dials re-render their header lookup. No-op if unchanged. */
+   * so dials re-render their header lookup. No-op if unchanged.
+   * Uses persistField (single-key chained write) instead of loadConfig
+   * round-tripping; the latter would silently drop any field absent from
+   * loadConfig's return shape (notably tuneMode / tuneStepHz, which were
+   * being clobbered every time the user switched JP region). */
   async setJpActiveRegion(region: JpRegion): Promise<void> {
     if (this.jpActiveRegion === region) return;
     this.jpActiveRegion = region;
-    try {
-      const cfg = await this.loadConfig();
-      const merged = { ...cfg, jpRegion: region };
-      await writeFile(CONFIG_PATH, JSON.stringify(merged, null, 2));
-    } catch (e) {
-      streamDeck.logger.error(`[spyService] persist jpRegion failed: ${e}`);
-    }
+    await this.persistField('jpRegion', region).catch((e) =>
+      streamDeck.logger.error(`[spyService] persist jpRegion failed: ${e}`));
     for (const fn of this.jpRegionListeners) fn(region);
   }
 

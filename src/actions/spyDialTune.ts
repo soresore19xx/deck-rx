@@ -43,6 +43,25 @@ function formatStep(hz: number): string {
   return `${hz}`;
 }
 
+// Pick the demod mode for a given freq when VFO-tuning across band boundaries.
+// USB/LSB/CW are intentionally not produced — they are listed in the PI MODES
+// array but the demodulator currently falls through to processFM for any
+// non-AM/non-WFM mode, so AM is the safer pick across MF/HF.
+//   522 kHz – 1.71 MHz   →  AM   (Japanese MW)
+//   1.8 MHz – 30 MHz    →  AM   (SW broadcast — narrow-AM is the workable fallback)
+//   30 MHz – 76 MHz     →  NFM  (VHF low)
+//   76 MHz – 108 MHz    →  WFM  (FM broadcast band)
+//   > 108 MHz           →  NFM  (air / VHF / UHF)
+//   anything else       →  null (don't change current mode)
+function autoDemodForFreq(hz: number): number | null {
+  if (hz >=     522_000 && hz <=   1_710_000) return 2;
+  if (hz >=   1_800_000 && hz <=  30_000_000) return 2;
+  if (hz >=  30_000_000 && hz <   76_000_000) return 0;
+  if (hz >=  76_000_000 && hz <= 108_000_000) return 1;
+  if (hz >  108_000_000)                      return 0;
+  return null;
+}
+
 function currentTimeHHMM(): string {
   const d = new Date();
   const hh = String(d.getHours()).padStart(2, '0');
@@ -204,7 +223,15 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       this.currentFreq = next;
       await this.updateDisplay(ev.action);
       if (this.tuneTimer) clearTimeout(this.tuneTimer);
-      this.tuneTimer = setTimeout(() => { this.tuneTimer = null; spyService.setFrequency(next); }, 200);
+      this.tuneTimer = setTimeout(() => {
+        this.tuneTimer = null;
+        // Auto-switch demod mode when VFO crosses a band boundary so the
+        // user dialing from FM (90 MHz) down into MW (594 kHz) actually
+        // hears AM, not noise. setDemodMode is a no-op when unchanged.
+        const desired = autoDemodForFreq(next);
+        if (desired !== null) spyService.setDemodMode(desired);
+        spyService.setFrequency(next);
+      }, 200);
     }
   }
 

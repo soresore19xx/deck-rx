@@ -70,6 +70,8 @@
     <select id="jpRegionSelect">
       <option value="kanto">関東</option>
       <option value="hokkaido">北海道</option>
+      <option value="tohoku">東北</option>
+      <option value="tokai">東海</option>
       <option value="kinki">近畿</option>
       <option value="chugoku">中国</option>
       <option value="kyushu">九州</option>
@@ -296,8 +298,8 @@
   });
 
   var JP_REGION_LABELS = {
-    kanto: '関東', hokkaido: '北海道', kinki: '近畿',
-    chugoku: '中国', kyushu: '九州', okinawa: '沖縄',
+    kanto: '関東', hokkaido: '北海道', tohoku: '東北', tokai: '東海',
+    kinki: '近畿', chugoku: '中国', kyushu: '九州', okinawa: '沖縄',
   };
   function renderJpStatus(whenIso, count, errMsg, region, manualCount, totalAuto) {
     var el = document.getElementById('jpStatus');

@@ -22,20 +22,27 @@ const FM_LIST_URL = 'https://www.soumu.go.jp/menu_seisaku/ictseisaku/housou_suis
 
 const FM_LIST_AREA_TO_REGION: Record<string, JpRegion> = {
   hokkaido: 'hokkaido',
+  tohoku:   'tohoku',
+  tokai:    'tokai',
   kinki:    'kinki',
   cyugoku:  'chugoku',
 };
 
 // Prefectures inside the kyusyu_okinawa area block that belong to 九州.
-// 沖縄 is detected via id="okinawa" and routed to its own scraper instead.
-// Source-page caveat: prefecture order in the HTML is fukuoka / nagasaki /
-// kumamoto / oita / miyazaki / kagoshima / okinawa / saga — saga sits AFTER
-// okinawa in the DOM, so a naive "everything before id=okinawa" split would
-// drop saga. Tracking by explicit prefecture id keeps it in 九州.
+// The page splits its broadcasters across TWO top-level <ul> blocks
+// ("FM補完放送局(ワイドFM)" + "FM放送局"). Only some <li> wrappers carry an
+// id="<prefecture>" — the second ul has just one (saga) and the rest are
+// id-less, so we cannot rely on a sticky "current prefecture" flag carried
+// from the first ul. Instead we decide per-broadcaster:
+//   1. Use the wrapper li's id when present (id="okinawa" → 沖縄;
+//      id ∈ KYUSHU_PREFECTURES → 九州).
+//   2. Fall back to the broadcaster name — anything containing 沖縄 / 琉球
+//      is treated as 沖縄, otherwise 九州.
 const KYUSHU_PREFECTURES = new Set([
   'fukuoka', 'saga', 'nagasaki', 'kumamoto',
   'oita', 'miyazaki', 'kagoshima',
 ]);
+const OKINAWA_NAME_RE = /沖縄|琉球/;
 
 // Operator-name aliases for stations whose 総務省 法人名 is verbose or
 // otherwise less recognisable than a common brand. Applied after the generic
@@ -376,7 +383,7 @@ export function parseSoumuOkinawaHtml(html: string): JpStation[] {
  * each contain a <ul class="housou"> whose first <li> is the operator name
  * and remaining <li> items are "（地域名）xx.xMHz" frequency rows.
  */
-export function parseFmListHtml(html: string, targetRegion: 'hokkaido' | 'kinki' | 'chugoku' | 'kyushu'): JpStation[] {
+export function parseFmListHtml(html: string, targetRegion: 'hokkaido' | 'tohoku' | 'tokai' | 'kinki' | 'chugoku' | 'kyushu'): JpStation[] {
   const root = parse(html);
   const out: JpStation[] = [];
   for (const areaList of root.querySelectorAll('div.area_list')) {
@@ -389,33 +396,41 @@ export function parseFmListHtml(html: string, targetRegion: 'hokkaido' | 'kinki'
     // Skip area blocks irrelevant to the request.
     if (!isKyushuOkinawaArea && directRegion !== targetRegion) continue;
     if (isKyushuOkinawaArea && targetRegion !== 'kyushu') continue;
-    const topUl = areaList.querySelector('ul');
-    if (!topUl) continue;
-    // For non-shared areas every li counts; for kyusyu_okinawa we walk and
-    // flip a flag whenever we hit a prefecture <li id="...">.
-    let inKyushu = !isKyushuOkinawaArea;
-    for (const li of topUl.querySelectorAll('li')) {
-      if (li.parentNode !== topUl) continue;  // depth-1 only (skip nested .housou items)
-      if (isKyushuOkinawaArea) {
-        const id = li.getAttribute('id') ?? '';
-        if (id === 'okinawa') inKyushu = false;
-        else if (KYUSHU_PREFECTURES.has(id)) inKyushu = true;
-      }
-      if (!inKyushu) continue;
-      const housou = li.querySelector('ul.housou');
-      if (!housou) continue;
-      const items = housou.querySelectorAll('li');
-      if (items.length < 2) continue;
-      const operatorName = cleanOperatorName(items[0].innerHTML);
-      if (!operatorName) continue;
-      for (let i = 1; i < items.length; i++) {
-        const text = stripHtml(items[i].innerHTML);
-        const m = text.match(/(\d+\.\d+)\s*MHz/);
-        if (!m) continue;
-        const hz = Math.round(parseFloat(m[1]) * 1_000_000);
-        const band = classifyBand(hz);
-        if (band !== 'FM') continue;
-        out.push({ freqHz: hz, band, name: operatorName });
+    // Each area_list contains TWO top-level <ul> blocks (one per broadcaster
+    // category — "FM補完放送局(ワイドFM)" + "FM放送局"). We need to walk both;
+    // querying just .querySelector('ul') silently misses half the broadcasters.
+    for (const topUl of areaList.querySelectorAll('ul')) {
+      if (topUl.parentNode !== areaList) continue;  // skip nested ul.housou
+      for (const li of topUl.querySelectorAll('li')) {
+        if (li.parentNode !== topUl) continue;  // depth-1 only (skip nested .housou items)
+        const housou = li.querySelector('ul.housou');
+        if (!housou) continue;
+        const items = housou.querySelectorAll('li');
+        if (items.length < 2) continue;
+        const operatorName = cleanOperatorName(items[0].innerHTML);
+        if (!operatorName) continue;
+        // For kyusyu_okinawa area, decide per-broadcaster whether to keep:
+        //   1. wrapper id="okinawa" / "saga"/etc → trust it
+        //   2. wrapper has no id → infer from broadcaster name (沖縄/琉球 → 沖縄)
+        // This avoids a sticky "previous prefecture" flag that would
+        // misclassify the FM放送局 ul (only one id="saga" marker, rest id-less).
+        if (isKyushuOkinawaArea) {
+          const id = li.getAttribute('id') ?? '';
+          let isOkinawa: boolean;
+          if (id === 'okinawa') isOkinawa = true;
+          else if (KYUSHU_PREFECTURES.has(id)) isOkinawa = false;
+          else isOkinawa = OKINAWA_NAME_RE.test(operatorName);
+          if (isOkinawa) continue;  // target is 'kyushu' — drop 沖縄 entries
+        }
+        for (let i = 1; i < items.length; i++) {
+          const text = stripHtml(items[i].innerHTML);
+          const m = text.match(/(\d+\.\d+)\s*MHz/);
+          if (!m) continue;
+          const hz = Math.round(parseFloat(m[1]) * 1_000_000);
+          const band = classifyBand(hz);
+          if (band !== 'FM') continue;
+          out.push({ freqHz: hz, band, name: operatorName });
+        }
       }
     }
   }
@@ -424,7 +439,7 @@ export function parseFmListHtml(html: string, targetRegion: 'hokkaido' | 'kinki'
 
 // Fetch + parse the 全国民放FM局一覧 for one of 北海道 / 近畿 / 中国 / 九州.
 // Tags every entry with the requested region.
-async function fetchFmListStations(region: 'hokkaido' | 'kinki' | 'chugoku' | 'kyushu'): Promise<JpStation[]> {
+async function fetchFmListStations(region: 'hokkaido' | 'tohoku' | 'tokai' | 'kinki' | 'chugoku' | 'kyushu'): Promise<JpStation[]> {
   const html = await fetchAndDecodeShiftJis(FM_LIST_URL);
   const stations = parseFmListHtml(html, region);
   if (stations.length < 5) throw new Error(`too few entries parsed for ${region} (${stations.length})`);
@@ -458,6 +473,8 @@ export async function scrapeJpStations(region: JpRegion): Promise<JpStation[]> {
     case 'okinawa':
       return fetchOkinawaStations();
     case 'hokkaido':
+    case 'tohoku':
+    case 'tokai':
     case 'kinki':
     case 'chugoku':
     case 'kyushu':

@@ -1002,52 +1002,68 @@
     {
       "freqHz": 693000,
       "band": "MW",
-      "name": "NHKラジオ第2"
+      "name": "NHKラジオ第2",
+      "region": "kanto"
     },
     {
       "freqHz": 810000,
       "band": "MW",
-      "name": "AFN Eagle 810"
+      "name": "AFN Eagle 810",
+      "region": "kanto"
+    },
+    {
+      "freqHz": 1008000,
+      "band": "MW",
+      "name": "ABCラジオ",
+      "region": "kinki"
     },
     {
       "freqHz": 1179000,
       "band": "MW",
-      "name": "MBSラジオ"
+      "name": "MBSラジオ",
+      "region": "kinki"
     },
     {
       "freqHz": 1260000,
       "band": "MW",
-      "name": "TBCラジオ"
+      "name": "TBCラジオ",
+      "region": "tohoku"
     },
     {
       "freqHz": 1278000,
       "band": "MW",
-      "name": "RKB毎日放送"
+      "name": "RKB毎日放送",
+      "region": "kyushu"
     },
     {
       "freqHz": 1287000,
       "band": "MW",
-      "name": "HBCラジオ"
+      "name": "HBCラジオ",
+      "region": "hokkaido"
     },
     {
       "freqHz": 1314000,
       "band": "MW",
-      "name": "ラジオ大阪"
+      "name": "ラジオ大阪",
+      "region": "kinki"
     },
     {
       "freqHz": 1332000,
       "band": "MW",
-      "name": "東海ラジオ"
+      "name": "東海ラジオ",
+      "region": "tokai"
     },
     {
       "freqHz": 1350000,
       "band": "MW",
-      "name": "RCCラジオ"
+      "name": "RCCラジオ",
+      "region": "chugoku"
     },
     {
       "freqHz": 1440000,
       "band": "MW",
-      "name": "STVラジオ"
+      "name": "STVラジオ",
+      "region": "hokkaido"
     }
   ]
 }

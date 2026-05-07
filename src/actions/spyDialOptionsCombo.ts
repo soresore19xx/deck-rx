@@ -45,7 +45,20 @@ const AM_ROWS = ['BW', 'CAGC', 'Sync', 'Atk', 'Dec', 'Gain', 'Mode'] as const;
 const FM_ROWS = ['Deemph', 'IFNR', 'HPF', 'LPF', 'Ste', 'Gain', 'Step'] as const;
 const ROWS_PER_COL = 7;
 
-function buildAmRows(o: AMOptions, gain: number, maxGain: number, tuneMode: TuneMode): OptionsPanelRow[] {
+// Both columns' last row is dual-purpose: shows "Mode: Preset" while in preset
+// mode and "Step: 9k" while in VFO mode. Editing it (rotation in edit mode)
+// CW = preset → vfo, then cycle step values up; CCW = step values down,
+// once past the smallest step → wraps back to preset. This way Mode toggle
+// and Step adjustment live on the same row in BOTH columns regardless of
+// which one is active, so FM-mode users can flip back to preset without
+// having to switch demod modes to access the AM column.
+function modeStepRow(tuneMode: TuneMode, stepHz: number): OptionsPanelRow {
+  return tuneMode === 'preset'
+    ? { label: 'Mode', value: 'Preset' }
+    : { label: 'Step', value: formatTuneStep(stepHz) };
+}
+
+function buildAmRows(o: AMOptions, gain: number, maxGain: number, tuneMode: TuneMode, stepHz: number): OptionsPanelRow[] {
   return [
     { label: 'BW',   value: fmtBw(o.bandwidth) },
     { label: 'CAGC', value: o.carrierAgc ? 'On' : 'Off' },
@@ -53,7 +66,7 @@ function buildAmRows(o: AMOptions, gain: number, maxGain: number, tuneMode: Tune
     { label: 'Atk',  value: o.agcAttack.toFixed(2) },
     { label: 'Dec',  value: o.agcDecay.toFixed(2) },
     { label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' },
-    { label: 'Mode', value: tuneMode === 'preset' ? 'Preset' : 'VFO' },
+    modeStepRow(tuneMode, stepHz),
   ];
 }
 
@@ -65,10 +78,31 @@ function buildFmRows(o: FMOptions, gain: number, maxGain: number, tuneMode: Tune
     { label: 'LPF',    value: o.lowPass  ? 'On' : 'Off' },
     { label: 'Ste',    value: o.stereo   ? 'On' : 'Off' },
     { label: 'Gain',   value: maxGain > 0 ? `${gain}/${maxGain}` : '-' },
-    // Step is only meaningful in VFO mode — show "—" placeholder otherwise so
-    // the row still occupies its slot (keeps the column 7-tall).
-    { label: 'Step',   value: tuneMode === 'vfo' ? formatTuneStep(stepHz) : '—' },
+    modeStepRow(tuneMode, stepHz),
   ];
+}
+
+// Common edit handler for the dual-purpose Mode/Step row. Used by both AM and
+// FM column case 6 — single source of truth for the "preset ↔ vfo + step
+// cycling" state machine.
+function applyModeStepEdit(ticks: number): void {
+  if (spyService.getTuneMode() === 'preset') {
+    spyService.setTuneMode('vfo');
+    return;
+  }
+  // VFO mode: cycle step values. Stepping past EITHER end of the list wraps
+  // back to preset mode — so the user can return to preset from the same
+  // row in both directions (CCW past 1 Hz min, or CW past 1 MHz max).
+  const list = TUNE_STEP_VALUES;
+  const ci = list.indexOf(spyService.getTuneStepHz());
+  const safeI = ci < 0 ? 0 : ci;
+  const dir = ticks > 0 ? 1 : -1;
+  const next = safeI + dir;
+  if (next < 0 || next >= list.length) {
+    spyService.setTuneMode('preset');
+  } else {
+    spyService.setTuneStepHz(list[next]);
+  }
 }
 
 @action({ UUID: 'com.hogehoge.deck-rx.dial-options-combo' })
@@ -175,7 +209,7 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
         case 3: await spyService.setAMOption('agcAttack',   adjustLog(cur.agcAttack, ticks, ATK_MIN, ATK_MAX)); break;
         case 4: await spyService.setAMOption('agcDecay',    adjustLog(cur.agcDecay,  ticks, DEC_MIN, DEC_MAX)); break;
         case 5: await spyService.setAmGain(spyService.getAmGain() + ticks); break;
-        case 6: spyService.setTuneMode(spyService.getTuneMode() === 'preset' ? 'vfo' : 'preset'); break;
+        case 6: applyModeStepEdit(ticks); break;
       }
     } else {
       const cur = spyService.getFMOptions();
@@ -191,15 +225,7 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
         case 3: await spyService.setFMOption('lowPass',  !cur.lowPass); break;
         case 4: await spyService.setFMOption('stereo',   !cur.stereo); break;
         case 5: await spyService.setFmGain(spyService.getFmGain() + ticks); break;
-        case 6: {
-          // Step row — only meaningful in VFO mode. In preset mode, edits no-op.
-          if (spyService.getTuneMode() !== 'vfo') return;
-          const list = TUNE_STEP_VALUES;
-          const ci = list.indexOf(spyService.getTuneStepHz());
-          const dir = ticks > 0 ? 1 : -1;
-          spyService.setTuneStepHz(list[(((ci < 0 ? 0 : ci) + dir) + list.length) % list.length]);
-          break;
-        }
+        case 6: applyModeStepEdit(ticks); break;
       }
     }
   }
@@ -213,7 +239,7 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
     const maxGain = spyService.getMaxGain();
     const tuneMode = spyService.getTuneMode();
     const stepHz = spyService.getTuneStepHz();
-    const amRows = buildAmRows(am, amGain, maxGain, tuneMode);
+    const amRows = buildAmRows(am, amGain, maxGain, tuneMode, stepHz);
     const fmRows = buildFmRows(fm, fmGain, maxGain, tuneMode, stepHz);
     const activeCol = this.isAmMode ? 'AM' : 'FM';
     const sel = this.focused ? this.selectedIdx : -1;

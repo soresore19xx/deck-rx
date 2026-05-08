@@ -45,6 +45,21 @@ export interface MockHarness {
   startCapture(): { stop(): unknown[] };
   /** Tear down: kill plugin, close server, await both. */
   shutdown(): Promise<void>;
+
+  /** Helper: dispatch willAppear for an Encoder action and wait for the
+   *  initial setFeedback/setImage so the test can proceed knowing the
+   *  action is fully rendered. */
+  willAppearDial(uuid: string, context: string, settings?: Record<string, unknown>): Promise<void>;
+  /** Helper: synthetic dialRotate (Encoder rotate). `ticks` > 0 = CW, < 0 = CCW. */
+  dialRotate(uuid: string, context: string, ticks: number, pressed?: boolean): void;
+  /** Helper: synthetic dialDown (Encoder push down). Always paired with dialUp. */
+  dialDown(uuid: string, context: string): void;
+  /** Helper: synthetic dialUp (Encoder push release). Pair with dialDown. */
+  dialUp(uuid: string, context: string): void;
+  /** Helper: PI sendToPlugin payload (for getJpRegion / setTuneMode / etc.) */
+  sendToPlugin(uuid: string, context: string, payload: Record<string, unknown>): void;
+  /** Helper: short delay so the plugin's async handlers settle before the next event. */
+  settle(ms?: number): Promise<void>;
 }
 
 export interface StartPluginOptions {
@@ -199,5 +214,86 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
       wss.close();
       await new Promise<void>(res => wss.once('close', () => res()));
     },
+
+    // Convenience helpers for tests. Encoder coordinates default to (0,0) —
+    // tests using more than one action on the same context should pass
+    // distinct context IDs (the SDK keys actions on context, not coordinates).
+    willAppearDial: async (uuid, context, settings = {}) => {
+      const payload = {
+        controller: 'Encoder' as const,
+        coordinates: { column: 0, row: 0 },
+        isInMultiAction: false,
+        settings,
+      };
+      const sock = client;
+      sock.send(JSON.stringify({
+        event: 'willAppear', action: uuid, context, device: 'dev-test-sdplus', payload,
+      }));
+      // Wait for the dial's first render so callers can rely on a fully
+      // initialised action when the helper resolves. setImage on the encoder
+      // image (knob graphic) is universal; some dials skip setFeedback on the
+      // very first onWillAppear under certain modes, so we key on setImage
+      // which every dial sends as part of the knob render.
+      await new Promise<void>((res, rej) => {
+        const timer = setTimeout(() => rej(new Error(`willAppearDial: no setImage for ${context} within 4 s`)), 4000);
+        const pred = (m: unknown) => {
+          const msg = m as { event?: string; context?: string };
+          return msg?.event === 'setImage' && msg?.context === context;
+        };
+        const idx = inbox.findIndex(pred);
+        if (idx >= 0) { inbox.splice(idx, 1); clearTimeout(timer); res(); return; }
+        waiters.push({ pred, resolve: () => { clearTimeout(timer); res(); }, reject: rej, timer });
+      });
+    },
+    dialRotate: (uuid, context, ticks, pressed = false) => {
+      client.send(JSON.stringify({
+        event: 'dialRotate',
+        action: uuid,
+        context,
+        device: 'dev-test-sdplus',
+        payload: {
+          controller: 'Encoder',
+          coordinates: { column: 0, row: 0 },
+          settings: {},
+          ticks,
+          pressed,
+        },
+      }));
+    },
+    dialDown: (uuid, context) => {
+      client.send(JSON.stringify({
+        event: 'dialDown',
+        action: uuid,
+        context,
+        device: 'dev-test-sdplus',
+        payload: {
+          controller: 'Encoder',
+          coordinates: { column: 0, row: 0 },
+          settings: {},
+        },
+      }));
+    },
+    dialUp: (uuid, context) => {
+      client.send(JSON.stringify({
+        event: 'dialUp',
+        action: uuid,
+        context,
+        device: 'dev-test-sdplus',
+        payload: {
+          controller: 'Encoder',
+          coordinates: { column: 0, row: 0 },
+          settings: {},
+        },
+      }));
+    },
+    sendToPlugin: (uuid, context, payload) => {
+      client.send(JSON.stringify({
+        event: 'sendToPlugin',
+        action: uuid,
+        context,
+        payload,
+      }));
+    },
+    settle: (ms = 50) => new Promise<void>(res => setTimeout(res, ms)),
   };
 }

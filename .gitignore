@@ -4,6 +4,8 @@ node_modules/
 
 # Plugin runtime logs
 com.hogehoge.deck-rx.sdPlugin/logs/
+# Some test / dev runs land an extra logs/ at repo root depending on cwd
+logs/
 
 # Local config (per-user, contains host/device-specific values)
 com.hogehoge.deck-rx.sdPlugin/config.json

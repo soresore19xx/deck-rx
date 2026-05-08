@@ -22,7 +22,11 @@ import {
 import { scrapeJpStations } from './japanStationsScraper.js';
 
 declare const __dirname: string;
-const CONFIG_PATH = join(__dirname, '..', 'config.json');
+// CONFIG_PATH defaults to the bundled config.json (sibling of bin/) for the
+// production plugin instance. Overridable via DECK_RX_CONFIG_PATH so the
+// integration-test harness can point at a sandboxed config without touching
+// the user-edited production config.
+const CONFIG_PATH = process.env.DECK_RX_CONFIG_PATH ?? join(__dirname, '..', 'config.json');
 
 export type DeemphasisOpt = 'off' | '50us' | '75us';
 

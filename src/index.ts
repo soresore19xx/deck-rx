@@ -7,7 +7,11 @@ import { SpyDialVolume } from './actions/spyDialVolume.js';
 import { SpyDialAmOptions } from './actions/spyDialAmOptions.js';
 import { SpyDialOptionsCombo } from './actions/spyDialOptionsCombo.js';
 
-const PID_FILE = '/tmp/deck-rx.pid';
+// PID_FILE defaults to /tmp/deck-rx.pid for the production plugin instance.
+// Overridable via DECK_RX_PID_FILE so the integration-test harness can spawn
+// a sandboxed plugin under a different lockfile without colliding with a
+// running production instance.
+const PID_FILE = process.env.DECK_RX_PID_FILE ?? '/tmp/deck-rx.pid';
 (function claimSingleInstance() {
   try {
     const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8').trim(), 10);

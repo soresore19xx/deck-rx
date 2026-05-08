@@ -69,6 +69,18 @@
       }
     },
     {
+      "UUID": "com.hogehoge.deck-rx.dial-ssb-options",
+      "Name": "Deck RX SSB Options",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "USB / LSB / CW options: BW + BFO + Gain (active only when demod is mode 4 / 5 / 6)",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "SSB" }],
+      "Encoder": {
+        "layout": "layouts/dial-ssb-options.json",
+        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
+      }
+    },
+    {
       "UUID": "com.hogehoge.deck-rx.dial-volume",
       "Name": "Deck RX Volume",
       "Icon": "imgs/actions/volume/action",

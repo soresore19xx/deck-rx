@@ -66,6 +66,22 @@ const DEFAULT_AM_OPTIONS: AMOptions = {
   sync: false,
 };
 
+export interface SSBOptions {
+  // Audio passband width after Weaver up-mix. With f_off = bandwidthHz/2 the
+  // demod produces a 0..bandwidthHz audio band — typical SSB voice 2.4 kHz,
+  // CW narrow 500 Hz. Range 250..3000.
+  bandwidthHz: number;
+  // CW BFO pitch — the audible frequency the unmodulated carrier is shifted
+  // to. Range 400..900 Hz. Ignored for USB/LSB (those use bandwidthHz/2 as
+  // their Weaver f_off instead).
+  bfoPitchHz: number;
+}
+
+const DEFAULT_SSB_OPTIONS: SSBOptions = {
+  bandwidthHz: 2400,
+  bfoPitchHz: 700,
+};
+
 interface Config {
   host: string;
   port: number;
@@ -89,6 +105,7 @@ interface Config {
   };
   fm?: Partial<FMOptions>;
   am?: Partial<AMOptions>;
+  ssb?: Partial<SSBOptions>;
   volume?: number;
   muted?: boolean;
   tuneMode?: 'preset' | 'vfo';
@@ -100,6 +117,7 @@ type SyncListener     = (s: SyncInfo) => void;
 type ConnectListener  = () => void;
 type OptionsListener  = (o: FMOptions) => void;
 type AMOptionsListener = (o: AMOptions) => void;
+type SSBOptionsListener = (o: SSBOptions) => void;
 type DeviceListener   = (d: DeviceInfo) => void;
 type EnabledListener  = (enabled: boolean) => void;
 type GainListener     = (gain: number, maxGain: number) => void;
@@ -126,6 +144,7 @@ class SpyService {
   private connectListeners = new Set<ConnectListener>();
   private optionsListeners = new Set<OptionsListener>();
   private amOptionsListeners = new Set<AMOptionsListener>();
+  private ssbOptionsListeners = new Set<SSBOptionsListener>();
   private deviceListeners  = new Set<DeviceListener>();
   private volumeListeners  = new Set<(v: number, muted: boolean) => void>();
   private enabledListeners = new Set<EnabledListener>();
@@ -141,6 +160,7 @@ class SpyService {
   private jpRegionListeners = new Set<(r: JpRegion) => void>();
   private fmOptions: FMOptions = { ...DEFAULT_FM_OPTIONS };
   private amOptions: AMOptions = { ...DEFAULT_AM_OPTIONS };
+  private ssbOptions: SSBOptions = { ...DEFAULT_SSB_OPTIONS };
   private host = '';
   private port = 0;
   private volume = 1.0;   // 0..1.5 (1.0 = unity)
@@ -291,6 +311,12 @@ class SpyService {
         this.amOptions.agcAttack = clamp(this.amOptions.agcAttack, 1, 200);
         this.amOptions.agcDecay  = clamp(this.amOptions.agcDecay,  1, 20);
         for (const fn of this.amOptionsListeners) fn(this.amOptions);
+      }
+      if (cfg.ssb) {
+        this.ssbOptions = { ...DEFAULT_SSB_OPTIONS, ...cfg.ssb };
+        this.ssbOptions.bandwidthHz = Math.max(250, Math.min(3000, this.ssbOptions.bandwidthHz));
+        this.ssbOptions.bfoPitchHz  = Math.max(400, Math.min(900,  this.ssbOptions.bfoPitchHz));
+        for (const fn of this.ssbOptionsListeners) fn(this.ssbOptions);
       }
       if (typeof cfg.volume === 'number') this.volume = Math.max(0, Math.min(1.5, cfg.volume));
       if (typeof cfg.muted  === 'boolean') this.muted  = cfg.muted;
@@ -566,6 +592,36 @@ class SpyService {
     fn(this.amOptions);
   }
   unsubscribeAMOptions(fn: AMOptionsListener): void { this.amOptionsListeners.delete(fn); }
+
+  getSSBOptions(): SSBOptions { return { ...this.ssbOptions }; }
+  async setSSBOption<K extends keyof SSBOptions>(key: K, value: SSBOptions[K]): Promise<void> {
+    this.ssbOptions = { ...this.ssbOptions, [key]: value };
+    // Re-setup the demodulator with the new value if SSB / CW is the active mode.
+    this.applySsbOptions();
+    for (const fn of this.ssbOptionsListeners) fn(this.ssbOptions);
+    const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
+    const cfg = JSON.parse(raw) as Record<string, unknown>;
+    cfg.ssb = { ...this.ssbOptions };
+    await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  }
+  subscribeSSBOptions(fn: SSBOptionsListener): void {
+    this.ssbOptionsListeners.add(fn);
+    fn(this.ssbOptions);
+  }
+  unsubscribeSSBOptions(fn: SSBOptionsListener): void { this.ssbOptionsListeners.delete(fn); }
+  private applySsbOptions(): void {
+    if (this.currentIQRate <= 0 || this.currentAudioRate <= 0) return;
+    const m = this.currentDemodMode;
+    if (m === 4 || m === 6) {
+      // USB / LSB — Weaver f_off = bandwidth / 2 (so audio band 0..bandwidth)
+      this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
+    } else if (m === 5) {
+      // CW — BFO pitch directly
+      this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
+    }
+    streamDeck.logger.info(`[spyService] applySsbOptions ${JSON.stringify(this.ssbOptions)}`);
+  }
+
   private applyAMOptions(): void {
     const am = this.amOptions;
     if (this.currentAudioRate > 0) {
@@ -689,6 +745,10 @@ class SpyService {
     this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
     this.demod.reset();
     this.iqnr.setMode(mode as DemodMode, this.currentIQRate);
+    // SSB / CW need the Weaver oscillator (and BFO for CW) re-tuned whenever
+    // the active mode lands on 4 / 5 / 6. applySsbOptions is a no-op for
+    // other modes.
+    this.applySsbOptions();
     streamDeck.logger.info(`[spyService] setDemodMode ${mode}`);
     this.persistField('demodMode', mode).catch(() => {});
     for (const fn of this.demodModeListeners) fn(mode);
@@ -748,9 +808,12 @@ class SpyService {
     this.currentIQRate = iqRate;
     // Configure stereo decode at IQ rate (filters need iqRate, not audioRate)
     this.demod.setStereo(iqRate);
-    // Apply FM/AM options (de-emph + audio filters + AM bandwidth/AGC)
+    // Apply FM/AM/SSB options (de-emph + audio filters + AM bandwidth/AGC,
+    // Weaver oscillator + BFO for SSB/CW). All three are no-ops when the
+    // current demod mode does not need them.
     this.applyFMOptions();
     this.applyAMOptions();
+    this.applySsbOptions();
 
     streamDeck.logger.info(`[spyService] startAudio decStage=${decStage} iqRate=${iqRate} audioRate=${audioRate} gain=${gain}`);
 
@@ -851,13 +914,13 @@ class SpyService {
           ? this.demod.processWFMStereo(iqBody, dec)
           : this.demod.processWFM(iqBody, dec);
       } else if (this.currentDemodMode === 4 || this.currentDemodMode === 6) {
-        // USB (mode 4) / LSB (mode 6) — Weaver SSB demod with f_off = 1.5 kHz
-        // (gives a usable 0–3 kHz audio band, the standard SSB voice slot).
-        this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, 1500);
+        // USB (mode 4) / LSB (mode 6) — Weaver SSB demod. f_off = bandwidth/2
+        // so the audio band ends up 0..bandwidth (default 2.4 kHz).
+        this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
         pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB');
       } else if (this.currentDemodMode === 5) {
-        // CW (mode 5) — direct frequency-shift by BFO (700 Hz default).
-        this.demod.setupCw(this.currentIQRate, this.currentAudioRate, 700);
+        // CW (mode 5) — direct frequency-shift by BFO (default 700 Hz).
+        this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
         pcm = this.demod.processCW(iqBody, dec);
       } else {
         // NFM (mode 0) — also catches DSB (3) and RAW (7) which fall through

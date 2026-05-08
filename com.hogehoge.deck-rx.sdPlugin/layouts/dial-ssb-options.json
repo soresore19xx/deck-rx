@@ -1,0 +1,6 @@
+{
+  "id": "dial-ssb-options-layout",
+  "items": [
+    { "key": "options-display", "type": "pixmap", "rect": [0,0,200,100], "zOrder": 0 }
+  ]
+}

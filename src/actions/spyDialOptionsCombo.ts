@@ -16,11 +16,13 @@ import { knobSvg, optionsPanelBandSvg, OptionsPanelRow, dimSvg } from '../icons.
 
 type Settings = { borderSide?: 'left' | 'right' | 'center' | 'none' };
 
-// Display order of the band column. spyService demod mode numbers:
-//   0 = WFM, 1 = NFM, 2 = AM, 4 = USB, 5 = LSB, 6 = CW
-// (3 = DSB and 7 = RAW are intentionally not exposed here.)
+// Display order of the band column. The MODES array in bandPolicy is
+//   ['NFM','WFM','AM','DSB','USB','CW','LSB','RAW']
+// → spyService mode numbers: 0=NFM, 1=WFM, 2=AM, 3=DSB, 4=USB, 5=CW, 6=LSB,
+// 7=RAW. The Band column shows the 6 useful values; DSB and RAW are
+// intentionally not exposed.
 const BAND_LABELS = ['WFM', 'NFM', 'AM', 'USB', 'LSB', 'CW'] as const;
-const BAND_MODES  = [0, 1, 2, 4, 5, 6] as const;
+const BAND_MODES  = [   1,    0,   2,    4,    6,   5] as const;
 const BAND_COUNT  = BAND_LABELS.length;        // 6
 const MODE_STEP_IDX = BAND_COUNT;              // 6
 const OPTS_START_IDX = BAND_COUNT + 1;         // 7

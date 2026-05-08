@@ -110,8 +110,10 @@ export type TuneMode = 'preset' | 'vfo';
 type TuneModeListener = (mode: TuneMode) => void;
 type TuneStepListener = (stepHz: number) => void;
 // Step values exposed in the dial cycler (mirrors PI dial-tune Step menu).
+// 50 / 500 added for CW work — most amateur ops fine-tune ±50 Hz around the
+// BFO pitch and 500 Hz is a useful intermediate when sweeping CW segments.
 export const TUNE_STEP_VALUES: number[] = [
-  1, 10, 100, 1000, 5000, 9000, 10000,
+  1, 10, 50, 100, 500, 1000, 5000, 9000, 10000,
   25000, 50000, 100000, 200000, 500000, 1000000,
 ];
 

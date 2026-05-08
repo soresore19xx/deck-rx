@@ -22,7 +22,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Frequency / mode persistence | ✅ (restored at startup) |
 | IFNR (IF Noise Reduction) | ✅ FM/NFM only (SDR++ FMIF tracking-filter port) |
 | Auto station-name lookup | ✅ **Japan-area only** for the JP DB — region-switchable from the Tune dial PI (関東 / 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 / 沖縄 ※全 8 region 対応; 関東+沖縄は AM/FM/CFM 一括、他 6 region は民放 FM のみ via 全国 FM 一覧) + region-tagged manual overrides; the EIBI SW DB covers international shortwave (day/time/spur-aware); in-PI `Update Now` for both |
-| Preset list | ✅ SDR++ bookmarks + JP DB の active region 局を周波数昇順でマージ; 同 freq は JP DB の局名で上書き; region 切替で list 自動再構築 |
+| Preset list | ✅ deck-rx-owned `data/presets.json` (UTF-8 clean、CJK 局名 OK) + JP DB の active region 局を周波数昇順でマージ; 同 freq は JP DB の局名で上書き; region 切替で list 自動再構築; PI の `Import bookmarks` で SDR++ `frequency_manager_config.json` から取り込み (read-only、merge、name dedup) |
 
 ### Encoder dial layout (4 LCDs on Stream Deck +)
 

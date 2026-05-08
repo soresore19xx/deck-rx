@@ -1,0 +1,29 @@
+{
+    "bookmarkDisplayMode": 1,
+    "lists": {
+        "General": {
+            "bookmarks": {
+                "Test FM 1": {
+                    "bandwidth": 200000.0,
+                    "frequency": 80000000.0,
+                    "mode": 1
+                },
+                "Test SW 1": {
+                    "bandwidth": 5000.0,
+                    "frequency": 9910000.0,
+                    "mode": 2
+                }
+            }
+        },
+        "Imported": {
+            "bookmarks": {
+                "Test USB": {
+                    "bandwidth": 2400.0,
+                    "frequency": 14300000.0,
+                    "mode": 4
+                }
+            }
+        }
+    },
+    "showOnWaterfall": true
+}

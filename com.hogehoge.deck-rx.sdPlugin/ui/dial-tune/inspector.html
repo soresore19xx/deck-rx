@@ -85,6 +85,10 @@
     <button type="button" id="jpUpdateBtn">Update Now</button>
     <span class="status" id="jpStatus"></span>
   </div>
+  <div class="row"><label>SDR++</label>
+    <button type="button" id="sdrImportBtn">Import bookmarks</button>
+    <span class="status" id="sdrImportStatus"></span>
+  </div>
   <div class="row"><span class="status" id="status"></span></div>
 </body>
 <script>
@@ -169,6 +173,21 @@
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'jpRegion') {
         if (msg.payload.region) {
           document.getElementById('jpRegionSelect').value = msg.payload.region;
+        }
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'sdrImported') {
+        var sbtn = document.getElementById('sdrImportBtn');
+        sbtn.disabled = false;
+        sbtn.textContent = 'Import bookmarks';
+        var status = document.getElementById('sdrImportStatus');
+        if (msg.payload.ok) {
+          status.className = 'status';
+          status.textContent = 'Added ' + msg.payload.added + ' bookmarks (' + msg.payload.skipped + ' already present)';
+          // Refresh the preset dropdown so the user sees the new entries.
+          sendToPlugin({ action: 'getPresets' });
+        } else {
+          status.className = 'status err';
+          status.textContent = 'Failed: ' + (msg.payload.error || 'unknown error');
         }
       }
     };
@@ -334,6 +353,14 @@
   });
   document.getElementById('jpRegionSelect').addEventListener('change', function() {
     sendToPlugin({ action: 'setJpRegion', region: this.value });
+  });
+  document.getElementById('sdrImportBtn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Importing...';
+    document.getElementById('sdrImportStatus').className = 'status';
+    document.getElementById('sdrImportStatus').textContent = '';
+    sendToPlugin({ action: 'importSdrppPresets' });
   });
 </script>
 </html>

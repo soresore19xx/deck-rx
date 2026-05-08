@@ -7,7 +7,7 @@ import { resolve } from 'path';
 const PROJECT = resolve(__dirname, '..');
 
 beforeAll(() => {
-  process.env.DECK_RX_SDR_CONFIG_PATH = resolve(__dirname, 'fixtures', 'sdr-presets.json');
+  process.env.DECK_RX_PRESETS_PATH = resolve(__dirname, 'fixtures', 'deck-rx-presets.json');
   process.env.DECK_RX_JP_STATIONS_PATH = resolve(PROJECT, 'com.hogehoge.deck-rx.sdPlugin', 'data', 'jp-stations.json');
 });
 
@@ -17,12 +17,12 @@ async function importLoader() {
   return mod;
 }
 
-describe('loadPresets — SDR++ + JP DB merge', () => {
-  it('without region: SDR++ entries only', async () => {
+describe('loadPresets — deck-rx presets + JP DB merge', () => {
+  it('without region: deck-rx preset entries only', async () => {
     const { loadPresets, clearPresetsCache } = await importLoader();
     clearPresetsCache();
     const presets = await loadPresets();
-    // SDR++ fixture has 3 entries; without region we should not pick up
+    // deck-rx fixture has 3 entries; without region we should not pick up
     // anything from the JP DB.
     expect(presets.length).toBe(3);
     const freqs = new Set(presets.map(p => p.freq));
@@ -41,10 +41,10 @@ describe('loadPresets — SDR++ + JP DB merge', () => {
     const byFreq = new Map(presets.map(p => [p.freq, p]));
     // 関東 NHK 594 from the auto-scraped pool
     expect(byFreq.get(594_000)?.name).toBe('NHK');
-    // 90.5 MHz collision: SDR++ has "TBS Radio (FM補完)", JP DB has "TBSラジオ".
-    // JP DB wins on freq collision per loadPresets dedup rule.
+    // 90.5 MHz collision: deck-rx fixture has "TBS Radio (FM補完)", JP DB has
+    // "TBSラジオ". JP DB wins on freq collision per loadPresets dedup rule.
     expect(byFreq.get(90_500_000)?.name).toBe('TBSラジオ');
-    // 9910 kHz only in SDR++ — preserved untouched.
+    // 9910 kHz only in deck-rx fixture — preserved untouched.
     expect(byFreq.get(9_910_000)?.name).toBe('KTWR SW');
   });
 
@@ -57,7 +57,7 @@ describe('loadPresets — SDR++ + JP DB merge', () => {
     expect(byFreq.get(1_008_000)?.name).toBe('ABCラジオ');
     // 関東 NHK 594 (auto-scraped, region=kanto) MUST NOT leak into kinki
     expect(byFreq.has(594_000)).toBe(false);
-    // SDR++ entries are still there
+    // deck-rx fixture entries are still there
     expect(byFreq.get(9_910_000)?.name).toBe('KTWR SW');
   });
 

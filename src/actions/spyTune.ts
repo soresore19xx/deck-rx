@@ -4,21 +4,8 @@ import type { JsonObject } from '@elgato/utils';
 import { spyService } from '../spyService.js';
 import { svgB64, tuneSvg } from '../icons.js';
 import { formatFreqLabel } from '../dialDisplay.js';
-import { readFile } from 'fs/promises';
-import { homedir } from 'os';
-import { join } from 'path';
 import { getJpStationsForRegion, type JpRegion, type JpStation } from '../japanStations.js';
-
-// Path defaults to the SDR++ config dir for the production user. Overridable
-// via DECK_RX_SDR_CONFIG_PATH so the unit-test harness can point at a
-// fixture. (Same env-override convention as DECK_RX_CONFIG_PATH /
-// DECK_RX_JP_STATIONS_PATH.)
-const SDR_CONFIG_PATH = process.env.DECK_RX_SDR_CONFIG_PATH ??
-  join(homedir(), 'Library/Application Support/sdrpp/frequency_manager_config.json');
-
-interface SdrBookmark { frequency: number; bandwidth: number; mode: number; }
-interface SdrList { bookmarks: Record<string, SdrBookmark>; }
-interface SdrConfig { lists: Record<string, SdrList>; }
+import { loadDeckRxPresets, flattenPresets } from '../presets.js';
 
 const MODES = ['NFM', 'WFM', 'AM', 'DSB', 'USB', 'CW', 'LSB', 'RAW'];
 export interface Preset { name: string; freq: number; bandwidth: number; mode: number; }
@@ -46,31 +33,27 @@ function jpStationToPreset(s: JpStation): Preset {
 /**
  * Build the full preset list, optionally tagged for a JP region.
  * Sources, in merge order:
- *   1. SDR++ frequency_manager_config.json bookmarks (if available)
+ *   1. deck-rx-owned presets.json bookmarks (UTF-8 clean, supports CJK
+ *      broadcaster names — populated by hand or via the PI "Import from
+ *      SDR++" button which reads SDR++'s frequency_manager_config.json)
  *   2. JP DB entries for the requested region (auto entries tagged with
- *      `region` + manualStations entries either tagged for the same region
+ *      region + manualStations entries either tagged for the same region
  *      or untagged = truly global)
- * On freq collision the JP DB entry overrides the SDR++ entry — preserves
- * the band-correct broadcaster name from the most recent scrape rather
- * than whatever label the user happened to set in SDR++. The freq +
- * bandwidth + mode of the SDR++ entry are still effectively replaced
- * (the preset cycler uses the JP DB defaults).
+ * On freq collision the JP DB entry overrides the deck-rx entry —
+ * preserves the band-correct broadcaster name from the most recent scrape
+ * rather than whatever label the user typed in. The freq + bandwidth +
+ * mode of the deck-rx entry are still effectively replaced (the preset
+ * cycler uses the JP DB defaults).
  * Result is sorted by freq ascending.
  */
 export async function loadPresets(region?: JpRegion): Promise<Preset[]> {
-  const sdr: Preset[] = [];
-  try {
-    const raw = await readFile(SDR_CONFIG_PATH, 'utf8');
-    const cfg = JSON.parse(raw) as SdrConfig;
-    for (const list of Object.values(cfg.lists)) {
-      for (const [name, bm] of Object.entries(list.bookmarks)) {
-        sdr.push({ name, freq: Math.round(bm.frequency), bandwidth: bm.bandwidth, mode: bm.mode });
-      }
-    }
-  } catch { /* no SDR++ config — fall through to JP DB only */ }
+  const file = await loadDeckRxPresets();
+  const local: Preset[] = flattenPresets(file).map(b => ({
+    name: b.name, freq: b.freq, bandwidth: b.bandwidth, mode: b.mode,
+  }));
 
   const byFreq = new Map<number, Preset>();
-  for (const p of sdr) byFreq.set(p.freq, p);
+  for (const p of local) byFreq.set(p.freq, p);
   if (region) {
     for (const s of getJpStationsForRegion(region)) {
       byFreq.set(s.freqHz, jpStationToPreset(s));  // JP DB wins on freq collision

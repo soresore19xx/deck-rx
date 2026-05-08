@@ -8,6 +8,7 @@ import { svgB64, knobSvg, dimSvg } from '../icons.js';
 import { dumpTuneLcd } from '../dialDisplay.js';
 import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
 import { loadPresets, clearPresetsCache, Preset } from './spyTune.js';
+import { importFromSdrpp } from '../presets.js';
 import { lookupEibi } from '../eibi.js';
 import { lookupJpStation, isJpRegion, type JpRegion } from '../japanStations.js';
 import { autoDemodForFreq } from '../bandPolicy.js';
@@ -361,6 +362,28 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       }
       if (typeof p.stepHz === 'number' && p.stepHz > 0 && p.stepHz !== spyService.getTuneStepHz()) {
         spyService.setTuneStepHz(p.stepHz);
+      }
+    }
+    if (ev.payload['action'] === 'importSdrppPresets') {
+      try {
+        const res = await importFromSdrpp();
+        clearPresetsCache();
+        this.presets = await loadPresets(spyService.getJpActiveRegion()).catch(() => []);
+        await streamDeck.ui.sendToPropertyInspector({
+          action: 'sdrImported',
+          ok: true,
+          added: res.added,
+          skipped: res.skipped,
+          lists: res.lists,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        streamDeck.logger.error(`[spyDialTune] importSdrppPresets failed: ${msg}`);
+        await streamDeck.ui.sendToPropertyInspector({
+          action: 'sdrImported',
+          ok: false,
+          error: msg,
+        });
       }
     }
     if (ev.payload['action'] === 'setJpRegion') {

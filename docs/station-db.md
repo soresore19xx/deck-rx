@@ -25,22 +25,25 @@ The selection is persisted to `config.json` as `jpRegion` (default `kanto` for b
 
 **北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 で NHK FM や AM 局を欲しい場合**: `manualStations[]` に手書きで追加する（[後述](#add--remove--edit-a-manualstations-entry)）。各 entry には `region` フィールドを付けると、その region がアクティブなときだけ lookup される — 例えば現状のプリセットでは ABCラジオ (1008, kinki), MBSラジオ (1179, kinki), TBCラジオ (1260, tohoku), RKB毎日放送 (1278, kyushu), HBCラジオ (1287, hokkaido), ラジオ大阪 (1314, kinki), 東海ラジオ (1332, tokai), RCCラジオ (1350, chugoku), STVラジオ (1440, hokkaido), AFN Eagle 810 (kanto), NHKラジオ第2 (693, kanto) を region tag 付きで登録している。region 無しで登録すれば全 region で hit する truly global override になる。
 
-## Preset list — JP DB / SDR++ マージ
+## Preset list — deck-rx presets / JP DB マージ + SDR++ Import
 
-Tune dial の preset list (`Preset` array) は **SDR++ の `frequency_manager_config.json` bookmarks + JP DB の active region 局** を周波数昇順でマージしたもの。`loadPresets(activeRegion)` (`src/actions/spyTune.ts`) が組み立てる:
+Tune dial の preset list は **deck-rx 専用 `data/presets.json` + JP DB の active region 局** を周波数昇順でマージしたもの。`loadPresets(activeRegion)` (`src/actions/spyTune.ts`) が組み立てる:
 
-1. SDR++ config (`~/Library/Application Support/sdrpp/frequency_manager_config.json`) を読み、すべての bookmark を `Preset { name, freq, bandwidth, mode }` に展開
+1. **`com.hogehoge.deck-rx.sdPlugin/data/presets.json`** を読む (UTF-8 clean、CJK broadcaster 名そのまま round-trip)。loaders は `src/presets.ts` の `loadDeckRxPresets / saveDeckRxPresets`。
 2. `getJpStationsForRegion(activeRegion)` で active region の auto + region-tagged manual entries を取得し、`{ FM → mode 1 / 200 kHz, MW → mode 2 / 9 kHz }` で `Preset` 化
-3. 周波数完全一致なら **JP DB が勝ち** (name は最新 scrape の broadcaster ブランド、SDR++ 側の手書き名は捨てる)。dedup 後 freq 昇順で sort
+3. 周波数完全一致なら **JP DB が勝ち** (name は最新 scrape の broadcaster ブランド、deck-rx 側の手書き名は捨てる)。dedup 後 freq 昇順で sort
 
 **Region 切替の挙動**: PI で `JP region` を切り替えると `spyService.subscribeJpRegion` listener が走り、preset cache を invalidate (`clearPresetsCache()`) → `loadPresets(newRegion)` で再構築 → PI へ `presets` event を再送信して dropdown を更新。
 
-**何が user に見える形で変わるか**:
-- 関東 → 近畿 切替で、Tune dial を preset scroll で回したときに 関東 局 (TBSラジオ / J-WAVE / etc.) は消えて、近畿 局 (ABCラジオ / MBSラジオ / ラジオ大阪) が並ぶ
-- SDR++ で登録した特殊周波数 (短波 KTWR / アマチュア無線等) は両 region で残る
-- 同 freq の SDR++ bookmark の name は JP DB が上書き (例: SDR++ "TBS Radio (FM補完)" 90.5 MHz → 関東 region で "TBSラジオ" 表示)
+**Import from SDR++ (PI button)**: SDR++ の `frequency_manager_config.json` を読み、deck-rx presets.json に **マージ** する (既存 deck-rx entries は上書きしない、同名の bookmark は skip)。SDR++ config 自体は touch しない (read-only)。なぜ Import 経路が必要か：
 
-**SDR++ config が無い user 環境** (`~/Library/Application Support/sdrpp/...` 不在) は SDR++ 部分が空になり、JP DB の region 局だけで preset list が組まれる。`DECK_RX_SDR_CONFIG_PATH` env var で別 path を指定可能 (test fixture 用)。
+- SDR++ の bookmark serialiser は **ASCII / Latin-1 のみで安定**動作する。漢字を入れると壊れるケースを user 環境で確認済み (2026-05 frequency_manager_config.json corruption incident — Python `json.dump` で indent / numeric type が変わって SDR++ が起動しなくなった)。
+- ので deck-rx は **SDR++ config を直接書き換えない**設計。deck-rx 側で UTF-8 clean な `presets.json` を持ち、SDR++ から *read-only* に取り込む。
+- 取り込み後、user は deck-rx の `presets.json` を自由に edit (CJK 局名追加 / フリーフォーマット) して良い。SDR++ は完全に分離。
+
+**Import button の挙動**: PI の `SDR++` 行の Import bookmarks をクリック → `importSdrppPresets` action が `spyService` 経由で発火 → `presets.ts::importFromSdrpp` が走る → 完了後 PI に `sdrImported {ok, added, skipped}` で結果通知 + preset list を refresh。同名 bookmark は skip（user 編集を温存）。
+
+**Test fixture path override**: `DECK_RX_PRESETS_PATH` / `DECK_RX_SDR_CONFIG_PATH` env var で deck-rx presets path / SDR++ config path をそれぞれ別 path に向けられる (test 用)。`src/presets.ts` の `presetsPath()` / `sdrConfigPath()` は call ごと evaluate なので、test で env 切替するだけで isolated に動く。
 
 ## Data sources
 

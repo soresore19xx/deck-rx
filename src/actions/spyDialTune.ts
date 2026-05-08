@@ -7,7 +7,7 @@ import { SyncInfo } from '../SpyClient.js';
 import { svgB64, knobSvg, dimSvg } from '../icons.js';
 import { dumpTuneLcd } from '../dialDisplay.js';
 import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
-import { loadPresets, Preset } from './spyTune.js';
+import { loadPresets, clearPresetsCache, Preset } from './spyTune.js';
 import { lookupEibi } from '../eibi.js';
 import { lookupJpStation, isJpRegion, type JpRegion } from '../japanStations.js';
 import { autoDemodForFreq } from '../bandPolicy.js';
@@ -96,13 +96,24 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     this.slotIndex  = ev.payload.settings.slotIndex ?? 0;
     this.borderSide = ev.payload.settings.borderSide ?? 'none';
     this.lastAction = ev.action;
-    this.presets = await loadPresets().catch(() => []);
+    this.presets = await loadPresets(spyService.getJpActiveRegion()).catch(() => []);
     if (spyService.currentFreq > 0) this.currentFreq = spyService.currentFreq;
     this.tuneModeListener = (m) => { this.dialMode = m; this.updateDisplay(ev.action).catch(() => {}); };
     spyService.subscribeTuneMode(this.tuneModeListener);
     this.tuneStepListener = (s) => { this.stepHz = s; this.updateDisplay(ev.action).catch(() => {}); };
     spyService.subscribeTuneStep(this.tuneStepListener);
-    this.jpRegionListener = () => { this.updateDisplay(this.lastAction).catch(() => {}); };
+    this.jpRegionListener = async (region) => {
+      // Region change → preset list now mixes a different JP DB pool, so
+      // rebuild it. Push the fresh list to the PI as well so the dropdown
+      // reflects the new region without the user having to reopen the PI.
+      clearPresetsCache();
+      this.presets = await loadPresets(region).catch(() => []);
+      this.updateDisplay(this.lastAction).catch(() => {});
+      streamDeck.ui.sendToPropertyInspector({
+        action: 'presets',
+        presets: this.presets as unknown as JsonObject[],
+      }).catch(() => {});
+    };
     spyService.subscribeJpRegion(this.jpRegionListener);
 
     this.syncListener = (s: SyncInfo) => {
@@ -188,7 +199,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     this.stepHz     = spyService.getTuneStepHz();
     this.slotIndex  = ev.payload.settings.slotIndex ?? 0;
     this.borderSide = ev.payload.settings.borderSide ?? 'none';
-    this.presets = await loadPresets().catch(() => []);
+    this.presets = await loadPresets(spyService.getJpActiveRegion()).catch(() => []);
     await this.updateDisplay(ev.action);
   }
 
@@ -243,7 +254,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
 
   override async onSendToPlugin(ev: SendToPluginEvent<JsonObject, DialTuneSettings>): Promise<void> {
     if (ev.payload['action'] === 'getPresets') {
-      const presets = await loadPresets().catch(() => []);
+      const presets = await loadPresets(spyService.getJpActiveRegion()).catch(() => []);
       await streamDeck.ui.sendToPropertyInspector({ action: 'presets', presets: presets as unknown as JsonObject[] });
     }
     if (ev.payload['action'] === 'getAudioDevices') {

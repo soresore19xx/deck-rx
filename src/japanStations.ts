@@ -144,3 +144,17 @@ export function jpStationCountForRegion(region: JpRegion): number {
 export function jpStationCountManual(): number {
   return load().manual.length;
 }
+
+/**
+ * Bulk fetch every entry tagged for `region`. Used by the preset list to
+ * surface JP DB stations alongside the user's SDR++ bookmarks (region
+ * matches: auto entries with the exact tag + manual entries that are either
+ * tagged for the same region or untagged = truly global).
+ */
+export function getJpStationsForRegion(region: JpRegion): JpStation[] {
+  const { auto, manual } = load();
+  return [
+    ...auto.filter(s => s.region === region),
+    ...manual.filter(s => !s.region || s.region === region),
+  ];
+}

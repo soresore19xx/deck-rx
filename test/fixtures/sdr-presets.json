@@ -1,0 +1,11 @@
+{
+  "lists": {
+    "TestList": {
+      "bookmarks": {
+        "TBS Radio (FM補完)": { "frequency": 90500000, "bandwidth": 200000, "mode": 1 },
+        "KTWR SW": { "frequency": 9910000, "bandwidth": 5000, "mode": 2 },
+        "NHK R2 Tokyo (manual SDR++)": { "frequency": 693000, "bandwidth": 9000, "mode": 2 }
+      }
+    }
+  }
+}

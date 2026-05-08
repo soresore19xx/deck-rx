@@ -6,7 +6,6 @@ import { SpyDialOptions } from './actions/spyDialOptions.js';
 import { SpyDialVolume } from './actions/spyDialVolume.js';
 import { SpyDialAmOptions } from './actions/spyDialAmOptions.js';
 import { SpyDialOptionsCombo } from './actions/spyDialOptionsCombo.js';
-import { SpyDialSsbOptions } from './actions/spyDialSsbOptions.js';
 
 // PID_FILE defaults to /tmp/deck-rx.pid for the production plugin instance.
 // Overridable via DECK_RX_PID_FILE so the integration-test harness can spawn
@@ -49,5 +48,4 @@ streamDeck.actions.registerAction(new SpyDialOptions());
 streamDeck.actions.registerAction(new SpyDialVolume());
 streamDeck.actions.registerAction(new SpyDialAmOptions());
 streamDeck.actions.registerAction(new SpyDialOptionsCombo());
-streamDeck.actions.registerAction(new SpyDialSsbOptions());
 streamDeck.connect();

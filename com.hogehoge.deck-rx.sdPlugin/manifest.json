@@ -60,27 +60,15 @@
       "UUID": "com.hogehoge.deck-rx.dial-options-combo",
       "Name": "Deck RX Combo Options",
       "Icon": "imgs/actions/options/action",
-      "Tooltip": "AM + FM options on a single dial; active column auto-tracks the demod mode",
+      "Tooltip": "Band selector (WFM/NFM/AM/USB/LSB/CW) + mode-dependent options on a single dial",
       "Controllers": ["Encoder"],
       "States": [{ "Image": "imgs/actions/options/action", "Title": "Opts" }],
       "Encoder": {
         "layout": "layouts/dial-options-combo.json",
-        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
+        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Confirm band / Toggle edit", "LongTouch": "" }
       }
     },
-    {
-      "UUID": "com.hogehoge.deck-rx.dial-ssb-options",
-      "Name": "Deck RX SSB Options",
-      "Icon": "imgs/actions/options/action",
-      "Tooltip": "USB / LSB / CW options: BW + BFO + Gain (active only when demod is mode 4 / 5 / 6)",
-      "Controllers": ["Encoder"],
-      "States": [{ "Image": "imgs/actions/options/action", "Title": "SSB" }],
-      "Encoder": {
-        "layout": "layouts/dial-ssb-options.json",
-        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
-      }
-    },
-    {
+{
       "UUID": "com.hogehoge.deck-rx.dial-volume",
       "Name": "Deck RX Volume",
       "Icon": "imgs/actions/volume/action",

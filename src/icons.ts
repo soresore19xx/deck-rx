@@ -286,3 +286,104 @@ ${divider}
 ${frame}
 </svg>`;
 }
+
+/**
+ * Side-by-side Band + mode-dependent Options panel for the unified Combo dial
+ * (F-2). Left column lists 6 demod bands (WFM/NFM/AM/USB/LSB/CW) with the
+ * currently-active band marked by a bullet (●); the bottom band-column row
+ * (idx 6) is the Mode/Step control. Right column shows the option rows for
+ * the currently-active demod mode (AM/FM/SSB shapes differ).
+ *
+ * selectedIdx is a single continuous cursor:
+ *   0..5  → Band rows (WFM/NFM/AM/USB/LSB/CW)
+ *   6     → Band-column Mode/Step row
+ *   7..N  → Opts column rows 0..(N-7)
+ */
+export function optionsPanelBandSvg(
+  bandLabels: readonly string[],
+  activeBandIdx: number,
+  modeStepRow: OptionsPanelRow,
+  optsRows: OptionsPanelRow[],
+  selectedIdx = -1,
+  editMode = false,
+): string {
+  const SVG_W = 200, SVG_H = 100;
+  const COL_W = SVG_W / 2;
+  const HEADER_H = 12;
+  const ROW_H = 12;
+  const FS = 10;
+  const FRAME_C = '#888888';
+  const DIVIDER_C = '#444444';
+  const accent = editMode ? '#ffaa55' : BLUE;
+  const BAND_TOTAL = bandLabels.length + 1; // 6 mode rows + Mode/Step row
+
+  const header =
+    `<text x="6" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">Band</text>` +
+    `<text x="${COL_W + 6}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">Opts</text>`;
+
+  const renderBandRow = (i: number): string => {
+    const y = HEADER_H + (i + 1) * ROW_H;
+    const isSelected = i === selectedIdx;
+    const isEdit = isSelected && editMode;
+    const bgPad = ROW_H - 2;
+    let bg = '';
+    if (isSelected) {
+      bg = `<rect x="0" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.22"/>`;
+    } else if (i % 2 === 0) {
+      bg = `<rect x="0" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.06"/>`;
+    }
+    const sideBar = isSelected ? `<rect x="0" y="${y - bgPad}" width="3" height="${ROW_H}" fill="${accent}"/>` : '';
+    let labelText: string, valueText: string;
+    if (i < bandLabels.length) {
+      labelText = bandLabels[i];
+      valueText = i === activeBandIdx ? '●' : '';
+    } else {
+      labelText = modeStepRow.label;
+      valueText = modeStepRow.value;
+    }
+    const labelColor = isSelected ? (isEdit ? accent : '#d4b800') : 'white';
+    const valueColor = isSelected ? '#aaff00' : 'white';
+    return `${bg}${sideBar}` +
+      `<text x="4" y="${y}" fill="${labelColor}" font-size="${FS}" font-family="monospace">${labelText}</text>` +
+      (valueText
+        ? `<text x="${COL_W - 4}" y="${y}" fill="${valueColor}" font-size="${FS}" font-family="monospace" text-anchor="end">${valueText}</text>`
+        : '');
+  };
+
+  const renderOptsRow = (j: number): string => {
+    const r = optsRows[j];
+    const y = HEADER_H + (j + 1) * ROW_H;
+    const cursorIdx = BAND_TOTAL + j;
+    const isSelected = cursorIdx === selectedIdx;
+    const isEdit = isSelected && editMode;
+    const bgPad = ROW_H - 2;
+    let bg = '';
+    if (isSelected) {
+      bg = `<rect x="${COL_W}" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.22"/>`;
+    } else if (j % 2 === 0) {
+      bg = `<rect x="${COL_W}" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.06"/>`;
+    }
+    const sideBar = isSelected ? `<rect x="${COL_W}" y="${y - bgPad}" width="3" height="${ROW_H}" fill="${accent}"/>` : '';
+    const labelColor = isSelected ? (isEdit ? accent : '#d4b800') : 'white';
+    const valueColor = isSelected ? '#aaff00' : (r.valueColor ?? 'white');
+    return `${bg}${sideBar}` +
+      `<text x="${COL_W + 4}" y="${y}" fill="${labelColor}" font-size="${FS}" font-family="monospace">${r.label}</text>` +
+      `<text x="${SVG_W - 4}" y="${y}" fill="${valueColor}" font-size="${FS}" font-family="monospace" text-anchor="end">${r.value}</text>`;
+  };
+
+  const bandPart = Array.from({ length: BAND_TOTAL }, (_, i) => renderBandRow(i)).join('\n');
+  const optsPart = Array.from({ length: optsRows.length }, (_, j) => renderOptsRow(j)).join('\n');
+  const headerSep = `<line x1="2" y1="${HEADER_H + 1}" x2="${SVG_W - 2}" y2="${HEADER_H + 1}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const divider   = `<line x1="${COL_W}" y1="${HEADER_H + 1}" x2="${COL_W}" y2="${SVG_H - 4}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const frame     = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
+
+  return `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
+<rect width="${SVG_W}" height="${SVG_H}" fill="#000000"/>
+${header}
+${headerSep}
+${bandPart}
+${optsPart}
+${divider}
+${frame}
+</svg>`;
+}

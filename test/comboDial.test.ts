@@ -1,6 +1,9 @@
 // A3 — fake dial events against the Combo Options dial, asserting the
-// resulting setFeedback payloads match the documented Mode/Step row state
-// machine (preset ↔ vfo toggle + step cycling with both-end wrap to preset).
+// resulting setFeedback payloads match the F-2 layout: left column lists 6
+// demod bands (WFM/NFM/AM/USB/LSB/CW) plus a Mode/Step bottom row, right
+// column shows mode-dependent option rows (AM/FM/SSB shapes differ). The
+// cursor is a single continuous index across both columns; PUSH on a Band
+// row immediately calls setDemodMode (no edit-mode roundtrip).
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { startPlugin, type MockHarness } from './harness/streamDeckMock.js';
@@ -43,6 +46,75 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     expect(svg).toMatch(/Preset/);
   }, 10_000);
 
+  it('initial render shows Band column with all 6 mode labels and active bullet', async () => {
+    harness = await startPlugin();
+    await harness.willAppearDial(COMBO_UUID, CTX);
+    await harness.settle(200);
+    const svg = await waitForCombFeedback(harness);
+    // All 6 band labels are present in the left column.
+    for (const label of ['WFM', 'NFM', 'AM', 'USB', 'LSB', 'CW']) {
+      expect(svg, `expected band label "${label}"`).toMatch(new RegExp(`>${label}<`));
+    }
+    // Default config has demodMode 1 (NFM); active band gets a bullet "●".
+    expect(svg).toMatch(/>●</);
+  }, 10_000);
+
+  it('PUSH on Band row triggers setDemodMode (cursor 2 → AM)', async () => {
+    harness = await startPlugin();
+    await harness.willAppearDial(COMBO_UUID, CTX);
+    await harness.settle(200);
+
+    // Initial active band is NFM (idx 1). Move cursor to AM (idx 2).
+    harness.dialRotate(COMBO_UUID, CTX, 1);
+    harness.dialRotate(COMBO_UUID, CTX, 1);
+    await harness.settle(100);
+
+    // PUSH (dialDown + dialUp) on a Band row → setDemodMode immediately.
+    // We can't observe the spyService side directly from the harness, but we
+    // can assert that the next setFeedback shows the bullet moved to AM and
+    // the right column flipped to AM Options shape (BW/CAGC/Sync/Atk/Dec/
+    // Gain — the FM column would show Deemph/IFNR instead).
+    const cap = harness.startCapture();
+    harness.dialDown(COMBO_UUID, CTX);
+    harness.dialUp(COMBO_UUID, CTX);
+    await harness.settle(300);
+    const fbs = cap.stop().filter(m => (m as { event?: string }).event === 'setFeedback');
+    expect(fbs.length).toBeGreaterThan(0);
+
+    // Walk the captured stream — the post-setDemodMode render is the last
+    // one to contain "CAGC" (AM-only label).
+    const amSvg = fbs.map(decodeOptionsSvg).find(s => /CAGC/.test(s));
+    expect(amSvg, 'expected an AM-shaped Opts column after PUSH on AM band').toBeTruthy();
+    // Sanity: the FM-only label "Deemph" should NOT be in that frame.
+    expect(amSvg!).not.toMatch(/Deemph/);
+  }, 15_000);
+
+  it('Opts column shrinks from 6 rows (FM/AM) to 3 rows (SSB) when cursor is on USB band and confirmed', async () => {
+    harness = await startPlugin();
+    await harness.willAppearDial(COMBO_UUID, CTX);
+    await harness.settle(200);
+
+    // Cursor 0=WFM → 3 = USB band (3 ticks CW from idx 0).
+    for (let i = 0; i < 3; i++) harness.dialRotate(COMBO_UUID, CTX, 1);
+    await harness.settle(150);
+    harness.dialDown(COMBO_UUID, CTX);
+    harness.dialUp(COMBO_UUID, CTX);
+    let ssbSvg = '';
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const msg = await harness.awaitMessage<SetFeedbackMsg>(
+        m => (m as SetFeedbackMsg)?.event === 'setFeedback' && (m as SetFeedbackMsg)?.context === CTX,
+        2000,
+      );
+      const s = decodeOptionsSvg(msg);
+      if (/>BFO</.test(s)) { ssbSvg = s; break; }
+    }
+    expect(ssbSvg, 'expected SSB-shaped Opts column with BFO row after USB band confirm').toMatch(/>BFO</);
+    // SSB shape has BW + BFO + Gain only; the AM-only "CAGC" or FM-only
+    // "Deemph" labels MUST NOT be present.
+    expect(ssbSvg).not.toMatch(/CAGC/);
+    expect(ssbSvg).not.toMatch(/Deemph/);
+  }, 15_000);
+
   it('dialRotate triggers re-render with focused selection', async () => {
     harness = await startPlugin();
     await harness.willAppearDial(COMBO_UUID, CTX);
@@ -67,7 +139,9 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     await harness.willAppearDial(COMBO_UUID, CTX);
     await harness.settle(200);
 
-    // Navigate selectedIdx 0 → 6 (Mode/Step row), enter edit mode.
+    // Navigate selectedIdx 0 → 6 (Mode/Step row at Band column bottom), enter
+    // edit mode. Band cells (idx 0..5) are non-edit; idx 6 = Mode/Step is
+    // edit-toggleable.
     for (let i = 0; i < 6; i++) harness.dialRotate(COMBO_UUID, CTX, 1);
     await harness.settle(100);
     harness.dialDown(COMBO_UUID, CTX);
@@ -90,9 +164,8 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
       if (/>Step</.test(s)) { vfoSvg = s; break; }
     }
     expect(vfoSvg, 'Expected "Step" label after preset→vfo toggle').toMatch(/>Step</);
-    // Both columns share the modeStepRow helper, so vfo mode renders "Step"
-    // in both AM and FM columns. The default step is 9 kHz → "9k" should
-    // appear as the value.
+    // Mode/Step row sits in the Band column bottom (single position). The
+    // default step is 9 kHz → "9k" should appear as the value.
     expect(vfoSvg).toMatch(/>9k</);
 
     // Now CCW: cycle down through TUNE_STEP_VALUES then wrap back to preset.

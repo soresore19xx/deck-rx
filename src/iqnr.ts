@@ -31,11 +31,16 @@
 //   - 9   NOAA APT (not exposed here)
 import FFT from 'fft.js';
 
-export type DemodMode = 0 | 1 | 2;  // 0=NFM, 1=WFM, 2=AM
+// spyService now drives the full 0..7 mode range (NFM/WFM/AM/DSB/USB/CW/LSB/
+// RAW). FMIF is meaningful only for FM-family modes; everything else just
+// disables it.
+export type DemodMode = number;
 
 const BINS_WFM = 32;
-const BINS_NFM = 15;       // SDR++ "Voice" preset; the default for NFM
-// const BINS_NFM_NARROW = 31;  // Narrow Band preset, not selected from UI yet
+// SDR++ Voice preset is 15 taps, but fft.js requires a power-of-two bin
+// count, so we round up to 16. The 1-tap difference has negligible effect on
+// the noise-floor estimator's behaviour.
+const BINS_NFM = 16;
 
 // Nuttall window — same window function SDR++ uses (gui::dsp::window::nuttall).
 // Coefficients from Albert H. Nuttall, "Some Windows with Very Good Sidelobe
@@ -98,7 +103,7 @@ export class IqNr {
    * behaviour doesn't depend on absolute sample rate.
    */
   setMode(mode: DemodMode, _iqRateHz: number): void {
-    if (mode === 2) {
+    if (mode !== 0 && mode !== 1) {
       this.active = false;
       return;
     }

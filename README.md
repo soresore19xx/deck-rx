@@ -13,6 +13,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Connection resilience | ✅ (TCP-connect timeout, app-level watchdog for cable-pull detection, full-dial dim + `LINK` indicator + `-----` freq while offline, auto-reconnect with state restore) |
 | Server host / port via PI | ✅ (debounced live-apply: changing host/port tears down + reconnects without restart) |
 | AM/SW Bandwidth | ✅ (16th-order complex IF LPF on I/Q + 8th-order post-envelope LPF) |
+| USB / LSB / CW | ✅ Weaver-method SSB demod (4th-order Butterworth audio LPF, ±f_off Q-flip for sideband select); CW = direct frequency-shift by BFO (default 700 Hz). VFO band-cross auto-selects mode for the major amateur segments (160m/80m/40m → LSB, 20m/15m/10m → USB, lower edge of each → CW) |
 | Carrier AGC | ✅ |
 | AGC Attack | ✅ (1–200, SDR++ slider convention = rate in 1/τ_seconds) |
 | AGC Decay | ✅ (1–20) |

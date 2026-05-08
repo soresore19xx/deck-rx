@@ -4,7 +4,12 @@
 // sendToPropertyInspector replies back.
 
 import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { resolve, join } from 'path';
 import { startPlugin, type MockHarness } from './harness/streamDeckMock.js';
+
+const SDRPP_FIXTURE = resolve(__dirname, 'fixtures', 'sdrpp-source.json');
 
 const TUNE_UUID = 'com.hogehoge.deck-rx.dial-tune';
 const CTX = 'ctx-tune-1';
@@ -83,6 +88,46 @@ describe('A4 — PI round-trip handlers in spyDialTune', () => {
     harness.sendToPlugin(TUNE_UUID, CTX, { action: 'getJpRegion' });
     expect((await awaitPI(harness, 'jpRegion')).region).toBe('kanto');
   }, 10_000);
+
+  it('importSdrppPresets imports SDR++ bookmarks into deck-rx presets.json', async () => {
+    // Sandbox both the presets.json (otherwise the test mutates the real
+    // production data dir) and point DECK_RX_SDR_CONFIG_PATH at a fixture
+    // SDR++ config with a known bookmark count.
+    const sandbox = mkdtempSync(join(tmpdir(), 'deck-rx-import-test-'));
+    const presetsPath = join(sandbox, 'presets.json');
+    try {
+      harness = await startPlugin({ presetsPath, sdrConfigPath: SDRPP_FIXTURE });
+      await spawnTuneDial(harness);
+
+      // Click the PI button.
+      harness.sendToPlugin(TUNE_UUID, CTX, { action: 'importSdrppPresets' });
+
+      // Plugin should bounce back sdrImported with import counts.
+      const reply = await awaitPI(harness, 'sdrImported');
+      expect(reply.ok).toBe(true);
+      expect(reply.added).toBe(3);    // SDR++ fixture has 3 bookmarks
+      expect(reply.skipped).toBe(0);
+
+      // Filesystem side-effect: presets.json now exists with the imported
+      // entries. SDR++ source is NOT touched (test does not assert this
+      // explicitly because the path is a fixture; production behaviour is
+      // covered by the unit-level presets.test.ts).
+      expect(existsSync(presetsPath)).toBe(true);
+      const written = JSON.parse(readFileSync(presetsPath, 'utf-8'));
+      expect(Object.keys(written.lists).sort()).toEqual(['General', 'Imported']);
+      expect(written.lists.General.bookmarks['Test FM 1'].frequency).toBe(80000000);
+      expect(written.lists.Imported.bookmarks['Test USB'].frequency).toBe(14300000);
+
+      // A second click is idempotent — added=0, skipped=3.
+      harness.sendToPlugin(TUNE_UUID, CTX, { action: 'importSdrppPresets' });
+      const reply2 = await awaitPI(harness, 'sdrImported');
+      expect(reply2.ok).toBe(true);
+      expect(reply2.added).toBe(0);
+      expect(reply2.skipped).toBe(3);
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it('setTuneMode propagates mode + step into spyService (PI Mode dropdown bug fix regression)', async () => {
     harness = await startPlugin();

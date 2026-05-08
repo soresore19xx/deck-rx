@@ -74,6 +74,14 @@ export interface StartPluginOptions {
   /** Initial config.json contents. Defaults to enabled=false so the plugin
    *  does NOT try to reach a SpyServer during the test. */
   config?: Record<string, unknown>;
+  /** Optional override for DECK_RX_PRESETS_PATH (deck-rx-owned preset
+   *  store). Tests that exercise the SDR++ Import flow point this at a
+   *  sandbox file so they observe the import side-effect without touching
+   *  the production data dir. */
+  presetsPath?: string;
+  /** Optional override for DECK_RX_SDR_CONFIG_PATH (SDR++ source file the
+   *  Import button reads from). */
+  sdrConfigPath?: string;
 }
 
 const DEFAULT_CONFIG = {
@@ -114,12 +122,14 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
   writeFileSync(configPath, JSON.stringify({ ...DEFAULT_CONFIG, ...(opts.config ?? {}) }, null, 2));
 
   // Plugin spawn
-  const env = {
+  const env: Record<string, string | undefined> = {
     ...process.env,
     DECK_RX_PID_FILE:           resolve(sandboxDir, 'deck-rx.pid'),
     DECK_RX_CONFIG_PATH:        configPath,
     DECK_RX_JP_STATIONS_PATH:   JP_STATIONS,
   };
+  if (opts.presetsPath)   env.DECK_RX_PRESETS_PATH    = opts.presetsPath;
+  if (opts.sdrConfigPath) env.DECK_RX_SDR_CONFIG_PATH = opts.sdrConfigPath;
   const plugin = spawn('node', [
     PLUGIN_ENTRY,
     '-port',          String(port),

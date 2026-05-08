@@ -56,6 +56,11 @@ export interface MockHarness {
   dialDown(uuid: string, context: string): void;
   /** Helper: synthetic dialUp (Encoder push release). Pair with dialDown. */
   dialUp(uuid: string, context: string): void;
+  /** Helper: tells the SDK that the Property Inspector is now visible for
+   *  the given action context. The SDK gates sendToPropertyInspector on
+   *  this — without it, plugin replies to sendToPlugin events will be
+   *  silently dropped by the SDK's UI service. */
+  showPropertyInspector(uuid: string, context: string): void;
   /** Helper: PI sendToPlugin payload (for getJpRegion / setTuneMode / etc.) */
   sendToPlugin(uuid: string, context: string, payload: Record<string, unknown>): void;
   /** Helper: short delay so the plugin's async handlers settle before the next event. */
@@ -165,8 +170,11 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
       const summary = (msg as { event?: string }).event ?? 'unknown';
       process.stderr.write(`[harness recv] ${summary} ${data.toString().slice(0, 120)}\n`);
     }
-    inbox.push(msg);
     for (const cap of captures) cap.push(msg);
+    // Try to hand the message to a waiting awaitMessage caller first. If
+    // matched, it is "consumed" and does NOT enter the inbox — otherwise
+    // a stale already-resolved message would resurface in a later
+    // awaitMessage call against the same predicate.
     for (let i = 0; i < waiters.length; i++) {
       if (waiters[i].pred(msg)) {
         clearTimeout(waiters[i].timer);
@@ -175,6 +183,8 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
         return;
       }
     }
+    // No waiter matched — buffer for the next awaitMessage call.
+    inbox.push(msg);
   });
 
   return {
@@ -284,6 +294,14 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
           coordinates: { column: 0, row: 0 },
           settings: {},
         },
+      }));
+    },
+    showPropertyInspector: (uuid, context) => {
+      client.send(JSON.stringify({
+        event: 'propertyInspectorDidAppear',
+        action: uuid,
+        context,
+        device: 'dev-test-sdplus',
       }));
     },
     sendToPlugin: (uuid, context, payload) => {

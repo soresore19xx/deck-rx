@@ -4,7 +4,9 @@
   "description": "Deck RX — SDR receiver controller for Stream Deck (AM / SW / FM via SpyServer)",
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
-    "postbuild": "node -e \"const fs=require('fs'),p=require('os').homedir()+'/Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin';try{if(!fs.lstatSync(p).isSymbolicLink()){console.error('ERROR: Plugins entry is not a symlink! Run: ln -s $(pwd)/com.hogehoge.deck-rx.sdPlugin \\\"'+p+'\\\"');process.exit(1)}}catch(e){console.error('ERROR: Plugin not installed as symlink:',e.message);process.exit(1)}\""
+    "postbuild": "node -e \"const fs=require('fs'),p=require('os').homedir()+'/Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin';try{if(!fs.lstatSync(p).isSymbolicLink()){console.error('ERROR: Plugins entry is not a symlink! Run: ln -s $(pwd)/com.hogehoge.deck-rx.sdPlugin \\\"'+p+'\\\"');process.exit(1)}}catch(e){console.error('ERROR: Plugin not installed as symlink:',e.message);process.exit(1)}\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "fft.js": "^4.0.4",
@@ -19,6 +21,7 @@
     "@types/node": "^22.0.0",
     "rollup": "^4.0.0",
     "tslib": "^2.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   }
 }

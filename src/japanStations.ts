@@ -3,7 +3,10 @@ import { join } from 'path';
 
 declare const __dirname: string;
 
-const DATA_PATH = join(__dirname, '..', 'data', 'jp-stations.json');
+// Path defaults to the bundled location (relative to bin/index.js after rollup).
+// Overridable via DECK_RX_JP_STATIONS_PATH so the unit-test harness can point
+// the loader at test/fixtures/ or another snapshot without touching prod state.
+const DATA_PATH = process.env.DECK_RX_JP_STATIONS_PATH ?? join(__dirname, '..', 'data', 'jp-stations.json');
 
 export type JpBand = 'FM' | 'MW';
 

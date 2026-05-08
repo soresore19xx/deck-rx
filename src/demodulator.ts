@@ -104,6 +104,18 @@ export class Demodulator {
   // Last packet's post-IF-LPF I/Q (for diagnostic spectrum analysis from outside).
   private amDiagPostI: Float64Array = new Float64Array(0);
   private amDiagPostQ: Float64Array = new Float64Array(0);
+
+  // SSB demod state (Weaver method). One shared Mix oscillator at f_off
+  // (audio mid-band, default 1500 Hz) handles both the down-mix and up-mix
+  // stages; the LPFs limit the audio bandwidth to ±f_off around the
+  // suppressed carrier (so total audio band ≈ 0..3 kHz with the default).
+  private ssbPhase = 0;
+  private ssbPhaseInc = 0;
+  private ssbLpfI: Biquad[] = Array.from({ length: 2 }, () => new Biquad());
+  private ssbLpfQ: Biquad[] = Array.from({ length: 2 }, () => new Biquad());
+  private ssbConfiguredIqRate = 0;
+  private ssbConfiguredAudioRate = 0;
+  private ssbConfiguredOffset = 0;
   getAmDiag(): { pre: number; post: number } {
     return { pre: this.amDiagPreRms, post: this.amDiagPostRms };
   }
@@ -150,6 +162,130 @@ export class Demodulator {
     this.pllPdI = 0;
     this.pllPdQ = 0;
     this.pllLocked = false;
+    this.ssbPhase = 0;
+    for (const b of this.ssbLpfI) b.reset();
+    for (const b of this.ssbLpfQ) b.reset();
+    this.cwPhase = 0;
+  }
+
+  /** Configure the SSB Weaver oscillator + LPF. Idempotent — re-applies
+   *  only when the (iqRate, audioRate, fOffset) triple changes. */
+  setupSsb(iqRate: number, audioRate: number, fOffsetHz = 1500): void {
+    if (this.ssbConfiguredIqRate === iqRate &&
+        this.ssbConfiguredAudioRate === audioRate &&
+        this.ssbConfiguredOffset === fOffsetHz) return;
+    this.ssbPhaseInc = 2 * Math.PI * fOffsetHz / iqRate;
+    // 4th-order Butterworth LPF (2 cascaded biquads). Q values:
+    //   Q_k = 1/(2·sin((2k−1)·π/8)),  k=1..2  →  0.5412, 1.3066
+    const Q4 = [0.5411961001, 1.3065629649];
+    for (let k = 0; k < 2; k++) {
+      this.ssbLpfI[k].setLowPass(audioRate, fOffsetHz, Q4[k]);
+      this.ssbLpfQ[k].setLowPass(audioRate, fOffsetHz, Q4[k]);
+    }
+    this.ssbConfiguredIqRate = iqRate;
+    this.ssbConfiguredAudioRate = audioRate;
+    this.ssbConfiguredOffset = fOffsetHz;
+  }
+
+  // CW demod state — direct frequency-shift (NOT the Weaver path SSB takes).
+  // CW receives an *unsuppressed* carrier (DC after direct conversion); the
+  // BFO oscillator simply rotates the complex IQ by +f_bfo so the carrier
+  // appears as an audible f_bfo tone. Weaver-style up/down mix would null
+  // the DC out — wrong shape for CW.
+  private cwPhase = 0;
+  private cwPhaseInc = 0;
+  private cwConfiguredIqRate = 0;
+  private cwConfiguredBfo = 0;
+
+  /** Configure for CW reception. f_bfo (default 700 Hz) is the audible
+   *  pitch the unmodulated carrier will be shifted to. Pre-tune the
+   *  receiver so the CW signal sits exactly on the suppressed-carrier
+   *  reference (= IQ DC); the BFO mix lifts it into the audio band. */
+  setupCw(iqRate: number, _audioRate: number, bfoHz = 700): void {
+    if (this.cwConfiguredIqRate === iqRate && this.cwConfiguredBfo === bfoHz) return;
+    this.cwPhaseInc = 2 * Math.PI * bfoHz / iqRate;
+    this.cwConfiguredIqRate = iqRate;
+    this.cwConfiguredBfo = bfoHz;
+    void _audioRate; // reserved for a future narrow audio bandpass
+  }
+
+  /** CW demodulator: rotate the complex IQ stream by +f_bfo so the
+   *  unmodulated carrier (DC at direct-conversion baseband) becomes an
+   *  audible tone at f_bfo. Output = real part of the rotated stream. */
+  processCW(iq: Buffer, decimate: number, gain = 12000): Int16Array {
+    const inSamples = iq.length >> 2;
+    const outSamples = Math.floor(inSamples / decimate);
+    const out = new Int16Array(outSamples * 2);
+    let oi = 0;
+    for (let i = 0; i < inSamples; i++) {
+      const I = iq.readInt16LE(i * 4);
+      const Q = iq.readInt16LE(i * 4 + 2);
+      const c = Math.cos(this.cwPhase);
+      const s = Math.sin(this.cwPhase);
+      // Rotate IQ by +f_bfo: new_I = I·cos − Q·sin, new_Q = I·sin + Q·cos.
+      // Audio = real part = new_I.
+      const audio = I * c - Q * s;
+      this.cwPhase += this.cwPhaseInc;
+      if (this.cwPhase > 2 * Math.PI) this.cwPhase -= 2 * Math.PI;
+      if (i % decimate !== 0 || oi >= outSamples) continue;
+      const v = (audio * gain) / 16000;
+      const sample = v >= 32767 ? 32767 : v <= -32767 ? -32767 : (v | 0);
+      out[oi * 2] = sample;
+      out[oi * 2 + 1] = sample;
+      oi++;
+    }
+    return out;
+  }
+
+  /**
+   * Single-sideband demodulator using the Weaver method.
+   *
+   *   Stage 1: mix the IQ stream down by f_off (audio mid-band)
+   *      I'(t) =  I·cos(ω·t) + Q·sin(ω·t)
+   *      Q'(t) = -I·sin(ω·t) + Q·cos(ω·t)
+   *   Stage 2: low-pass filter both at f_off → keeps ±f_off → 0..2·f_off
+   *            after the up-mix (typical voice band 0..3 kHz with f_off=1.5 k)
+   *   Stage 3: mix back up by f_off
+   *      USB(t) = I'·cos(ω·t) − Q'·sin(ω·t)
+   *
+   * LSB shares the USB code path by flipping the sign of the input Q before
+   * mixing — equivalent to running Weaver against the conjugate IQ stream,
+   * which inverts which sideband survives the LPF stage.
+   *
+   * Output is stereo-interleaved Int16 (L = R = audio).
+   * Caller must invoke setupSsb() once after constructing the demodulator
+   * (or whenever iqRate / audioRate / fOffset change).
+   */
+  processSSB(iq: Buffer, decimate: number, sideBand: 'USB' | 'LSB', gain = 12000): Int16Array {
+    const inSamples = iq.length >> 2;
+    const outSamples = Math.floor(inSamples / decimate);
+    const out = new Int16Array(outSamples * 2);
+    const qSign = sideBand === 'USB' ? 1 : -1;
+    let oi = 0;
+    for (let i = 0; i < inSamples; i++) {
+      const I =          iq.readInt16LE(i * 4);
+      const Q = qSign * iq.readInt16LE(i * 4 + 2);
+      const c = Math.cos(this.ssbPhase);
+      const s = Math.sin(this.ssbPhase);
+      const Ip =  I * c + Q * s;   // mix-down I  (rotate IQ by −ω·t)
+      const Qp = -I * s + Q * c;   // mix-down Q
+      this.ssbPhase += this.ssbPhaseInc;
+      if (this.ssbPhase > 2 * Math.PI) this.ssbPhase -= 2 * Math.PI;
+      if (i % decimate !== 0 || oi >= outSamples) continue;
+      // LPF runs at audio rate (post-decimation).
+      let lpI = Ip;
+      for (const b of this.ssbLpfI) lpI = b.step(lpI);
+      let lpQ = Qp;
+      for (const b of this.ssbLpfQ) lpQ = b.step(lpQ);
+      // Up-mix (USB convention; the Q-sign flip above gives us LSB for free).
+      const audio = lpI * c - lpQ * s;
+      const v = (audio * gain) / 16000;
+      const sample = v >= 32767 ? 32767 : v <= -32767 ? -32767 : (v | 0);
+      out[oi * 2] = sample;
+      out[oi * 2 + 1] = sample;
+      oi++;
+    }
+    return out;
   }
 
   setDeemphasis(audioRate: number, tau: number): void {

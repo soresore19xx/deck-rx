@@ -850,7 +850,18 @@ class SpyService {
         pcm = this.fmOptions.stereo
           ? this.demod.processWFMStereo(iqBody, dec)
           : this.demod.processWFM(iqBody, dec);
+      } else if (this.currentDemodMode === 4 || this.currentDemodMode === 6) {
+        // USB (mode 4) / LSB (mode 6) — Weaver SSB demod with f_off = 1.5 kHz
+        // (gives a usable 0–3 kHz audio band, the standard SSB voice slot).
+        this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, 1500);
+        pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB');
+      } else if (this.currentDemodMode === 5) {
+        // CW (mode 5) — direct frequency-shift by BFO (700 Hz default).
+        this.demod.setupCw(this.currentIQRate, this.currentAudioRate, 700);
+        pcm = this.demod.processCW(iqBody, dec);
       } else {
+        // NFM (mode 0) — also catches DSB (3) and RAW (7) which fall through
+        // to FM until proper demod is implemented.
         pcm = this.demod.processFM(iqBody, dec);
       }
       // Diagnostic log every 3 s: detect silent output from DSP issues.

@@ -11,6 +11,11 @@ logs/
 com.hogehoge.deck-rx.sdPlugin/config.json
 com.hogehoge.deck-rx.sdPlugin/config.json.*
 
+# User's preset store (populated by the SDR++ Import button + hand edits;
+# host-specific so it must stay out of the shared repo)
+com.hogehoge.deck-rx.sdPlugin/data/presets.json
+com.hogehoge.deck-rx.sdPlugin/data/presets.json.*
+
 # Editor / OS
 .DS_Store
 .vscode/

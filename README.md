@@ -34,6 +34,8 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 - **Deck RX AM Options** — BW / Carrier AGC / Attack / Decay / Gain
 - **Deck RX Combo Options** — unified Band selector (WFM / NFM / AM / USB / LSB / CW) on the left column + mode-dependent Options on the right column. PUSH on a Band row immediately switches the demod mode (no edit-mode roundtrip); the Opts column auto-shapes to AM (BW / CAGC / Sync / Atk / Dec / Gain), FM (Deemph / IFNR / HPF / LPF / Ste / Gain), or SSB (BW / BFO / Gain) depending on the active demod. Mode/Step (preset ⇄ vfo + step cycle) lives at the bottom of the Band column. The legacy single-mode `Deck RX Options` and `Deck RX AM Options` panels are still registered for users who prefer one panel per mode
 
+![Combo dial — all 6 demod modes](docs/lcd-combo-modes.png)
+
 See [docs/architecture.md](docs/architecture.md) for layout details, focus highlight colours, and signal-path notes.
 
 ## Documentation

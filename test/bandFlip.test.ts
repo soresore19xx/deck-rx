@@ -34,6 +34,66 @@ interface SetFeedback {
   payload: Record<string, unknown>;
 }
 
+// Display order of the band column (matches src/actions/spyDialOptionsCombo.ts).
+const BAND_LABELS = ['WFM', 'NFM', 'AM', 'USB', 'LSB', 'CW'] as const;
+const BAND_MODES  = [   1,    0,   2,    4,    6,   5] as const;
+
+describe('A4 — Combo Band PUSH: sweep all 6×5 from/to pairs', () => {
+  // Build one independent test per from→to combination so a regression on
+  // a specific transition (e.g. AM → SSB) doesn't get masked by the whole
+  // suite passing on the average path.
+  for (let fromIdx = 0; fromIdx < BAND_LABELS.length; fromIdx++) {
+    for (let toIdx = 0; toIdx < BAND_LABELS.length; toIdx++) {
+      if (fromIdx === toIdx) continue; // same mode = no-op, no listener fires
+      const fromLabel = BAND_LABELS[fromIdx];
+      const toLabel   = BAND_LABELS[toIdx];
+      const fromMode  = BAND_MODES[fromIdx];
+      const toMode    = BAND_MODES[toIdx];
+
+      it(`${fromLabel} → ${toLabel} flips Combo Opts header to "${toLabel} Opts"`, async () => {
+        const presetsPath = resolve(__dirname, 'fixtures', 'deck-rx-presets.json');
+        harness = await startPlugin({
+          presetsPath,
+          config: {
+            enabled: true,
+            demodMode: fromMode,
+            host: '10.255.255.1',
+            port: 1,
+            audioEnabled: false,
+            tuneMode: 'preset',
+          },
+        });
+        await harness.willAppearDial(TUNE_UUID, TUNE_CTX, { mode: 'preset', stepHz: 9000, slotIndex: 0, borderSide: 'none' });
+        await harness.willAppearDial(COMBO_UUID, COMBO_CTX);
+        await harness.settle(600);
+
+        // Cursor starts at 0 (WFM row). Walk it to the destination row.
+        const cap = harness.startCapture();
+        for (let i = 0; i < toIdx; i++) {
+          harness.dialRotate(COMBO_UUID, COMBO_CTX, 1);
+        }
+        await harness.settle(150);
+        harness.dialDown(COMBO_UUID, COMBO_CTX);
+        harness.dialUp(COMBO_UUID, COMBO_CTX);
+        await harness.settle(800);
+
+        const all = cap.stop();
+        const comboFb = all.filter(m => (m as { event?: string }).event === 'setFeedback' && (m as SetFeedback).context === COMBO_CTX);
+        const comboSvgs = comboFb.map(m => decodeOptionsSvg(m as SetFeedback));
+        // Find at least one frame whose Opts header matches the destination
+        // band — that's the post-setDemodMode render.
+        const matched = comboSvgs.find(s => new RegExp(`>${toLabel} Opts<`).test(s));
+        expect(matched, `expected Combo Opts header "${toLabel} Opts" after PUSH on ${toLabel} (toMode=${toMode})`).toBeTruthy();
+
+        // Tune dial should have re-rendered too (demodListener fired) — at
+        // least one fresh setFeedback after the band PUSH.
+        const tuneFb = all.filter(m => (m as { event?: string }).event === 'setFeedback' && (m as SetFeedback).context === TUNE_CTX);
+        expect(tuneFb.length, `Tune dial should re-render after ${fromLabel} → ${toLabel}`).toBeGreaterThan(0);
+      }, 20_000);
+    }
+  }
+});
+
 describe('A4 — Combo Band PUSH propagates to Tune dial', () => {
   it('flips Tune dial frequency when band switches FM → AM in preset mode', async () => {
     const presetsPath = resolve(__dirname, 'fixtures', 'deck-rx-presets.json');

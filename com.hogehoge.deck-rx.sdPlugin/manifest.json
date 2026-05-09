@@ -32,31 +32,7 @@
         "TriggerDescription": { "Rotate": "Tune frequency", "Push": "", "LongTouch": "" }
       }
     },
-    {
-      "UUID": "com.hogehoge.deck-rx.dial-options",
-      "Name": "Deck RX Options",
-      "Icon": "imgs/actions/options/action",
-      "Tooltip": "FM demodulation options",
-      "Controllers": ["Encoder"],
-      "States": [{ "Image": "imgs/actions/options/action", "Title": "Opts" }],
-      "Encoder": {
-        "layout": "layouts/dial-options.json",
-        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
-      }
-    },
-    {
-      "UUID": "com.hogehoge.deck-rx.dial-am-options",
-      "Name": "Deck RX AM Options",
-      "Icon": "imgs/actions/options/action",
-      "Tooltip": "AM bandwidth and Carrier AGC settings",
-      "Controllers": ["Encoder"],
-      "States": [{ "Image": "imgs/actions/options/action", "Title": "AM" }],
-      "Encoder": {
-        "layout": "layouts/dial-am-options.json",
-        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
-      }
-    },
-    {
+{
       "UUID": "com.hogehoge.deck-rx.dial-options-combo",
       "Name": "Deck RX Combo Options",
       "Icon": "imgs/actions/options/action",

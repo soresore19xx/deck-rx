@@ -5,7 +5,7 @@
 // gap snaps to the next covered band instead of letting the user park on a
 // physically unreceivable freq and hear noise.
 
-import { DEVICE_AIRSPY_HF, DEVICE_AIRSPY_ONE, DEVICE_RTLSDR } from './spyClient.js';
+import { DEVICE_AIRSPY_HF, DEVICE_AIRSPY_ONE, DEVICE_RTLSDR } from './SpyClient.js';
 
 export interface DeviceBand { lo: number; hi: number; }
 

@@ -1,0 +1,163 @@
+{
+  "lists": {
+    "General": {
+      "bookmarks": {
+        "文化放送": {
+          "frequency": 91600000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "ベイエフエム": {
+          "frequency": 78000000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "InterFM897": {
+          "frequency": 89700000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "J−WAVE": {
+          "frequency": 81300000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "かつしかFM": {
+          "frequency": 78900000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "LuckyFM": {
+          "frequency": 94600000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "NHK": {
+          "frequency": 82500000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "ニッポン放送": {
+          "frequency": 93000000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "エフエムナックファイブ": {
+          "frequency": 79500000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "ラジオ日本": {
+          "frequency": 92400000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "TBSラジオ": {
+          "frequency": 90500000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "エフエム東京": {
+          "frequency": 80000000,
+          "bandwidth": 200000,
+          "mode": 1
+        },
+        "AFN Eagle 810": {
+          "frequency": 810000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "HBCラジオ": {
+          "frequency": 1287000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "MBSラジオ": {
+          "frequency": 1179000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "NHKラジオ第2": {
+          "frequency": 693000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "ラジオ大阪": {
+          "frequency": 1314000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "RCCラジオ": {
+          "frequency": 1350000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "RKB毎日放送": {
+          "frequency": 1278000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "STVラジオ": {
+          "frequency": 1440000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "東海ラジオ": {
+          "frequency": 1332000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "TBCラジオ": {
+          "frequency": 1260000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW China Radio International. (CRI)": {
+          "frequency": 7325000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW HCJB ReachBeyond Australia 07:30-08:00": {
+          "frequency": 17650000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW Indonesia 21:00-22:00": {
+          "frequency": 5750000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW KTWR Sun. 21:15-21:45": {
+          "frequency": 9975000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW RADIO NIKKEI 1": {
+          "frequency": 6055000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW RADIO NIKKEI 2": {
+          "frequency": 6115000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW Radio Taipei International": {
+          "frequency": 9740000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW ReachBeyond Australia": {
+          "frequency": 15460000,
+          "bandwidth": 9000,
+          "mode": 2
+        },
+        "SW Voice of Vietnam": {
+          "frequency": 9840000,
+          "bandwidth": 9000,
+          "mode": 2
+        }
+      }
+    }
+  }
+}

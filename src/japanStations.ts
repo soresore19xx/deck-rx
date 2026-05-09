@@ -116,8 +116,17 @@ export function clearJpStationsCache(): void {
 // Frequency match tolerances are chosen so the registered grid (0.1 MHz for FM,
 // 9 kHz for MW) doesn't produce false negatives if the user tunes a few hundred
 // Hz off — but tight enough that adjacent grid slots don't bleed into each other.
-const FM_TOLERANCE_HZ = 50_000;   // 50 kHz; adjacent FM stations are 100 kHz apart
-const MW_TOLERANCE_HZ = 4_000;    // 4 kHz; adjacent MW stations are 9 kHz apart
+// Lookup tolerance windows. These exist to absorb integer-rounding error
+// at the source (jp-stations.json) vs. SpyServer's setFrequency echo and
+// nothing more — they should NOT be wide enough to match a freq the user
+// is genuinely off-channel from. Earlier values (MW 4 kHz, FM 50 kHz) were
+// half-channel-grid permissive: tuning 590 kHz (4 kHz off NHK東京 594)
+// would still surface "NHK", giving a false on-channel impression while
+// the carrier is too far off to actually receive. The narrower windows
+// below mean only freqs the dial actually lands on (1 kHz / 100 kHz step
+// grid for MW / FM) match.
+const FM_TOLERANCE_HZ =  5_000;   // 5 kHz; well inside the 100 kHz channel grid
+const MW_TOLERANCE_HZ =    500;   // 500 Hz; absorbs float drift, no adjacent match
 
 // Scan one station list for the closest match within tolerance.
 function scan(list: JpStation[], freqHz: number, band: JpBand, tol: number): { entry: JpStation; delta: number } | null {

@@ -89,6 +89,32 @@ describe('lookupJpStation — region filter on auto-scraped pool', () => {
   });
 });
 
+describe('lookupJpStation — tolerance window (regression: VFO off-channel must NOT match)', () => {
+  // Bug 2026-05-10: with MW tolerance 4 kHz, VFO-tuning 590-598 kHz (any of
+  // those 1 kHz steps near NHK東京 594) all surfaced "NHK" on the dial header,
+  // implying "on-channel" while the user was 4 kHz off — far past the AM
+  // bandwidth, no signal actually receivable. Tolerance now 500 Hz for MW
+  // (and 5 kHz for FM) so only freqs essentially on-grid match.
+  it('MW 590 kHz does NOT match 594 kHz NHK (4 kHz off-channel)', () => {
+    expect(lookupJpStation(590_000, 'kanto')).toBeNull();
+  });
+  it('MW 598 kHz does NOT match 594 kHz NHK (4 kHz off-channel)', () => {
+    expect(lookupJpStation(598_000, 'kanto')).toBeNull();
+  });
+  it('MW 593 kHz still matches 594 kHz NHK (1 kHz off — within absorb-rounding window)', () => {
+    expect(lookupJpStation(593_500, 'kanto')?.name).toBe('NHK');
+  });
+  it('FM 80.003 MHz still matches 80.0 MHz TOKYO FM (3 kHz drift, within 5 kHz window)', () => {
+    expect(lookupJpStation(80_003_000, 'kanto')).not.toBeNull();
+  });
+  it('FM 80.020 MHz does NOT match 80.0 MHz (20 kHz off — outside 5 kHz tolerance)', () => {
+    expect(lookupJpStation(80_020_000, 'kanto')).toBeNull();
+  });
+  it('FM 80.050 MHz does NOT match 80.0 MHz (50 kHz off — mid-channel, off-channel)', () => {
+    expect(lookupJpStation(80_050_000, 'kanto')).toBeNull();
+  });
+});
+
 describe('lookupJpStation — out-of-band', () => {
   it('returns null outside MW and FM bands', () => {
     expect(lookupJpStation(100, 'kanto')).toBeNull();

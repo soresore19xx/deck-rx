@@ -168,13 +168,17 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   const unitW = unit.length * unitSize * 0.68;
   const totalW = numTotalW + 4 + unitW;
 
-  // Reserve a left margin for the optional Mode label (e.g. "FM", "USB").
-  // Center the digits in the area RIGHT of the mode label so a 3-char mode
-  // doesn't unbalance the 7-seg block.
+  // Optional Mode label (e.g. "FM", "USB"): treat the [mode + digits + unit]
+  // as one horizontal block and centre the whole block in the svg so the
+  // 7-seg digits keep their original visual size. A tight 2 px gap between
+  // mode text and the first digit keeps them feeling like a single unit
+  // rather than two stranded items at the edges.
   const MODE_FS = 14;
   const MODE_CW = 8.5;
-  const modeW = modeLabel ? modeLabel.length * MODE_CW + 8 : 0;
-  let cx = modeW + (svgW - modeW - totalW) / 2;
+  const MODE_GAP = 2;
+  const modeW = modeLabel ? modeLabel.length * MODE_CW + MODE_GAP : 0;
+  const blockStart = (svgW - (modeW + totalW)) / 2;
+  let cx = modeLabel ? blockStart + modeW : (svgW - totalW) / 2;
   const oy = (svgH - DH) / 2;
   let out = `<rect width="${svgW}" height="${svgH}" fill="#000000"/>`;
   // Top-right corner: STEREO badge (FM stereo lock) takes priority over an
@@ -192,10 +196,11 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
     // Mono) needs a font fixup, applied per-copy in dumpTuneLcd.
     out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
   }
-  // Mode label on the left, vertically aligned with the 7-seg digits' centre.
+  // Mode label sits at the start of the centred [mode | digits | unit]
+  // block, vertically aligned with the digits' midline.
   if (modeLabel) {
     const my = oy + DH / 2 + MODE_FS * 0.35;
-    out += `<text x="4" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace">${modeLabel}</text>`;
+    out += `<text x="${n(Math.max(2, blockStart))}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace">${modeLabel}</text>`;
   }
 
   for (const c of numStr) {

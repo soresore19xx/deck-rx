@@ -168,17 +168,13 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   const unitW = unit.length * unitSize * 0.68;
   const totalW = numTotalW + 4 + unitW;
 
-  // Optional Mode label (e.g. "FM", "USB"): treat the [mode + digits + unit]
-  // as one horizontal block and centre the whole block in the svg so the
-  // 7-seg digits keep their original visual size. A tight 2 px gap between
-  // mode text and the first digit keeps them feeling like a single unit
-  // rather than two stranded items at the edges.
+  // 7-seg digits stay centred in the svg with their original size — the
+  // optional Mode label is pinned to the *left* of the digits with a tight
+  // 2 px gap, so adding a Mode no longer shifts or shrinks the digits.
   const MODE_FS = 14;
   const MODE_CW = 8.5;
   const MODE_GAP = 2;
-  const modeW = modeLabel ? modeLabel.length * MODE_CW + MODE_GAP : 0;
-  const blockStart = (svgW - (modeW + totalW)) / 2;
-  let cx = modeLabel ? blockStart + modeW : (svgW - totalW) / 2;
+  let cx = (svgW - totalW) / 2;
   const oy = (svgH - DH) / 2;
   let out = `<rect width="${svgW}" height="${svgH}" fill="#000000"/>`;
   // Top-right corner: STEREO badge (FM stereo lock) takes priority over an
@@ -196,11 +192,14 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
     // Mono) needs a font fixup, applied per-copy in dumpTuneLcd.
     out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
   }
-  // Mode label sits at the start of the centred [mode | digits | unit]
-  // block, vertically aligned with the digits' midline.
+  // Mode label is pinned to the digits' left edge (cx - gap - text width)
+  // so it tracks the centred 7-seg block. Vertically aligned with the
+  // digits' midline. The min-x guard keeps short SVG widths from pulling
+  // the label off the left edge.
   if (modeLabel) {
     const my = oy + DH / 2 + MODE_FS * 0.35;
-    out += `<text x="${n(Math.max(2, blockStart))}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace">${modeLabel}</text>`;
+    const modeX = Math.max(2, cx - MODE_GAP - modeLabel.length * MODE_CW);
+    out += `<text x="${n(modeX)}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace">${modeLabel}</text>`;
   }
 
   for (const c of numStr) {

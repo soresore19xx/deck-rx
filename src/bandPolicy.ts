@@ -33,9 +33,9 @@
  *
  *   SW broadcast (rest of 1.8 – 30 MHz)  →  AM (international shortwave broadcast)
  *
- *   VHF low 30 – 76 MHz                  →  NFM
- *   FM broadcast 76 – 108 MHz            →  WFM
- *   VHF / UHF > 108 MHz                  →  NFM
+ *   VHF low 30 – 76 MHz                  →  NFM (VHF業務無線 / 6 m amateur — NOT broadcast FM)
+ *   FM broadcast 76 – 108 MHz            →  WFM (Japan FM 放送 76–95 + 95–108 海外, ワイドFM)
+ *   VHF / UHF > 108 MHz                  →  NFM (VHF/UHF 業務 / アマチュア)
  *
  *   anything else (gaps below MW etc.)   →  null (do not change current mode)
  *

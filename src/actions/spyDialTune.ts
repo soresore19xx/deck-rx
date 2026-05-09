@@ -12,6 +12,7 @@ import { importFromSdrpp } from '../presets.js';
 import { lookupEibi } from '../eibi.js';
 import { lookupJpStation, isJpRegion, type JpRegion } from '../japanStations.js';
 import { autoDemodForFreq } from '../bandPolicy.js';
+import { bandsForDevice, snapToCoveredFreq } from '../deviceBands.js';
 
 // Station-name auto-lookup priority:
 //   1. jp-stations.json — auto-scraped 総務省 region tables (filtered by the
@@ -240,7 +241,16 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     } else {
       const base = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       if (base <= 0) return;
-      const next = Math.max(0, base + ev.payload.ticks * this.stepHz);
+      const raw = Math.max(0, base + ev.payload.ticks * this.stepHz);
+      // Snap to a covered band of the connected SDR so the user can't park
+      // on a hardware-gap freq (Airspy HF+ has a 31–60 MHz dead zone) or
+      // tune past the device's published edges. Direction = sign of ticks
+      // so dialing UP through a gap jumps to the next band's lo, dialing
+      // DOWN jumps to the previous band's hi.
+      const dev = spyService.getDeviceInfo();
+      const bands = dev ? bandsForDevice(dev.deviceType, dev.minFrequency, dev.maxFrequency) : [];
+      const dir = ev.payload.ticks > 0 ? 1 : -1;
+      const next = snapToCoveredFreq(raw, bands, dir);
       this.currentFreq = next;
       await this.updateDisplay(ev.action);
       if (this.tuneTimer) clearTimeout(this.tuneTimer);

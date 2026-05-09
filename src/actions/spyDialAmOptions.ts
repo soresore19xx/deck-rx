@@ -214,8 +214,12 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     if (this.isAmMode) rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
     const sel = this.focused ? this.selectedIdx : -1;
     const dim = !this.enabled || !this.connected;
+    // Title shows the dial's purpose; if the live demod is something other
+    // than AM, append a hint so the user isn't fooled into thinking edits
+    // here will affect what they're hearing right now.
+    const title = this.isAmMode ? 'AM Options' : 'AM Options  (FM live)';
     this.act.setFeedback({
-      'options-display': dumpAndB64('am-options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), dim)),
+      'options-display': dumpAndB64('am-options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide, title), dim)),
     }).catch(() => {});
   }
 }

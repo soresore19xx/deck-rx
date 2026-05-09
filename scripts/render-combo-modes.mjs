@@ -59,4 +59,33 @@ for (const [mode, label] of MODES) {
   await harness.shutdown();
 }
 
+// ── Legacy single-mode dials ────────────────────────────────────────────
+// Render FM Options + AM Options once each so the title-bar update can be
+// inspected separately. demodMode is set to the dial's "native" mode so
+// the title is the simple "FM Options" / "AM Options" form.
+const LEGACY = [
+  { uuid: 'com.hogehoge.deck-rx.dial-options',     mode: 1, label: 'fm-options' },
+  { uuid: 'com.hogehoge.deck-rx.dial-am-options',  mode: 2, label: 'am-options' },
+];
+for (const d of LEGACY) {
+  console.error(`>> rendering ${d.label} (mode=${d.mode})`);
+  const harness = await startPlugin({ config: {
+    enabled: true,
+    demodMode: d.mode,
+    host: '10.255.255.1',
+    port: 1,
+    audioEnabled: false,
+  } });
+  const cap = harness.startCapture();
+  await harness.willAppearDial(d.uuid, CTX);
+  await harness.settle(2500);
+  const fbs = cap.stop().filter(m => m?.event === 'setFeedback' && m?.context === CTX);
+  const last = fbs.length > 0 ? decodeSvg(fbs[fbs.length - 1]) : '';
+  if (last) {
+    writeFileSync(`/tmp/${d.label}.svg`, last);
+    console.error(`   wrote /tmp/${d.label}.svg (${last.length} chars, ${fbs.length} frames)`);
+  }
+  await harness.shutdown();
+}
+
 console.error('>> all done');

@@ -77,7 +77,7 @@ export interface OptionsPanelRow {
   valueColor?: string;
 }
 
-export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editMode = false, borderSide: 'left' | 'right' | 'center' | 'none' = 'none'): string {
+export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editMode = false, borderSide: 'left' | 'right' | 'center' | 'none' = 'none', title = ''): string {
   // Fixed compact metrics: rowH 14 / font 11/12. Used for ALL panel-style
   // dials so AM Options, FM Options and Volume+Status share identical
   // typography regardless of how many rows each happens to render.
@@ -97,6 +97,11 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   const lastBarY = SVG_H - 9;  // = 91, used only when lastRowHasBar
   // upperArea ends a few px above the bar so there's breathing room.
   const upperAreaH = lastBarY - textH - 8;
+  // Optional title bar at the top — only used by non-bar panels (Volume keeps
+  // its own anchored layout). Communicates "what this dial controls" so a
+  // user glancing at the LCD knows which mode's parameters they're seeing.
+  const titleVisible = title.length > 0 && !lastRowHasBar;
+  const TITLE_H = titleVisible ? 12 : 0;
   let startY: number;
   if (lastRowHasBar) {
     const upperRows = rows.length - 1;
@@ -112,7 +117,9 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
     // line up at the top. Vertical centring is intentionally NOT used here.
     // rowH=12 lets up to 8 rows fit (last baseline 100 - just at frame edge);
     // 7 rows leave breathing room at the bottom, 6 rows leave more.
-    startY = rowH + 4;
+    // When a title bar is shown, push the first row down by TITLE_H but trim
+    // the +4 gap to keep 7 rows + title fitting inside the 100 px frame.
+    startY = titleVisible ? TITLE_H + rowH : rowH + 4;
   }
   // Panel-wide column positions: panels containing an inline bar (Volume) keep
   // the original wide layout (label flush left, value flush right of the bar)
@@ -198,8 +205,15 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // exact same y as the Tune dial's RSSI bar without scaling. Frame bottom is
   // pulled up 1 px (height 99→98) to avoid device-edge clipping.
   const frame = `<rect x="0.5" y="0.5" width="199" height="98" rx="4" ry="4" fill="none" stroke="${C}" stroke-width="1"/>`;
+  // Title bar: dial-name banner pinned to the top, divider line below it.
+  // Centred horizontally so it reads as a header, not a row.
+  const headerSvg = titleVisible
+    ? `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" text-anchor="middle">${title}</text>` +
+      `<line x1="2" y1="${TITLE_H + 1}" x2="198" y2="${TITLE_H + 1}" stroke="#444444" stroke-width="0.6"/>`
+    : '';
   return `<svg width="200" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="200" height="${SVG_H}" fill="#000000"/>
+${headerSvg}
 ${items}
 ${frame}
 </svg>`;
@@ -317,9 +331,14 @@ export function optionsPanelBandSvg(
   const accent = editMode ? '#ffaa55' : BLUE;
   const BAND_TOTAL = bandLabels.length + 1; // 6 mode rows + Mode/Step row
 
+  // Right column header reflects the active demod mode so the user knows
+  // which mode's parameters are visible (e.g. "WFM Opts" vs "AM Opts").
+  const optsHeaderText = activeBandIdx >= 0 && activeBandIdx < bandLabels.length
+    ? `${bandLabels[activeBandIdx]} Opts`
+    : 'Opts';
   const header =
     `<text x="6" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">Band</text>` +
-    `<text x="${COL_W + 6}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">Opts</text>`;
+    `<text x="${COL_W + 6}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">${optsHeaderText}</text>`;
 
   const renderBandRow = (i: number): string => {
     const y = HEADER_H + (i + 1) * ROW_H;

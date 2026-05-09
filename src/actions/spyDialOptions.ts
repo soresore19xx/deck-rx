@@ -168,8 +168,14 @@ export class SpyDialOptions extends SingletonAction<Settings> {
     if (this.isFmMode) rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
     const sel = this.focused ? this.selectedIdx : -1;
     const dim = !this.enabled || !this.connected;
+    // Title makes it obvious which dial / mode-family this panel controls
+    // when the user is glancing at the strip of LCDs. The active demod mode
+    // is appended so an inactive panel (e.g. AM is the live mode but the
+    // user is looking at the FM Options dial) reads as "FM Opts (AM live)".
+    const activeMode = this.isFmMode ? 'FM' : 'AM';
+    const title = this.isFmMode ? 'FM Options' : `FM Options  (${activeMode} live)`;
     this.act.setFeedback({
-      'options-display': dumpAndB64('options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), dim)),
+      'options-display': dumpAndB64('options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide, title), dim)),
     }).catch(() => {});
   }
 }

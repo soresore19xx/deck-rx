@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { bandsForDevice, isCoveredFreq, snapToCoveredFreq } from '../src/deviceBands.js';
-import { DEVICE_AIRSPY_HF, DEVICE_AIRSPY_ONE, DEVICE_RTLSDR } from '../src/SpyClient.js';
+import { DEVICE_AIRSPY_HF, DEVICE_AIRSPY_ONE, DEVICE_RTLSDR } from '../src/spyClient.js';
 
 describe('bandsForDevice', () => {
   it('Airspy HF+ returns the HF + VHF bands with a gap at 31–60 MHz', () => {

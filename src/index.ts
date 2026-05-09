@@ -2,7 +2,9 @@ import fs from 'fs';
 import streamDeck from '@elgato/streamdeck';
 import { SpyTune } from './actions/spyTune.js';
 import { SpyDialTune } from './actions/spyDialTune.js';
+import { SpyDialOptions } from './actions/spyDialOptions.js';
 import { SpyDialVolume } from './actions/spyDialVolume.js';
+import { SpyDialAmOptions } from './actions/spyDialAmOptions.js';
 import { SpyDialOptionsCombo } from './actions/spyDialOptionsCombo.js';
 
 // PID_FILE defaults to /tmp/deck-rx.pid for the production plugin instance.
@@ -42,6 +44,8 @@ process.on('unhandledRejection', (r)  => { safeLog(`[deck-rx] unhandledRejection
 
 streamDeck.actions.registerAction(new SpyTune());
 streamDeck.actions.registerAction(new SpyDialTune());
+streamDeck.actions.registerAction(new SpyDialOptions());
 streamDeck.actions.registerAction(new SpyDialVolume());
+streamDeck.actions.registerAction(new SpyDialAmOptions());
 streamDeck.actions.registerAction(new SpyDialOptionsCombo());
 streamDeck.connect();

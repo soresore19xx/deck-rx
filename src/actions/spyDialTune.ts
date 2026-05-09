@@ -12,7 +12,7 @@ import { importFromSdrpp } from '../presets.js';
 import { lookupEibi } from '../eibi.js';
 import { lookupJpStation, isJpRegion, type JpRegion } from '../japanStations.js';
 import { autoDemodForFreq } from '../bandPolicy.js';
-import { bandsForDevice, snapToCoveredFreq } from '../deviceBands.js';
+import { bandsForDevice, snapToCoveredFreq, isFreqReceivable } from '../deviceBands.js';
 
 // Station-name auto-lookup priority:
 //   1. jp-stations.json — auto-scraped 総務省 region tables (filtered by the
@@ -136,7 +136,9 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     this.connectListener = () => {
       if (this.dialMode === 'preset' && this.presets.length > 0) {
         const p = this.presets[this.slotIndex];
-        if (p?.freq) {
+        const dev = spyService.getDeviceInfo();
+        const receivable = !p?.freq || !dev || isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency);
+        if (p?.freq && receivable) {
           // Suppress the demodListener's auto-jump while the connect-time
           // seed runs — otherwise it would re-pick the first matching-mode
           // preset and stomp the user's persisted slotIndex.
@@ -152,8 +154,19 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
           }
           this.suppressDemodJump = false;
         }
+        // If the persisted preset is unreceivable on the connected device
+        // (e.g. user persisted a 50 MHz NFM slot then plugged in an Airspy
+        // HF+ which has a 31–60 MHz hardware gap) we silently skip the
+        // seed; the user can rotate to a covered preset manually. The dial
+        // is left in dim state, mirroring "no signal" rather than pretending
+        // the freq is tuned.
       } else if (this.dialMode === 'vfo' && this.currentFreq > 0 && spyService.currentFreq === 0) {
-        spyService.setFrequency(this.currentFreq);
+        // Snap the persisted VFO freq into a covered band before seeding —
+        // same reasoning as above, applied to free-form VFO state.
+        const dev = spyService.getDeviceInfo();
+        const bands = dev ? bandsForDevice(dev.deviceType, dev.minFrequency, dev.maxFrequency) : [];
+        const seedFreq = snapToCoveredFreq(this.currentFreq, bands, 0);
+        if (seedFreq > 0) spyService.setFrequency(seedFreq);
       }
       this.updateDisplay(this.lastAction).catch(() => {});
     };
@@ -195,7 +208,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       if (!this.suppressDemodJump
           && this.dialMode === 'preset'
           && this.presets.length > 0) {
-        const idx = this.presets.findIndex(p => p.mode === mode);
+        // Pick the first preset that BOTH matches the new demod mode AND
+        // is receivable on the connected hardware. Without the receivability
+        // filter, PUSH-ing NFM on an Airspy HF+ would happily land us on a
+        // 50 MHz preset (6 m amateur, in the HF+ 31–60 MHz hardware gap)
+        // and the user would hear noise. If no covered preset matches we
+        // simply don't jump — the user can VFO-tune or pick another band.
+        const dev = spyService.getDeviceInfo();
+        const idx = this.presets.findIndex(p => p.mode === mode && (!dev || isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency)));
         if (idx >= 0) {
           this.slotIndex = idx;
           const p = this.presets[idx];
@@ -273,7 +293,32 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   override async onDialRotate(ev: DialRotateEvent<DialTuneSettings>): Promise<void> {
     if (this.dialMode === 'preset') {
       if (!this.presets.length) return;
-      this.slotIndex = ((this.slotIndex + ev.payload.ticks) % this.presets.length + this.presets.length) % this.presets.length;
+      // Advance one slot per tick, but skip presets the connected hardware
+      // can't actually receive (Airspy HF+ has a 31–60 MHz hardware gap, so
+      // 50 MHz NFM presets exist on disk but aren't tunable). When *no*
+      // covered preset exists in the list at all, bail without changing
+      // state — there's nothing meaningful to land on.
+      const dev = spyService.getDeviceInfo();
+      const isCovered = (idx: number): boolean => {
+        const p = this.presets[idx];
+        return !!p && (!dev || isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency));
+      };
+      const len = this.presets.length;
+      const dir = ev.payload.ticks >= 0 ? 1 : -1;
+      const steps = Math.max(1, Math.abs(ev.payload.ticks));
+      let next = this.slotIndex;
+      let landed = false;
+      for (let s = 0; s < steps; s++) {
+        let attempts = len;
+        do {
+          next = ((next + dir) % len + len) % len;
+          attempts--;
+        } while (!isCovered(next) && attempts > 0);
+        if (!isCovered(next)) { landed = false; break; }
+        landed = true;
+      }
+      if (!landed) return;
+      this.slotIndex = next;
       await ev.action.setSettings({ ...ev.payload.settings, slotIndex: this.slotIndex });
       const p = this.presets[this.slotIndex];
       this.currentFreq = p.freq;

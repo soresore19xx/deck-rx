@@ -1,7 +1,7 @@
 // Unit tests for src/deviceBands.ts — VFO frequency clamping per device.
 
 import { describe, it, expect } from 'vitest';
-import { bandsForDevice, isCoveredFreq, snapToCoveredFreq } from '../src/deviceBands.js';
+import { bandsForDevice, isCoveredFreq, snapToCoveredFreq, isFreqReceivable } from '../src/deviceBands.js';
 import { DEVICE_AIRSPY_HF, DEVICE_AIRSPY_ONE, DEVICE_RTLSDR } from '../src/SpyClient.js';
 
 describe('bandsForDevice', () => {
@@ -88,5 +88,30 @@ describe('snapToCoveredFreq (contiguous device)', () => {
 describe('snapToCoveredFreq (empty bands)', () => {
   it('no bands list → return hz unchanged (caller skipped clamping)', () => {
     expect(snapToCoveredFreq(35_000_000, [], 1)).toBe(35_000_000);
+  });
+});
+
+describe('isFreqReceivable (preset / keypad guard)', () => {
+  it('Airspy HF+ rejects 50 MHz (in the 31–60 MHz hardware gap)', () => {
+    expect(isFreqReceivable(50_000_000, DEVICE_AIRSPY_HF)).toBe(false);
+  });
+  it('Airspy HF+ accepts 80 MHz (FM broadcast, in VHF range)', () => {
+    expect(isFreqReceivable(80_000_000, DEVICE_AIRSPY_HF)).toBe(true);
+  });
+  it('Airspy HF+ accepts 9 MHz (HF range)', () => {
+    expect(isFreqReceivable(9_000_000, DEVICE_AIRSPY_HF)).toBe(true);
+  });
+  it('Airspy R2 accepts 50 MHz (no hardware gap)', () => {
+    expect(isFreqReceivable(50_000_000, DEVICE_AIRSPY_ONE)).toBe(true);
+  });
+  it('undefined deviceType (DeviceInfo race) → returns true so the user’s first action isn’t silently dropped', () => {
+    expect(isFreqReceivable(50_000_000, undefined)).toBe(true);
+  });
+  it('unknown deviceType + no fallback → returns true (no clamp data, do not filter)', () => {
+    expect(isFreqReceivable(50_000_000, 999)).toBe(true);
+  });
+  it('unknown deviceType + protocol fallback (min,max) honours the fallback range', () => {
+    expect(isFreqReceivable(1_500_000, 999, 1_000, 2_000_000)).toBe(true);   // inside fallback
+    expect(isFreqReceivable(50_000_000, 999, 1_000, 2_000_000)).toBe(false); // outside fallback
   });
 });

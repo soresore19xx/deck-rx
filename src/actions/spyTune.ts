@@ -6,6 +6,7 @@ import { svgB64, tuneSvg } from '../icons.js';
 import { formatFreqLabel } from '../dialDisplay.js';
 import { getJpStationsForRegion, type JpRegion, type JpStation } from '../japanStations.js';
 import { loadDeckRxPresets, flattenPresets } from '../presets.js';
+import { isFreqReceivable } from '../deviceBands.js';
 
 const MODES = ['NFM', 'WFM', 'AM', 'DSB', 'USB', 'CW', 'LSB', 'RAW'];
 export interface Preset { name: string; freq: number; bandwidth: number; mode: number; }
@@ -113,6 +114,15 @@ export class SpyTune extends SingletonAction<TuneSettings> {
     const slot = ev.payload.settings.slot ?? 1;
     const p = await getPreset(slot);
     if (!p) return;
+    // Refuse the tune if the connected device's hardware can't reach this
+    // freq (Airspy HF+ has a 31–60 MHz gap, etc.). Without this guard a
+    // slot bound to e.g. 50 MHz would silently send a freq the SDR can't
+    // tune and the user would just hear noise.
+    const dev = spyService.getDeviceInfo();
+    if (dev && !isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency)) {
+      await (ev.action as KeyAction<TuneSettings>).showAlert();
+      return;
+    }
     spyService.setDemodMode(p.mode);
     spyService.setFrequency(p.freq);
     await (ev.action as KeyAction<TuneSettings>).showOk();

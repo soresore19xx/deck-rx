@@ -42,6 +42,25 @@ export function isCoveredFreq(hz: number, bands: DeviceBand[]): boolean {
 }
 
 /**
+ * Convenience wrapper used by every freq-selecting code path (preset cycle,
+ * preset PUSH via demodListener, connect-time seed, keypad jump). When the
+ * device is unknown — bandsForDevice returns [] — we deliberately return
+ * true so the early "no DeviceInfo yet" race doesn't silently swallow the
+ * user's first action.
+ */
+export function isFreqReceivable(
+  hz: number,
+  deviceType: number | undefined,
+  fallbackMin?: number,
+  fallbackMax?: number,
+): boolean {
+  if (deviceType === undefined) return true;
+  const bands = bandsForDevice(deviceType, fallbackMin, fallbackMax);
+  if (bands.length === 0) return true;
+  return isCoveredFreq(hz, bands);
+}
+
+/**
  * Snap hz to the closest covered freq in the requested direction.
  *   direction > 0 (CW dial)  : if hz is in a gap or below all bands, jump
  *                              UP to the next band's lo.

@@ -1,6 +1,6 @@
 import { action, DialDownEvent, DialRotateEvent, DialUpEvent, SingletonAction, WillAppearEvent, WillDisappearEvent, DidReceiveSettingsEvent } from '@elgato/streamdeck';
 import streamDeck from '@elgato/streamdeck';
-import { spyService, AMOptions, FMOptions, SSBOptions, DeemphasisOpt, TuneMode, TUNE_STEP_VALUES } from '../spyService.js';
+import { spyService, AMOptions, FMOptions, SSBOptions, DeemphasisOpt, TuneMode, tuneStepValuesForMode } from '../spyService.js';
 import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelBandSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
@@ -105,7 +105,7 @@ function applyModeStepEdit(ticks: number): void {
     spyService.setTuneMode('vfo');
     return;
   }
-  const list = TUNE_STEP_VALUES;
+  const list = tuneStepValuesForMode(spyService.getDemodMode());
   const ci = list.indexOf(spyService.getTuneStepHz());
   const safeI = ci < 0 ? 0 : ci;
   const dir = ticks > 0 ? 1 : -1;

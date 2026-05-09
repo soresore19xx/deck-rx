@@ -1,6 +1,6 @@
 import { action, DialDownEvent, DialRotateEvent, DialUpEvent, SingletonAction, WillAppearEvent, WillDisappearEvent, DidReceiveSettingsEvent } from '@elgato/streamdeck';
 import streamDeck from '@elgato/streamdeck';
-import { spyService, FMOptions, DeemphasisOpt, TuneMode, TUNE_STEP_VALUES } from '../spyService.js';
+import { spyService, FMOptions, DeemphasisOpt, TuneMode, tuneStepValuesForMode } from '../spyService.js';
 import { svgB64, dumpAndB64, knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
 function formatTuneStep(hz: number): string {
@@ -123,7 +123,7 @@ export class SpyDialOptions extends SingletonAction<Settings> {
         spyService.setTuneMode(tuneMode === 'preset' ? 'vfo' : 'preset');
       } else if (showStep && idx === stepRowIdx) {
         const cur = spyService.getTuneStepHz();
-        const list = TUNE_STEP_VALUES;
+        const list = tuneStepValuesForMode(spyService.getDemodMode());
         const ci = list.indexOf(cur);
         const dir = ticks > 0 ? 1 : -1;
         const ni = (((ci < 0 ? 0 : ci) + dir) + list.length) % list.length;

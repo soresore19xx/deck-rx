@@ -128,12 +128,52 @@ export type TuneMode = 'preset' | 'vfo';
 type TuneModeListener = (mode: TuneMode) => void;
 type TuneStepListener = (stepHz: number) => void;
 // Step values exposed in the dial cycler (mirrors PI dial-tune Step menu).
-// 50 / 500 added for CW work — most amateur ops fine-tune ±50 Hz around the
-// BFO pitch and 500 Hz is a useful intermediate when sweeping CW segments.
+// Kept as the union of every mode's candidate steps so the PI dropdown can
+// stay static; the dial cycler picks the mode-specific subset instead.
 export const TUNE_STEP_VALUES: number[] = [
-  1, 10, 50, 100, 500, 1000, 5000, 9000, 10000,
+  10, 50, 100, 500, 1000, 5000, 9000, 10000, 12500,
   25000, 50000, 100000, 200000, 500000, 1000000,
 ];
+
+// Per-mode subsets — Combo Band-column Mode/Step row + Tune dial cycler use
+// these so the user only spins through values that make sense for the
+// current band:
+//   WFM   broadcast FM (76–108 MHz, 100 kHz spacing in Japan)
+//   NFM   VHF/UHF business + amateur (12.5/25 kHz typical)
+//   AM    MW (9k JP/EU, 10k Americas) + SW (5k or 1k) + 100 Hz fine
+//   USB/LSB  HF SSB voice (100–500 Hz fine, 1k coarse)
+//   CW    HF CW QSO (10–100 Hz fine for zero-beat, 500/1k for sweeping)
+const TUNE_STEP_WFM = [10000, 25000, 50000, 100000, 200000, 500000, 1000000];
+const TUNE_STEP_NFM = [1000, 5000, 9000, 10000, 12500, 25000, 50000, 100000];
+const TUNE_STEP_AM  = [100, 1000, 5000, 9000, 10000, 25000];
+const TUNE_STEP_SSB = [50, 100, 500, 1000, 5000, 10000];
+const TUNE_STEP_CW  = [10, 50, 100, 500, 1000];
+
+export function tuneStepValuesForMode(mode: number): number[] {
+  switch (mode) {
+    case 1:                return TUNE_STEP_WFM;
+    case 0:                return TUNE_STEP_NFM;
+    case 2:                return TUNE_STEP_AM;
+    case 4: case 6:        return TUNE_STEP_SSB;     // USB / LSB
+    case 5:                return TUNE_STEP_CW;
+    default:               return TUNE_STEP_VALUES;  // unknown → full list
+  }
+}
+
+// Snap an arbitrary step value into the closest entry of the given list.
+// Used at mode-change time so the persisted step from a previous mode (e.g.
+// 1 MHz from WFM) snaps into the new mode's neighbourhood (e.g. 25 kHz on
+// AM) instead of leaving the user with a step the band can't use.
+export function snapTuneStepToList(stepHz: number, list: number[]): number {
+  if (list.length === 0) return stepHz;
+  if (list.includes(stepHz)) return stepHz;
+  let best = list[0], bestDelta = Math.abs(stepHz - list[0]);
+  for (const v of list) {
+    const d = Math.abs(stepHz - v);
+    if (d < bestDelta) { best = v; bestDelta = d; }
+  }
+  return best;
+}
 
 class SpyService {
   private client = new SpyClient();
@@ -751,6 +791,17 @@ class SpyService {
     this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
     this.demod.reset();
     this.iqnr.setMode(mode as DemodMode, this.currentIQRate);
+    // Snap the persisted step into the new mode's candidate list so
+    // dial cycling stays inside band-appropriate values (e.g. 1 MHz step
+    // from WFM → 25 kHz when flipping to AM). No-op if the value already
+    // matches one of the new mode's entries.
+    const newStepList = tuneStepValuesForMode(mode);
+    const snapped = snapTuneStepToList(this.tuneStepHz, newStepList);
+    if (snapped !== this.tuneStepHz) {
+      this.tuneStepHz = snapped;
+      this.persistField('tuneStepHz', snapped).catch(() => {});
+      for (const fn of this.tuneStepListeners) fn(this.tuneStepHz);
+    }
     // SSB / CW need the Weaver oscillator (and BFO for CW) re-tuned whenever
     // the active mode lands on 4 / 5 / 6. applySsbOptions is a no-op for
     // other modes.

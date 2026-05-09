@@ -170,7 +170,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         if (idx >= 0 && idx !== this.slotIndex) {
           this.slotIndex = idx;
           const p = this.presets[idx];
-          if (p?.freq) spyService.setFrequency(p.freq);
+          if (p?.freq) {
+            this.currentFreq = p.freq;       // local mirror so the dial's own
+            spyService.setFrequency(p.freq); // SVG reflects the jump too
+          }
         }
       }
       this.updateDisplay(this.lastAction).catch(() => {});

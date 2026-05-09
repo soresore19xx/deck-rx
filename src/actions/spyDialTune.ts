@@ -202,12 +202,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
           if (p?.freq) {
             this.currentFreq = p.freq;
             spyService.setFrequency(p.freq);
-            // Persist slotIndex so onDidReceiveSettings doesn't restore
-            // the stale value on subsequent re-emits.
-            if (this.lastAction) {
-              const a = this.lastAction as { setSettings?: (s: Record<string, unknown>) => Promise<void> };
-              if (a.setSettings) a.setSettings({ slotIndex: idx } as DialTuneSettings).catch(() => {});
-            }
+            // We do NOT call setSettings here. Stream Deck SDK's setSettings
+            // is a *full replace* of the action's settings object, so a
+            // partial { slotIndex: idx } would null-out mode / stepHz /
+            // borderSide and trigger onDidReceiveSettings, which then
+            // overwrites this.slotIndex back to its persisted (stale) value.
+            // The next user-driven setSettings via onDialRotate carries
+            // a spread of the full settings and naturally persists the
+            // new slot.
           }
         }
       }

@@ -318,6 +318,78 @@ ${frame}
  *   6     → Band-column Mode/Step row
  *   7..N  → Opts column rows 0..(N-7)
  */
+/**
+ * Single-column Band selector panel — full 200 px width, 6 mode rows + a
+ * Mode/Step bottom row. Used by the standalone Band Select dial (案 A/B/C).
+ * Active mode row gets a saturated blue tint + bright cyan side rail; cursor
+ * (selected) row wins with a white tint as in the Combo dial.
+ */
+export function bandSelectPanelSvg(
+  bandLabels: readonly string[],
+  activeBandIdx: number,
+  modeStepRow: OptionsPanelRow,
+  selectedIdx = -1,
+  editMode = false,
+): string {
+  const SVG_W = 200, SVG_H = 100;
+  const HEADER_H = 12;
+  const ROW_H = 12;
+  const FS = 10;
+  const FRAME_C = '#888888';
+  const DIVIDER_C = '#444444';
+  const ACTIVE_BG = '#0055cc';
+  const ACTIVE_RAIL = '#00ddff';
+  const ACTIVE_DOT = '#ffee00';
+  const accent = editMode ? '#ffaa55' : BLUE;
+  const TOTAL = bandLabels.length + 1;
+
+  const header = `<text x="100" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" text-anchor="middle">Band</text>`;
+
+  const renderRow = (i: number): string => {
+    const y = HEADER_H + (i + 1) * ROW_H;
+    const isSelected = i === selectedIdx;
+    const isActive = i < bandLabels.length && i === activeBandIdx;
+    const isEdit = isSelected && editMode;
+    const bgPad = ROW_H - 2;
+    let bg = '';
+    if (isSelected) {
+      bg = `<rect x="0" y="${y - bgPad}" width="${SVG_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.22"/>`;
+    } else if (isActive) {
+      bg = `<rect x="0" y="${y - bgPad}" width="${SVG_W}" height="${ROW_H}" fill="${ACTIVE_BG}" fill-opacity="0.85"/>`;
+    } else if (i % 2 === 0) {
+      bg = `<rect x="0" y="${y - bgPad}" width="${SVG_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.06"/>`;
+    }
+    const sideBar = isSelected
+      ? `<rect x="0" y="${y - bgPad}" width="3" height="${ROW_H}" fill="${accent}"/>`
+      : (isActive
+          ? `<rect x="0" y="${y - bgPad}" width="3" height="${ROW_H}" fill="${ACTIVE_RAIL}"/>`
+          : '');
+    const isBandRow = i < bandLabels.length;
+    const labelText = isBandRow ? bandLabels[i] : modeStepRow.label;
+    const valueText = isBandRow
+      ? (isActive && !isSelected ? '●' : '')
+      : modeStepRow.value;
+    const labelColor = isSelected ? (isEdit ? accent : '#d4b800') : (isActive ? '#ffffff' : 'white');
+    const valueColor = isSelected ? '#aaff00' : (isBandRow && isActive && !isSelected ? ACTIVE_DOT : 'white');
+    return `${bg}${sideBar}` +
+      `<text x="6" y="${y}" fill="${labelColor}" font-size="${FS}" font-family="monospace">${labelText}</text>` +
+      (valueText
+        ? `<text x="${SVG_W - 6}" y="${y}" fill="${valueColor}" font-size="${FS}" font-family="monospace" text-anchor="end">${valueText}</text>`
+        : '');
+  };
+
+  const rows = Array.from({ length: TOTAL }, (_, i) => renderRow(i)).join('\n');
+  const headerSep = `<line x1="2" y1="${HEADER_H + 1}" x2="${SVG_W - 2}" y2="${HEADER_H + 1}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const frame = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
+  return `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
+<rect width="${SVG_W}" height="${SVG_H}" fill="#000000"/>
+${header}
+${headerSep}
+${rows}
+${frame}
+</svg>`;
+}
+
 export function optionsPanelBandSvg(
   bandLabels: readonly string[],
   activeBandIdx: number,

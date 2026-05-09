@@ -68,7 +68,55 @@
         "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Confirm band / Toggle edit", "LongTouch": "" }
       }
     },
-{
+    {
+      "UUID": "com.hogehoge.deck-rx.dial-band-select",
+      "Name": "Deck RX Band Select",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "Band selector — full-width WFM/NFM/AM/USB/LSB/CW + Mode/Step",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "Band" }],
+      "Encoder": {
+        "layout": "layouts/dial-band-select.json",
+        "TriggerDescription": { "Rotate": "Cycle band", "Push": "Confirm band / Toggle Mode/Step edit", "LongTouch": "" }
+      }
+    },
+    {
+      "UUID": "com.hogehoge.deck-rx.dial-options-auto",
+      "Name": "Deck RX Options Auto",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "Mode-aware Options (AM/FM/SSB) auto-shape on one full-width dial",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "Opts" }],
+      "Encoder": {
+        "layout": "layouts/dial-options-auto.json",
+        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
+      }
+    },
+    {
+      "UUID": "com.hogehoge.deck-rx.dial-options-2col",
+      "Name": "Deck RX Options 2-Col",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "AM | FM 2-column Options panel; SSB collapses to a single column",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "2col" }],
+      "Encoder": {
+        "layout": "layouts/dial-options-2col.json",
+        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
+      }
+    },
+    {
+      "UUID": "com.hogehoge.deck-rx.dial-ssb-options",
+      "Name": "Deck RX SSB Options",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "USB / LSB / CW options: BW + BFO + Gain (active only when demod is mode 4 / 5 / 6)",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "SSB" }],
+      "Encoder": {
+        "layout": "layouts/dial-ssb-options.json",
+        "TriggerDescription": { "Rotate": "Navigate / Adjust", "Push": "Toggle edit", "LongTouch": "" }
+      }
+    },
+    {
       "UUID": "com.hogehoge.deck-rx.dial-volume",
       "Name": "Deck RX Volume",
       "Icon": "imgs/actions/volume/action",

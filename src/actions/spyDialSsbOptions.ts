@@ -194,7 +194,7 @@ export class SpyDialSsbOptions extends SingletonAction<Settings> {
     // when AM is not the active mode).
     const dim = !this.enabled || !this.connected || !this.isSsbMode;
     this.act.setFeedback({
-      'options-display': dumpAndB64('ssb-options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide), dim)),
+      'options-display': dumpAndB64('ssb-options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide, 'SSB Options'), dim)),
     }).catch(() => {});
   }
 }

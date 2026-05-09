@@ -429,12 +429,16 @@ export function optionsPanelBandSvg(
 
   // Right column header reflects the active demod mode so the user knows
   // which mode's parameters are visible (e.g. "WFM Opts" vs "AM Opts").
+  // Title bar uses the same saturated-blue tint + bold + cyan divider that
+  // optionsPanelSvg / bandSelectPanelSvg use, so all dials share a single
+  // visual idiom.
   const optsHeaderText = activeBandIdx >= 0 && activeBandIdx < bandLabels.length
     ? `${bandLabels[activeBandIdx]} Opts`
     : 'Opts';
   const header =
-    `<text x="6" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">Band</text>` +
-    `<text x="${COL_W + 6}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">${optsHeaderText}</text>`;
+    `<rect x="0" y="0" width="${SVG_W}" height="${HEADER_H}" fill="#0055cc" fill-opacity="0.22"/>` +
+    `<text x="${COL_W / 2}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">Band</text>` +
+    `<text x="${COL_W + COL_W / 2}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">${optsHeaderText}</text>`;
 
   // Active-row colour palette: a bold blue fill stands out at LCD viewing
   // distance, the bright cyan side rail catches the eye on the left, and a
@@ -513,7 +517,7 @@ export function optionsPanelBandSvg(
 
   const bandPart = Array.from({ length: BAND_TOTAL }, (_, i) => renderBandRow(i)).join('\n');
   const optsPart = Array.from({ length: optsRows.length }, (_, j) => renderOptsRow(j)).join('\n');
-  const headerSep = `<line x1="2" y1="${HEADER_H + 1}" x2="${SVG_W - 2}" y2="${HEADER_H + 1}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const headerSep = `<line x1="0" y1="${HEADER_H + 0.5}" x2="${SVG_W}" y2="${HEADER_H + 0.5}" stroke="#5599cc" stroke-width="0.8"/>`;
   const divider   = `<line x1="${COL_W}" y1="${HEADER_H + 1}" x2="${COL_W}" y2="${SVG_H - 4}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
   const frame     = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
 

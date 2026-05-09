@@ -5,6 +5,7 @@ import type { OutputErrorTag } from '../AudioOutput.js';
 import { DeviceInfo, DEVICE_AIRSPY_ONE, DEVICE_AIRSPY_HF, DEVICE_RTLSDR } from '../SpyClient.js';
 import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
+import { currentTimeHHMM } from './spyDialTune.js';
 
 type Settings = {
   borderSide?: 'left' | 'right' | 'center' | 'none';
@@ -41,6 +42,9 @@ export class SpyDialVolume extends SingletonAction<Settings> {
   private device: DeviceInfo | null = null;
   private connected = false;
   private enabled = true;
+  // Tick the title-bar clock every second. Same cadence as the Tune dial's
+  // footerTimer; impact on the SDK WebSocket is negligible.
+  private clockTimer: ReturnType<typeof setInterval> | null = null;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     this.act = ev.action as unknown as typeof this.act;
@@ -78,6 +82,7 @@ export class SpyDialVolume extends SingletonAction<Settings> {
 
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialVolume] ${e}`));
     await ev.action.setImage(svgB64(knobSvg()));
+    this.clockTimer = setInterval(() => this.render(), 1000);
     this.render();
   }
 
@@ -89,6 +94,7 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     if (this.audioStateListener) { spyService.unsubscribeAudioState(this.audioStateListener); this.audioStateListener = null; }
     if (this.connStateListener)  { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
     if (this.audioOutputStateListener) { spyService.unsubscribeAudioOutputState(this.audioOutputStateListener); this.audioOutputStateListener = null; }
+    if (this.clockTimer) { clearInterval(this.clockTimer); this.clockTimer = null; }
     this.act = null;
   }
 
@@ -156,8 +162,11 @@ export class SpyDialVolume extends SingletonAction<Settings> {
       },
     ];
     const dim = !this.enabled || !this.connected;
+    // Title bar shows the live HH:MM (TZ) clock that the Tune dial used to
+    // carry. Updates every second via clockTimer.
+    const title = currentTimeHHMM();
     this.act.setFeedback({
-      'vol-display': dumpAndB64('volume', dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide), dim)),
+      'vol-display': dumpAndB64('volume', dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide, title), dim)),
     }).catch(() => {});
   }
 }

@@ -152,19 +152,17 @@ describe('A4 — PI round-trip handlers in spyDialTune', () => {
     await harness.settle(300);
 
     const msgs = cap.stop();
-    // We expect at least one setFeedback after the mode switch — the
-    // Tune dial re-renders its header on tuneMode change. The header now
-    // shows "VFO" prefix when in VFO mode (vs "<mode>  <preset name>"
-    // in preset mode), so a header SVG containing "VFO" should be in
-    // the captured stream.
-    const headerWithVfo = msgs.find(m => {
-      const x = m as { event?: string; payload?: { header?: string } };
+    // After the layout move, "VFO" no longer lives in the header — Mode is
+    // now drawn left of the freq digits in the freq-display SVG. Look for
+    // it there instead.
+    const freqWithVfo = msgs.find(m => {
+      const x = m as { event?: string; payload?: { 'freq-display'?: string } };
       if (x?.event !== 'setFeedback') return false;
-      const headerSvg = x.payload?.header;
-      if (typeof headerSvg !== 'string' || !headerSvg.startsWith('data:image/svg+xml;base64,')) return false;
-      const decoded = Buffer.from(headerSvg.split(',')[1], 'base64').toString('utf-8');
+      const freqSvg = x.payload?.['freq-display'];
+      if (typeof freqSvg !== 'string' || !freqSvg.startsWith('data:image/svg+xml;base64,')) return false;
+      const decoded = Buffer.from(freqSvg.split(',')[1], 'base64').toString('utf-8');
       return /VFO/.test(decoded);
     });
-    expect(headerWithVfo, 'expected header to flip to VFO after setTuneMode').toBeTruthy();
+    expect(freqWithVfo, 'expected VFO mode label in freq-display after setTuneMode').toBeTruthy();
   }, 10_000);
 });

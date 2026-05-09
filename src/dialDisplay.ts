@@ -147,7 +147,7 @@ const SEGS: Record<string, string> = {
   'W': 'bcdef',
 };
 
-export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number, extraT = 0, scale = 1.0, clockHHMM = ''): string {
+export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number, extraT = 0, scale = 1.0, clockHHMM = '', modeLabel = '', stereo = false): string {
   const n = (v: number) => v.toFixed(1);
   const DH  = svgH * 0.65 * scale;
   const DW  = DH * 0.56;
@@ -168,23 +168,34 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   const unitW = unit.length * unitSize * 0.68;
   const totalW = numTotalW + 4 + unitW;
 
-  let cx = (svgW - totalW) / 2;
+  // Reserve a left margin for the optional Mode label (e.g. "FM", "USB").
+  // Center the digits in the area RIGHT of the mode label so a 3-char mode
+  // doesn't unbalance the 7-seg block.
+  const MODE_FS = 14;
+  const MODE_CW = 8.5;
+  const modeW = modeLabel ? modeLabel.length * MODE_CW + 8 : 0;
+  let cx = modeW + (svgW - modeW - totalW) / 2;
   const oy = (svgH - DH) / 2;
   let out = `<rect width="${svgW}" height="${svgH}" fill="#000000"/>`;
-  // Optional clock above the frequency unit (MHz/kHz) — small grey HH:MM
-  // pinned to the right edge so it sits above the unit text without
-  // competing with the 7-seg digits. Renders even in offline mode so the
-  // user always has a sense of time on the dial.
-  if (clockHHMM) {
-    // Clock above the freqDisplay's unit text (right-aligned). This is
-    // the SDK on-device render — `monospace` maps to Menlo via macOS
-    // Core Text, x=svgW-4 verified visually OK on the device. The
-    // rsvg-convert dump path (~/ICON) needs different attributes
-    // because Pango's monospace fallback (Liberation Mono) tracks
-    // wider; dumpTuneLcd does that substitution on a copy of this
-    // SVG before writing the dump file. Do NOT change this <text> for
-    // dump-only reasons — touch dumpTuneLcd instead.
+  // Top-right corner: STEREO badge (FM stereo lock) takes priority over an
+  // optional clock — when both are requested only the badge renders. Coords
+  // pinned to the same area the clock used so dumpTuneLcd's Pango font
+  // fixup keeps aligning correctly when only the clock is shown.
+  if (stereo) {
+    const BADGE_W = 44, BADGE_H = 13;
+    const bx = svgW - BADGE_W - 4;
+    out += `<rect x="${bx}" y="3" width="${BADGE_W}" height="${BADGE_H}" rx="3" fill="none" stroke="#ff3333" stroke-width="1.2"/>` +
+           `<text x="${bx + BADGE_W / 2}" y="13" font-family="monospace" font-size="9" fill="#ff3333" text-anchor="middle">STEREO</text>`;
+  } else if (clockHHMM) {
+    // Clock above the freqDisplay's unit text (right-aligned). On-device
+    // SDK renders monospace as Menlo; the dump path (Pango → Liberation
+    // Mono) needs a font fixup, applied per-copy in dumpTuneLcd.
     out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
+  }
+  // Mode label on the left, vertically aligned with the 7-seg digits' centre.
+  if (modeLabel) {
+    const my = oy + DH / 2 + MODE_FS * 0.35;
+    out += `<text x="4" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace">${modeLabel}</text>`;
   }
 
   for (const c of numStr) {

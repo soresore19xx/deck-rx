@@ -97,17 +97,22 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   const lastBarY = SVG_H - 9;  // = 91, used only when lastRowHasBar
   // upperArea ends a few px above the bar so there's breathing room.
   const upperAreaH = lastBarY - textH - 8;
-  // Optional title bar at the top — only used by non-bar panels (Volume keeps
-  // its own anchored layout). Communicates "what this dial controls" so a
-  // user glancing at the LCD knows which mode's parameters they're seeing.
-  const titleVisible = title.length > 0 && !lastRowHasBar;
+  // Optional title bar at the top — works on both non-bar (Options) and
+  // bar (Volume) panels. Volume uses it to host the live HH:MM clock that
+  // moved over from the Tune dial.
+  const titleVisible = title.length > 0;
   const TITLE_H = titleVisible ? 12 : 0;
   let startY: number;
   if (lastRowHasBar) {
     const upperRows = rows.length - 1;
     if (upperRows > 0) {
       const upperSpan = textH + (upperRows - 1) * rowH;
-      const topMargin = Math.max(2, Math.floor((upperAreaH - upperSpan) / 2));
+      // When a title is shown, anchor the upper rows just below it so the
+      // clock has a dedicated band; otherwise vertically centre between top
+      // and the bar like before.
+      const topMargin = titleVisible
+        ? TITLE_H + 4
+        : Math.max(2, Math.floor((upperAreaH - upperSpan) / 2));
       startY = topMargin + textH;
     } else {
       startY = lastBarY;

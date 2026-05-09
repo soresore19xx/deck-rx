@@ -49,7 +49,7 @@ function formatStep(hz: number): string {
 // exercise the band-policy decisions without importing the Stream Deck SDK
 // or the spyService singleton.
 
-function currentTimeHHMM(): string {
+export function currentTimeHHMM(): string {
   const d = new Date();
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
@@ -475,20 +475,24 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     // the freq digits — the dial otherwise shows a frequency that isn't really
     // being received. Master OFF keeps the freq visible (it's where we'll
     // resume when re-enabled).
-    const offlineSvg = svgB64(seg7svg('-----', '', 200, 55, 0, 1.0, currentTimeHHMM()));
+    const offlineSvg = svgB64(seg7svg('-----', '', 200, 55, 0, 1.0, '', '', false));
     if (this.dialMode === 'preset') {
       const p = this.presets[this.slotIndex];
       const freq = p?.freq ?? 0;
       const { num, unit } = freqParts(freq);
       const modeStr = p ? (MODES[p.mode] ?? '') : '';
       const auto = p ? autoStationLabel(freq, spyService.getJpActiveRegion()) : null;
-      const baseHeader = p ? `${modeStr}  ${auto ?? p.name}` : 'No presets';
+      // Header now carries the broadcaster name only — Mode and STEREO have
+      // moved into the freq display (Mode = left of digits, STEREO = top-
+      // right corner where the clock used to live; the clock relocated to
+      // the Volume + Status panel's title bar).
+      const baseHeader = p ? (auto ?? p.name) : 'No presets';
       const header = !this.enabled ? `OFF  ${baseHeader}`
                    : offline        ? `LINK  ${baseHeader}`
                    : baseHeader;
       const isFM = p?.mode === 1;
-      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, currentTimeHHMM()));
-      const headerImg = D(makeHeaderSvg(header, isFM && showStereo));
+      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', modeStr, isFM && showStereo));
+      const headerImg = D(makeHeaderSvg(header, false));
       const freqImg   = D(freqSvg);
       const borderImg = makeBorderSvg(this.borderSide);
       await a.setFeedback({
@@ -509,14 +513,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       const { num, unit } = freqParts(freq);
       const auto = autoStationLabel(freq, spyService.getJpActiveRegion());
-      const baseHeader = auto
-        ? `VFO  ${auto}`
-        : `VFO  step:${formatStep(this.stepHz)}`;
+      // VFO header: only the station name (when known) or "step:Nk". The
+      // "VFO" prefix is gone because Mode now lives left of the freq digits.
+      const baseHeader = auto ? auto : `step:${formatStep(this.stepHz)}`;
       const header = !this.enabled ? `OFF  ${baseHeader}`
                    : offline        ? `LINK  ${baseHeader}`
                    : baseHeader;
-      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, currentTimeHHMM()));
-      const headerImg = D(makeHeaderSvg(header, showStereo));
+      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', 'VFO', showStereo));
+      const headerImg = D(makeHeaderSvg(header, false));
       const freqImg   = D(freqSvg);
       const borderImg = makeBorderSvg(this.borderSide);
       await a.setFeedback({

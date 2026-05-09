@@ -328,6 +328,12 @@ class SpyService {
       }
       if (typeof cfg.demodMode === 'number') {
         this.currentDemodMode = cfg.demodMode;
+        // Notify subscribers so dials hydrate from the persisted mode at
+        // startup. Without this, the Combo dial's local mirror of currentMode
+        // stays at its default (1) until something triggers setDemodMode,
+        // and the Opts column shows the wrong shape on first paint after a
+        // restart.
+        for (const fn of this.demodModeListeners) fn(this.currentDemodMode);
       }
       if (cfg.tuneMode === 'preset' || cfg.tuneMode === 'vfo') {
         this.tuneMode = cfg.tuneMode;

@@ -56,9 +56,10 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
       expect(svg, `expected band label "${label}"`).toMatch(new RegExp(`>${label}<`));
     }
     // Default config has demodMode 1 (WFM, BAND_LABELS[0]); the active-mode
-    // row gets a blue tint + side rail (#00aaff) so the user can read off
-    // the live mode at a glance without a tiny bullet glyph.
-    expect(svg, 'expected blue active-row tint').toMatch(/fill="#00aaff"/);
+    // row gets a saturated blue fill (#0055cc) + bright cyan side rail
+    // (#00ddff) + yellow ● dot so the live mode is unmistakable.
+    expect(svg, 'expected saturated active-row blue fill').toMatch(/fill="#0055cc"/);
+    expect(svg, 'expected bright cyan active-row rail').toMatch(/fill="#00ddff"/);
   }, 10_000);
 
   it('PUSH on Band row triggers setDemodMode (cursor 2 → AM)', async () => {
@@ -115,10 +116,10 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     // Last setFeedback must reflect the hydrated SSB mode (BFO row present).
     const lastSvg = decodeOptionsSvg(fbs[fbs.length - 1]);
     expect(lastSvg, 'expected SSB Opts shape after connect-time hydration').toMatch(/>BFO</);
-    // And the Band column's active-mode tint should sit on the USB row
+    // And the Band column's active-mode fill should sit on the USB row
     // (BAND_LABELS index 3 = USB → bg rect y = 12 + 4*12 - (ROW_H-2) = 50,
-    // height ROW_H=12). Look for the blue-tinted rect at that band.
-    expect(lastSvg).toMatch(/<rect[^>]*y="50"[^>]*height="12"[^>]*fill="#00aaff"/);
+    // height ROW_H=12). Look for the saturated-blue rect at that band.
+    expect(lastSvg).toMatch(/<rect[^>]*y="50"[^>]*height="12"[^>]*fill="#0055cc"/);
   }, 15_000);
 
   it('Opts column shrinks from 6 rows (FM/AM) to 3 rows (SSB) when cursor is on USB band and confirmed', async () => {

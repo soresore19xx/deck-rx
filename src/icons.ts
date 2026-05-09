@@ -210,11 +210,13 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // exact same y as the Tune dial's RSSI bar without scaling. Frame bottom is
   // pulled up 1 px (height 99→98) to avoid device-edge clipping.
   const frame = `<rect x="0.5" y="0.5" width="199" height="98" rx="4" ry="4" fill="none" stroke="${C}" stroke-width="1"/>`;
-  // Title bar: dial-name banner pinned to the top, divider line below it.
-  // Centred horizontally so it reads as a header, not a row.
+  // Title bar: same saturated-blue tint + bold + cyan-tinted divider as
+  // bandSelectPanelSvg / optionsPanelBandSvg / optionsPanelDualSvg so all
+  // five panel SVGs share one visual idiom.
   const headerSvg = titleVisible
-    ? `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" text-anchor="middle">${title}</text>` +
-      `<line x1="2" y1="${TITLE_H + 1}" x2="198" y2="${TITLE_H + 1}" stroke="#444444" stroke-width="0.6"/>`
+    ? `<rect x="0" y="0" width="200" height="${TITLE_H}" fill="#0055cc" fill-opacity="0.22"/>` +
+      `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>` +
+      `<line x1="0" y1="${TITLE_H + 0.5}" x2="200" y2="${TITLE_H + 0.5}" stroke="#5599cc" stroke-width="0.8"/>`
     : '';
   return `<svg width="200" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="200" height="${SVG_H}" fill="#000000"/>

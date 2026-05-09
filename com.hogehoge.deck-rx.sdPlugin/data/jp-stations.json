@@ -44,12 +44,6 @@
       "region": "kanto"
     },
     {
-      "freqHz": 1197000,
-      "band": "MW",
-      "name": "LuckyFM",
-      "region": "kanto"
-    },
-    {
       "freqHz": 1242000,
       "band": "MW",
       "name": "ニッポン放送",

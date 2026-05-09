@@ -8,6 +8,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
+import { lookupJpStation } from './japanStations.js';
 
 declare const __dirname: string;
 
@@ -109,12 +110,22 @@ export async function importFromSdrpp(sdrPath = sdrConfigPath()): Promise<{ adde
     const dstList = dst.lists[listName] ?? { bookmarks: {} };
     let listChanged = false;
     for (const [bmName, bm] of Object.entries(list.bookmarks ?? {})) {
-      if (dstList.bookmarks[bmName]) {
+      const freq = Math.round(bm.frequency);
+      // Replace the SDR++ ASCII placeholder ("MW HBC Radio", "FM TBS"…)
+      // with the JP DB's CJK broadcaster name when one exists at that
+      // freq+band. lookupJpStation searches across all regions when no
+      // active region is supplied, so a Tokyo-region kanto config still
+      // hits Hokkaido / 関西 / 九州 manualStations entries (HBCラジオ,
+      // MBSラジオ, RKB毎日放送, etc.). SW / NW / unknown freqs fall
+      // through to the SDR++ name unchanged.
+      const jp = lookupJpStation(freq);
+      const finalName = jp?.name ?? bmName;
+      if (dstList.bookmarks[finalName]) {
         skipped++;
         continue;
       }
-      dstList.bookmarks[bmName] = {
-        frequency: Math.round(bm.frequency),
+      dstList.bookmarks[finalName] = {
+        frequency: freq,
         bandwidth: bm.bandwidth,
         mode: bm.mode,
       };

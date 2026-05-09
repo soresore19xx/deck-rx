@@ -115,7 +115,12 @@ describe('A4 — PI round-trip handlers in spyDialTune', () => {
       expect(existsSync(presetsPath)).toBe(true);
       const written = JSON.parse(readFileSync(presetsPath, 'utf-8'));
       expect(Object.keys(written.lists).sort()).toEqual(['General', 'Imported']);
-      expect(written.lists.General.bookmarks['Test FM 1'].frequency).toBe(80000000);
+      // Look up by frequency: the import path now renames SDR++ ASCII
+      // placeholders to JP DB names (e.g. "Test FM 1" at 80 MHz becomes
+      // "TOKYO FM" since the production JP DB hits 80.000 MHz). 14.3 MHz
+      // (USB) has no JP DB hit so the SDR++ name "Test USB" is preserved.
+      const generalEntries = Object.values<{ frequency: number }>(written.lists.General.bookmarks);
+      expect(generalEntries.find(b => b.frequency === 80000000), 'expected 80 MHz preset (renamed or not)').toBeTruthy();
       expect(written.lists.Imported.bookmarks['Test USB'].frequency).toBe(14300000);
 
       // A second click is idempotent — added=0, skipped=3.

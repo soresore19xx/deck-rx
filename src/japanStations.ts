@@ -6,7 +6,12 @@ declare const __dirname: string;
 // Path defaults to the bundled location (relative to bin/index.js after rollup).
 // Overridable via DECK_RX_JP_STATIONS_PATH so the unit-test harness can point
 // the loader at test/fixtures/ or another snapshot without touching prod state.
-const DATA_PATH = process.env.DECK_RX_JP_STATIONS_PATH ?? join(__dirname, '..', 'data', 'jp-stations.json');
+// Resolved per-call (mirroring presets.ts) so unit tests can flip
+// DECK_RX_JP_STATIONS_PATH after module load — the previous module-init
+// const captured the env at import time, defeating test isolation.
+function dataPath(): string {
+  return process.env.DECK_RX_JP_STATIONS_PATH ?? join(__dirname, '..', 'data', 'jp-stations.json');
+}
 
 export type JpBand = 'FM' | 'MW';
 
@@ -55,7 +60,7 @@ let manualStations: JpStation[] | null = null;
 function load(): { auto: JpStation[]; manual: JpStation[] } {
   if (stations && manualStations) return { auto: stations, manual: manualStations };
   try {
-    const raw = readFileSync(DATA_PATH, 'utf-8');
+    const raw = readFileSync(dataPath(), 'utf-8');
     const data = JSON.parse(raw) as JpStationFile;
     const valid = (s: JpStation) => s.freqHz > 0 && !!s.name;
     stations       = (data.stations       ?? []).filter(valid);
@@ -68,7 +73,7 @@ function load(): { auto: JpStation[]; manual: JpStation[] } {
 }
 
 export function getJpStationsPath(): string {
-  return DATA_PATH;
+  return dataPath();
 }
 
 export function clearJpStationsCache(): void {

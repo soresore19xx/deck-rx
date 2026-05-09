@@ -159,11 +159,22 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     };
     spyService.subscribeConnectionState(this.connStateListener);
 
-    // Re-render the Tune dial when the demod mode changes (e.g. Combo dial
-    // Band PUSH switches FM → AM). The frequency display, preset-name lookup
-    // and MHz/kHz unit all depend on the active mode, so without this
-    // subscription the dial stays stuck on the old mode's formatting.
-    this.demodListener = () => { this.updateDisplay(this.lastAction).catch(() => {}); };
+    // React to demod-mode changes (e.g. Combo dial Band PUSH switches FM →
+    // AM). In preset mode we also jump the dial onto the first preset that
+    // matches the new mode so the user lands on a real station instead of
+    // staring at an FM-band frequency while the demod has flipped to AM.
+    // VFO mode leaves the frequency alone — the user is dialing manually.
+    this.demodListener = (mode: number) => {
+      if (this.dialMode === 'preset' && this.presets.length > 0) {
+        const idx = this.presets.findIndex(p => p.mode === mode);
+        if (idx >= 0 && idx !== this.slotIndex) {
+          this.slotIndex = idx;
+          const p = this.presets[idx];
+          if (p?.freq) spyService.setFrequency(p.freq);
+        }
+      }
+      this.updateDisplay(this.lastAction).catch(() => {});
+    };
     spyService.subscribeDemodMode(this.demodListener);
 
     await ev.action.setImage(svgB64(knobSvg()));

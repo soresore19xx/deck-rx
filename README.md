@@ -32,8 +32,7 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 - **Deck RX Volume + Status** — 0–150 % volume / mute, conn state, host, device, audio output, icecast publish health
 - **Deck RX Options** (FM/NFM) — Deemphasis / IFNR / HPF / LPF / Stereo / Gain
 - **Deck RX AM Options** — BW / Carrier AGC / Attack / Decay / Gain
-- **Deck RX Combo Options** — both AM and FM in side-by-side dual columns; active column auto-tracks the demod mode
-- **Deck RX SSB Options** — companion dial for USB / LSB / CW: BW (250–2800 Hz covering CW narrow + SSB voice slots), BFO pitch (400–900 Hz), Mode/Step, Gain. Auto-dims when the active demod is not 4 / 5 / 6
+- **Deck RX Combo Options** — unified Band selector (WFM / NFM / AM / USB / LSB / CW) on the left column + mode-dependent Options on the right column. PUSH on a Band row immediately switches the demod mode (no edit-mode roundtrip); the Opts column auto-shapes to AM (BW / CAGC / Sync / Atk / Dec / Gain), FM (Deemph / IFNR / HPF / LPF / Ste / Gain), or SSB (BW / BFO / Gain) depending on the active demod. Mode/Step (preset ⇄ vfo + step cycle) lives at the bottom of the Band column. The legacy single-mode `Deck RX Options` and `Deck RX AM Options` panels are still registered for users who prefer one panel per mode
 
 See [docs/architecture.md](docs/architecture.md) for layout details, focus highlight colours, and signal-path notes.
 

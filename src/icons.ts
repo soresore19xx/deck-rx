@@ -340,28 +340,43 @@ export function optionsPanelBandSvg(
     `<text x="6" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">Band</text>` +
     `<text x="${COL_W + 6}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace">${optsHeaderText}</text>`;
 
+  const ACTIVE_BG    = '#00aaff';
+  const ACTIVE_TEXT  = '#88ddff';
   const renderBandRow = (i: number): string => {
     const y = HEADER_H + (i + 1) * ROW_H;
     const isSelected = i === selectedIdx;
+    const isActive   = i === activeBandIdx;
     const isEdit = isSelected && editMode;
     const bgPad = ROW_H - 2;
+    // Layering rules for the band column:
+    //   - Cursor (selected) row: bright white tint, takes priority over
+    //     active-mode highlighting since the user is currently navigating.
+    //   - Active demod-mode row (and not the cursor): blue tint + blue side
+    //     rail + cyan-ish text so it reads as "this is the live mode" at a
+    //     glance, no need for a tiny ● bullet.
+    //   - Otherwise: faint zebra alternation.
     let bg = '';
     if (isSelected) {
       bg = `<rect x="0" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.22"/>`;
+    } else if (isActive) {
+      bg = `<rect x="0" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="${ACTIVE_BG}" fill-opacity="0.20"/>`;
     } else if (i % 2 === 0) {
       bg = `<rect x="0" y="${y - bgPad}" width="${COL_W}" height="${ROW_H}" fill="#ffffff" fill-opacity="0.06"/>`;
     }
-    const sideBar = isSelected ? `<rect x="0" y="${y - bgPad}" width="3" height="${ROW_H}" fill="${accent}"/>` : '';
-    let labelText: string, valueText: string;
-    if (i < bandLabels.length) {
-      labelText = bandLabels[i];
-      valueText = i === activeBandIdx ? '●' : '';
-    } else {
-      labelText = modeStepRow.label;
-      valueText = modeStepRow.value;
-    }
-    const labelColor = isSelected ? (isEdit ? accent : '#d4b800') : 'white';
-    const valueColor = isSelected ? '#aaff00' : 'white';
+    const sideBar = isSelected
+      ? `<rect x="0" y="${y - bgPad}" width="3" height="${ROW_H}" fill="${accent}"/>`
+      : (isActive
+          ? `<rect x="0" y="${y - bgPad}" width="3" height="${ROW_H}" fill="${ACTIVE_BG}"/>`
+          : '');
+    const isBandRow = i < bandLabels.length;
+    const labelText = isBandRow ? bandLabels[i] : modeStepRow.label;
+    const valueText = isBandRow ? '' : modeStepRow.value;
+    const labelColor = isSelected
+      ? (isEdit ? accent : '#d4b800')
+      : (isActive ? ACTIVE_TEXT : 'white');
+    const valueColor = isSelected
+      ? '#aaff00'
+      : (isActive ? ACTIVE_TEXT : 'white');
     return `${bg}${sideBar}` +
       `<text x="4" y="${y}" fill="${labelColor}" font-size="${FS}" font-family="monospace">${labelText}</text>` +
       (valueText

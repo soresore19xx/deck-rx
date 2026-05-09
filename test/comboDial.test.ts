@@ -46,7 +46,7 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     expect(svg).toMatch(/Preset/);
   }, 10_000);
 
-  it('initial render shows Band column with all 6 mode labels and active bullet', async () => {
+  it('initial render shows Band column with all 6 mode labels and active-row highlight', async () => {
     harness = await startPlugin();
     await harness.willAppearDial(COMBO_UUID, CTX);
     await harness.settle(200);
@@ -55,8 +55,10 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     for (const label of ['WFM', 'NFM', 'AM', 'USB', 'LSB', 'CW']) {
       expect(svg, `expected band label "${label}"`).toMatch(new RegExp(`>${label}<`));
     }
-    // Default config has demodMode 1 (NFM); active band gets a bullet "●".
-    expect(svg).toMatch(/>●</);
+    // Default config has demodMode 1 (WFM, BAND_LABELS[0]); the active-mode
+    // row gets a blue tint + side rail (#00aaff) so the user can read off
+    // the live mode at a glance without a tiny bullet glyph.
+    expect(svg, 'expected blue active-row tint').toMatch(/fill="#00aaff"/);
   }, 10_000);
 
   it('PUSH on Band row triggers setDemodMode (cursor 2 → AM)', async () => {
@@ -113,9 +115,10 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     // Last setFeedback must reflect the hydrated SSB mode (BFO row present).
     const lastSvg = decodeOptionsSvg(fbs[fbs.length - 1]);
     expect(lastSvg, 'expected SSB Opts shape after connect-time hydration').toMatch(/>BFO</);
-    // And the Band column's bullet should sit on the USB row (BAND_LABELS
-    // index 3 = USB → row baseline y = 12 + 4*12 = 60).
-    expect(lastSvg).toMatch(/y="60"[^>]*text-anchor="end">●</);
+    // And the Band column's active-mode tint should sit on the USB row
+    // (BAND_LABELS index 3 = USB → bg rect y = 12 + 4*12 - (ROW_H-2) = 50,
+    // height ROW_H=12). Look for the blue-tinted rect at that band.
+    expect(lastSvg).toMatch(/<rect[^>]*y="50"[^>]*height="12"[^>]*fill="#00aaff"/);
   }, 15_000);
 
   it('Opts column shrinks from 6 rows (FM/AM) to 3 rows (SSB) when cursor is on USB band and confirmed', async () => {

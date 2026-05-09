@@ -92,6 +92,12 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private tuneStepListener: ((s: number) => void) | null = null;
   private jpRegionListener: ((r: JpRegion) => void) | null = null;
   private demodListener: ((mode: number) => void) | null = null;
+  // Set true while the Tune dial is the *source* of a setDemodMode call
+  // (preset cycle on this dial, or PI Mode dropdown reacting through this
+  // dial). The demodListener checks this and skips its auto-jump path so
+  // the user's preset choice isn't immediately overwritten by the first
+  // matching-mode preset in the list.
+  private suppressDemodJump = false;
 
   override async onWillAppear(ev: WillAppearEvent<DialTuneSettings>): Promise<void> {
     this.dialMode   = spyService.getTuneMode();
@@ -131,6 +137,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       if (this.dialMode === 'preset' && this.presets.length > 0) {
         const p = this.presets[this.slotIndex];
         if (p?.freq) {
+          // Suppress the demodListener's auto-jump while the connect-time
+          // seed runs — otherwise it would re-pick the first matching-mode
+          // preset and stomp the user's persisted slotIndex.
+          this.suppressDemodJump = true;
           if (spyService.currentFreq === 0) {
             // First run, no persisted state — seed freq + mode.
             spyService.setDemodMode(p.mode);
@@ -140,6 +150,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
             // covering older configs where demodMode lagged the freq change.
             spyService.setDemodMode(p.mode);
           }
+          this.suppressDemodJump = false;
         }
       } else if (this.dialMode === 'vfo' && this.currentFreq > 0 && spyService.currentFreq === 0) {
         spyService.setFrequency(this.currentFreq);
@@ -166,7 +177,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     // staring at an FM-band frequency while the demod has flipped to AM.
     // VFO mode leaves the frequency alone — the user is dialing manually.
     this.demodListener = (mode: number) => {
-      if (this.dialMode === 'preset' && this.presets.length > 0) {
+      // Auto-jump only when the mode change came from elsewhere (Combo dial
+      // Band PUSH, autoDemodForFreq band-cross, etc.). When the Tune dial
+      // is itself driving the change (preset cycle / PI dropdown), the user
+      // already chose a specific preset — don't yank it back to the first
+      // matching-mode entry in the list.
+      if (!this.suppressDemodJump
+          && this.dialMode === 'preset'
+          && this.presets.length > 0) {
         const idx = this.presets.findIndex(p => p.mode === mode);
         if (idx >= 0 && idx !== this.slotIndex) {
           this.slotIndex = idx;
@@ -179,7 +197,13 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       }
       this.updateDisplay(this.lastAction).catch(() => {});
     };
+    // Initial fire of subscribeDemodMode is synchronous (the service fires
+    // the listener once with the current value at subscribe time). Wrap the
+    // call in suppressDemodJump so the dial keeps the persisted slotIndex
+    // instead of jumping to the first matching-mode preset on every launch.
+    this.suppressDemodJump = true;
     spyService.subscribeDemodMode(this.demodListener);
+    this.suppressDemodJump = false;
 
     await ev.action.setImage(svgB64(knobSvg()));
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialTune] ${e}`));
@@ -235,8 +259,16 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       await ev.action.setSettings({ ...ev.payload.settings, slotIndex: this.slotIndex });
       const p = this.presets[this.slotIndex];
       this.currentFreq = p.freq;
+      // The Tune dial is itself driving this mode/freq change — silence
+      // the demodListener's auto-jump until the listener has consumed
+      // this setDemodMode call. Without this, demodListener would scan
+      // for the FIRST matching-mode preset and overwrite the user's
+      // hand-picked slotIndex (preset cycle FM → AM would always land
+      // on the lowest-freq AM entry instead of the next AM in order).
+      this.suppressDemodJump = true;
       spyService.setDemodMode(p.mode);
       spyService.setFrequency(p.freq);
+      this.suppressDemodJump = false;
       await this.updateDisplay(ev.action);
     } else {
       const base = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;

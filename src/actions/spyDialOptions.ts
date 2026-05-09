@@ -105,6 +105,10 @@ export class SpyDialOptions extends SingletonAction<Settings> {
   }
 
   override async onDialRotate(ev: DialRotateEvent<Settings>): Promise<void> {
+    // FM Options dial only operates while a FM-family mode is the active
+    // demod. When AM is live, every edit on this dial would silently target
+    // FM state the user can't even hear, so we ignore rotation outright.
+    if (!this.isFmMode) return;
     const ticks = ev.payload.ticks;
     const tuneMode = spyService.getTuneMode();
     const showStep = tuneMode === 'vfo';
@@ -141,6 +145,9 @@ export class SpyDialOptions extends SingletonAction<Settings> {
   override onDialDown(_ev: DialDownEvent<Settings>): void {}
 
   override onDialUp(_ev: DialUpEvent<Settings>): void {
+    // PUSH ignored when the live demod is AM — same rationale as
+    // onDialRotate: there's nothing on this dial that affects AM audio.
+    if (!this.isFmMode) return;
     if (this.editMode) {
       // confirm value: leave edit mode and hide focus highlight
       this.editMode = false;
@@ -167,11 +174,11 @@ export class SpyDialOptions extends SingletonAction<Settings> {
     if (showStep) rows.push({ label: 'Step', value: formatTuneStep(tuneStepHz) });
     if (this.isFmMode) rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
     const sel = this.focused ? this.selectedIdx : -1;
-    const dim = !this.enabled || !this.connected;
-    // Title makes it obvious which dial / mode-family this panel controls
-    // when the user is glancing at the strip of LCDs. The active demod mode
-    // is appended so an inactive panel (e.g. AM is the live mode but the
-    // user is looking at the FM Options dial) reads as "FM Opts (AM live)".
+    // Dim when the master switch / TCP link is down OR when the live demod
+    // mode isn't FM-family. The dim treatment + the title's "(AM live)"
+    // hint together signal that the dial is locked out, and onDialRotate /
+    // onDialUp short-circuit so any spin or push is a no-op.
+    const dim = !this.enabled || !this.connected || !this.isFmMode;
     const activeMode = this.isFmMode ? 'FM' : 'AM';
     const title = this.isFmMode ? 'FM Options' : `FM Options  (${activeMode} live)`;
     this.act.setFeedback({

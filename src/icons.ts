@@ -215,8 +215,7 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // five panel SVGs share one visual idiom.
   const headerSvg = titleVisible
     ? `<rect x="0" y="0" width="200" height="${TITLE_H}" fill="#0055cc" fill-opacity="0.22"/>` +
-      `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>` +
-      `<line x1="0" y1="${TITLE_H + 0.5}" x2="200" y2="${TITLE_H + 0.5}" stroke="#5599cc" stroke-width="0.8"/>`
+      `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>`
     : '';
   return `<svg width="200" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="200" height="${SVG_H}" fill="#000000"/>
@@ -258,8 +257,7 @@ export function optionsPanelDualSvg(
   // one visual idiom.
   const titleSvg = title
     ? `<rect x="0" y="0" width="${SVG_W}" height="${TITLE_H}" fill="#0055cc" fill-opacity="0.22"/>` +
-      `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>` +
-      `<line x1="0" y1="${TITLE_H + 0.5}" x2="${SVG_W}" y2="${TITLE_H + 0.5}" stroke="#5599cc" stroke-width="0.8"/>`
+      `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>`
     : '';
 
   // Column header — active column: bright white + ▶ marker; inactive: dim grey.
@@ -400,12 +398,10 @@ export function bandSelectPanelSvg(
   };
 
   const rows = Array.from({ length: TOTAL }, (_, i) => renderRow(i)).join('\n');
-  const headerSep = `<line x1="0" y1="${HEADER_H + 0.5}" x2="${SVG_W}" y2="${HEADER_H + 0.5}" stroke="#5599cc" stroke-width="0.8"/>`;
   const frame = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
   return `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="${SVG_W}" height="${SVG_H}" fill="#000000"/>
 ${header}
-${headerSep}
 ${rows}
 ${frame}
 </svg>`;
@@ -519,14 +515,12 @@ export function optionsPanelBandSvg(
 
   const bandPart = Array.from({ length: BAND_TOTAL }, (_, i) => renderBandRow(i)).join('\n');
   const optsPart = Array.from({ length: optsRows.length }, (_, j) => renderOptsRow(j)).join('\n');
-  const headerSep = `<line x1="0" y1="${HEADER_H + 0.5}" x2="${SVG_W}" y2="${HEADER_H + 0.5}" stroke="#5599cc" stroke-width="0.8"/>`;
   const divider   = `<line x1="${COL_W}" y1="${HEADER_H + 1}" x2="${COL_W}" y2="${SVG_H - 4}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
   const frame     = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
 
   return `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="${SVG_W}" height="${SVG_H}" fill="#000000"/>
 ${header}
-${headerSep}
 ${bandPart}
 ${optsPart}
 ${divider}

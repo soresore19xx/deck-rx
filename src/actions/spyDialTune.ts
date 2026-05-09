@@ -180,18 +180,34 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // Auto-jump only when the mode change came from elsewhere (Combo dial
       // Band PUSH, autoDemodForFreq band-cross, etc.). When the Tune dial
       // is itself driving the change (preset cycle / PI dropdown), the user
-      // already chose a specific preset — don't yank it back to the first
-      // matching-mode entry in the list.
+      // already chose a specific preset — suppressDemodJump prevents this
+      // path from yanking that choice back.
+      //
+      // Note: we no longer skip on `idx === this.slotIndex`. Earlier
+      // versions did, on the assumption that "already on the right preset"
+      // means nothing to do. But that broke the common case of "AM → WFM
+      // PUSH twice in a row": the second PUSH lands on the same
+      // findIndex() result (slot 0 of that mode) and would silently no-op,
+      // leaving the displayed freq stuck on whatever station the OTHER
+      // mode had selected. Re-issuing setFrequency to the same hz is a
+      // cheap no-op inside spyService, so always perform the jump when
+      // a matching-mode preset exists.
       if (!this.suppressDemodJump
           && this.dialMode === 'preset'
           && this.presets.length > 0) {
         const idx = this.presets.findIndex(p => p.mode === mode);
-        if (idx >= 0 && idx !== this.slotIndex) {
+        if (idx >= 0) {
           this.slotIndex = idx;
           const p = this.presets[idx];
           if (p?.freq) {
-            this.currentFreq = p.freq;       // local mirror so the dial's own
-            spyService.setFrequency(p.freq); // SVG reflects the jump too
+            this.currentFreq = p.freq;
+            spyService.setFrequency(p.freq);
+            // Persist slotIndex so onDidReceiveSettings doesn't restore
+            // the stale value on subsequent re-emits.
+            if (this.lastAction) {
+              const a = this.lastAction as { setSettings?: (s: Record<string, unknown>) => Promise<void> };
+              if (a.setSettings) a.setSettings({ slotIndex: idx } as DialTuneSettings).catch(() => {});
+            }
           }
         }
       }

@@ -7,7 +7,7 @@ process.env.DECK_RX_JP_STATIONS_PATH = resolve(
   __dirname, '..', 'com.hogehoge.deck-rx.sdPlugin', 'data', 'jp-stations.json',
 );
 
-const { lookupJpStation, isJpRegion, JP_REGIONS, JP_REGION_LABELS } =
+const { lookupJpStation, formatJpStationLabel, isJpRegion, JP_REGIONS, JP_REGION_LABELS } =
   await import('../src/japanStations.js');
 
 // Tests run against the live com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json,
@@ -94,5 +94,32 @@ describe('lookupJpStation — out-of-band', () => {
     expect(lookupJpStation(100, 'kanto')).toBeNull();
     expect(lookupJpStation(50_000_000, 'kanto')).toBeNull();
     expect(lookupJpStation(200_000_000, 'kanto')).toBeNull();
+  });
+});
+
+describe('formatJpStationLabel — display formatting', () => {
+  it('NHK MW infers 第1 channel (post-2025-03 第2 closure)', () => {
+    expect(formatJpStationLabel({ freqHz: 594_000, band: 'MW', name: 'NHK' })).toBe('NHK第1');
+  });
+  it('NHK FM renders as NHK-FM', () => {
+    expect(formatJpStationLabel({ freqHz: 82_500_000, band: 'FM', name: 'NHK' })).toBe('NHK-FM');
+  });
+  it('NHK MW + siteName appends "(site)"', () => {
+    expect(formatJpStationLabel({ freqHz: 594_000, band: 'MW', name: 'NHK', siteName: '東京' })).toBe('NHK第1 (東京)');
+  });
+  it('NHK FM + multi-site siteName preserves the verbatim string', () => {
+    expect(formatJpStationLabel({ freqHz: 82_500_000, band: 'FM', name: 'NHK', siteName: '東京・墨田' })).toBe('NHK-FM (東京・墨田)');
+  });
+  it('non-NHK name passes through unchanged', () => {
+    expect(formatJpStationLabel({ freqHz: 80_000_000, band: 'FM', name: 'TOKYO FM' })).toBe('TOKYO FM');
+  });
+  it('non-NHK + siteName appends parens', () => {
+    expect(formatJpStationLabel({ freqHz: 80_000_000, band: 'FM', name: 'TOKYO FM', siteName: '東京' })).toBe('TOKYO FM (東京)');
+  });
+  it('manual-curated name "NHKラジオ第2" passes through unchanged (only bare "NHK" is auto-channelled)', () => {
+    expect(formatJpStationLabel({ freqHz: 693_000, band: 'MW', name: 'NHKラジオ第2' })).toBe('NHKラジオ第2');
+  });
+  it('693 kHz NHKラジオ第2 has been removed from manualStations (2025-03 closure)', () => {
+    expect(lookupJpStation(693_000, 'kanto')).toBeNull();
   });
 });

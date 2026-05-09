@@ -39,6 +39,30 @@ describe('parseSoumuKantoHtml', () => {
     expect(fm.length).toBeGreaterThan(50);
     expect(mw.length).toBeGreaterThan(10);
   });
+
+  it('captures 送信地 from "freq(site)" parens for representative anchors', () => {
+    const stations = parseSoumuKantoHtml(KANTO_HTML);
+    // 594 kHz NHK 親局 — fixture cell is "594kHz(東京)" (half-width parens)
+    const nhk594 = stations.find(s => s.freqHz === 594_000);
+    expect(nhk594?.siteName).toBe('東京');
+    // 1584 kHz NHK 富士吉田 中継局 — full-width parens "（富士吉田）"
+    const nhk1584 = stations.find(s => s.freqHz === 1_584_000);
+    expect(nhk1584?.siteName).toBe('富士吉田');
+    // 82.5 MHz NHK FM 親局 — multi-site "（東京・墨田）"
+    const nhkFm = stations.find(s => s.freqHz === 82_500_000);
+    expect(nhkFm?.siteName).toBe('東京・墨田');
+  });
+
+  it('drops empty / whitespace-only siteName (so JSON stays clean for site-less rows)', () => {
+    const stations = parseSoumuKantoHtml(KANTO_HTML);
+    // Every entry that does carry siteName should have non-empty trimmed text.
+    for (const s of stations) {
+      if ('siteName' in s && s.siteName !== undefined) {
+        expect(s.siteName.length).toBeGreaterThan(0);
+        expect(s.siteName.trim()).toBe(s.siteName);
+      }
+    }
+  });
 });
 
 describe('parseSoumuOkinawaHtml', () => {

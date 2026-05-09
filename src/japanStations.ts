@@ -43,6 +43,38 @@ export interface JpStation {
   band: JpBand;
   name: string;
   region?: JpRegion;  // undefined for manualStations (always consulted, region-independent)
+  // Optional 送信地 (transmission site) annotation, scraped from the
+  // parenthesised suffix in the 関東総合通信局 / 沖縄総通局 freq cells —
+  // e.g. "594kHz(東京)" → siteName: "東京". Multiple physical relay sites
+  // separated by 、 / ・ are kept verbatim ("父島、母島" / "東京・墨田").
+  // Older jp-stations.json entries without this field still load fine.
+  siteName?: string;
+}
+
+/**
+ * Render a station for the dial header. Two transformations on top of the
+ * raw `name`:
+ *
+ *   1. Channel inference for NHK — post-2025-03 NHKラジオ第2 closure, every
+ *      surviving NHK MW transmitter is NHK第1; every NHK FM is NHK-FM. The
+ *      scraped 法人名 is just "NHK" (alias of 日本放送協会), which would
+ *      otherwise leave 33+ entries indistinguishable. We only special-case
+ *      the canonical bare "NHK" — manual entries that explicitly say e.g.
+ *      "NHKラジオ第2" pass through unchanged.
+ *   2. Site annotation — when siteName is present we append it in
+ *      half-width parens: "TOKYO FM" + "東京" → "TOKYO FM (東京)". Empty /
+ *      missing siteName falls through to bare name (current behaviour).
+ *
+ * Width: long names + " (site)" can exceed the 200 px header but
+ * `makeHeaderSvg` already auto-shrinks (14 → 12 → spacingAndGlyphs squeeze),
+ * so callers don't need to pre-clip.
+ */
+export function formatJpStationLabel(s: JpStation): string {
+  let name = s.name;
+  if (name === 'NHK') {
+    name = s.band === 'MW' ? 'NHK第1' : 'NHK-FM';
+  }
+  return s.siteName ? `${name} (${s.siteName})` : name;
 }
 
 interface JpStationFile {

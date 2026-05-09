@@ -115,21 +115,30 @@ function cleanOperatorName(raw: string): string {
   return NAME_ALIASES[s] ?? s;
 }
 
-// Extract all (freqHz, band) pairs from a table cell. Matches `594kHz`,
-// `82.6MHz`, and bare decimal numbers (`82.5`) — the latter falls back to
-// `defaultUnit`. The 2-4 digit / decimal-required lookahead in the regex
+// Extract all (freqHz, band, siteName?) tuples from a table cell. Matches
+// `594kHz`, `82.6MHz`, and bare decimal numbers (`82.5` — falls back to
+// `defaultUnit`). The 2-4 digit / decimal-required lookahead in the regex
 // avoids scooping up stray digits like 「FM補完中継局」 sub-strings.
-function parseFreqList(html: string, defaultUnit: 'kHz' | 'MHz'): { hz: number; band: 'FM' | 'MW' }[] {
+//
+// 送信地 (site) is the parenthesised suffix when present:
+//   `594kHz(東京)`            → site "東京"     (half-width parens)
+//   `1584kHz（富士吉田）`      → site "富士吉田"  (full-width parens)
+//   `82.6MHz（父島、母島）`    → site "父島、母島" (full-width, multi-site)
+//   `94.6MHz(加波山）`         → site "加波山"    (mixed half/full close)
+// Mixed parens are real on the 総通局 page so the close paren is matched
+// independently of the open paren. Empty / whitespace-only sites are dropped.
+function parseFreqList(html: string, defaultUnit: 'kHz' | 'MHz'): { hz: number; band: 'FM' | 'MW'; siteName?: string }[] {
   const text = stripHtml(html);
-  const out: { hz: number; band: 'FM' | 'MW' }[] = [];
-  const re = /(\d+\.\d+|\d{2,4})\s*(kHz|MHz)?/g;
+  const out: { hz: number; band: 'FM' | 'MW'; siteName?: string }[] = [];
+  const re = /(\d+\.\d+|\d{2,4})\s*(kHz|MHz)?(?:\s*[（(]([^（）()]+)[）)])?/g;
   for (const m of text.matchAll(re)) {
     const value = parseFloat(m[1]);
     const unit = (m[2] as 'kHz' | 'MHz' | undefined) ?? defaultUnit;
     const hz = unit === 'MHz' ? Math.round(value * 1_000_000) : Math.round(value * 1_000);
     const band = classifyBand(hz);
     if (!band) continue;   // out-of-range / spurious match
-    out.push({ hz, band });
+    const siteName = m[3]?.trim() || undefined;
+    out.push(siteName ? { hz, band, siteName } : { hz, band });
   }
   return out;
 }
@@ -168,6 +177,13 @@ function expandRows(table: HTMLElement): string[][] {
   return result;
 }
 
+// Build a JpStation, attaching siteName only when present so JSON output
+// stays clean (no `"siteName": null/undefined` clutter for the >50% of
+// rows where the source doesn't carry a 送信地).
+function makeStation(name: string, hz: number, band: 'FM' | 'MW', siteName?: string): JpStation {
+  return siteName ? { freqHz: hz, band, name, siteName } : { freqHz: hz, band, name };
+}
+
 // 中波 (AM) table: cols [#, name, parentFreq, relayFreq]
 // Both freq columns may contain multiple `594kHz(東京)\n927kHz(甲府)` style
 // entries; explicit kHz/MHz suffix is always present in this table.
@@ -177,8 +193,8 @@ function parseAmTable(table: HTMLElement): JpStation[] {
     if (row.length < 4) continue;
     const name = cleanOperatorName(row[1]);
     if (!name) continue;
-    for (const f of parseFreqList(row[2], 'kHz')) out.push({ freqHz: f.hz, band: f.band, name });
-    for (const f of parseFreqList(row[3], 'kHz')) out.push({ freqHz: f.hz, band: f.band, name });
+    for (const f of parseFreqList(row[2], 'kHz')) out.push(makeStation(name, f.hz, f.band, f.siteName));
+    for (const f of parseFreqList(row[3], 'kHz')) out.push(makeStation(name, f.hz, f.band, f.siteName));
   }
   return out;
 }
@@ -192,21 +208,24 @@ function parseFmTable(table: HTMLElement): JpStation[] {
     if (row.length < 4) continue;
     const name = cleanOperatorName(row[1]);
     if (!name) continue;
-    for (const f of parseFreqList(row[2], 'MHz')) out.push({ freqHz: f.hz, band: f.band, name });
-    for (const f of parseFreqList(row[3], 'MHz')) out.push({ freqHz: f.hz, band: f.band, name });
+    for (const f of parseFreqList(row[2], 'MHz')) out.push(makeStation(name, f.hz, f.band, f.siteName));
+    for (const f of parseFreqList(row[3], 'MHz')) out.push(makeStation(name, f.hz, f.band, f.siteName));
   }
   return out;
 }
 
 // コミュニティ放送 tables (one per prefecture): cols [#, name, location, freq]
 // Default unit MHz (header literally says "周波数(MHz)").
+// CFM tables carry the location in column 2 (`location`) rather than in
+// parens after the freq, so we use that column as the siteName fallback.
 function parseCfmTable(table: HTMLElement): JpStation[] {
   const out: JpStation[] = [];
   for (const row of expandRows(table)) {
     if (row.length < 4) continue;
     const name = cleanOperatorName(row[1]);
     if (!name) continue;
-    for (const f of parseFreqList(row[3], 'MHz')) out.push({ freqHz: f.hz, band: f.band, name });
+    const cfmLocation = stripHtml(row[2]).trim() || undefined;
+    for (const f of parseFreqList(row[3], 'MHz')) out.push(makeStation(name, f.hz, f.band, f.siteName ?? cfmLocation));
   }
   return out;
 }
@@ -280,8 +299,11 @@ async function fetchKantoStations(): Promise<JpStation[]> {
 //   "※82.6"        → FM 82.6 MHz only (no AM mainline at this site)
 //   "549"           → AM 549 kHz only
 //   "" or "　"      → empty (whitespace / NBSP)
-// Returns the (hz, band) pairs found in the cell.
-function parseOkinawaAmCell(html: string): { hz: number; band: 'FM' | 'MW' }[] {
+// 沖縄 cells don't carry an inline (site) — the row's first <th> already
+// names the location, so the caller (parseOkinawaTransposedTable) supplies
+// siteName separately. Return type stays compatible with parseFreqList so
+// both can be used interchangeably as the cellParser callback.
+function parseOkinawaAmCell(html: string): { hz: number; band: 'FM' | 'MW'; siteName?: string }[] {
   const text = stripHtml(html);
   const out: { hz: number; band: 'FM' | 'MW' }[] = [];
   for (const piece of text.split(/[\s　\r\n]+/)) {
@@ -308,7 +330,7 @@ function parseOkinawaAmCell(html: string): { hz: number; band: 'FM' | 'MW' }[] {
 // the generic parseFreqList with defaultUnit='MHz'.
 function parseOkinawaTransposedTable(
   table: HTMLElement,
-  cellParser: (html: string) => { hz: number; band: 'FM' | 'MW' }[],
+  cellParser: (html: string) => { hz: number; band: 'FM' | 'MW'; siteName?: string }[],
 ): JpStation[] {
   const trs = table.querySelectorAll('tr');
   if (trs.length < 2) return [];
@@ -322,11 +344,15 @@ function parseOkinawaTransposedTable(
   for (let r = 1; r < trs.length; r++) {
     const cells = trs[r].querySelectorAll('th, td');
     // cells[0] = location <th>, cells[1..] = freq <td> per station column.
+    // The leading <th> is the row's location; we forward it as the default
+    // siteName so the 沖縄 transposed shape benefits from site annotation
+    // even though no inline (site) parens exist in the freq cells.
+    const rowSiteName = stripHtml(cells[0]?.innerHTML ?? '').trim() || undefined;
     for (let i = 1; i < cells.length && i - 1 < stationNames.length; i++) {
       const name = stationNames[i - 1];
       if (!name) continue;
       for (const f of cellParser(cells[i].innerHTML)) {
-        out.push({ freqHz: f.hz, band: f.band, name });
+        out.push(makeStation(name, f.hz, f.band, f.siteName ?? rowSiteName));
       }
     }
   }
@@ -344,8 +370,11 @@ function parseOkinawaCfmTable(table: HTMLElement): JpStation[] {
     if (cells.length < 3) continue;
     const name = cleanOperatorName(cells[1].innerHTML);
     if (!name) continue;
+    // 沖縄 CFM cell-0 carries the 市町村名 (eg "那覇市"); use it as siteName
+    // when the freq cell doesn't already supply one inline.
+    const cfmLocation = stripHtml(cells[0].innerHTML).trim() || undefined;
     for (const f of parseFreqList(cells[2].innerHTML, 'MHz')) {
-      out.push({ freqHz: f.hz, band: f.band, name });
+      out.push(makeStation(name, f.hz, f.band, f.siteName ?? cfmLocation));
     }
   }
   return out;
@@ -424,12 +453,17 @@ export function parseFmListHtml(html: string, targetRegion: 'hokkaido' | 'tohoku
         }
         for (let i = 1; i < items.length; i++) {
           const text = stripHtml(items[i].innerHTML);
+          // Lines look like "（札幌） 76.0MHz" — the parenthesised地域名 is
+          // the 送信地. Either order is matched: site can come before or
+          // after the freq. Empty/missing site falls through unannotated.
           const m = text.match(/(\d+\.\d+)\s*MHz/);
           if (!m) continue;
           const hz = Math.round(parseFloat(m[1]) * 1_000_000);
           const band = classifyBand(hz);
           if (band !== 'FM') continue;
-          out.push({ freqHz: hz, band, name: operatorName });
+          const siteMatch = text.match(/[（(]([^（）()]+)[）)]/);
+          const siteName = siteMatch?.[1].trim() || undefined;
+          out.push(makeStation(operatorName, hz, band, siteName));
         }
       }
     }

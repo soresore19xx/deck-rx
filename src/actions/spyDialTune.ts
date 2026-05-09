@@ -10,7 +10,7 @@ import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSv
 import { loadPresets, clearPresetsCache, Preset } from './spyTune.js';
 import { importFromSdrpp } from '../presets.js';
 import { lookupEibi } from '../eibi.js';
-import { lookupJpStation, isJpRegion, type JpRegion } from '../japanStations.js';
+import { lookupJpStation, formatJpStationLabel, isJpRegion, type JpRegion } from '../japanStations.js';
 import { autoDemodForFreq } from '../bandPolicy.js';
 import { bandsForDevice, snapToCoveredFreq, isFreqReceivable } from '../deviceBands.js';
 
@@ -23,7 +23,7 @@ import { bandsForDevice, snapToCoveredFreq, isFreqReceivable } from '../deviceBa
 //   3. (caller falls back to the user's preset name when both return null.)
 function autoStationLabel(freqHz: number, activeRegion: JpRegion): string | null {
   const jp = lookupJpStation(freqHz, activeRegion);
-  if (jp) return jp.name;
+  if (jp) return formatJpStationLabel(jp);
   if (freqHz >= 16_000 && freqHz <= 30_000_000) {
     const e = lookupEibi(freqHz);
     if (e) return e.name;

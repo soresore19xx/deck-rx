@@ -67,12 +67,12 @@ describe('A4 — PI round-trip handlers in spyDialTune', () => {
     const status = await awaitPI(harness, 'jpStationsStatus');
     expect(status.region).toBe('kinki');
     // Auto-scraped pool currently has only 関東 entries in the seed file →
-    // count for kinki should be 0; manualCount should still report all 11
-    // hand-curated entries (manualStations are region-tagged but the status
-    // reports the absolute count regardless of active region).
+    // count for kinki should be 0; manualCount reports the absolute count of
+    // hand-curated manual entries regardless of active region. After the
+    // 2025-03 NHKラジオ第2 closure removal, the seed has 10 manual entries.
     expect(status.count).toBe(0);
     expect(typeof status.manualCount).toBe('number');
-    expect(status.manualCount).toBeGreaterThanOrEqual(11);
+    expect(status.manualCount).toBeGreaterThanOrEqual(10);
 
     // And getJpRegion now returns kinki.
     harness.sendToPlugin(TUNE_UUID, CTX, { action: 'getJpRegion' });

@@ -90,6 +90,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private tuneModeListener: ((m: 'preset' | 'vfo') => void) | null = null;
   private tuneStepListener: ((s: number) => void) | null = null;
   private jpRegionListener: ((r: JpRegion) => void) | null = null;
+  private demodListener: ((mode: number) => void) | null = null;
 
   override async onWillAppear(ev: WillAppearEvent<DialTuneSettings>): Promise<void> {
     this.dialMode   = spyService.getTuneMode();
@@ -158,6 +159,13 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     };
     spyService.subscribeConnectionState(this.connStateListener);
 
+    // Re-render the Tune dial when the demod mode changes (e.g. Combo dial
+    // Band PUSH switches FM → AM). The frequency display, preset-name lookup
+    // and MHz/kHz unit all depend on the active mode, so without this
+    // subscription the dial stays stuck on the old mode's formatting.
+    this.demodListener = () => { this.updateDisplay(this.lastAction).catch(() => {}); };
+    spyService.subscribeDemodMode(this.demodListener);
+
     await ev.action.setImage(svgB64(knobSvg()));
     spyService.connect().catch((e) => streamDeck.logger.error(`[spyDialTune] ${e}`));
     // Periodically refresh footer (stereo-lock indicator updates from pilot power)
@@ -173,6 +181,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
     if (this.tuneStepListener) { spyService.unsubscribeTuneStep(this.tuneStepListener); this.tuneStepListener = null; }
     if (this.jpRegionListener) { spyService.unsubscribeJpRegion(this.jpRegionListener); this.jpRegionListener = null; }
+    if (this.demodListener) { spyService.unsubscribeDemodMode(this.demodListener); this.demodListener = null; }
     if (this.tuneTimer) { clearTimeout(this.tuneTimer); this.tuneTimer = null; }
     if (this.footerTimer) { clearInterval(this.footerTimer); this.footerTimer = null; }
     this.lastAction = null;

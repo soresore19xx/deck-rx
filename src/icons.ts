@@ -238,22 +238,35 @@ export function optionsPanelDualSvg(
   activeCol: 'AM' | 'FM',
   selectedRow = -1,
   editMode = false,
+  title = '',
 ): string {
   const SVG_W = 200, SVG_H = 100;
   const COL_W = SVG_W / 2;
+  const TITLE_H = title ? 12 : 0;
   const HEADER_H = 12;
-  const ROW_H = 12;
+  const ROW_H = 11;  // tightened from 12 so 6 rows + title + col-hdr fit
   const FS = 10;
   const FRAME_C = '#888888';
   const DIVIDER_C = '#444444';
   const accent = editMode ? '#ffaa55' : BLUE;
+  const COL_HEADER_TOP = TITLE_H;
 
-  // Header — active column: bright white + ▶ marker; inactive: dim grey.
+  // Optional dial-title banner (saturated blue bg + bold + cyan divider).
+  // Same style as optionsPanelSvg / bandSelectPanelSvg so all dials share
+  // one visual idiom.
+  const titleSvg = title
+    ? `<rect x="0" y="0" width="${SVG_W}" height="${TITLE_H}" fill="#0055cc" fill-opacity="0.55"/>` +
+      `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>` +
+      `<line x1="0" y1="${TITLE_H + 0.5}" x2="${SVG_W}" y2="${TITLE_H + 0.5}" stroke="#00ddff" stroke-width="1.2"/>`
+    : '';
+
+  // Column header — active column: bright white + ▶ marker; inactive: dim grey.
   const amHdr = activeCol === 'AM' ? { color: '#ffffff', text: 'AM ▶' } : { color: '#666666', text: 'AM' };
   const fmHdr = activeCol === 'FM' ? { color: '#ffffff', text: 'FM ▶' } : { color: '#666666', text: 'FM' };
+  const colHdrY = COL_HEADER_TOP + HEADER_H - 2;
   const header =
-    `<text x="6" y="${HEADER_H - 2}" fill="${amHdr.color}" font-size="${FS}" font-family="monospace">${amHdr.text}</text>` +
-    `<text x="${COL_W + 6}" y="${HEADER_H - 2}" fill="${fmHdr.color}" font-size="${FS}" font-family="monospace">${fmHdr.text}</text>`;
+    `<text x="6" y="${colHdrY}" fill="${amHdr.color}" font-size="${FS}" font-family="monospace">${amHdr.text}</text>` +
+    `<text x="${COL_W + 6}" y="${colHdrY}" fill="${fmHdr.color}" font-size="${FS}" font-family="monospace">${fmHdr.text}</text>`;
 
   const renderCol = (rows: OptionsPanelRow[], xOff: number, isActive: boolean): string => {
     const out: string[] = [];
@@ -264,7 +277,7 @@ export function optionsPanelDualSvg(
       // Baseline for row i: header band (HEADER_H) + (i+1) * ROW_H. First row
       // baseline = 12 + 12 = 24; last (i=6) = 12 + 7*12 = 96. bg rect sits
       // (rowH - 2) px above the baseline so it visually centres on the text.
-      const y = HEADER_H + (i + 1) * ROW_H;
+      const y = COL_HEADER_TOP + HEADER_H + (i + 1) * ROW_H;
       const isSelected = isActive && i === selectedRow;
       const isEdit = isSelected && editMode;
       const bgPad = ROW_H - 2;
@@ -292,11 +305,13 @@ export function optionsPanelDualSvg(
 
   const amCol = renderCol(amRows, 0, activeCol === 'AM');
   const fmCol = renderCol(fmRows, COL_W, activeCol === 'FM');
-  const divider = `<line x1="${COL_W}" y1="${HEADER_H + 1}" x2="${COL_W}" y2="${SVG_H - 4}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
-  const headerSep = `<line x1="2" y1="${HEADER_H + 1}" x2="${SVG_W - 2}" y2="${HEADER_H + 1}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const colHdrBottom = COL_HEADER_TOP + HEADER_H;
+  const divider = `<line x1="${COL_W}" y1="${colHdrBottom + 1}" x2="${COL_W}" y2="${SVG_H - 4}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const headerSep = `<line x1="2" y1="${colHdrBottom + 1}" x2="${SVG_W - 2}" y2="${colHdrBottom + 1}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
   const frame = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
   return `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="${SVG_W}" height="${SVG_H}" fill="#000000"/>
+${titleSvg}
 ${header}
 ${headerSep}
 ${amCol}
@@ -343,7 +358,11 @@ export function bandSelectPanelSvg(
   const accent = editMode ? '#ffaa55' : BLUE;
   const TOTAL = bandLabels.length + 1;
 
-  const header = `<text x="100" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" text-anchor="middle">Band</text>`;
+  // Title bar: same saturated-blue treatment as optionsPanelSvg so all
+  // dial titles share one visual style.
+  const header =
+    `<rect x="0" y="0" width="${SVG_W}" height="${HEADER_H}" fill="#0055cc" fill-opacity="0.55"/>` +
+    `<text x="100" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">Band</text>`;
 
   const renderRow = (i: number): string => {
     const y = HEADER_H + (i + 1) * ROW_H;
@@ -379,7 +398,7 @@ export function bandSelectPanelSvg(
   };
 
   const rows = Array.from({ length: TOTAL }, (_, i) => renderRow(i)).join('\n');
-  const headerSep = `<line x1="2" y1="${HEADER_H + 1}" x2="${SVG_W - 2}" y2="${HEADER_H + 1}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
+  const headerSep = `<line x1="0" y1="${HEADER_H + 0.5}" x2="${SVG_W}" y2="${HEADER_H + 0.5}" stroke="#00ddff" stroke-width="1.2"/>`;
   const frame = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
   return `<svg width="${SVG_W}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="${SVG_W}" height="${SVG_H}" fill="#000000"/>

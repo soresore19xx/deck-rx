@@ -157,7 +157,7 @@ export class SpyDialOptions2Col extends SingletonAction<Settings> {
     } else {
       const amRows = buildAm(spyService.getAMOptions(), amGain, maxGain);
       const fmRows = buildFm(spyService.getFMOptions(), fmGain, maxGain);
-      svg = optionsPanelDualSvg(amRows, fmRows, isAm ? 'AM' : 'FM', sel, this.editMode);
+      svg = optionsPanelDualSvg(amRows, fmRows, isAm ? 'AM' : 'FM', sel, this.editMode, 'Options 2-Col');
     }
     this.act.setFeedback({
       'options-display': dumpAndB64('options-2col', dimSvg(svg, dim)),

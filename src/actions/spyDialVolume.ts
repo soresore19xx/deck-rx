@@ -166,7 +166,7 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     // carry. Updates every second via clockTimer.
     const title = currentTimeHHMM();
     this.act.setFeedback({
-      'vol-display': dumpAndB64('volume', dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide, title), dim)),
+      'vol-display': dumpAndB64('volume', dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide, title, false), dim)),
     }).catch(() => {});
   }
 }

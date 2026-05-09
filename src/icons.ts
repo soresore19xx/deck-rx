@@ -77,7 +77,7 @@ export interface OptionsPanelRow {
   valueColor?: string;
 }
 
-export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editMode = false, borderSide: 'left' | 'right' | 'center' | 'none' = 'none', title = ''): string {
+export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editMode = false, borderSide: 'left' | 'right' | 'center' | 'none' = 'none', title = '', titleStyled = true): string {
   // Fixed compact metrics: rowH 14 / font 11/12. Used for ALL panel-style
   // dials so AM Options, FM Options and Volume+Status share identical
   // typography regardless of how many rows each happens to render.
@@ -213,9 +213,15 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // Title bar: same saturated-blue tint + bold + cyan-tinted divider as
   // bandSelectPanelSvg / optionsPanelBandSvg / optionsPanelDualSvg so all
   // five panel SVGs share one visual idiom.
+  // titleStyled (default) renders the saturated-blue + bold title bar used
+  // by the 6 dial-name banners requested by the user. titleStyled=false is
+  // used by the Volume dial to host its live HH:MM clock — the clock isn't
+  // a dial title, so it stays plain so as not to mislead.
   const headerSvg = titleVisible
-    ? `<rect x="0" y="0" width="200" height="${TITLE_H}" fill="#0055cc" fill-opacity="0.22"/>` +
-      `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>`
+    ? (titleStyled
+        ? `<rect x="0" y="0" width="200" height="${TITLE_H}" fill="#0055cc" fill-opacity="0.22"/>` +
+          `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>`
+        : `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" text-anchor="middle">${title}</text>`)
     : '';
   return `<svg width="200" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="200" height="${SVG_H}" fill="#000000"/>

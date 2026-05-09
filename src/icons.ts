@@ -219,7 +219,7 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // a dial title, so it stays plain so as not to mislead.
   const headerSvg = titleVisible
     ? (titleStyled
-        ? `<rect x="0" y="0" width="200" height="${TITLE_H}" fill="#0055cc" fill-opacity="0.22"/>` +
+        ? `<rect x="0" y="0" width="200" height="${TITLE_H}" fill="#0a1a4a"/>` +
           `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>`
         : `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" text-anchor="middle">${title}</text>`)
     : '';
@@ -262,7 +262,7 @@ export function optionsPanelDualSvg(
   // Same style as optionsPanelSvg / bandSelectPanelSvg so all dials share
   // one visual idiom.
   const titleSvg = title
-    ? `<rect x="0" y="0" width="${SVG_W}" height="${TITLE_H}" fill="#0055cc" fill-opacity="0.22"/>` +
+    ? `<rect x="0" y="0" width="${SVG_W}" height="${TITLE_H}" fill="#0a1a4a"/>` +
       `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>`
     : '';
 
@@ -367,7 +367,7 @@ export function bandSelectPanelSvg(
   // Title bar: same saturated-blue treatment as optionsPanelSvg so all
   // dial titles share one visual style.
   const header =
-    `<rect x="0" y="0" width="${SVG_W}" height="${HEADER_H}" fill="#0055cc" fill-opacity="0.22"/>` +
+    `<rect x="0" y="0" width="${SVG_W}" height="${HEADER_H}" fill="#0a1a4a"/>` +
     `<text x="100" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">Band</text>`;
 
   const renderRow = (i: number): string => {
@@ -440,7 +440,7 @@ export function optionsPanelBandSvg(
     ? `${bandLabels[activeBandIdx]} Opts`
     : 'Opts';
   const header =
-    `<rect x="0" y="0" width="${SVG_W}" height="${HEADER_H}" fill="#0055cc" fill-opacity="0.22"/>` +
+    `<rect x="0" y="0" width="${SVG_W}" height="${HEADER_H}" fill="#0a1a4a"/>` +
     `<text x="${COL_W / 2}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">Band</text>` +
     `<text x="${COL_W + COL_W / 2}" y="${HEADER_H - 2}" fill="#ffffff" font-size="${FS}" font-family="monospace" font-weight="bold" text-anchor="middle">${optsHeaderText}</text>`;
 

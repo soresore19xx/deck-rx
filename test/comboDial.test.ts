@@ -89,6 +89,35 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     expect(amSvg!).not.toMatch(/Deemph/);
   }, 15_000);
 
+  it('hydrates persisted demodMode at startup (regression for connect-time listener fire)', async () => {
+    // Bug: spyService.connect() assigned cfg.demodMode to currentDemodMode
+    // without notifying subscribers, so the Combo dial's local mirror stayed
+    // at default (1) and the Opts column rendered the wrong shape on first
+    // paint after a restart with an SSB mode persisted.
+    //
+    // Fix at src/spyService.ts: after the assignment, fire the
+    // demodModeListeners. This test asserts the dial's final post-hydration
+    // setFeedback shape matches the persisted mode (USB → SSB Opts shape).
+    harness = await startPlugin({ config: {
+      enabled: true,
+      demodMode: 4,           // USB
+      host: '10.255.255.1',   // unroutable so TCP just times out
+      port: 1,
+      audioEnabled: false,
+    } });
+    const cap = harness.startCapture();
+    await harness.willAppearDial(COMBO_UUID, CTX);
+    await harness.settle(2500);
+    const fbs = cap.stop().filter(m => (m as { event?: string }).event === 'setFeedback' && (m as SetFeedbackMsg).context === CTX);
+    expect(fbs.length).toBeGreaterThan(0);
+    // Last setFeedback must reflect the hydrated SSB mode (BFO row present).
+    const lastSvg = decodeOptionsSvg(fbs[fbs.length - 1]);
+    expect(lastSvg, 'expected SSB Opts shape after connect-time hydration').toMatch(/>BFO</);
+    // And the Band column's bullet should sit on the USB row (BAND_LABELS
+    // index 3 = USB → row baseline y = 12 + 4*12 = 60).
+    expect(lastSvg).toMatch(/y="60"[^>]*text-anchor="end">●</);
+  }, 15_000);
+
   it('Opts column shrinks from 6 rows (FM/AM) to 3 rows (SSB) when cursor is on USB band and confirmed', async () => {
     harness = await startPlugin();
     await harness.willAppearDial(COMBO_UUID, CTX);

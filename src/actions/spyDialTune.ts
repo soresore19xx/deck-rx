@@ -513,11 +513,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       const { num, unit } = freqParts(freq);
       const auto = autoStationLabel(freq, spyService.getJpActiveRegion());
-      // VFO header: only the station name (when known) or "step:Nk". The
-      // "VFO" prefix is gone because Mode now lives left of the freq digits.
-      const baseHeader = auto ? auto : `step:${formatStep(this.stepHz)}`;
-      const header = !this.enabled ? `OFF  ${baseHeader}`
-                   : offline        ? `LINK  ${baseHeader}`
+      // VFO header: station name when known, otherwise blank. The "VFO"
+      // prefix and step value were removed — Mode is shown left of the
+      // freq digits and the step value is visible in the Combo dial's
+      // Mode/Step row, so duplicating it on the Tune header just added
+      // visual noise.
+      const baseHeader = auto ?? '';
+      const header = !this.enabled ? (baseHeader ? `OFF  ${baseHeader}` : 'OFF')
+                   : offline        ? (baseHeader ? `LINK  ${baseHeader}` : 'LINK')
                    : baseHeader;
       const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', 'VFO', showStereo));
       const headerImg = D(makeHeaderSvg(header, false));

@@ -28,13 +28,43 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 
 ![Deck RX — all four LCD panels](docs/lcd-combined.png)
 
-- **Deck RX Dial** — VFO / preset scrolling, 7-seg frequency, FM stereo lock badge, ATS-Mini-style N (SNR) / S (RSSI) bars, `HH:MM TZ` clock; long-press (≥ 2 s) for master ON/OFF
-- **Deck RX Volume + Status** — 0–150 % volume / mute, conn state, host, device, audio output, icecast publish health
-- **Deck RX Options** (FM/NFM) — Deemphasis / IFNR / HPF / LPF / Stereo / Gain
-- **Deck RX AM Options** — BW / Carrier AGC / Attack / Decay / Gain
-- **Deck RX Combo Options** — unified Band selector (WFM / NFM / AM / USB / LSB / CW) on the left column + mode-dependent Options on the right column. PUSH on a Band row immediately switches the demod mode (no edit-mode roundtrip); the Opts column auto-shapes to AM (BW / CAGC / Sync / Atk / Dec / Gain), FM (Deemph / IFNR / HPF / LPF / Ste / Gain), or SSB (BW / BFO / Gain) depending on the active demod. Mode/Step (preset ⇄ vfo + step cycle) lives at the bottom of the Band column. The Tune dial follows the Band PUSH automatically: it jumps to the first matching-mode preset that's actually receivable on the connected SDR; for SSB / CW where presets typically don't exist, it falls back to a band-representative default (USB → 14.200 MHz, LSB → 7.100 MHz, CW → 7.025 MHz, NFM → 145.000 MHz), so a Band PUSH always moves the dial to a sensible freq even in VFO mode. Returning to AM/WFM finds a matching preset and restores attribution. The legacy single-mode `Deck RX Options` and `Deck RX AM Options` panels are still registered for users who prefer one panel per mode; both auto-dim with a `(<live mode> live)` title hint when the active demod doesn't match the panel's mode (e.g., AM Options shows `AM Options (USB live)` and locks out edits while in USB)
+- **Deck RX Dial** — VFO / preset scrolling, 7-seg frequency, FM stereo lock badge, ATS-Mini-style N (SNR) / S (RSSI) bars, `HH:MM TZ` clock; long-press (≥ 2 s) for master ON/OFF. Header carries the JP DB-resolved station name + 識別信号 callsign + 送信地 (e.g. `NHK第1 JOAK (東京)`).
 
-![Combo dial — all 6 demod modes](docs/lcd-combo-modes.png)
+  ![Tune dial](docs/lcd-tune.png)
+
+- **Deck RX Volume + Status** — 0–150 % volume / mute, conn state, host, device, audio output, icecast publish health. Title bar carries the `HH:MM TZ` clock so the Tune dial's freq area is left to the 7-seg.
+
+  ![Volume + Status dial](docs/lcd-volume.png)
+
+- **Deck RX Combo Options** — unified Band selector (WFM / NFM / AM / USB / LSB / CW) on the left column + mode-dependent Options on the right column. PUSH on a Band row immediately switches the demod mode (no edit-mode roundtrip); the Opts column auto-shapes to AM (BW / CAGC / Sync / Atk / Dec / Gain), FM (Deemph / IFNR / HPF / LPF / Ste / Gain), or SSB (BW / BFO / Gain) depending on the active demod. Mode/Step (preset ⇄ vfo + step cycle) lives at the bottom of the Band column. The Tune dial follows the Band PUSH automatically: it jumps to the first matching-mode preset that's actually receivable on the connected SDR; for SSB / CW where presets typically don't exist, it falls back to a band-representative default (USB → 14.200 MHz, LSB → 7.100 MHz, CW → 7.025 MHz, NFM → 145.000 MHz), so a Band PUSH always moves the dial to a sensible freq even in VFO mode. Returning to AM/WFM finds a matching preset and restores attribution.
+
+  ![Combo Options dial](docs/lcd-options-combo.png)
+
+  ![Combo dial — all 6 demod modes](docs/lcd-combo-modes.png)
+
+- **Deck RX Options** (FM/NFM) — Deemphasis / IFNR / HPF / LPF / Stereo / Gain. Auto-dims and shows `(<live mode> live)` title hint + locks out edits when the active demod isn't FM-family.
+
+  ![FM Options dial](docs/lcd-options-fm.png)
+
+- **Deck RX AM Options** — BW / Carrier AGC / Sync / Attack / Decay / Gain. Auto-dims and shows `(<live mode> live)` (e.g. `AM Options (USB live)`) + locks out edits when active demod isn't AM (symmetric to FM Options above).
+
+  ![AM Options dial](docs/lcd-options-am.png)
+
+- **Deck RX SSB Options** — BW (250 Hz – 2.8 kHz CW + voice) / BFO (CW pitch 400–900 Hz) / Mode / Gain. Active only while USB / LSB / CW is the live demod.
+
+  ![SSB Options dial](docs/lcd-options-ssb.png)
+
+- **Deck RX Band Select** — full-width Band column variant of the Combo dial without the Opts side. Useful when a user pairs it with a separate Options dial of their choice.
+
+  ![Band Select dial](docs/lcd-band-select.png)
+
+- **Deck RX Options Auto** — single-column, auto-shaping Options panel (`<MODE> Options` title). Shows the row set for whatever the active demod is (AM / FM / SSB), no Band column.
+
+  ![Options Auto dial](docs/lcd-options-auto.png)
+
+- **Deck RX Options 2-Col** — two-column comparison view: AM rows on the left, FM rows on the right. The active demod's column is bright; the inactive column shows live values dimmed for at-a-glance contrast.
+
+  ![Options 2-Col dial](docs/lcd-options-2col.png)
 
 See [docs/architecture.md](docs/architecture.md) for layout details, focus highlight colours, and signal-path notes.
 

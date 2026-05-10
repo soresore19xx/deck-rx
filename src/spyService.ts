@@ -36,6 +36,15 @@ export interface FMOptions {
   highPass: boolean;
   lowPass: boolean;
   stereo: boolean;
+  // IF passband one-sided bandwidth (Hz). SDR++-style, regulator-aligned
+  // values for Japanese broadcast FM where the licensed channel is 200
+  // kHz wide (occupied) but the receiver may want a narrower IF for
+  // adjacent rejection in dense urban allotments.
+  //   200000 = full-spec, retains every modulation feature (Carson)
+  //   150000 = light tightening, still keeps stereo subcarrier (53 kHz)
+  //   110000 = community-FM friendly, slight HF audio loss above 14 kHz
+  //   80000  = aggressive adjacent rejection, mono-leaning content
+  bandwidth: number;
 }
 
 const DEFAULT_FM_OPTIONS: FMOptions = {
@@ -44,6 +53,7 @@ const DEFAULT_FM_OPTIONS: FMOptions = {
   highPass: true,
   lowPass: true,
   stereo: false,
+  bandwidth: 200000,  // SDR++ default for WFM is also 200 kHz
 };
 
 export interface AMOptions {
@@ -639,6 +649,12 @@ class SpyService {
         fm.lowPass  ? 15000 : this.currentAudioRate * 0.45,
         fm.highPass ? 30    : 0,
       );
+    }
+    // IF passband — half the channel bandwidth becomes the LPF cutoff on
+    // the complex IQ stream before the discriminator. 200 kHz channel →
+    // 100 kHz cutoff; 150 kHz → 75 kHz; etc.
+    if (this.currentIQRate > 0) {
+      this.demod.setWfmIfBandwidth(this.currentIQRate, fm.bandwidth / 2);
     }
     streamDeck.logger.info(`[spyService] applyFMOptions ${JSON.stringify(fm)}`);
   }

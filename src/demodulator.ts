@@ -434,26 +434,34 @@ export class Demodulator {
     this.pllBeta = (omegaN * omegaN) / (iqRate * iqRate);
     // Phase-detector LPF cutoff at 5x loop BW for stable PD output
     this.pllPdLpfAlpha = Math.min(1, 2 * Math.PI * (bwHz * 5) / iqRate);
-    // WFM IF LPF: 8th-order Butterworth complex LPF (4 cascaded biquads on
-    // I and Q each) at 80 kHz cutoff. Tightened from 4th-order / 90 kHz
-    // because adjacent FM stations 100–300 kHz away in central 関東
-    // beat through the previous configuration's modest stopband. 80 kHz
-    // cutoff still preserves Carson's-rule FM peak (75 kHz) + stereo
-    // subcarrier (53 kHz baseband), so the legitimate signal is intact.
-    // Configured here because setStereo runs whenever WFM is the active
-    // mode (spyService calls it from startAudio); rate-aware so re-init
-    // works on iqRate change.
-    if (this.wfmIfRate !== iqRate) {
-      // Q values for cascaded second-order sections of an 8th-order
-      // Butterworth filter (poles equispaced on the unit circle).
-      const Q8 = [0.5097955791, 0.6013396757, 0.9000182960, 2.5629154236];
-      for (let k = 0; k < 4; k++) {
-        this.wfmIfLpfI[k].setLowPass(iqRate, 80000, Q8[k]);
-        this.wfmIfLpfQ[k].setLowPass(iqRate, 80000, Q8[k]);
-      }
-      this.wfmIfRate = iqRate;
-    }
+    // WFM IF LPF cutoff is configured separately via setWfmIfBandwidth so
+    // the cutoff can change at runtime when the user picks a different
+    // FM bandwidth (Mode preset BW row in FM Options). Default cutoff is
+    // installed lazily here only when no bandwidth has been set yet, so
+    // upgrade flows from before the BW selector existed get the previous
+    // 80 kHz default.
+    if (this.wfmIfRate === 0) this.setWfmIfBandwidth(iqRate, 80000);
     this.stereoConfigured = true;
+  }
+
+  /** Configure the WFM complex IF LPF — 8th-order Butterworth, cutoff in Hz.
+   *  Called when the user changes FM bandwidth or when iqRate changes. */
+  setWfmIfBandwidth(iqRate: number, cutoffHz: number): void {
+    // Clamp to a sane range: lower bound = pilot frequency × 1.5 so the
+    // 19 kHz pilot stays well inside the passband; upper bound = 95 % of
+    // Nyquist so the digital filter doesn't pin its pole on the unit
+    // circle and ring.
+    const minCut = 30_000;
+    const maxCut = Math.max(minCut + 1, iqRate * 0.45);
+    const fc = Math.max(minCut, Math.min(maxCut, cutoffHz));
+    // Q values for cascaded second-order sections of an 8th-order
+    // Butterworth filter (poles equispaced on the unit circle).
+    const Q8 = [0.5097955791, 0.6013396757, 0.9000182960, 2.5629154236];
+    for (let k = 0; k < 4; k++) {
+      this.wfmIfLpfI[k].setLowPass(iqRate, fc, Q8[k]);
+      this.wfmIfLpfQ[k].setLowPass(iqRate, fc, Q8[k]);
+    }
+    this.wfmIfRate = iqRate;
   }
   isStereoConfigured(): boolean { return this.stereoConfigured; }
 

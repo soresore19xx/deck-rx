@@ -12,6 +12,16 @@ function formatTuneStep(hz: number): string {
 type Settings = { borderSide?: 'left' | 'right' | 'center' | 'none' };
 
 const DEEMPH_CYCLE: DeemphasisOpt[] = ['off', '50us', '75us'];
+// SDR++-style WFM IF passband options. 200 kHz preserves full Carson FM
+// (regulated channel width); narrower values trade a touch of HF audio
+// content for adjacent-channel rejection in dense urban allotments.
+const BW_CYCLE_FM: number[] = [200_000, 150_000, 110_000, 80_000];
+function fmtFmBw(hz: number): string { return `${(hz / 1000) | 0}k`; }
+function nextInArray<T>(arr: T[], cur: T, ticks: number): T {
+  const i = arr.indexOf(cur);
+  const n = ((i < 0 ? 0 : i) + (ticks > 0 ? 1 : -1) + arr.length) % arr.length;
+  return arr[n];
+}
 
 interface OptionDef {
   label: string;
@@ -20,6 +30,7 @@ interface OptionDef {
 }
 
 const OPTIONS: OptionDef[] = [
+  { label: 'BW',      format: (o) => fmtFmBw(o.bandwidth),       cycle: (o, t) => ({ bandwidth: nextInArray(BW_CYCLE_FM, o.bandwidth, t) }) },
   {
     label: 'De-emph',
     format: (o) => o.deemphasis === 'off' ? 'Off' : o.deemphasis,

@@ -29,6 +29,7 @@ const OPTS_START_IDX = BAND_COUNT + 1;         // 7
 
 const DEEMPH_CYCLE: DeemphasisOpt[] = ['off', '50us', '75us'];
 const BW_CYCLE_AM = [4000, 6000, 9000, 12000];
+const BW_CYCLE_FM = [200_000, 150_000, 110_000, 80_000];
 const BW_CYCLE_SSB = [250, 500, 1000, 1800, 2400, 2800];
 const BFO_CYCLE = [400, 500, 600, 700, 800, 900];
 const ATK_MIN = 1, ATK_MAX = 200;
@@ -77,6 +78,7 @@ function buildAmOptsRows(o: AMOptions, gain: number, maxGain: number): OptionsPa
 }
 function buildFmOptsRows(o: FMOptions, gain: number, maxGain: number): OptionsPanelRow[] {
   return [
+    { label: 'BW',     value: fmtBw(o.bandwidth) },
     { label: 'Deemph', value: o.deemphasis === 'off' ? 'Off' : o.deemphasis },
     { label: 'IFNR',   value: o.ifnr     ? 'On' : 'Off' },
     { label: 'HPF',    value: o.highPass ? 'On' : 'Off' },
@@ -275,17 +277,18 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
     } else {
       const cur = spyService.getFMOptions();
       switch (optsIdx) {
-        case 0: {
+        case 0: await spyService.setFMOption('bandwidth', nextInArray(BW_CYCLE_FM, cur.bandwidth, ticks)); break;
+        case 1: {
           const i = DEEMPH_CYCLE.indexOf(cur.deemphasis);
           const n = (i + (ticks > 0 ? 1 : -1) + DEEMPH_CYCLE.length) % DEEMPH_CYCLE.length;
           await spyService.setFMOption('deemphasis', DEEMPH_CYCLE[n]);
           break;
         }
-        case 1: await spyService.setFMOption('ifnr',     !cur.ifnr); break;
-        case 2: await spyService.setFMOption('highPass', !cur.highPass); break;
-        case 3: await spyService.setFMOption('lowPass',  !cur.lowPass); break;
-        case 4: await spyService.setFMOption('stereo',   !cur.stereo); break;
-        case 5: await spyService.setFmGain(spyService.getFmGain() + ticks); break;
+        case 2: await spyService.setFMOption('ifnr',     !cur.ifnr); break;
+        case 3: await spyService.setFMOption('highPass', !cur.highPass); break;
+        case 4: await spyService.setFMOption('lowPass',  !cur.lowPass); break;
+        case 5: await spyService.setFMOption('stereo',   !cur.stereo); break;
+        case 6: await spyService.setFmGain(spyService.getFmGain() + ticks); break;
       }
     }
   }

@@ -212,7 +212,11 @@ export class Demodulator {
   /** CW demodulator: rotate the complex IQ stream by +f_bfo so the
    *  unmodulated carrier (DC at direct-conversion baseband) becomes an
    *  audible tone at f_bfo. Output = real part of the rotated stream. */
-  processCW(iq: Buffer, decimate: number, gain = 12000): Int16Array {
+  // CW direct-shift demod produces audio at the BFO tone amplitude, which
+  // for typical 国内 amateur signals lands well below AM envelope levels.
+  // Same 4x boost (12000 → 48000) as processSSB above for matching
+  // output loudness.
+  processCW(iq: Buffer, decimate: number, gain = 48000): Int16Array {
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);
     const out = new Int16Array(outSamples * 2);
@@ -256,7 +260,13 @@ export class Demodulator {
    * Caller must invoke setupSsb() once after constructing the demodulator
    * (or whenever iqRate / audioRate / fOffset change).
    */
-  processSSB(iq: Buffer, decimate: number, sideBand: 'USB' | 'LSB', gain = 12000): Int16Array {
+  // SSB Weaver demod outputs roughly 4x quieter audio than AM envelope
+  // detection for the same input IQ level (narrow 2.4 kHz audio band +
+  // demod path divides energy across in-phase / quadrature). With the
+  // earlier `gain = 12000` default, 国内 ham QSOs at typical signal
+  // strength were barely audible even at SDR RF gain 8/8 — bumped to
+  // 48000 (4x) so signals come out at ~AM listening level.
+  processSSB(iq: Buffer, decimate: number, sideBand: 'USB' | 'LSB', gain = 48000): Int16Array {
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);
     const out = new Int16Array(outSamples * 2);

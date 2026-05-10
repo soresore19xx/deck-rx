@@ -49,10 +49,16 @@ export interface JpStation {
   // separated by 、 / ・ are kept verbatim ("父島、母島" / "東京・墨田").
   // Older jp-stations.json entries without this field still load fine.
   siteName?: string;
+  // Optional 識別信号 (callsign), e.g. "JOAK" for NHK第1 東京 / "JOLF" for
+  // ニッポン放送. Sourced from 総務省「無線局等情報検索」 (公共データ利用規約
+  // 第1.0版, https://www.tele.soumu.go.jp/musen/) via scripts/fetch-callsigns.ts
+  // and merged into the live data file. Some licensed transmitters (予備設備
+  // 等) carry no callsign in the source — those entries simply omit this field.
+  callsign?: string;
 }
 
 /**
- * Render a station for the dial header. Two transformations on top of the
+ * Render a station for the dial header. Three transformations on top of the
  * raw `name`:
  *
  *   1. Channel inference for NHK — post-2025-03 NHKラジオ第2 closure, every
@@ -61,11 +67,14 @@ export interface JpStation {
  *      otherwise leave 33+ entries indistinguishable. We only special-case
  *      the canonical bare "NHK" — manual entries that explicitly say e.g.
  *      "NHKラジオ第2" pass through unchanged.
- *   2. Site annotation — when siteName is present we append it in
+ *   2. Callsign infix — when callsign is present we insert it between the
+ *      name (or channel-resolved name) and the site: "NHK第1 JOAK (東京)".
+ *      Without callsign the name + site form is unchanged.
+ *   3. Site annotation — when siteName is present we append it in
  *      half-width parens: "TOKYO FM" + "東京" → "TOKYO FM (東京)". Empty /
- *      missing siteName falls through to bare name (current behaviour).
+ *      missing siteName falls through to bare name.
  *
- * Width: long names + " (site)" can exceed the 200 px header but
+ * Width: long names + callsign + " (site)" can exceed the 200 px header but
  * `makeHeaderSvg` already auto-shrinks (14 → 12 → spacingAndGlyphs squeeze),
  * so callers don't need to pre-clip.
  */
@@ -74,6 +83,7 @@ export function formatJpStationLabel(s: JpStation): string {
   if (name === 'NHK') {
     name = s.band === 'MW' ? 'NHK第1' : 'NHK-FM';
   }
+  if (s.callsign) name = `${name} ${s.callsign}`;
   return s.siteName ? `${name} (${s.siteName})` : name;
 }
 
@@ -86,11 +96,32 @@ interface JpStationFile {
   manualStations?: JpStation[];
 }
 
+// Sidecar callsign DB sourced from 総務省「無線局等情報検索」 via
+// scripts/fetch-callsigns.ts. Stored as a separate file so a re-fetch
+// (~50 min, 公共データ利用規約 第1.0版 準拠) does not disturb the curated
+// stations / manualStations data, and the join (freqHz match) happens at
+// lookup time.
+interface CallsignFile {
+  callsigns?: Array<{
+    freqHz: number;
+    band: 'FM' | 'MW';
+    callsign: string;
+    location: string;
+    operatorName: string;
+  }>;
+}
+
+function callsignsPath(): string {
+  return process.env.DECK_RX_CALLSIGNS_PATH
+    ?? join(__dirname, '..', 'data', 'callsigns.json');
+}
+
 let stations: JpStation[] | null = null;
 let manualStations: JpStation[] | null = null;
+let callsigns: CallsignFile['callsigns'] | null = null;
 
-function load(): { auto: JpStation[]; manual: JpStation[] } {
-  if (stations && manualStations) return { auto: stations, manual: manualStations };
+function load(): { auto: JpStation[]; manual: JpStation[]; cs: NonNullable<CallsignFile['callsigns']> } {
+  if (stations && manualStations && callsigns) return { auto: stations, manual: manualStations, cs: callsigns };
   try {
     const raw = readFileSync(dataPath(), 'utf-8');
     const data = JSON.parse(raw) as JpStationFile;
@@ -101,7 +132,31 @@ function load(): { auto: JpStation[]; manual: JpStation[] } {
     stations = [];
     manualStations = [];
   }
-  return { auto: stations, manual: manualStations };
+  try {
+    const raw = readFileSync(callsignsPath(), 'utf-8');
+    const data = JSON.parse(raw) as CallsignFile;
+    callsigns = (data.callsigns ?? []).filter(c => c.freqHz > 0 && !!c.callsign);
+  } catch {
+    callsigns = [];
+  }
+  return { auto: stations, manual: manualStations, cs: callsigns };
+}
+
+// Find the closest 総務省 callsign entry within the same tolerance the
+// station scan uses (MW 500 Hz / FM 5 kHz). Multiple licensed transmitters
+// can sit on the same nominal freq across regions, so we pick the smallest
+// delta and ignore region — the caller (lookupJpStation) has already
+// resolved a single region-correct station entry.
+function findCallsign(freqHz: number, band: 'FM' | 'MW', list: NonNullable<CallsignFile['callsigns']>): string | undefined {
+  const tol = band === 'FM' ? FM_TOLERANCE_HZ : MW_TOLERANCE_HZ;
+  let best: string | undefined;
+  let bestDelta = Infinity;
+  for (const c of list) {
+    if (c.band !== band) continue;
+    const d = Math.abs(c.freqHz - freqHz);
+    if (d <= tol && d < bestDelta) { best = c.callsign; bestDelta = d; }
+  }
+  return best;
 }
 
 export function getJpStationsPath(): string {
@@ -151,7 +206,7 @@ export function lookupJpStation(freqHz: number, activeRegion?: JpRegion): JpStat
   if (!band) return null;
 
   const tol = band === 'FM' ? FM_TOLERANCE_HZ : MW_TOLERANCE_HZ;
-  const { auto, manual } = load();
+  const { auto, manual, cs } = load();
 
   // Region filter: when activeRegion is supplied, both auto and manual pools
   // are filtered to entries tagged with that region. Untagged entries (no
@@ -170,8 +225,17 @@ export function lookupJpStation(freqHz: number, activeRegion?: JpRegion): JpStat
   // generic "NHK" naming).
   const m = scan(filteredManual, freqHz, band, tol);
   const a = scan(filteredAuto,   freqHz, band, tol);
-  if (m && a) return m.delta <= a.delta ? m.entry : a.entry;
-  return (m ?? a)?.entry ?? null;
+  let best: JpStation | null = null;
+  if (m && a) best = m.delta <= a.delta ? m.entry : a.entry;
+  else best = (m ?? a)?.entry ?? null;
+  if (!best) return null;
+  // Annotate with callsign from the sidecar 総務省 DB if not already set.
+  // Manually-curated entries that already carry a callsign keep theirs.
+  if (!best.callsign) {
+    const cscall = findCallsign(freqHz, band, cs);
+    if (cscall) best = { ...best, callsign: cscall };
+  }
+  return best;
 }
 
 export function jpStationCount(): number {

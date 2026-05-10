@@ -148,4 +148,28 @@ describe('formatJpStationLabel — display formatting', () => {
   it('693 kHz NHKラジオ第2 has been removed from manualStations (2025-03 closure)', () => {
     expect(lookupJpStation(693_000, 'kanto')).toBeNull();
   });
+
+  // 識別信号 (callsign) is the third format axis, sourced from 総務省 via
+  // scripts/fetch-callsigns.ts. The infix sits between the (channel-resolved)
+  // name and the parens-site, so all three pieces compose cleanly.
+  it('NHK MW + callsign + siteName: "NHK第1 JOAK (東京)"', () => {
+    expect(formatJpStationLabel({
+      freqHz: 594_000, band: 'MW', name: 'NHK', callsign: 'JOAK', siteName: '東京',
+    })).toBe('NHK第1 JOAK (東京)');
+  });
+  it('NHK FM + callsign + siteName: "NHK-FM JOAK-FM (東京・墨田)"', () => {
+    expect(formatJpStationLabel({
+      freqHz: 82_500_000, band: 'FM', name: 'NHK', callsign: 'JOAK-FM', siteName: '東京・墨田',
+    })).toBe('NHK-FM JOAK-FM (東京・墨田)');
+  });
+  it('non-NHK + callsign + siteName: "TBSラジオ JOKR (東京)"', () => {
+    expect(formatJpStationLabel({
+      freqHz: 954_000, band: 'MW', name: 'TBSラジオ', callsign: 'JOKR', siteName: '東京',
+    })).toBe('TBSラジオ JOKR (東京)');
+  });
+  it('callsign without siteName: "TBSラジオ JOKR"', () => {
+    expect(formatJpStationLabel({
+      freqHz: 954_000, band: 'MW', name: 'TBSラジオ', callsign: 'JOKR',
+    })).toBe('TBSラジオ JOKR');
+  });
 });

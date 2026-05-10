@@ -32,5 +32,8 @@ conversation-*.txt
 # Claude Code permission-mode startup logs
 **/*-permission-mode.txt
 
+# Claude Code per-project local state (scheduled tasks lock, local settings)
+.claude/
+
 # Personal developer notes (host paths / incident logs — keep out of public repo)
 docs/dev-notes.md

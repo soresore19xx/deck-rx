@@ -1,0 +1,3695 @@
+<!DOCTYPE HTML>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<html lang="ja">
+
+<head>
+<meta charset="UTF-8">
+<title>総務省 電波利用ポータル | 無線局等情報検索</title>
+<meta name="viewport" content="width=1160">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="format-detection" content="telephone=no">
+<meta http-equiv="content-style-type" content="text/css">
+<meta http-equiv="content-script-type" content="text/javascript">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<meta name="Robots" content="index,follow">
+<meta name="DC.Language" content="ja-jp">
+<meta name="DC.Date" content="2006-02-20">
+<meta name="Keywords" content="電波利用,無線局,免許,登録,簡易検索,放送形態,テレビ,ラジオ">
+<meta name="description" content="電波利用,無線局,免許,登録,簡易検索,放送形態,テレビ,ラジオ">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/assets/css/sjis_style.css">
+</head>
+
+<body onload="hfLoad('tab_adm');EsyBCA001('null','null','null' );
+EsyBCA008(03,'BBC','null','null','null','null',
+'null','null','null','null','null','null','2','100','null');" class="adm">
+
+  
+  <div id="comHeader"></div>
+
+  <div id="contents">
+    <div class="l-page-header">
+      <div class="l-inner">
+        <h1 class="page-ttl">無線局等情報検索</h1>
+      </div>
+    </div>
+    <div class="l-container">
+      <div class="l-main">
+        <div class="l-topicpath">
+          <div class="l-inner">
+            <ol>
+              <li>
+                <a href="/index.htm">HOME</a>
+              </li>
+              <li>
+                <a href="/j/proc/index.htm">免許関係</a>
+              </li>
+              <li>
+                <a href="/j/musen/index.htm">検索・統計</a>
+              </li>
+              <li>
+                <a href="/musen/SearchServlet?pageID=1">無線局等情報検索</a>
+              </li>
+              <li>
+                <span>種類で探す</span>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+<div id="temp1">
+<h2 class="m-hdg2">種類で探す</h2>
+
+
+<div class="tele-formbox">
+	<form method="get" id="select_condition" name="select_condition" action="#result">
+		<input type="hidden" name="SC" value="1">
+		<input type="hidden" name="pageID" value="3">
+		<input type="hidden" name="SelectID" value="2">
+		<input type="hidden" name="CONFIRM" value="0">	
+		
+		<input type="hidden" name="MK" value="BBC">
+		
+		<h3 class="tele-formbox__title">検索条件</h3>
+		<div class="tele-formbox__content">
+			<div class="m-block">
+				<div class="m-form-block m-col2">
+					<div class="m-form-block__item">
+						<label class="m-form-label">
+	    	            	放送形態
+	    	            	<span class="m-label-required">必須</span>
+	    	        	</label>
+						<select class="m-form-select" name="SelectHSK" id="SelectHSK" onchange="EsyBCA010()">
+							<optgroup label="------テレビ------">
+								<option value="01">デジタル放送</option>
+								
+							</optgroup>
+							<optgroup label="------ラジオ------">
+								<option value="03">ＡＭ・短波</option>
+								<option value="04">ＦＭ</option>
+							</optgroup>
+						</select>
+					</div>
+				</div>
+			</div>
+			<div class="m-block">
+				<div class="m-form-block m-col2">
+					<div class="m-form-block__item">
+						<label class="m-form-label">
+							所轄総合通信局
+	    	        	</label>
+						<select class="m-form-select" name="IT" id="IT" size=1>
+							<option value="">指定なし</option>
+							<option value="J">北海道総合通信局</option>
+							<option value="I">東北総合通信局</option>
+							<option value="A">関東総合通信局</option>
+							<option value="B">信越総合通信局</option>
+							<option value="D">北陸総合通信局</option>
+							<option value="C">東海総合通信局</option>
+							<option value="E">近畿総合通信局</option>
+							<option value="F">中国総合通信局</option>
+							<option value="G">四国総合通信局</option>
+							<option value="H">九州総合通信局</option>
+							<option value="O">沖縄総合通信事務所</option>
+						</select>
+					</div>
+				</div>
+			</div>
+			<div class="m-block">
+				<div class="m-form-block m-col2">
+					<div class="m-form-block__item">
+						<label class="m-form-label">
+							都道府県
+	    	        	</label>
+						<select class="m-form-select" name="HC" id="HC" size=1>
+						</select>
+					</div>
+				</div>
+			</div>
+			<div class="m-block">
+				<div class="m-form-block m-col2">
+					<div class="m-form-block__item">
+						<label class="m-form-label">
+							市区町村
+	    	        	</label>
+						<select class="m-form-select" name="HV" id="HV" size=1>
+						</select>
+					</div>
+				</div>
+			</div>
+			<div class="m-block">
+				<div class="m-form-block m-col2">
+					<div class="m-form-block__item">
+						<label class="m-form-label">
+							無線局の目的
+	    	        	</label>
+						
+										
+										<select name="MK" id="MK" size=1 class="m-form-select is-disable" disabled="" aria-label="select disable">
+						
+									
+											<option value="BBC">基幹放送用</option>
+									
+										</select>
+					</div>
+				</div>
+			</div>
+			<div class="m-block">
+				<div class="m-form-block m-col2">
+					<div class="m-form-block__item">
+						<label class="m-form-label">
+							基幹放送の種類
+	    	        	</label>
+						<select class="m-form-select" name="KHS" id="KHS" size=1>
+						</select>
+					</div>
+				</div>
+			</div>
+			<div class="m-block">
+				<label class="m-form-label">周波数（From-To）</label>
+				<div class="m-form-multi">
+					<div class="m-form-multi__input">
+						<input name="FF" id="FF" size="25" maxlength="17" type="text" class="m-form-input__text" aria-label="周波数 from">
+					</div>
+					<div class="m-form-multi__range">〜</div>
+					<div class="m-form-multi__input">
+						<input name="TF" id="TF" size="25" maxlength="17" type="text" class="m-form-input__text" aria-label="周波数 to">
+					</div>
+					<div class="m-form-multi__unit">
+						<select name="HZ" id="HZ" class="m-form-select" aria-label="周波数 単位">
+							<option value="2">kHz</option>
+							<option value="3">MHz</option>
+							<option value="4">GHz</option>
+						</select>
+					</div>
+				</div>
+			</div>
+			<div class="m-block">
+				<label class="m-form-label" for="NA">免許人名称</label>
+				<input class="m-form-input__text" type="text" name="NA" id="NA" size="50" maxlength="100">
+			</div>
+			<!-- 年月日 FROM -->
+			<div class="m-block">
+				<label class="m-form-label" for="form-select">免許の年月日（From） </label>
+				<div class="m-form-input__radio-inner">
+					<div class="m-form-date-selection">
+						<div class="m-form-multi__input">
+							<input class="m-form-input__text" type="text" name="DFY" id="DFY" size="5" maxlength="4">
+						</div>
+						<label for="form-select-date-02">年</label>
+					</div>
+					<div class="m-form-date-selection">
+						<div class="m-form-multi__input">
+							<input class="m-form-input__text" type="text" name="DFM" id="DFM" size="3" maxlength="2">
+						</div>
+						<label for="form-select-date-03">月</label>
+					</div>
+					<div class="m-form-date-selection">
+						<div class="m-form-multi__input">
+							<input class="m-form-input__text" type="text" name="DFD" id="DFD" size="3" maxlength="2">
+						</div>
+						<label for="form-select-date-03">日</label>
+					</div>
+				</div>
+			</div>
+			<!-- /年月日 FROM -->
+
+			<!-- 年月日 TO -->
+			<div class="m-block">
+				<label class="m-form-label" for="form-select">免許の年月日（To）</label>
+				<div class="m-form-input__radio-inner">
+					<div class="m-form-date-selection">
+						<div class="m-form-multi__input">
+							<input class="m-form-input__text" type="text" name="DTY" id="DTY" size="5" maxlength="4">
+						</div>
+						<label for="form-select-date-02">年</label>
+					</div>
+					<div class="m-form-date-selection">
+						<div class="m-form-multi__input">
+							<input class="m-form-input__text" type="text" name="DTM" id="DTM" size="3" maxlength="2">
+						</div>
+						<label for="form-select-date-03">月</label>
+					</div>
+					<div class="m-form-date-selection">
+						<div class="m-form-multi__input">
+							<input class="m-form-input__text" type="text" name="DTD" id="DTD" size="3" maxlength="2">
+						</div>
+						<label for="form-select-date-03">日</label>
+					</div>
+				</div>
+			</div>
+			<!-- /年月日 TO -->
+			<ul class="m-list-button__bottom">
+				<li>
+					<button type="button" onClick="EsyBCA005(document.select_condition.FF.value, document.select_condition.TF.value, document.select_condition.DFY.value, document.select_condition.DFM.value, document.select_condition.DFD.value, document.select_condition.DTY.value, document.select_condition.DTM.value, document.select_condition.DTD.value)" class="m-button__primary-m" value="検索する">
+						検索する
+					</button>
+				</li>
+				<li>
+					<button type="button" class="m-button__tertiary-m" value="条件クリア" onClick="clearCondition()">
+						条件クリア
+					</button>
+				</li>
+			</ul>
+		</div>
+		<!-- TODO: ComResult.jsp に移行 -->
+		<select name="SK" id="SK" style="display: none;">
+			<option value="1">名称</option>
+			<option value="2">都道府県</option>
+			<option value="3">無線局の目的</option>
+			<option value="4">免許の年月日</option>
+		</select>
+		<select name="DC" id="DC" style="display: none;">
+			<option value="100">100件</option>
+			<option value="500">500件</option>
+		</select>
+	</form>
+</div>
+<ul class="m-list-button__bottom">
+	<li><button type="button" onClick="location.href='/musen/SearchServlet?pageID=1'" class="m-button__secondary-s">かんたん検索で探す</button></li>
+</ul>
+<a name="result"></a>
+<br>
+<h2 class="m-hdg2">検索結果</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div id="temp1">
+<br>
+<form name="result">
+
+
+	<div class="m-pagination__result-control-top">
+		<div class="m-pagination__result-control-number">
+        	<span>全 621 件中 1 - 100 件を表示</span>
+    	</div>
+		<div class="m-pagination__result-control-button">
+        <label for="LDC" class="m-pagination__result-control-button-label">
+          表示件数
+          <select name="DC" id="LDC" class="m-form-select" form="select_condition" onChange=EsyBCA005(document.select_condition.FF.value,document.select_condition.TF.value,document.select_condition.DFY.value,document.select_condition.DFM.value,document.select_condition.DFD.value,document.select_condition.DTY.value,document.select_condition.DTM.value,document.select_condition.DTD.value)>
+		  	<option value="100" selected>100件</option>
+			<option value="500" >500件</option>
+          </select>
+        </label>
+      </div>
+	</div>
+	
+	
+
+
+
+
+
+
+
+
+
+
+	<div class="m-pagination__result-control">
+    	<div class="m-pagination__result-control-pagination">
+    		<div class="m-pagination">
+    			<nav aria-label="Page navigation">
+    	    		<ul class="m-pagination">
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" tabindex="-1">
+								<img class="m-pagination__img" src="/assets/img/icon/icon_arrow_w_left.svg" alt="最初へ">
+							</a>
+						</li>
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" tabindex="-1">
+								<img class="m-pagination__img" src="/assets/img/icon/icon_arrow_left.svg" alt="前へ">
+							</a>
+						</li>
+						
+						
+						<li class="m-pagination__item is-current">
+							<a class="m-pagination__link" tabindex="-1">
+								1
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=101#result">
+								2
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=201#result">
+								3
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=301#result">
+								4
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=401#result">
+								5
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=501#result">
+								6
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=601#result">
+								7
+							</a>
+						</li>
+						
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&SC=101&CONFIRM=1#result">
+								<img class="m-pagination__img" src="/assets/img/icon/icon_arrow_right.svg" alt="次へ">
+							</a>
+						</li>
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&SC=601&CONFIRM=1#result">
+								<img class="m-pagination__img" src="/assets/img/icon/icon_arrow_w_right.svg" alt="次へ">
+							</a>
+						</li>
+					</ul>
+				</nav>
+			</div>
+		</div>
+	</div>
+
+	<div class="m-table-sort__wrapper is-overflow">
+		<table class="m-table-sort">
+			<colgroup>
+				<col class="m-table-sort__w">
+				<col>
+				<col>
+				<col>
+			</colgroup>
+			<thead class="m-table-sort__head">
+				
+				
+				<tr>
+					<th>
+						<button type="button" class="m-table-sort__head-inner " onClick="location.href='./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&pageID=3&SC=1&CONFIRM=1&SK=1#result'" title="クリックするとソートします">
+							名称
+						</button>
+					</th>
+					<th>
+						<button type="button" class="m-table-sort__head-inner is-sort desc" onClick="location.href='./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&pageID=3&SC=1&CONFIRM=1&SK=2#result'" title="クリックするとソートします'">
+							都道府県
+						</button>
+					</th>
+					<th>
+						<button type="button" class="m-table-sort__head-inner " onClick="location.href='./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&pageID=3&SC=1&CONFIRM=1&SK=3#result'" title="クリックするとソートします">
+							無線局の目的
+						</button>
+					</th>
+					<th>
+						<button type="button" class="m-table-sort__head-inner " onClick="location.href='./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&pageID=3&SC=1&CONFIRM=1&SK=4#result'" title="クリックするとソートします">
+							免許の年月日
+						</button>
+					</th>
+				</tr>
+			</thead>
+			<tbody class="m-table-sort__body">
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008760&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道函館市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008684&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道函館市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008685&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道函館市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008761&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道旭川市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008686&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道旭川市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008703&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道旭川市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008678&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道旭川市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009262&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道室蘭市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008693&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道室蘭市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008694&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道室蘭市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008677&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道室蘭市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008689&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道釧路市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008690&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道釧路市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009265&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道北見市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008759&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道北見市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008680&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道北見市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009261&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道網走市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008691&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道網走市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008692&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道網走市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008681&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道網走市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009886&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道留萌市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008699&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道留萌市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008700&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道留萌市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009884&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道留萌市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009855&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道苫小牧市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009943&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道苫小牧市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000010119&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道稚内市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008695&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道稚内市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008696&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道稚内市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000010118&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道稚内市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008743&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道江別市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008682&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道江別市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008683&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道江別市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008674&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道江別市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009264&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道名寄市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008701&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道名寄市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008702&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道名寄市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008667&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道名寄市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009887&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道根室市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008728&DD=1&styleNumber=01" target="_blank">
+							株式会社日経ラジオ社
+						</a>
+						
+						<br>法人番号7010401022998
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道根室市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008666&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道根室市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008711&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道根室市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009885&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道根室市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008675&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道北斗市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008720&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道松前郡松前町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000010899&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道檜山郡江差町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008697&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道檜山郡江差町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008698&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道檜山郡江差町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000010897&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道檜山郡江差町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008704&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道瀬棚郡今金町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008733&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道瀬棚郡今金町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000010900&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道久遠郡せたな町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000010898&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道久遠郡せたな町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000327830&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道天塩郡遠別町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008731&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道天塩郡遠別町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008732&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道天塩郡遠別町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000327831&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道天塩郡遠別町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008719&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道枝幸郡中頓別町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008791&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道枝幸郡中頓別町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000011012&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道紋別郡遠軽町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008748&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道紋別郡遠軽町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008869&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道紋別郡遠軽町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000011011&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道紋別郡遠軽町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008705&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道浦河郡浦河町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008920&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道浦河郡浦河町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008762&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道河東郡音更町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008687&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道河東郡音更町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008688&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道河東郡音更町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008723&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道広尾郡広尾町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008679&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道中川郡幕別町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000009263&DD=1&styleNumber=01" target="_blank">
+							株式会社ＳＴＶラジオ
+						</a>
+						
+						<br>法人番号6430001030286
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道釧路郡釧路町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008676&DD=1&styleNumber=01" target="_blank">
+							北海道放送株式会社
+						</a>
+						
+						<br>法人番号6430001022390
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道釧路郡釧路町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008668&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道標津郡中標津町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=J&DFCD=0000008717&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						北海道標津郡中標津町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010496&DD=1&styleNumber=01" target="_blank">
+							青森放送株式会社
+						</a>
+						
+						<br>法人番号1420001000261
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県青森市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010516&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県青森市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010517&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県青森市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010498&DD=1&styleNumber=01" target="_blank">
+							青森放送株式会社
+						</a>
+						
+						<br>法人番号1420001000261
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県弘前市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010524&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県弘前市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010525&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県弘前市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010497&DD=1&styleNumber=01" target="_blank">
+							青森放送株式会社
+						</a>
+						
+						<br>法人番号1420001000261
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県八戸市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010532&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県八戸市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010533&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県八戸市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000014397&DD=1&styleNumber=01" target="_blank">
+							青森放送株式会社
+						</a>
+						
+						<br>法人番号1420001000261
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県十和田市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000014396&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県十和田市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000011370&DD=1&styleNumber=01" target="_blank">
+							青森放送株式会社
+						</a>
+						
+						<br>法人番号1420001000261
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県西津軽郡深浦町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010581&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県西津軽郡深浦町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000434757&DD=1&styleNumber=01" target="_blank">
+							青森放送株式会社
+						</a>
+						
+						<br>法人番号1420001000261
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県上北郡野辺地町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000434765&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県上北郡野辺地町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000015142&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						青森県三戸郡田子町<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010577&DD=1&styleNumber=01" target="_blank">
+							株式会社アイビーシー岩手放送
+						</a>
+						
+						<br>法人番号9400001000033
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県宮古市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010538&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県宮古市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010539&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県宮古市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000011308&DD=1&styleNumber=01" target="_blank">
+							株式会社アイビーシー岩手放送
+						</a>
+						
+						<br>法人番号9400001000033
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県大船渡市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010546&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県大船渡市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010547&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県大船渡市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000012016&DD=1&styleNumber=01" target="_blank">
+							株式会社アイビーシー岩手放送
+						</a>
+						
+						<br>法人番号9400001000033
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県久慈市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010559&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県久慈市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010606&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県久慈市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+				
+				<tr class="m-table-sort__row">
+					<td >
+						
+						<a class="m-link" href="./SearchServlet?pageID=4&IT=I&DFCD=0000010603&DD=1&styleNumber=01" target="_blank">
+							日本放送協会
+						</a>
+						
+						<br>法人番号8011005000968
+						
+					</td>
+					
+					<td bgcolor="#e5f5eb">
+						
+						岩手県遠野市<br>
+						
+					</td>
+					
+					<td >
+						
+						基幹放送用
+						
+					</td>
+					
+					<td >
+						
+						令5.11.1
+						
+					</td>
+				</tr>
+				
+			</tbody>
+		</table>
+	</div>
+	
+	
+
+
+
+
+
+
+
+
+
+
+	<div class="m-pagination__result-control">
+    	<div class="m-pagination__result-control-pagination">
+    		<div class="m-pagination">
+    			<nav aria-label="Page navigation">
+    	    		<ul class="m-pagination">
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" tabindex="-1">
+								<img class="m-pagination__img" src="/assets/img/icon/icon_arrow_w_left.svg" alt="最初へ">
+							</a>
+						</li>
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" tabindex="-1">
+								<img class="m-pagination__img" src="/assets/img/icon/icon_arrow_left.svg" alt="前へ">
+							</a>
+						</li>
+						
+						
+						<li class="m-pagination__item is-current">
+							<a class="m-pagination__link" tabindex="-1">
+								1
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=101#result">
+								2
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=201#result">
+								3
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=301#result">
+								4
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=401#result">
+								5
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=501#result">
+								6
+							</a>
+						</li>
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&CONFIRM=1&SC=601#result">
+								7
+							</a>
+						</li>
+						
+						
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&SC=101&CONFIRM=1#result">
+								<img class="m-pagination__img" src="/assets/img/icon/icon_arrow_right.svg" alt="次へ">
+							</a>
+						</li>
+						<li class="m-pagination__item">
+							<a class="m-pagination__link" href="./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=3&SC=601&CONFIRM=1#result">
+								<img class="m-pagination__img" src="/assets/img/icon/icon_arrow_w_right.svg" alt="次へ">
+							</a>
+						</li>
+					</ul>
+				</nav>
+			</div>
+		</div>
+	</div>
+
+	<ul class="m-list-button__bottom">
+    	<li><button type="button" onClick="location.href='./SearchServlet?MK=BBC&SelectID=2&SelectHSK=03&DC=100&SK=2&pageID=5&SC=1&CONFIRM=1'" class="m-button__primary-m">この結果をダウンロードする</button></li>
+    </ul>
+
+
+</form>
+</div>
+
+
+<div class="bottom-box">
+            担当：総合通信基盤局電波部電波政策課
+</div>
+
+</div>
+
+      </div>
+    </div>
+  </div>
+
+  
+  <div id="comFooter"></div>
+
+  <!-- script -->
+  <script src="/assets/js/vendor/sjis_jquery-3.5.1.min.js"></script>
+  <script src="/assets/js/vendor/sjis_jquery.matchheight-min.js"></script>
+  <script src="/assets/js/vendor/sjis_jquery.easing.1.3.js"></script>
+  <script src="/assets/js/vendor/sjis_jquery-accessibleMegaMenu.js"></script>
+  <script src="/assets/js/sjis_common.js"></script>
+  <script src="./js/musen_EsyBC.js"></script>
+  <script src="/j/musen/js/hchv_data.js"></script>
+  <script src="./js/musen_Common.js"></script>
+  <script src="/j/musen/js/mktk_data.js"></script>
+  <script src="/js/headerfooter.js"></script>
+  <!-- /script -->
+
+
+</body>
+
+</html>
+

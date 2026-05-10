@@ -47,6 +47,38 @@ See [docs/architecture.md](docs/architecture.md) for layout details, focus highl
 - [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules
 - [Debug helpers](docs/debug-helpers.md) — LCD dump / lint / compare-baseline scripts
 
+## Data sources & attribution
+
+The auto station-name lookup combines several public broadcast databases.
+All upstream data is used under its own terms; deck-rx redistributes the
+station list and callsign DB under the attributions below.
+
+| Source | Coverage | License / Terms |
+|---|---|---|
+| 関東総合通信局 ラジオ放送事業者一覧 | 1都7県 (東京・神奈川・千葉・埼玉・茨城・栃木・群馬・山梨) AM 親局 + 中継局 + FM 補完 + 超短波 + コミュニティ放送 | 公共データ利用規約 第1.0版 |
+| 沖縄総合通信局 ラジオ周波数一覧 | 沖縄県 AM/FM/CFM | 公共データ利用規約 第1.0版 |
+| 総務省 全国民放FM局・ワイドFM局一覧 | 北海道・東北・東海・近畿・中国・九州 民放 FM | 公共データ利用規約 第1.0版 |
+| **総務省 無線局等情報検索** (https://www.tele.soumu.go.jp/musen/) | **callsign (識別信号) DB across all licensed broadcast transmitters** | **公共データ利用規約 第1.0版** |
+| EIBI SW DB | 国際短波放送 (day/time/spur-aware) | EIBI license (publicly accessible, attribution requested) |
+
+公共データ利用規約 第1.0版 (https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html)
+は商用利用も含む再配布を認める一方で、 出典明記と編集・加工した場合
+その旨の記載を求めています。 本リポジトリ内の `com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json`
+および `callsigns.json` は当該規約に準拠して以下の編集を施しています:
+
+- 法人名の brand 化 (法令上の "株式会社..." → 一般に流通する短縮形 / カナ表記)
+- 周波数を Hz 整数に正規化
+- 送信地・市町村名 cell を `siteName` フィールドに分離
+- 識別信号値の前後にあるマスク (`*****`) や `<BR>` を除去し callsign 単独に切り出し
+
+データ更新時は以下のスクリプトで再取得できます (rate-limit 1 req/sec、 全体で
+約 50 分):
+
+```sh
+npx tsx scripts/fetch-callsigns.ts        # AM + FM 全件
+npx tsx scripts/fetch-callsigns.ts --validate  # AM 1 page (smoke test, ~2 分)
+```
+
 ## License
 
 Personal project. No license granted.

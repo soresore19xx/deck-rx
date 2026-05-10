@@ -43,6 +43,22 @@ const CTX = 'ctx-render-all';
 const DUMP_FLAG = '/tmp/deck-rx-lcd-dump';
 writeFileSync(DUMP_FLAG, '');
 
+// Track every harness's plugin process for unconditional cleanup. If the
+// script is interrupted (SIGINT) or throws an uncaught exception, any
+// plugin we spawned would otherwise hang around as a zombie trying to
+// reconnect to the harness host (10.255.255.1:1) every 10 s, polluting
+// the log and consuming CPU. The 2026-05-11 incident left exactly such
+// a zombie running for ~12 h before we noticed.
+const activeHarnesses = new Set();
+const cleanup = (sig) => {
+  console.error(`>> ${sig} — killing ${activeHarnesses.size} harness plugin(s)`);
+  for (const h of activeHarnesses) { try { h.shutdown(); } catch {} }
+  activeHarnesses.clear();
+};
+process.on('SIGINT',  () => { cleanup('SIGINT');  process.exit(130); });
+process.on('SIGTERM', () => { cleanup('SIGTERM'); process.exit(143); });
+process.on('uncaughtException', (e) => { console.error('uncaught:', e); cleanup('uncaught'); process.exit(1); });
+
 for (const d of DIALS) {
   console.error(`>> rendering ${d.label} (uuid=${d.uuid})`);
   const harness = await startPlugin({ config: {
@@ -52,21 +68,25 @@ for (const d of DIALS) {
     audioEnabled: false,
     ...d.config,
   } });
-  await harness.willAppearDial(d.uuid, CTX);
-  await harness.settle(2500);
-  const svgPath = `/tmp/deck-rx-lcd-${d.dumpTag}.svg`;
-  if (!existsSync(svgPath)) {
-    console.error(`   ✗ ${svgPath} not produced`);
+  activeHarnesses.add(harness);
+  try {
+    await harness.willAppearDial(d.uuid, CTX);
+    await harness.settle(2500);
+    const svgPath = `/tmp/deck-rx-lcd-${d.dumpTag}.svg`;
+    if (!existsSync(svgPath)) {
+      console.error(`   ✗ ${svgPath} not produced`);
+      continue;
+    }
+    const stripped = stripDim(readFileSync(svgPath, 'utf-8'));
+    const strippedPath = `/tmp/deck-rx-lcd-${d.dumpTag}-bright.svg`;
+    writeFileSync(strippedPath, stripped);
+    const pngPath = `docs/lcd-${d.label}.png`;
+    execSync(`rsvg-convert -z 2 ${strippedPath} -o ${pngPath}`);
+    console.error(`   wrote ${pngPath}`);
+  } finally {
     await harness.shutdown();
-    continue;
+    activeHarnesses.delete(harness);
   }
-  const stripped = stripDim(readFileSync(svgPath, 'utf-8'));
-  const strippedPath = `/tmp/deck-rx-lcd-${d.dumpTag}-bright.svg`;
-  writeFileSync(strippedPath, stripped);
-  const pngPath = `docs/lcd-${d.label}.png`;
-  execSync(`rsvg-convert -z 2 ${strippedPath} -o ${pngPath}`);
-  console.error(`   wrote ${pngPath}`);
-  await harness.shutdown();
 }
 
 console.error('>> all done');

@@ -79,6 +79,19 @@ npx tsx scripts/fetch-callsigns.ts        # AM + FM 全件
 npx tsx scripts/fetch-callsigns.ts --validate  # AM 1 page (smoke test, ~2 分)
 ```
 
+総務省側に差分取得 API は無いため再取得は常に全量。 1 年後等に何が変わったか
+だけ知りたい場合は `scripts/diff-callsigns.ts` で前回 fetch との差分を表示
+できます (新規 license / 廃止 / 設置場所・法人名変更を分類):
+
+```sh
+cp com.hogehoge.deck-rx.sdPlugin/data/callsigns.json{,.old}
+npx tsx scripts/fetch-callsigns.ts
+npx tsx scripts/diff-callsigns.ts \
+    com.hogehoge.deck-rx.sdPlugin/data/callsigns.json.old \
+    com.hogehoge.deck-rx.sdPlugin/data/callsigns.json
+# 確認 OK なら .old を削除して commit、 一部だけ rollback したい場合は手動編集
+```
+
 ## License
 
 Personal project. No license granted.

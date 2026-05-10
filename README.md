@@ -14,12 +14,12 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Server host / port via PI | ✅ (debounced live-apply: changing host/port tears down + reconnects without restart) |
 | AM/SW Bandwidth | ✅ (16th-order complex IF LPF on I/Q + 8th-order post-envelope LPF) |
 | USB / LSB / CW | ✅ Weaver-method SSB demod (4th-order Butterworth audio LPF, ±f_off Q-flip for sideband select); CW = direct frequency-shift by BFO (default 700 Hz). VFO band-cross auto-selects mode for the major amateur segments (160m/80m/40m → LSB, 20m/15m/10m → USB, lower edge of each → CW) |
-| Carrier AGC | ✅ |
+| Carrier AGC | ✅ (port of SDR++ `dsp::loop::AGC` + `dsp::demod::AM` CARRIER mode; tracks `\|IQ\|` with asymmetric attack/decay EWMA, applies gain to the complex IQ stream BEFORE envelope detection) |
 | AGC Attack | ✅ (1–200, SDR++ slider convention = rate in 1/τ_seconds) |
 | AGC Decay | ✅ (1–20) |
-| FM Stereo PLL (true phase lock) | ✅ |
+| FM Stereo PLL (true phase lock) | ✅ (2nd-order Costas-style PLL locks VCO to 19 kHz pilot, loop bandwidth ≈ 50 Hz, damping = 1/√2, hysteretic lock detection so weak/intermittent pilots don't flap; STEREO badge shown only while pilot-locked AND user has stereo option enabled) |
 | Per-mode RF Gain (AM / FM separate) | ✅ (live-applied, debounced, pop-suppressed) |
-| Frequency / mode persistence | ✅ (restored at startup) |
+| Frequency / mode persistence | ✅ (debounced 500 ms write to `config.json`; on startup the stored freq + demod mode + tune step are restored before the first IQ packet) |
 | IFNR (IF Noise Reduction) | ✅ FM/NFM only (SDR++ FMIF tracking-filter port) |
 | Auto station-name lookup | ✅ **Japan-area only** for the JP DB — region-switchable from the Tune dial PI (関東 / 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 / 沖縄 ※全 8 region 対応; 関東+沖縄は AM/FM/CFM 一括、他 6 region は民放 FM のみ via 全国 FM 一覧) + region-tagged manual overrides; the EIBI SW DB covers international shortwave (day/time/spur-aware); in-PI `Update Now` for both |
 | Preset list | ✅ deck-rx-owned `data/presets.json` (UTF-8 clean、CJK 局名 OK) + JP DB の active region 局を周波数昇順でマージ; 同 freq は JP DB の局名で上書き; region 切替で list 自動再構築; PI の `Import bookmarks` で SDR++ `frequency_manager_config.json` から取り込み (read-only、merge、name dedup) |

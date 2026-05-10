@@ -1,309 +1,15 @@
 {
   "_source": "総務省「無線局等情報検索」 (公共データ利用規約 第1.0版)",
   "_url": "https://www.tele.soumu.go.jp/musen/",
-  "_fetchedAt": "2026-05-10T00:57:41.285Z",
+  "_fetchedAt": "2026-05-10T04:29:25.511167Z",
   "_note": "本データは 公共データ利用規約 第1.0版 (https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html) に準拠し総務省公開情報から取得・再配布しています。 編集・加工: freqHz / band 正規化のみ。",
   "callsigns": [
-    {
-      "callsign": "JOWN",
-      "freqHz": 639000,
-      "band": "MW",
-      "location": "北海道函館市",
-      "operatorName": "株式会社ＳＴＶラジオ"
-    },
-    {
-      "callsign": "JOVK",
-      "freqHz": 675000,
-      "band": "MW",
-      "location": "送信所 北海道函館市 演奏所 北海道札幌市中央区 予備送信所 北海道函館市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOWL",
-      "freqHz": 1197000,
-      "band": "MW",
-      "location": "北海道旭川市",
-      "operatorName": "株式会社ＳＴＶラジオ"
-    },
-    {
-      "callsign": "JOCG",
-      "freqHz": 621000,
-      "band": "MW",
-      "location": "送信所 北海道旭川市 演奏所 北海道札幌市中央区 予備送信所 北海道旭川市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOHE",
-      "freqHz": 864000,
-      "band": "MW",
-      "location": "送信所 北海道旭川市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOIQ",
-      "freqHz": 945000,
-      "band": "MW",
-      "location": "送信所 北海道室蘭市 演奏所 北海道札幌市中央区 予備送信所 北海道室蘭市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOQF",
-      "freqHz": 864000,
-      "band": "MW",
-      "location": "送信所 北海道室蘭市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOPG",
-      "freqHz": 585000,
-      "band": "MW",
-      "location": "送信所 北海道釧路市 演奏所 北海道札幌市中央区 予備送信所 北海道釧路市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOYS",
-      "freqHz": 1485000,
-      "band": "MW",
-      "location": "北海道北見市",
-      "operatorName": "株式会社ＳＴＶラジオ"
-    },
-    {
-      "callsign": "JOQN",
-      "freqHz": 801000,
-      "band": "MW",
-      "location": "送信所 北海道北見市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOVX",
-      "freqHz": 909000,
-      "band": "MW",
-      "location": "北海道網走市",
-      "operatorName": "株式会社ＳＴＶラジオ"
-    },
-    {
-      "callsign": "JOKP",
-      "freqHz": 1188000,
-      "band": "MW",
-      "location": "送信所 北海道網走市 演奏所 北海道札幌市中央区 予備送信所 北海道北見市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOQM",
-      "freqHz": 1449000,
-      "band": "MW",
-      "location": "送信所 北海道網走市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOHS",
-      "freqHz": 1557000,
-      "band": "MW",
-      "location": "送信所 北海道留萌市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOTS",
-      "freqHz": 1368000,
-      "band": "MW",
-      "location": "送信所 北海道稚内市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOWF",
-      "freqHz": 1440000,
-      "band": "MW",
-      "location": "送信所 北海道江別市 演奏所 北海道札幌市中央区",
-      "operatorName": "株式会社ＳＴＶラジオ"
-    },
-    {
-      "callsign": "JOIK",
-      "freqHz": 567000,
-      "band": "MW",
-      "location": "送信所 北海道江別市 演奏所 北海道札幌市中央区 予備送信所 北海道江別市 予備送信所 北海道札幌市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOHR",
-      "freqHz": 1287000,
-      "band": "MW",
-      "location": "送信所 北海道江別市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOTL",
-      "freqHz": 1494000,
-      "band": "MW",
-      "location": "送信所 北海道名寄市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOXS",
-      "freqHz": 1062000,
-      "band": "MW",
-      "location": "北海道根室市",
-      "operatorName": "株式会社ＳＴＶラジオ"
-    },
-    {
-      "callsign": "JOQS",
-      "freqHz": 801000,
-      "band": "MW",
-      "location": "送信所 北海道根室市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOHO",
-      "freqHz": 900000,
-      "band": "MW",
-      "location": "送信所 北海道北斗市 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOFM",
-      "freqHz": 1269000,
-      "band": "MW",
-      "location": "送信所 北海道檜山郡江差町 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOFN",
-      "freqHz": 1098000,
-      "band": "MW",
-      "location": "北海道久遠郡せたな町",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOWM",
-      "freqHz": 1071000,
-      "band": "MW",
-      "location": "北海道河東郡音更町",
-      "operatorName": "株式会社ＳＴＶラジオ"
-    },
-    {
-      "callsign": "JOOG",
-      "freqHz": 603000,
-      "band": "MW",
-      "location": "送信所 北海道河東郡音更町 演奏所 北海道札幌市中央区 予備送信所 北海道帯広市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOHW",
-      "freqHz": 1269000,
-      "band": "MW",
-      "location": "送信所 北海道中川郡幕別町 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOWS",
-      "freqHz": 882000,
-      "band": "MW",
-      "location": "北海道釧路郡釧路町",
-      "operatorName": "株式会社ＳＴＶラジオ"
-    },
-    {
-      "callsign": "JOQL",
-      "freqHz": 1404000,
-      "band": "MW",
-      "location": "送信所 北海道釧路郡釧路町 演奏所 北海道札幌市中央区",
-      "operatorName": "北海道放送株式会社"
-    },
-    {
-      "callsign": "JOGR",
-      "freqHz": 1233000,
-      "band": "MW",
-      "location": "送受信所 青森県青森市 演奏所 青森県青森市",
-      "operatorName": "青森放送株式会社"
-    },
-    {
-      "callsign": "JOTG",
-      "freqHz": 963000,
-      "band": "MW",
-      "location": "送信所 青森県青森市 演奏所 青森県青森市 予備送信所 青森県青森市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOGE",
-      "freqHz": 1215000,
-      "band": "MW",
-      "location": "送受信所 青森県弘前市 演奏所 青森県弘前市",
-      "operatorName": "青森放送株式会社"
-    },
-    {
-      "callsign": "JOGO",
-      "freqHz": 1485000,
-      "band": "MW",
-      "location": "送信所 青森県八戸市 演奏所 青森県八戸市 受信所 青森県八戸市",
-      "operatorName": "青森放送株式会社"
-    },
-    {
-      "callsign": "JODN",
-      "freqHz": 1557000,
-      "band": "MW",
-      "location": "送信所 岩手県宮古市 演奏所 岩手県宮古市",
-      "operatorName": "株式会社アイビーシー岩手放送"
-    },
-    {
-      "callsign": "JODM",
-      "freqHz": 1062000,
-      "band": "MW",
-      "location": "演奏所 岩手県釜石市 送受信所 岩手県釜石市",
-      "operatorName": "株式会社アイビーシー岩手放送"
-    },
-    {
-      "callsign": "JODF",
-      "freqHz": 684000,
-      "band": "MW",
-      "location": "送信所 岩手県紫波郡矢巾町 演奏所 岩手県盛岡市",
-      "operatorName": "株式会社アイビーシー岩手放送"
-    },
     {
       "callsign": "JOQG",
       "freqHz": 531000,
       "band": "MW",
       "location": "送信所 岩手県紫波郡矢巾町 演奏所 岩手県盛岡市 予備送信所 岩手県盛岡市",
       "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOHK",
-      "freqHz": 891000,
-      "band": "MW",
-      "location": "送信所 宮城県仙台市宮城野区 演奏所 宮城県仙台市青葉区 送信所 宮城県仙台市青葉区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOIR",
-      "freqHz": 1260000,
-      "band": "MW",
-      "location": "送信所 宮城県仙台市若林区 演奏所 宮城県仙台市太白区",
-      "operatorName": "東北放送株式会社"
-    },
-    {
-      "callsign": "JOIO",
-      "freqHz": 801000,
-      "band": "MW",
-      "location": "送受信所 宮城県気仙沼市 演奏所 宮城県気仙沼市",
-      "operatorName": "東北放送株式会社"
-    },
-    {
-      "callsign": "JOTR",
-      "freqHz": 936000,
-      "band": "MW",
-      "location": "送信所 秋田県秋田市 演奏所 秋田県秋田市",
-      "operatorName": "株式会社秋田放送"
-    },
-    {
-      "callsign": "JOUK",
-      "freqHz": 1503000,
-      "band": "MW",
-      "location": "送信所 秋田県秋田市 演奏所 秋田県秋田市 予備送信所 秋田県秋田市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOTO",
-      "freqHz": 1485000,
-      "band": "MW",
-      "location": "秋田県横手市",
-      "operatorName": "株式会社秋田放送"
     },
     {
       "callsign": "JOJG",
@@ -313,102 +19,53 @@
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOEF",
-      "freqHz": 918000,
+      "callsign": "JOMG",
+      "freqHz": 540000,
       "band": "MW",
-      "location": "送信所 山形県山形市 演奏所 山形県山形市",
-      "operatorName": "山形放送株式会社"
-    },
-    {
-      "callsign": "JOWR",
-      "freqHz": 1458000,
-      "band": "MW",
-      "location": "送信所 福島県福島市 演奏所 福島県福島市",
-      "operatorName": "株式会社ラジオ福島"
-    },
-    {
-      "callsign": "JOFP",
-      "freqHz": 1323000,
-      "band": "MW",
-      "location": "送信所 福島県福島市 演奏所 福島県福島市 送信所 福島県福島市",
+      "location": "送受信所 宮崎県宮崎市 演奏所 宮崎県宮崎市 予備送信所 宮崎県宮崎市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOWE",
-      "freqHz": 1395000,
+      "callsign": "JOSK",
+      "freqHz": 540000,
       "band": "MW",
-      "location": "送信所 福島県会津若松市 演奏所 福島県会津若松市",
-      "operatorName": "株式会社ラジオ福島"
+      "location": "送信所 福岡県北九州市若松区 第1演奏所 福岡県北九州市小倉北区 第2演奏所 福岡県福岡市中央区 予備送信所 福岡県北九州市小倉北区",
+      "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOWO",
-      "freqHz": 1098000,
+      "callsign": "JOAP",
+      "freqHz": 549000,
       "band": "MW",
-      "location": "送信所 福島県郡山市 演奏所 福島県郡山市",
-      "operatorName": "株式会社ラジオ福島"
+      "location": "送信所 沖縄県豊見城市 演奏所 沖縄県那覇市 演奏所 沖縄県那覇市",
+      "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOWW",
-      "freqHz": 1431000,
+      "callsign": "JOCR",
+      "freqHz": 558000,
       "band": "MW",
-      "location": "送信所 福島県いわき市 演奏所 福島県いわき市",
-      "operatorName": "株式会社ラジオ福島"
+      "location": "送信所 兵庫県淡路市 予備送信所 兵庫県神戸市中央区 演奏所 兵庫県神戸市中央区",
+      "operatorName": "株式会社ラジオ関西"
     },
     {
-      "callsign": "JOFL",
-      "freqHz": 801000,
+      "callsign": "JOIK",
+      "freqHz": 567000,
       "band": "MW",
-      "location": "送信所 福島県南相馬市 演奏所 福島県南相馬市",
-      "operatorName": "株式会社ラジオ福島"
+      "location": "送信所 北海道江別市 演奏所 北海道札幌市中央区 予備送信所 北海道江別市 予備送信所 北海道札幌市中央区",
+      "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOYF",
-      "freqHz": 1197000,
+      "callsign": "JOHG",
+      "freqHz": 576000,
       "band": "MW",
-      "location": "送信所 茨城県水戸市 演奏所 茨城県水戸市",
-      "operatorName": "株式会社ＬｕｃｋｙＦＭ茨城放送"
+      "location": "送信所 鹿児島県霧島市 演奏所 鹿児島県鹿児島市 予備送信所 鹿児島県鹿児島市",
+      "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOYL",
-      "freqHz": 1458000,
+      "callsign": "JOPG",
+      "freqHz": 585000,
       "band": "MW",
-      "location": "送信所 茨城県土浦市 演奏所 茨城県水戸市",
-      "operatorName": "株式会社ＬｕｃｋｙＦＭ茨城放送"
-    },
-    {
-      "callsign": "JOXM",
-      "freqHz": 1062000,
-      "band": "MW",
-      "location": "送信所 栃木県足利市 演奏所 栃木県宇都宮市",
-      "operatorName": "株式会社栃木放送"
-    },
-    {
-      "callsign": "JOXF",
-      "freqHz": 1530000,
-      "band": "MW",
-      "location": "送信所 栃木県鹿沼市 演奏所 栃木県宇都宮市",
-      "operatorName": "株式会社栃木放送"
-    },
-    {
-      "callsign": "JOXN",
-      "freqHz": 864000,
-      "band": "MW",
-      "location": "送信所 栃木県那須塩原市 演奏所 栃木県宇都宮市",
-      "operatorName": "株式会社栃木放送"
-    },
-    {
-      "callsign": "JOQR",
-      "freqHz": 1134000,
-      "band": "MW",
-      "location": "送信所 埼玉県川口市 演奏所 東京都港区 予備送信所 東京都新宿区",
-      "operatorName": "株式会社文化放送"
-    },
-    {
-      "callsign": "JOKR",
-      "freqHz": 954000,
-      "band": "MW",
-      "location": "送信所 埼玉県戸田市 演奏所 東京都港区 予備送信所 東京都港区",
-      "operatorName": "株式会社ＴＢＳラジオ"
+      "location": "送信所 北海道釧路市 演奏所 北海道札幌市中央区 予備送信所 北海道釧路市",
+      "operatorName": "日本放送協会"
     },
     {
       "callsign": "JOAK",
@@ -418,60 +75,46 @@
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOLF",
-      "freqHz": 1242000,
+      "callsign": "JOKK",
+      "freqHz": 603000,
       "band": "MW",
-      "location": "送信所 千葉県木更津市 予備送信所 東京都足立区 演奏所 東京都千代田区",
-      "operatorName": "株式会社ニッポン放送"
-    },
-    {
-      "callsign": "JORF",
-      "freqHz": 1422000,
-      "band": "MW",
-      "location": "送信所 神奈川県川崎市幸区 演奏所 神奈川県横浜市中区 予備送信所 神奈川県横浜市西区",
-      "operatorName": "株式会社アール・エフ・ラジオ日本"
-    },
-    {
-      "callsign": "JORL",
-      "freqHz": 1485000,
-      "band": "MW",
-      "location": "送信所 神奈川県小田原市 演奏所 神奈川県横浜市中区",
-      "operatorName": "株式会社アール・エフ・ラジオ日本"
-    },
-    {
-      "callsign": "JODR",
-      "freqHz": 1116000,
-      "band": "MW",
-      "location": "送受信所 新潟県新潟市中央区 演奏所 新潟県新潟市中央区",
-      "operatorName": "株式会社新潟放送"
-    },
-    {
-      "callsign": "JOQK",
-      "freqHz": 837000,
-      "band": "MW",
-      "location": "送受信所 新潟県新潟市西区 演奏所 新潟県新潟市中央区 予備送信所 新潟県新潟市中央区",
+      "location": "送信所 岡山県岡山市南区 演奏所 岡山県岡山市北区 予備送信所 岡山県玉野市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JODE",
-      "freqHz": 1062000,
+      "callsign": "JOOG",
+      "freqHz": 603000,
       "band": "MW",
-      "location": "送信所 新潟県長岡市 演奏所 新潟県新潟市中央区",
-      "operatorName": "株式会社新潟放送"
+      "location": "送信所 北海道河東郡音更町 演奏所 北海道札幌市中央区 予備送信所 北海道帯広市",
+      "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JODO",
-      "freqHz": 1530000,
+      "callsign": "JOLK",
+      "freqHz": 612000,
       "band": "MW",
-      "location": "送受信所 新潟県上越市 演奏所 新潟県新潟市中央区",
-      "operatorName": "株式会社新潟放送"
+      "location": "送信所 福岡県春日市 演奏所 福岡県福岡市中央区 予備送信所 福岡県福岡市中央区",
+      "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOLR",
-      "freqHz": 738000,
+      "callsign": "JOCG",
+      "freqHz": 621000,
       "band": "MW",
-      "location": "送信所 富山県富山市 演奏所 富山県富山市",
-      "operatorName": "北日本放送株式会社"
+      "location": "送信所 北海道旭川市 演奏所 北海道札幌市中央区 予備送信所 北海道旭川市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOIP",
+      "freqHz": 639000,
+      "band": "MW",
+      "location": "送信所 大分県大分市 演奏所 大分県大分市 予備送信所 大分県大分市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOWN",
+      "freqHz": 639000,
+      "band": "MW",
+      "location": "北海道函館市",
+      "operatorName": "株式会社ＳＴＶラジオ"
     },
     {
       "callsign": "JOIG",
@@ -481,38 +124,73 @@
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOJK",
-      "freqHz": 1224000,
+      "callsign": "JOBK",
+      "freqHz": 666000,
       "band": "MW",
-      "location": "送信所 石川県野々市市 演奏所 石川県金沢市 予備送信所 石川県金沢市",
+      "location": "送信所 大阪府堺市美原区 演奏所 大阪府大阪市中央区 予備送信所 大阪府羽曳野市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOMR",
-      "freqHz": 1107000,
+      "callsign": "JOUG",
+      "freqHz": 675000,
       "band": "MW",
-      "location": "送信所 石川県野々市市 演奏所 石川県金沢市",
-      "operatorName": "北陸放送株式会社"
-    },
-    {
-      "callsign": "JOFG",
-      "freqHz": 927000,
-      "band": "MW",
-      "location": "送信所 福井県福井市 演奏所 福井県福井市 予備送信所 福井県福井市",
+      "location": "送信所 山口県防府市 演奏所 山口県山口市 予備送信所 山口県山口市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOPR",
-      "freqHz": 864000,
+      "callsign": "JOVK",
+      "freqHz": 675000,
       "band": "MW",
-      "location": "送信所 福井県坂井市 演奏所 福井県福井市",
-      "operatorName": "福井放送株式会社"
+      "location": "送信所 北海道函館市 演奏所 北海道札幌市中央区 予備送信所 北海道函館市",
+      "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOKG",
-      "freqHz": 927000,
+      "callsign": "JOAG",
+      "freqHz": 684000,
       "band": "MW",
-      "location": "送信所 山梨県甲府市 演奏所 山梨県甲府市 予備送信所 山梨県甲府市",
+      "location": "送信所 長崎県長崎市 演奏所 長崎県長崎市 予備送信所 長崎県長崎市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JODF",
+      "freqHz": 684000,
+      "band": "MW",
+      "location": "送信所 岩手県紫波郡矢巾町 演奏所 岩手県盛岡市",
+      "operatorName": "株式会社アイビーシー岩手放送"
+    },
+    {
+      "callsign": "JOIL",
+      "freqHz": 720000,
+      "band": "MW",
+      "location": "送受信所 福岡県北九州市若松区 演奏所 福岡県福岡市中央区",
+      "operatorName": "九州朝日放送株式会社"
+    },
+    {
+      "callsign": "JOCK",
+      "freqHz": 729000,
+      "band": "MW",
+      "location": "送信所 愛知県弥富市 演奏所 愛知県名古屋市東区 予備送信所 愛知県名古屋市昭和区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOLR",
+      "freqHz": 738000,
+      "band": "MW",
+      "location": "送信所 富山県富山市 演奏所 富山県富山市",
+      "operatorName": "北日本放送株式会社"
+    },
+    {
+      "callsign": "JORR",
+      "freqHz": 738000,
+      "band": "MW",
+      "location": "送信所 沖縄県豊見城市 演奏所 沖縄県那覇市",
+      "operatorName": "琉球放送株式会社"
+    },
+    {
+      "callsign": "JOGK",
+      "freqHz": 756000,
+      "band": "MW",
+      "location": "送信所 熊本県熊本市北区 演奏所 熊本県熊本市中央区 予備送信所 熊本県熊本市中央区",
       "operatorName": "日本放送協会"
     },
     {
@@ -523,11 +201,39 @@
       "operatorName": "株式会社山梨放送"
     },
     {
-      "callsign": "JOSR",
-      "freqHz": 1098000,
+      "callsign": "JOPF",
+      "freqHz": 765000,
       "band": "MW",
-      "location": "送受信所 長野県長野市 演奏所 長野県長野市",
-      "operatorName": "信越放送株式会社"
+      "location": "送受信所 山口県周南市 演奏所 山口県周南市 予備送信所 山口県周南市",
+      "operatorName": "山口放送株式会社"
+    },
+    {
+      "callsign": "JOFL",
+      "freqHz": 801000,
+      "band": "MW",
+      "location": "送信所 福島県南相馬市 演奏所 福島県南相馬市",
+      "operatorName": "株式会社ラジオ福島"
+    },
+    {
+      "callsign": "JOIO",
+      "freqHz": 801000,
+      "band": "MW",
+      "location": "送受信所 宮城県気仙沼市 演奏所 宮城県気仙沼市",
+      "operatorName": "東北放送株式会社"
+    },
+    {
+      "callsign": "JOQN",
+      "freqHz": 801000,
+      "band": "MW",
+      "location": "送信所 北海道北見市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOQS",
+      "freqHz": 801000,
+      "band": "MW",
+      "location": "送信所 北海道根室市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
     },
     {
       "callsign": "JONK",
@@ -537,6 +243,34 @@
       "operatorName": "日本放送協会"
     },
     {
+      "callsign": "JOQK",
+      "freqHz": 837000,
+      "band": "MW",
+      "location": "送受信所 新潟県新潟市西区 演奏所 新潟県新潟市中央区 予備送信所 新潟県新潟市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOHE",
+      "freqHz": 864000,
+      "band": "MW",
+      "location": "送信所 北海道旭川市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOPR",
+      "freqHz": 864000,
+      "band": "MW",
+      "location": "送信所 福井県坂井市 演奏所 福井県福井市",
+      "operatorName": "福井放送株式会社"
+    },
+    {
+      "callsign": "JOQF",
+      "freqHz": 864000,
+      "band": "MW",
+      "location": "送信所 北海道室蘭市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
       "callsign": "JOSO",
       "freqHz": 864000,
       "band": "MW",
@@ -544,39 +278,18 @@
       "operatorName": "信越放送株式会社"
     },
     {
-      "callsign": "JOSL",
-      "freqHz": 1062000,
+      "callsign": "JOXN",
+      "freqHz": 864000,
       "band": "MW",
-      "location": "送受信所 長野県上田市 演奏所 長野県長野市",
-      "operatorName": "信越放送株式会社"
+      "location": "送信所 栃木県那須塩原市 演奏所 栃木県宇都宮市",
+      "operatorName": "株式会社栃木放送"
     },
     {
-      "callsign": "JOSE",
-      "freqHz": 1197000,
+      "callsign": "JOXR",
+      "freqHz": 864000,
       "band": "MW",
-      "location": "送受信所 長野県岡谷市 第1演奏所 長野県長野市",
-      "operatorName": "信越放送株式会社"
-    },
-    {
-      "callsign": "JOSW",
-      "freqHz": 1098000,
-      "band": "MW",
-      "location": "送受信所 長野県飯田市 第1演奏所 長野県長野市 第2演奏所 長野県飯田市",
-      "operatorName": "信越放送株式会社"
-    },
-    {
-      "callsign": "JOZF",
-      "freqHz": 1431000,
-      "band": "MW",
-      "location": "送信所 岐阜県岐阜市 演奏所 岐阜県岐阜市",
-      "operatorName": "株式会社岐阜放送"
-    },
-    {
-      "callsign": "JOVR",
-      "freqHz": 1404000,
-      "band": "MW",
-      "location": "送受信所 静岡県静岡市駿河区 演奏所 静岡県静岡市駿河区 予備送信所 静岡県静岡市駿河区",
-      "operatorName": "静岡放送株式会社"
+      "location": "送信所 沖縄県南城市 演奏所 沖縄県那覇市",
+      "operatorName": "株式会社ラジオ沖縄"
     },
     {
       "callsign": "JOPK",
@@ -586,143 +299,17 @@
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOCK",
-      "freqHz": 729000,
+      "callsign": "JOWS",
+      "freqHz": 882000,
       "band": "MW",
-      "location": "送信所 愛知県弥富市 演奏所 愛知県名古屋市東区 予備送信所 愛知県名古屋市昭和区",
-      "operatorName": "日本放送協会"
+      "location": "北海道釧路郡釧路町",
+      "operatorName": "株式会社ＳＴＶラジオ"
     },
     {
-      "callsign": "JOSF",
-      "freqHz": 1332000,
+      "callsign": "JOHK",
+      "freqHz": 891000,
       "band": "MW",
-      "location": "送信所 愛知県あま市 演奏所 愛知県名古屋市東区",
-      "operatorName": "東海ラジオ放送株式会社"
-    },
-    {
-      "callsign": "JOAR",
-      "freqHz": 1053000,
-      "band": "MW",
-      "location": "送信所 三重県桑名市 予備送信所 愛知県名古屋市中区 演奏所 愛知県名古屋市中区",
-      "operatorName": "株式会社ＣＢＣラジオ"
-    },
-    {
-      "callsign": "JOBW",
-      "freqHz": 1215000,
-      "band": "MW",
-      "location": "送信所 滋賀県彦根市 演奏所 京都府京都市上京区",
-      "operatorName": "株式会社京都放送"
-    },
-    {
-      "callsign": "JOQP",
-      "freqHz": 945000,
-      "band": "MW",
-      "location": "送信所 滋賀県彦根市 第1演奏所 滋賀県大津市 第2演奏所 大阪府大阪市中央区 予備送信所 滋賀県大津市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOBE",
-      "freqHz": 1485000,
-      "band": "MW",
-      "location": "送信所 京都府福知山市 演奏所 京都府京都市上京区",
-      "operatorName": "株式会社京都放送"
-    },
-    {
-      "callsign": "JOBO",
-      "freqHz": 1215000,
-      "band": "MW",
-      "location": "送信所 京都府舞鶴市 演奏所 京都府京都市上京区",
-      "operatorName": "株式会社京都放送"
-    },
-    {
-      "callsign": "JOBR",
-      "freqHz": 1143000,
-      "band": "MW",
-      "location": "送信所 京都府久世郡久御山町 演奏所 京都府京都市上京区",
-      "operatorName": "株式会社京都放送"
-    },
-    {
-      "callsign": "JOUF",
-      "freqHz": 1314000,
-      "band": "MW",
-      "location": "演奏所 大阪府大阪市港区 送信所 大阪府堺市東区",
-      "operatorName": "株式会社ラジオ大阪"
-    },
-    {
-      "callsign": "JOOR",
-      "freqHz": 1179000,
-      "band": "MW",
-      "location": "演奏所 大阪府大阪市北区 送信所 大阪府高石市 予備送信所 大阪府大阪市北区",
-      "operatorName": "株式会社ＭＢＳラジオ"
-    },
-    {
-      "callsign": "JOBK",
-      "freqHz": 666000,
-      "band": "MW",
-      "location": "送信所 大阪府堺市美原区 演奏所 大阪府大阪市中央区 予備送信所 大阪府羽曳野市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JONR",
-      "freqHz": 1008000,
-      "band": "MW",
-      "location": "送受信所 大阪府高石市 演奏所 大阪府大阪市福島区",
-      "operatorName": "朝日放送ラジオ株式会社"
-    },
-    {
-      "callsign": "JOCE",
-      "freqHz": 1395000,
-      "band": "MW",
-      "location": "兵庫県豊岡市",
-      "operatorName": "株式会社ラジオ関西"
-    },
-    {
-      "callsign": "JOCR",
-      "freqHz": 558000,
-      "band": "MW",
-      "location": "送信所 兵庫県淡路市 予備送信所 兵庫県神戸市中央区 演奏所 兵庫県神戸市中央区",
-      "operatorName": "株式会社ラジオ関西"
-    },
-    {
-      "callsign": "JOVF",
-      "freqHz": 1431000,
-      "band": "MW",
-      "location": "送信所 和歌山県和歌山市 演奏所 和歌山県和歌山市",
-      "operatorName": "株式会社和歌山放送"
-    },
-    {
-      "callsign": "JOVL",
-      "freqHz": 1233000,
-      "band": "MW",
-      "location": "送信所 和歌山県田辺市 演奏所 和歌山県和歌山市",
-      "operatorName": "株式会社和歌山放送"
-    },
-    {
-      "callsign": "JOVN",
-      "freqHz": 1557000,
-      "band": "MW",
-      "location": "送信所 和歌山県新宮市 演奏所 和歌山県和歌山市",
-      "operatorName": "株式会社和歌山放送"
-    },
-    {
-      "callsign": "JOVM",
-      "freqHz": 1557000,
-      "band": "MW",
-      "location": "送信所 和歌山県日高郡日高町 演奏所 和歌山県和歌山市",
-      "operatorName": "株式会社和歌山放送"
-    },
-    {
-      "callsign": "JOHL",
-      "freqHz": 1431000,
-      "band": "MW",
-      "location": "送信所 鳥取県鳥取市 演奏所 鳥取県米子市",
-      "operatorName": "株式会社山陰放送"
-    },
-    {
-      "callsign": "JOLG",
-      "freqHz": 1368000,
-      "band": "MW",
-      "location": "送信所 鳥取県鳥取市 演奏所 鳥取県鳥取市 予備送信所 鳥取県鳥取市",
+      "location": "送信所 宮城県仙台市宮城野区 演奏所 宮城県仙台市青葉区 送信所 宮城県仙台市青葉区",
       "operatorName": "日本放送協会"
     },
     {
@@ -733,60 +320,32 @@
       "operatorName": "株式会社山陰放送"
     },
     {
-      "callsign": "JOHM",
-      "freqHz": 1557000,
+      "callsign": "JOHO",
+      "freqHz": 900000,
       "band": "MW",
-      "location": "送受信所 島根県浜田市 演奏所 鳥取県米子市",
-      "operatorName": "株式会社山陰放送"
+      "location": "送信所 北海道北斗市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
     },
     {
-      "callsign": "JOTK",
-      "freqHz": 1296000,
+      "callsign": "JOZR",
+      "freqHz": 900000,
       "band": "MW",
-      "location": "送信所 島根県出雲市 演奏所 島根県松江市 予備送信所 島根県松江市",
-      "operatorName": "日本放送協会"
+      "location": "演奏所 高知県高知市 送信所 高知県高知市",
+      "operatorName": "株式会社高知放送"
     },
     {
-      "callsign": "JOHN",
-      "freqHz": 1431000,
+      "callsign": "JOVX",
+      "freqHz": 909000,
       "band": "MW",
-      "location": "送信所 島根県益田市 演奏所 鳥取県米子市",
-      "operatorName": "株式会社山陰放送"
+      "location": "北海道網走市",
+      "operatorName": "株式会社ＳＴＶラジオ"
     },
     {
-      "callsign": "JOYR",
-      "freqHz": 1494000,
+      "callsign": "JOEF",
+      "freqHz": 918000,
       "band": "MW",
-      "location": "送信所 岡山県岡山市北区 演奏所 岡山県岡山市北区 予備送信所 岡山県岡山市北区",
-      "operatorName": "ＲＳＫ山陽放送株式会社"
-    },
-    {
-      "callsign": "JOKK",
-      "freqHz": 603000,
-      "band": "MW",
-      "location": "送信所 岡山県岡山市南区 演奏所 岡山県岡山市北区 予備送信所 岡山県玉野市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOEO",
-      "freqHz": 1530000,
-      "band": "MW",
-      "location": "演奏所 広島県広島市中区 送信所 広島県福山市",
-      "operatorName": "株式会社中国放送"
-    },
-    {
-      "callsign": "JOER",
-      "freqHz": 1350000,
-      "band": "MW",
-      "location": "演奏所 広島県広島市中区 送信所 広島県江田島市 予備送信所 広島県広島市中区",
-      "operatorName": "株式会社中国放送"
-    },
-    {
-      "callsign": "JOFK",
-      "freqHz": 1071000,
-      "band": "MW",
-      "location": "送信所 広島県広島市安佐南区 演奏所 広島県広島市中区 予備送信所 広島県広島市南区",
-      "operatorName": "日本放送協会"
+      "location": "送信所 山形県山形市 演奏所 山形県山形市",
+      "operatorName": "山形放送株式会社"
     },
     {
       "callsign": "JOPM",
@@ -796,20 +355,6 @@
       "operatorName": "山口放送株式会社"
     },
     {
-      "callsign": "JOPL",
-      "freqHz": 1485000,
-      "band": "MW",
-      "location": "送信所 山口県萩市 演奏所 山口県周南市",
-      "operatorName": "山口放送株式会社"
-    },
-    {
-      "callsign": "JOUG",
-      "freqHz": 675000,
-      "band": "MW",
-      "location": "送信所 山口県防府市 演奏所 山口県山口市 予備送信所 山口県山口市",
-      "operatorName": "日本放送協会"
-    },
-    {
       "callsign": "JOPN",
       "freqHz": 918000,
       "band": "MW",
@@ -817,11 +362,46 @@
       "operatorName": "山口放送株式会社"
     },
     {
-      "callsign": "JOPF",
-      "freqHz": 765000,
+      "callsign": "JOFG",
+      "freqHz": 927000,
       "band": "MW",
-      "location": "送受信所 山口県周南市 演奏所 山口県周南市 予備送信所 山口県周南市",
-      "operatorName": "山口放送株式会社"
+      "location": "送信所 福井県福井市 演奏所 福井県福井市 予備送信所 福井県福井市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOKG",
+      "freqHz": 927000,
+      "band": "MW",
+      "location": "送信所 山梨県甲府市 演奏所 山梨県甲府市 予備送信所 山梨県甲府市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JONF",
+      "freqHz": 936000,
+      "band": "MW",
+      "location": "送受信所 宮崎県宮崎市 演奏所 宮崎県宮崎市",
+      "operatorName": "株式会社宮崎放送"
+    },
+    {
+      "callsign": "JOTR",
+      "freqHz": 936000,
+      "band": "MW",
+      "location": "送信所 秋田県秋田市 演奏所 秋田県秋田市",
+      "operatorName": "株式会社秋田放送"
+    },
+    {
+      "callsign": "JOIQ",
+      "freqHz": 945000,
+      "band": "MW",
+      "location": "送信所 北海道室蘭市 演奏所 北海道札幌市中央区 予備送信所 北海道室蘭市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOQP",
+      "freqHz": 945000,
+      "band": "MW",
+      "location": "送信所 滋賀県彦根市 第1演奏所 滋賀県大津市 第2演奏所 大阪府大阪市中央区 予備送信所 滋賀県大津市",
+      "operatorName": "日本放送協会"
     },
     {
       "callsign": "JOXK",
@@ -831,25 +411,25 @@
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOKF",
-      "freqHz": 1449000,
+      "callsign": "JOKR",
+      "freqHz": 954000,
       "band": "MW",
-      "location": "送受信所 香川県高松市 演奏所 香川県高松市",
-      "operatorName": "西日本放送株式会社"
+      "location": "送信所 埼玉県戸田市 演奏所 東京都港区 予備送信所 東京都港区",
+      "operatorName": "株式会社ＴＢＳラジオ"
     },
     {
-      "callsign": "JOHP",
-      "freqHz": 1368000,
+      "callsign": "JOSP",
+      "freqHz": 963000,
       "band": "MW",
-      "location": "送信所 香川県高松市 演奏所 香川県高松市 予備送信所 香川県高松市",
+      "location": "送信所 佐賀県佐賀市 演奏所 佐賀県佐賀市 予備送信所 佐賀県佐賀市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOAF",
-      "freqHz": 1116000,
+      "callsign": "JOTG",
+      "freqHz": 963000,
       "band": "MW",
-      "location": "送信所 愛媛県松山市 演奏所 愛媛県松山市",
-      "operatorName": "南海放送株式会社"
+      "location": "送信所 青森県青森市 演奏所 青森県青森市 予備送信所 青森県青森市",
+      "operatorName": "日本放送協会"
     },
     {
       "callsign": "JOZK",
@@ -859,10 +439,143 @@
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOAM",
+      "callsign": "JORK",
+      "freqHz": 990000,
+      "band": "MW",
+      "location": "送信所 高知県高知市 演奏所 高知県高知市 予備送信所 高知県高知市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JONR",
+      "freqHz": 1008000,
+      "band": "MW",
+      "location": "送受信所 大阪府高石市 演奏所 大阪府大阪市福島区",
+      "operatorName": "朝日放送ラジオ株式会社"
+    },
+    {
+      "callsign": "JOAR",
+      "freqHz": 1053000,
+      "band": "MW",
+      "location": "送信所 三重県桑名市 予備送信所 愛知県名古屋市中区 演奏所 愛知県名古屋市中区",
+      "operatorName": "株式会社ＣＢＣラジオ"
+    },
+    {
+      "callsign": "JODE",
+      "freqHz": 1062000,
+      "band": "MW",
+      "location": "送信所 新潟県長岡市 演奏所 新潟県新潟市中央区",
+      "operatorName": "株式会社新潟放送"
+    },
+    {
+      "callsign": "JODM",
+      "freqHz": 1062000,
+      "band": "MW",
+      "location": "演奏所 岩手県釜石市 送受信所 岩手県釜石市",
+      "operatorName": "株式会社アイビーシー岩手放送"
+    },
+    {
+      "callsign": "JOFE",
+      "freqHz": 1062000,
+      "band": "MW",
+      "location": "送信所 福岡県大牟田市 演奏所 福岡県福岡市早良区",
+      "operatorName": "ＲＫＢ毎日放送株式会社"
+    },
+    {
+      "callsign": "JOSL",
+      "freqHz": 1062000,
+      "band": "MW",
+      "location": "送受信所 長野県上田市 演奏所 長野県長野市",
+      "operatorName": "信越放送株式会社"
+    },
+    {
+      "callsign": "JOXM",
+      "freqHz": 1062000,
+      "band": "MW",
+      "location": "送信所 栃木県足利市 演奏所 栃木県宇都宮市",
+      "operatorName": "株式会社栃木放送"
+    },
+    {
+      "callsign": "JOXS",
+      "freqHz": 1062000,
+      "band": "MW",
+      "location": "北海道根室市",
+      "operatorName": "株式会社ＳＴＶラジオ"
+    },
+    {
+      "callsign": "JOFK",
+      "freqHz": 1071000,
+      "band": "MW",
+      "location": "送信所 広島県広島市安佐南区 演奏所 広島県広島市中区 予備送信所 広島県広島市南区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOWM",
+      "freqHz": 1071000,
+      "band": "MW",
+      "location": "北海道河東郡音更町",
+      "operatorName": "株式会社ＳＴＶラジオ"
+    },
+    {
+      "callsign": "JOFN",
+      "freqHz": 1098000,
+      "band": "MW",
+      "location": "北海道久遠郡せたな町",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOGF",
+      "freqHz": 1098000,
+      "band": "MW",
+      "location": "送信所 大分県杵築市 演奏所 大分県大分市",
+      "operatorName": "株式会社大分放送"
+    },
+    {
+      "callsign": "JOMF",
+      "freqHz": 1098000,
+      "band": "MW",
+      "location": "送受信所 長崎県佐世保市 演奏所 長崎県長崎市",
+      "operatorName": "長崎放送株式会社"
+    },
+    {
+      "callsign": "JOSR",
+      "freqHz": 1098000,
+      "band": "MW",
+      "location": "送受信所 長野県長野市 演奏所 長野県長野市",
+      "operatorName": "信越放送株式会社"
+    },
+    {
+      "callsign": "JOSW",
+      "freqHz": 1098000,
+      "band": "MW",
+      "location": "送受信所 長野県飯田市 第1演奏所 長野県長野市 第2演奏所 長野県飯田市",
+      "operatorName": "信越放送株式会社"
+    },
+    {
+      "callsign": "JOWO",
+      "freqHz": 1098000,
+      "band": "MW",
+      "location": "送信所 福島県郡山市 演奏所 福島県郡山市",
+      "operatorName": "株式会社ラジオ福島"
+    },
+    {
+      "callsign": "JOCF",
+      "freqHz": 1107000,
+      "band": "MW",
+      "location": "送受信所 鹿児島県霧島市 演奏所 鹿児島県鹿児島市",
+      "operatorName": "株式会社南日本放送"
+    },
+    {
+      "callsign": "JOMR",
+      "freqHz": 1107000,
+      "band": "MW",
+      "location": "送信所 石川県野々市市 演奏所 石川県金沢市",
+      "operatorName": "北陸放送株式会社"
+    },
+    {
+      "callsign": "JOAF",
       "freqHz": 1116000,
       "band": "MW",
-      "location": "送信所 愛媛県宇和島市 演奏所 愛媛県松山市",
+      "location": "送信所 愛媛県松山市 演奏所 愛媛県松山市",
       "operatorName": "南海放送株式会社"
     },
     {
@@ -870,6 +583,13 @@
       "freqHz": 1116000,
       "band": "MW",
       "location": "送信所 愛媛県新居浜市 演奏所 愛媛県松山市",
+      "operatorName": "南海放送株式会社"
+    },
+    {
+      "callsign": "JOAM",
+      "freqHz": 1116000,
+      "band": "MW",
+      "location": "送信所 愛媛県宇和島市 演奏所 愛媛県松山市",
       "operatorName": "南海放送株式会社"
     },
     {
@@ -887,115 +607,38 @@
       "operatorName": "南海放送株式会社"
     },
     {
-      "callsign": "JOZR",
-      "freqHz": 900000,
+      "callsign": "JODR",
+      "freqHz": 1116000,
       "band": "MW",
-      "location": "演奏所 高知県高知市 送信所 高知県高知市",
-      "operatorName": "株式会社高知放送"
+      "location": "送受信所 新潟県新潟市中央区 演奏所 新潟県新潟市中央区",
+      "operatorName": "株式会社新潟放送"
     },
     {
-      "callsign": "JORK",
-      "freqHz": 990000,
+      "callsign": "JOQR",
+      "freqHz": 1134000,
       "band": "MW",
-      "location": "送信所 高知県高知市 演奏所 高知県高知市 予備送信所 高知県高知市",
-      "operatorName": "日本放送協会"
+      "location": "送信所 埼玉県川口市 演奏所 東京都港区 予備送信所 東京都新宿区",
+      "operatorName": "株式会社文化放送"
     },
     {
-      "callsign": "JOFO",
-      "freqHz": 1197000,
+      "callsign": "JOBR",
+      "freqHz": 1143000,
       "band": "MW",
-      "location": "送信所 福岡県北九州市若松区 演奏所 福岡県福岡市早良区",
-      "operatorName": "ＲＫＢ毎日放送株式会社"
+      "location": "送信所 京都府久世郡久御山町 演奏所 京都府京都市上京区",
+      "operatorName": "株式会社京都放送"
     },
     {
-      "callsign": "JOIL",
-      "freqHz": 720000,
+      "callsign": "JOOR",
+      "freqHz": 1179000,
       "band": "MW",
-      "location": "送受信所 福岡県北九州市若松区 演奏所 福岡県福岡市中央区",
-      "operatorName": "九州朝日放送株式会社"
+      "location": "演奏所 大阪府大阪市北区 送信所 大阪府高石市 予備送信所 大阪府大阪市北区",
+      "operatorName": "株式会社ＭＢＳラジオ"
     },
     {
-      "callsign": "JOSK",
-      "freqHz": 540000,
+      "callsign": "JOKP",
+      "freqHz": 1188000,
       "band": "MW",
-      "location": "送信所 福岡県北九州市若松区 第1演奏所 福岡県北九州市小倉北区 第2演奏所 福岡県福岡市中央区 予備送信所 福岡県北九州市小倉北区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOFR",
-      "freqHz": 1278000,
-      "band": "MW",
-      "location": "送信所 福岡県福岡市東区 演奏所 福岡県福岡市早良区",
-      "operatorName": "ＲＫＢ毎日放送株式会社"
-    },
-    {
-      "callsign": "JOIF",
-      "freqHz": 1413000,
-      "band": "MW",
-      "location": "送信所 福岡県福岡市東区 送信所 福岡県福岡市中央区 演奏所 福岡県福岡市中央区",
-      "operatorName": "九州朝日放送株式会社"
-    },
-    {
-      "callsign": "JOFE",
-      "freqHz": 1062000,
-      "band": "MW",
-      "location": "送信所 福岡県大牟田市 演奏所 福岡県福岡市早良区",
-      "operatorName": "ＲＫＢ毎日放送株式会社"
-    },
-    {
-      "callsign": "JOIM",
-      "freqHz": 1485000,
-      "band": "MW",
-      "location": "送受信所 福岡県大牟田市 演奏所 福岡県福岡市中央区",
-      "operatorName": "九州朝日放送株式会社"
-    },
-    {
-      "callsign": "JOLK",
-      "freqHz": 612000,
-      "band": "MW",
-      "location": "送信所 福岡県春日市 演奏所 福岡県福岡市中央区 予備送信所 福岡県福岡市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOUO",
-      "freqHz": 1458000,
-      "band": "MW",
-      "location": "送受信所 佐賀県佐賀市 演奏所 長崎県長崎市",
-      "operatorName": "長崎放送株式会社"
-    },
-    {
-      "callsign": "JOSP",
-      "freqHz": 963000,
-      "band": "MW",
-      "location": "送信所 佐賀県佐賀市 演奏所 佐賀県佐賀市 予備送信所 佐賀県佐賀市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOUR",
-      "freqHz": 1233000,
-      "band": "MW",
-      "location": "送信所 長崎県長崎市 受信所 長崎県長崎市 演奏所 長崎県長崎市",
-      "operatorName": "長崎放送株式会社"
-    },
-    {
-      "callsign": "JOAG",
-      "freqHz": 684000,
-      "band": "MW",
-      "location": "送信所 長崎県長崎市 演奏所 長崎県長崎市 予備送信所 長崎県長崎市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOMF",
-      "freqHz": 1098000,
-      "band": "MW",
-      "location": "送受信所 長崎県佐世保市 演奏所 長崎県長崎市",
-      "operatorName": "長崎放送株式会社"
-    },
-    {
-      "callsign": "JOGK",
-      "freqHz": 756000,
-      "band": "MW",
-      "location": "送信所 熊本県熊本市北区 演奏所 熊本県熊本市中央区 予備送信所 熊本県熊本市中央区",
+      "location": "送信所 北海道網走市 演奏所 北海道札幌市中央区 予備送信所 北海道北見市",
       "operatorName": "日本放送協会"
     },
     {
@@ -1006,74 +649,837 @@
       "operatorName": "株式会社熊本放送"
     },
     {
-      "callsign": "JOIP",
-      "freqHz": 639000,
+      "callsign": "JOFO",
+      "freqHz": 1197000,
       "band": "MW",
-      "location": "送信所 大分県大分市 演奏所 大分県大分市 予備送信所 大分県大分市",
+      "location": "送信所 福岡県北九州市若松区 演奏所 福岡県福岡市早良区",
+      "operatorName": "ＲＫＢ毎日放送株式会社"
+    },
+    {
+      "callsign": "JOSE",
+      "freqHz": 1197000,
+      "band": "MW",
+      "location": "送受信所 長野県岡谷市 第1演奏所 長野県長野市",
+      "operatorName": "信越放送株式会社"
+    },
+    {
+      "callsign": "JOWL",
+      "freqHz": 1197000,
+      "band": "MW",
+      "location": "北海道旭川市",
+      "operatorName": "株式会社ＳＴＶラジオ"
+    },
+    {
+      "callsign": "JOYF",
+      "freqHz": 1197000,
+      "band": "MW",
+      "location": "送信所 茨城県水戸市 演奏所 茨城県水戸市",
+      "operatorName": "株式会社ＬｕｃｋｙＦＭ茨城放送"
+    },
+    {
+      "callsign": "JOBO",
+      "freqHz": 1215000,
+      "band": "MW",
+      "location": "送信所 京都府舞鶴市 演奏所 京都府京都市上京区",
+      "operatorName": "株式会社京都放送"
+    },
+    {
+      "callsign": "JOBW",
+      "freqHz": 1215000,
+      "band": "MW",
+      "location": "送信所 滋賀県彦根市 演奏所 京都府京都市上京区",
+      "operatorName": "株式会社京都放送"
+    },
+    {
+      "callsign": "JOGE",
+      "freqHz": 1215000,
+      "band": "MW",
+      "location": "送受信所 青森県弘前市 演奏所 青森県弘前市",
+      "operatorName": "青森放送株式会社"
+    },
+    {
+      "callsign": "JOJK",
+      "freqHz": 1224000,
+      "band": "MW",
+      "location": "送信所 石川県野々市市 演奏所 石川県金沢市 予備送信所 石川県金沢市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOGF",
-      "freqHz": 1098000,
+      "callsign": "JOGR",
+      "freqHz": 1233000,
       "band": "MW",
-      "location": "送信所 大分県杵築市 演奏所 大分県大分市",
-      "operatorName": "株式会社大分放送"
+      "location": "送受信所 青森県青森市 演奏所 青森県青森市",
+      "operatorName": "青森放送株式会社"
     },
     {
-      "callsign": "JONF",
-      "freqHz": 936000,
+      "callsign": "JOUR",
+      "freqHz": 1233000,
       "band": "MW",
-      "location": "送受信所 宮崎県宮崎市 演奏所 宮崎県宮崎市",
-      "operatorName": "株式会社宮崎放送"
+      "location": "送信所 長崎県長崎市 受信所 長崎県長崎市 演奏所 長崎県長崎市",
+      "operatorName": "長崎放送株式会社"
     },
     {
-      "callsign": "JOMG",
-      "freqHz": 540000,
+      "callsign": "JOVL",
+      "freqHz": 1233000,
       "band": "MW",
-      "location": "送受信所 宮崎県宮崎市 演奏所 宮崎県宮崎市 予備送信所 宮崎県宮崎市",
+      "location": "送信所 和歌山県田辺市 演奏所 和歌山県和歌山市",
+      "operatorName": "株式会社和歌山放送"
+    },
+    {
+      "callsign": "JOLF",
+      "freqHz": 1242000,
+      "band": "MW",
+      "location": "送信所 千葉県木更津市 予備送信所 東京都足立区 演奏所 東京都千代田区",
+      "operatorName": "株式会社ニッポン放送"
+    },
+    {
+      "callsign": "JOIR",
+      "freqHz": 1260000,
+      "band": "MW",
+      "location": "送信所 宮城県仙台市若林区 演奏所 宮城県仙台市太白区",
+      "operatorName": "東北放送株式会社"
+    },
+    {
+      "callsign": "JOFM",
+      "freqHz": 1269000,
+      "band": "MW",
+      "location": "送信所 北海道檜山郡江差町 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOHW",
+      "freqHz": 1269000,
+      "band": "MW",
+      "location": "送信所 北海道中川郡幕別町 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOFR",
+      "freqHz": 1278000,
+      "band": "MW",
+      "location": "送信所 福岡県福岡市東区 演奏所 福岡県福岡市早良区",
+      "operatorName": "ＲＫＢ毎日放送株式会社"
+    },
+    {
+      "callsign": "JOHR",
+      "freqHz": 1287000,
+      "band": "MW",
+      "location": "送信所 北海道江別市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOTK",
+      "freqHz": 1296000,
+      "band": "MW",
+      "location": "送信所 島根県出雲市 演奏所 島根県松江市 予備送信所 島根県松江市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOCF",
-      "freqHz": 1107000,
+      "callsign": "JOUF",
+      "freqHz": 1314000,
       "band": "MW",
-      "location": "送受信所 鹿児島県霧島市 演奏所 鹿児島県鹿児島市",
-      "operatorName": "株式会社南日本放送"
+      "location": "演奏所 大阪府大阪市港区 送信所 大阪府堺市東区",
+      "operatorName": "株式会社ラジオ大阪"
     },
     {
-      "callsign": "JOHG",
-      "freqHz": 576000,
+      "callsign": "JOFP",
+      "freqHz": 1323000,
       "band": "MW",
-      "location": "送信所 鹿児島県霧島市 演奏所 鹿児島県鹿児島市 予備送信所 鹿児島県鹿児島市",
+      "location": "送信所 福島県福島市 演奏所 福島県福島市 送信所 福島県福島市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOAP",
-      "freqHz": 549000,
+      "callsign": "JOSF",
+      "freqHz": 1332000,
       "band": "MW",
-      "location": "送信所 沖縄県豊見城市 演奏所 沖縄県那覇市 演奏所 沖縄県那覇市",
+      "location": "送信所 愛知県あま市 演奏所 愛知県名古屋市東区",
+      "operatorName": "東海ラジオ放送株式会社"
+    },
+    {
+      "callsign": "JOER",
+      "freqHz": 1350000,
+      "band": "MW",
+      "location": "演奏所 広島県広島市中区 送信所 広島県江田島市 予備送信所 広島県広島市中区",
+      "operatorName": "株式会社中国放送"
+    },
+    {
+      "callsign": "JOHP",
+      "freqHz": 1368000,
+      "band": "MW",
+      "location": "送信所 香川県高松市 演奏所 香川県高松市 予備送信所 香川県高松市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JORR",
-      "freqHz": 738000,
+      "callsign": "JOLG",
+      "freqHz": 1368000,
       "band": "MW",
-      "location": "送信所 沖縄県豊見城市 演奏所 沖縄県那覇市",
-      "operatorName": "琉球放送株式会社"
+      "location": "送信所 鳥取県鳥取市 演奏所 鳥取県鳥取市 予備送信所 鳥取県鳥取市",
+      "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOXR",
-      "freqHz": 864000,
+      "callsign": "JOTS",
+      "freqHz": 1368000,
       "band": "MW",
-      "location": "送信所 沖縄県南城市 演奏所 沖縄県那覇市",
-      "operatorName": "株式会社ラジオ沖縄"
+      "location": "送信所 北海道稚内市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOCE",
+      "freqHz": 1395000,
+      "band": "MW",
+      "location": "兵庫県豊岡市",
+      "operatorName": "株式会社ラジオ関西"
+    },
+    {
+      "callsign": "JOWE",
+      "freqHz": 1395000,
+      "band": "MW",
+      "location": "送信所 福島県会津若松市 演奏所 福島県会津若松市",
+      "operatorName": "株式会社ラジオ福島"
+    },
+    {
+      "callsign": "JOQL",
+      "freqHz": 1404000,
+      "band": "MW",
+      "location": "送信所 北海道釧路郡釧路町 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOVR",
+      "freqHz": 1404000,
+      "band": "MW",
+      "location": "送受信所 静岡県静岡市駿河区 演奏所 静岡県静岡市駿河区 予備送信所 静岡県静岡市駿河区",
+      "operatorName": "静岡放送株式会社"
+    },
+    {
+      "callsign": "JOIF",
+      "freqHz": 1413000,
+      "band": "MW",
+      "location": "送信所 福岡県福岡市東区 送信所 福岡県福岡市中央区 演奏所 福岡県福岡市中央区",
+      "operatorName": "九州朝日放送株式会社"
+    },
+    {
+      "callsign": "JORF",
+      "freqHz": 1422000,
+      "band": "MW",
+      "location": "送信所 神奈川県川崎市幸区 演奏所 神奈川県横浜市中区 予備送信所 神奈川県横浜市西区",
+      "operatorName": "株式会社アール・エフ・ラジオ日本"
+    },
+    {
+      "callsign": "JOHL",
+      "freqHz": 1431000,
+      "band": "MW",
+      "location": "送信所 鳥取県鳥取市 演奏所 鳥取県米子市",
+      "operatorName": "株式会社山陰放送"
+    },
+    {
+      "callsign": "JOHN",
+      "freqHz": 1431000,
+      "band": "MW",
+      "location": "送信所 島根県益田市 演奏所 鳥取県米子市",
+      "operatorName": "株式会社山陰放送"
+    },
+    {
+      "callsign": "JOVF",
+      "freqHz": 1431000,
+      "band": "MW",
+      "location": "送信所 和歌山県和歌山市 演奏所 和歌山県和歌山市",
+      "operatorName": "株式会社和歌山放送"
+    },
+    {
+      "callsign": "JOWW",
+      "freqHz": 1431000,
+      "band": "MW",
+      "location": "送信所 福島県いわき市 演奏所 福島県いわき市",
+      "operatorName": "株式会社ラジオ福島"
+    },
+    {
+      "callsign": "JOZF",
+      "freqHz": 1431000,
+      "band": "MW",
+      "location": "送信所 岐阜県岐阜市 演奏所 岐阜県岐阜市",
+      "operatorName": "株式会社岐阜放送"
+    },
+    {
+      "callsign": "JOWF",
+      "freqHz": 1440000,
+      "band": "MW",
+      "location": "送信所 北海道江別市 演奏所 北海道札幌市中央区",
+      "operatorName": "株式会社ＳＴＶラジオ"
+    },
+    {
+      "callsign": "JOKF",
+      "freqHz": 1449000,
+      "band": "MW",
+      "location": "送受信所 香川県高松市 演奏所 香川県高松市",
+      "operatorName": "西日本放送株式会社"
+    },
+    {
+      "callsign": "JOQM",
+      "freqHz": 1449000,
+      "band": "MW",
+      "location": "送信所 北海道網走市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOUO",
+      "freqHz": 1458000,
+      "band": "MW",
+      "location": "送受信所 佐賀県佐賀市 演奏所 長崎県長崎市",
+      "operatorName": "長崎放送株式会社"
+    },
+    {
+      "callsign": "JOWR",
+      "freqHz": 1458000,
+      "band": "MW",
+      "location": "送信所 福島県福島市 演奏所 福島県福島市",
+      "operatorName": "株式会社ラジオ福島"
+    },
+    {
+      "callsign": "JOYL",
+      "freqHz": 1458000,
+      "band": "MW",
+      "location": "送信所 茨城県土浦市 演奏所 茨城県水戸市",
+      "operatorName": "株式会社ＬｕｃｋｙＦＭ茨城放送"
+    },
+    {
+      "callsign": "JOBE",
+      "freqHz": 1485000,
+      "band": "MW",
+      "location": "送信所 京都府福知山市 演奏所 京都府京都市上京区",
+      "operatorName": "株式会社京都放送"
+    },
+    {
+      "callsign": "JOGO",
+      "freqHz": 1485000,
+      "band": "MW",
+      "location": "送信所 青森県八戸市 演奏所 青森県八戸市 受信所 青森県八戸市",
+      "operatorName": "青森放送株式会社"
+    },
+    {
+      "callsign": "JOIM",
+      "freqHz": 1485000,
+      "band": "MW",
+      "location": "送受信所 福岡県大牟田市 演奏所 福岡県福岡市中央区",
+      "operatorName": "九州朝日放送株式会社"
+    },
+    {
+      "callsign": "JOPL",
+      "freqHz": 1485000,
+      "band": "MW",
+      "location": "送信所 山口県萩市 演奏所 山口県周南市",
+      "operatorName": "山口放送株式会社"
+    },
+    {
+      "callsign": "JORL",
+      "freqHz": 1485000,
+      "band": "MW",
+      "location": "送信所 神奈川県小田原市 演奏所 神奈川県横浜市中区",
+      "operatorName": "株式会社アール・エフ・ラジオ日本"
+    },
+    {
+      "callsign": "JOTO",
+      "freqHz": 1485000,
+      "band": "MW",
+      "location": "秋田県横手市",
+      "operatorName": "株式会社秋田放送"
+    },
+    {
+      "callsign": "JOYS",
+      "freqHz": 1485000,
+      "band": "MW",
+      "location": "北海道北見市",
+      "operatorName": "株式会社ＳＴＶラジオ"
+    },
+    {
+      "callsign": "JOTL",
+      "freqHz": 1494000,
+      "band": "MW",
+      "location": "送信所 北海道名寄市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOYR",
+      "freqHz": 1494000,
+      "band": "MW",
+      "location": "送信所 岡山県岡山市北区 演奏所 岡山県岡山市北区 予備送信所 岡山県岡山市北区",
+      "operatorName": "ＲＳＫ山陽放送株式会社"
+    },
+    {
+      "callsign": "JOUK",
+      "freqHz": 1503000,
+      "band": "MW",
+      "location": "送信所 秋田県秋田市 演奏所 秋田県秋田市 予備送信所 秋田県秋田市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JODO",
+      "freqHz": 1530000,
+      "band": "MW",
+      "location": "送受信所 新潟県上越市 演奏所 新潟県新潟市中央区",
+      "operatorName": "株式会社新潟放送"
+    },
+    {
+      "callsign": "JOEO",
+      "freqHz": 1530000,
+      "band": "MW",
+      "location": "演奏所 広島県広島市中区 送信所 広島県福山市",
+      "operatorName": "株式会社中国放送"
+    },
+    {
+      "callsign": "JOXF",
+      "freqHz": 1530000,
+      "band": "MW",
+      "location": "送信所 栃木県鹿沼市 演奏所 栃木県宇都宮市",
+      "operatorName": "株式会社栃木放送"
+    },
+    {
+      "callsign": "JODN",
+      "freqHz": 1557000,
+      "band": "MW",
+      "location": "送信所 岩手県宮古市 演奏所 岩手県宮古市",
+      "operatorName": "株式会社アイビーシー岩手放送"
+    },
+    {
+      "callsign": "JOHM",
+      "freqHz": 1557000,
+      "band": "MW",
+      "location": "送受信所 島根県浜田市 演奏所 鳥取県米子市",
+      "operatorName": "株式会社山陰放送"
+    },
+    {
+      "callsign": "JOHS",
+      "freqHz": 1557000,
+      "band": "MW",
+      "location": "送信所 北海道留萌市 演奏所 北海道札幌市中央区",
+      "operatorName": "北海道放送株式会社"
+    },
+    {
+      "callsign": "JOVM",
+      "freqHz": 1557000,
+      "band": "MW",
+      "location": "送信所 和歌山県日高郡日高町 演奏所 和歌山県和歌山市",
+      "operatorName": "株式会社和歌山放送"
+    },
+    {
+      "callsign": "JOVN",
+      "freqHz": 1557000,
+      "band": "MW",
+      "location": "送信所 和歌山県新宮市 演奏所 和歌山県和歌山市",
+      "operatorName": "株式会社和歌山放送"
+    },
+    {
+      "callsign": "JOFW-FM",
+      "freqHz": 76100000,
+      "band": "FM",
+      "location": "送信所 福岡県那珂川市 演奏所 福岡県福岡市中央区",
+      "operatorName": "ラブエフエム国際放送株式会社"
+    },
+    {
+      "callsign": "JOLU-FM",
+      "freqHz": 76100000,
+      "band": "FM",
+      "location": "送信所 福井県福井市 演奏所 福井県福井市",
+      "operatorName": "福井エフエム放送株式会社"
+    },
+    {
+      "callsign": "JOQU-FM",
+      "freqHz": 76100000,
+      "band": "FM",
+      "location": "送信所 岩手県紫波郡紫波町 演奏所 岩手県盛岡市",
+      "operatorName": "株式会社エフエム岩手"
+    },
+    {
+      "callsign": "JOSV-FM",
+      "freqHz": 76400000,
+      "band": "FM",
+      "location": "送信所 栃木県宇都宮市 演奏所 栃木県宇都宮市",
+      "operatorName": "株式会社エフエム栃木"
+    },
+    {
+      "callsign": "JOAW-FM",
+      "freqHz": 76500000,
+      "band": "FM",
+      "location": "送信所 大阪府東大阪市 演奏所 大阪府大阪市北区",
+      "operatorName": "株式会社ＦＭ８０２"
+    },
+    {
+      "callsign": "JOVV-FM",
+      "freqHz": 76800000,
+      "band": "FM",
+      "location": "送信所 岡山県玉野市 演奏所 岡山県岡山市北区",
+      "operatorName": "岡山エフエム放送株式会社"
+    },
+    {
+      "callsign": "JOUV-FM",
+      "freqHz": 77000000,
+      "band": "FM",
+      "location": "演奏所 滋賀県大津市 送信所 滋賀県湖南市",
+      "operatorName": "株式会社エフエム滋賀"
+    },
+    {
+      "callsign": "JOJU-FM",
+      "freqHz": 77100000,
+      "band": "FM",
+      "location": "送信所 宮城県仙台市太白区 演奏所 宮城県仙台市青葉区",
+      "operatorName": "株式会社エフエム仙台"
+    },
+    {
+      "callsign": "JOSU-FM",
+      "freqHz": 77400000,
+      "band": "FM",
+      "location": "送受信所 熊本県熊本市西区 演奏所 熊本県熊本市中央区",
+      "operatorName": "株式会社エフエム熊本"
+    },
+    {
+      "callsign": "JOVU-FM",
+      "freqHz": 77400000,
+      "band": "FM",
+      "location": "送信所 島根県松江市 演奏所 島根県松江市",
+      "operatorName": "株式会社エフエム山陰"
+    },
+    {
+      "callsign": "JOXU-FM",
+      "freqHz": 77500000,
+      "band": "FM",
+      "location": "送信所 新潟県西蒲原郡弥彦村 演奏所 新潟県新潟市中央区",
+      "operatorName": "株式会社エフエムラジオ新潟"
+    },
+    {
+      "callsign": "JOQV-FM",
+      "freqHz": 77800000,
+      "band": "FM",
+      "location": "送信所 愛知県名古屋市昭和区 演奏所 愛知県名古屋市中区",
+      "operatorName": "株式会社ＺＩＰーＦＭ"
+    },
+    {
+      "callsign": "JONV-FM",
+      "freqHz": 77900000,
+      "band": "FM",
+      "location": "送信所 佐賀県唐津市 演奏所 佐賀県佐賀市",
+      "operatorName": "株式会社エフエム佐賀"
+    },
+    {
+      "callsign": "JOGV-FM",
+      "freqHz": 78000000,
+      "band": "FM",
+      "location": "送信所 千葉県船橋市 演奏所 千葉県千葉市美浜区",
+      "operatorName": "株式会社ベイエフエム"
+    },
+    {
+      "callsign": "JOGU-FM",
+      "freqHz": 78200000,
+      "band": "FM",
+      "location": "送信所 広島県広島市南区 演奏所 広島県広島市南区",
+      "operatorName": "広島エフエム放送株式会社"
+    },
+    {
+      "callsign": "JOYU-FM",
+      "freqHz": 78600000,
+      "band": "FM",
+      "location": "演奏所 香川県高松市 送受信所 香川県高松市",
+      "operatorName": "株式会社エフエム香川"
+    },
+    {
+      "callsign": "JORV-FM",
+      "freqHz": 78700000,
+      "band": "FM",
+      "location": "送信所 福岡県福岡市早良区 演奏所 福岡県北九州市小倉北区",
+      "operatorName": "株式会社ＣＲＯＳＳ ＦＭ"
+    },
+    {
+      "callsign": "JONU-FM",
+      "freqHz": 78900000,
+      "band": "FM",
+      "location": "送受信所 三重県津市 演奏所 三重県津市",
+      "operatorName": "三重エフエム放送株式会社"
+    },
+    {
+      "callsign": "JOKU-FM",
+      "freqHz": 79200000,
+      "band": "FM",
+      "location": "送信所 静岡県静岡市清水区 演奏所 静岡県浜松市中央区",
+      "operatorName": "静岡エフエム放送株式会社"
+    },
+    {
+      "callsign": "JOUU-FM",
+      "freqHz": 79200000,
+      "band": "FM",
+      "location": "送信所 山口県防府市 演奏所 山口県山口市",
+      "operatorName": "株式会社エフエム山口"
+    },
+    {
+      "callsign": "JODV-FM",
+      "freqHz": 79500000,
+      "band": "FM",
+      "location": "送信所 埼玉県比企郡ときがわ町 演奏所 埼玉県さいたま市大宮区",
+      "operatorName": "株式会社エフエムナックファイブ"
+    },
+    {
+      "callsign": "JOHU-FM",
+      "freqHz": 79500000,
+      "band": "FM",
+      "location": "送信所 長崎県長崎市 演奏所 長崎県長崎市",
+      "operatorName": "株式会社エフエム長崎"
+    },
+    {
+      "callsign": "JOEU-FM",
+      "freqHz": 79700000,
+      "band": "FM",
+      "location": "演奏所 愛媛県松山市 送受信所 愛媛県伊予市",
+      "operatorName": "株式会社エフエム愛媛"
+    },
+    {
+      "callsign": "JOZU-FM",
+      "freqHz": 79700000,
+      "band": "FM",
+      "location": "送受信所 長野県松本市 第1演奏所 長野県松本市 第2演奏所 長野県松本市",
+      "operatorName": "長野エフエム放送株式会社"
+    },
+    {
+      "callsign": "JOOV-FM",
+      "freqHz": 79800000,
+      "band": "FM",
+      "location": "送信所 鹿児島県鹿児島市 演奏所 鹿児島県鹿児島市",
+      "operatorName": "株式会社エフエム鹿児島"
+    },
+    {
+      "callsign": "JOAU-FM",
+      "freqHz": 80000000,
+      "band": "FM",
+      "location": "送信所 東京都港区 予備送信所 東京都西多摩郡檜原村 演奏所 東京都千代田区",
+      "operatorName": "株式会社エフエム東京"
+    },
+    {
+      "callsign": "JOWU-FM",
+      "freqHz": 80000000,
+      "band": "FM",
+      "location": "送受信所 青森県五所川原市 演奏所 青森県青森市",
+      "operatorName": "株式会社エフエム青森"
+    },
+    {
+      "callsign": "JOXV-FM",
+      "freqHz": 80000000,
+      "band": "FM",
+      "location": "送信所 岐阜県岐阜市 演奏所 岐阜県大垣市",
+      "operatorName": "株式会社エフエム岐阜"
+    },
+    {
+      "callsign": "JOFV-FM",
+      "freqHz": 80200000,
+      "band": "FM",
+      "location": "演奏所 大阪府大阪市北区 送信所 大阪府大東市",
+      "operatorName": "株式会社ＦＭ８０２"
+    },
+    {
+      "callsign": "JOBP-FM",
+      "freqHz": 80300000,
+      "band": "FM",
+      "location": "送信所 栃木県宇都宮市 演奏所 栃木県宇都宮市",
+      "operatorName": "日本放送協会"
     },
     {
       "callsign": "JOVS",
-      "freqHz": 85200000,
+      "freqHz": 80300000,
       "band": "FM",
-      "location": "送信所 北海道札幌市西区 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "location": "送信所 栃木県宇都宮市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
       "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOEV-FM",
+      "freqHz": 80400000,
+      "band": "FM",
+      "location": "送信所 山形県山形市 演奏所 山形県山形市",
+      "operatorName": "株式会社エフエム山形"
+    },
+    {
+      "callsign": "JOFU-FM",
+      "freqHz": 80400000,
+      "band": "FM",
+      "location": "送信所 北海道札幌市西区 演奏所 北海道札幌市中央区 演奏所 北海道札幌市中央区",
+      "operatorName": "株式会社エフエム北海道"
+    },
+    {
+      "callsign": "JOHV-FM",
+      "freqHz": 80500000,
+      "band": "FM",
+      "location": "送信所 石川県野々市市 演奏所 石川県金沢市 演奏所 石川県金沢市",
+      "operatorName": "株式会社エフエム石川"
+    },
+    {
+      "callsign": "JOCU-FM",
+      "freqHz": 80700000,
+      "band": "FM",
+      "location": "送信所 愛知県名古屋市昭和区 受信所 愛知県名古屋市昭和区 演奏所 愛知県名古屋市中区",
+      "operatorName": "株式会社エフエム愛知"
+    },
+    {
+      "callsign": "JODU-FM",
+      "freqHz": 80700000,
+      "band": "FM",
+      "location": "送信所 福岡県福岡市中央区 演奏所 福岡県福岡市中央区",
+      "operatorName": "株式会社エフエム福岡"
+    },
+    {
+      "callsign": "JOMP-FM",
+      "freqHz": 80700000,
+      "band": "FM",
+      "location": "送信所 千葉県船橋市 演奏所 千葉県千葉市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOMV-FM",
+      "freqHz": 80700000,
+      "band": "FM",
+      "location": "演奏所 徳島県徳島市 送受信所 徳島県徳島市",
+      "operatorName": "株式会社エフエム徳島"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 80700000,
+      "band": "FM",
+      "location": "送信所 千葉県船橋市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOAV-FM",
+      "freqHz": 81300000,
+      "band": "FM",
+      "location": "送信所 東京都墨田区 予備送信所 東京都港区 演奏所 東京都港区",
+      "operatorName": "株式会社Ｊ－ＷＡＶＥ"
+    },
+    {
+      "callsign": "JOIG-FM",
+      "freqHz": 81500000,
+      "band": "FM",
+      "location": "送信所 富山県富山市 演奏所 富山県富山市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 81500000,
+      "band": "FM",
+      "location": "送信所 富山県富山市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOLV-FM",
+      "freqHz": 81600000,
+      "band": "FM",
+      "location": "送受信所 高知県高知市 演奏所 高知県高知市",
+      "operatorName": "株式会社エフエム高知"
+    },
+    {
+      "callsign": "JOSP-FM",
+      "freqHz": 81600000,
+      "band": "FM",
+      "location": "送受信所 佐賀県唐津市 演奏所 佐賀県佐賀市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOTP-FM",
+      "freqHz": 81600000,
+      "band": "FM",
+      "location": "送信所 群馬県高崎市 演奏所 群馬県前橋市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 81600000,
+      "band": "FM",
+      "location": "送信所 佐賀県唐津市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JONP-FM",
+      "freqHz": 81800000,
+      "band": "FM",
+      "location": "送受信所 三重県津市 演奏所 三重県津市 演奏所 愛知県名古屋市東区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOTV-FM",
+      "freqHz": 81800000,
+      "band": "FM",
+      "location": "送信所 福島県福島市 演奏所 福島県郡山市",
+      "operatorName": "株式会社エフエム福島"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 81800000,
+      "band": "FM",
+      "location": "送信所 三重県津市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOGP-FM",
+      "freqHz": 81900000,
+      "band": "FM",
+      "location": "送信所 神奈川県横浜市磯子区 演奏所 神奈川県横浜市中区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 81900000,
+      "band": "FM",
+      "location": "送信所 神奈川県横浜市磯子区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOJG-FM",
+      "freqHz": 82100000,
+      "band": "FM",
+      "location": "送信所 山形県山形市 演奏所 山形県山形市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 82100000,
+      "band": "FM",
+      "location": "送信所 山形県山形市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOJK-FM",
+      "freqHz": 82200000,
+      "band": "FM",
+      "location": "送信所 石川県野々市市 演奏所 石川県金沢市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 82200000,
+      "band": "FM",
+      "location": "送信所 石川県野々市市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOQK-FM",
+      "freqHz": 82300000,
+      "band": "FM",
+      "location": "送信所 新潟県西蒲原郡弥彦村 受信所 新潟県西蒲原郡弥彦村 演奏所 新潟県新潟市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOAK-FM",
+      "freqHz": 82500000,
+      "band": "FM",
+      "location": "送信所 東京都墨田区 予備送信所 東京都港区 演奏所 東京都渋谷区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOCK-FM",
+      "freqHz": 82500000,
+      "band": "FM",
+      "location": "送受信所 愛知県名古屋市昭和区 演奏所 愛知県名古屋市東区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOHK-FM",
+      "freqHz": 82500000,
+      "band": "FM",
+      "location": "送信所 宮城県仙台市太白区 演奏所 宮城県仙台市青葉区",
+      "operatorName": "日本放送協会"
     },
     {
       "callsign": "JOPV-FM",
@@ -1083,11 +1489,214 @@
       "operatorName": "株式会社ＦＭ ＮＯＲＴＨ ＷＡＶＥ"
     },
     {
-      "callsign": "JOFU-FM",
-      "freqHz": 80400000,
+      "callsign": "JOVS",
+      "freqHz": 82500000,
       "band": "FM",
-      "location": "送信所 北海道札幌市西区 演奏所 北海道札幌市中央区 演奏所 北海道札幌市中央区",
-      "operatorName": "株式会社エフエム北海道"
+      "location": "送信所 宮城県仙台市太白区 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOOU-FM",
+      "freqHz": 82700000,
+      "band": "FM",
+      "location": "送信所 富山県富山市 演奏所 富山県富山市",
+      "operatorName": "富山エフエム放送株式会社"
+    },
+    {
+      "callsign": "JOOK-FM",
+      "freqHz": 82800000,
+      "band": "FM",
+      "location": "送受信所 京都府京都市西京区 演奏所 京都府京都市中京区 演奏所 大阪府大阪市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOPU-FM",
+      "freqHz": 82800000,
+      "band": "FM",
+      "location": "送信所 秋田県秋田市 演奏所 秋田県秋田市",
+      "operatorName": "株式会社エフエム秋田"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 82800000,
+      "band": "FM",
+      "location": "送信所 京都府京都市西京区 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOCV-FM",
+      "freqHz": 83000000,
+      "band": "FM",
+      "location": "送受信所 山梨県笛吹市 演奏所 山梨県甲府市",
+      "operatorName": "株式会社エフエム富士"
+    },
+    {
+      "callsign": "JOQG-FM",
+      "freqHz": 83100000,
+      "band": "FM",
+      "location": "送信所 岩手県紫波郡紫波町 演奏所 岩手県盛岡市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 83100000,
+      "band": "FM",
+      "location": "送信所 岩手県紫波郡紫波町 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOEP-FM",
+      "freqHz": 83200000,
+      "band": "FM",
+      "location": "送信所 茨城県桜川市 演奏所 茨城県水戸市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOMU-FM",
+      "freqHz": 83200000,
+      "band": "FM",
+      "location": "送受信所 宮崎県宮崎市 演奏所 宮崎県宮崎市",
+      "operatorName": "株式会社エフエム宮崎"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 83200000,
+      "band": "FM",
+      "location": "送信所 茨城県桜川市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOFG-FM",
+      "freqHz": 83400000,
+      "band": "FM",
+      "location": "送信所 福井県福井市 演奏所 福井県福井市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 83400000,
+      "band": "FM",
+      "location": "送信所 徳島県徳島市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOXK-FM",
+      "freqHz": 83400000,
+      "band": "FM",
+      "location": "送信所 徳島県徳島市 演奏所 徳島県徳島市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOOP-FM",
+      "freqHz": 83600000,
+      "band": "FM",
+      "location": "送信所 岐阜県岐阜市 演奏所 岐阜県岐阜市 演奏所 愛知県名古屋市東区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 83600000,
+      "band": "FM",
+      "location": "送信所 岐阜県岐阜市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JONK-FM",
+      "freqHz": 84000000,
+      "band": "FM",
+      "location": "送受信所 長野県上田市 演奏所 長野県長野市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOQP-FM",
+      "freqHz": 84000000,
+      "band": "FM",
+      "location": "送信所 滋賀県湖南市 第1演奏所 滋賀県大津市 第2演奏所 大阪府大阪市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 84000000,
+      "band": "FM",
+      "location": "送信所 滋賀県湖南市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOAG-FM",
+      "freqHz": 84500000,
+      "band": "FM",
+      "location": "送信所 長崎県長崎市 演奏所 長崎県長崎市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOTK-FM",
+      "freqHz": 84500000,
+      "band": "FM",
+      "location": "送信所 島根県松江市 演奏所 島根県松江市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 84500000,
+      "band": "FM",
+      "location": "送信所 長崎県長崎市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JORP-FM",
+      "freqHz": 84700000,
+      "band": "FM",
+      "location": "送受信所 和歌山県海南市 演奏所 和歌山県和歌山市 演奏所 大阪府大阪市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOTU-FM",
+      "freqHz": 84700000,
+      "band": "FM",
+      "location": "送信所 神奈川県秦野市 演奏所 神奈川県横浜市西区 予備送信所 神奈川県横浜市磯子区",
+      "operatorName": "横浜エフエム放送株式会社"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 84700000,
+      "band": "FM",
+      "location": "送信所 和歌山県海南市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOLK-FM",
+      "freqHz": 84800000,
+      "band": "FM",
+      "location": "送信所 福岡県福岡市早良区 演奏所 福岡県福岡市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 84800000,
+      "band": "FM",
+      "location": "送信所 福岡県福岡市早良区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOBU-FM",
+      "freqHz": 85100000,
+      "band": "FM",
+      "location": "送信所 大阪府大東市 演奏所 大阪府大阪市浪速区 予備送信所 大阪府大阪市浪速区",
+      "operatorName": "株式会社エフエム大阪"
+    },
+    {
+      "callsign": "JOLP-FM",
+      "freqHz": 85100000,
+      "band": "FM",
+      "location": "送信所 埼玉県さいたま市桜区 演奏所 埼玉県さいたま市浦和区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 85100000,
+      "band": "FM",
+      "location": "送信所 埼玉県さいたま市桜区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
     },
     {
       "callsign": "JOIK-FM",
@@ -1098,9 +1707,170 @@
     },
     {
       "callsign": "JOVS",
-      "freqHz": 87000000,
+      "freqHz": 85200000,
       "band": "FM",
-      "location": "送信所 北海道函館市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "location": "送信所 北海道札幌市西区 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOFP-FM",
+      "freqHz": 85300000,
+      "band": "FM",
+      "location": "送信所 福島県福島市 演奏所 福島県福島市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOUG-FM",
+      "freqHz": 85300000,
+      "band": "FM",
+      "location": "送信所 山口県防府市 演奏所 山口県山口市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 85300000,
+      "band": "FM",
+      "location": "送信所 山口県防府市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOGK-FM",
+      "freqHz": 85400000,
+      "band": "FM",
+      "location": "送信所 熊本県熊本市西区 演奏所 熊本県熊本市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 85400000,
+      "band": "FM",
+      "location": "送信所 熊本県熊本市西区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOHG-FM",
+      "freqHz": 85600000,
+      "band": "FM",
+      "location": "送信所 鹿児島県鹿児島市 演奏所 鹿児島県鹿児島市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOKG-FM",
+      "freqHz": 85600000,
+      "band": "FM",
+      "location": "送信所 山梨県笛吹市 演奏所 山梨県甲府市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 85600000,
+      "band": "FM",
+      "location": "送信所 鹿児島県鹿児島市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOSK-FM",
+      "freqHz": 85700000,
+      "band": "FM",
+      "location": "送信所 福岡県北九州市八幡東区 第1演奏所 福岡県北九州市小倉北区 第2演奏所 福岡県福岡市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOCG-FM",
+      "freqHz": 85800000,
+      "band": "FM",
+      "location": "送信所 北海道旭川市 演奏所 北海道札幌市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOLG-FM",
+      "freqHz": 85800000,
+      "band": "FM",
+      "location": "送信所 鳥取県東伯郡湯梨浜町 演奏所 鳥取県鳥取市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 85800000,
+      "band": "FM",
+      "location": "送信所 鳥取県東伯郡湯梨浜町 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOHP-FM",
+      "freqHz": 86000000,
+      "band": "FM",
+      "location": "送受信所 香川県高松市 演奏所 香川県高松市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOKP-FM",
+      "freqHz": 86000000,
+      "band": "FM",
+      "location": "送信所 北海道網走市 演奏所 北海道札幌市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOTG-FM",
+      "freqHz": 86000000,
+      "band": "FM",
+      "location": "送信所 青森県青森市 演奏所 青森県青森市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 86000000,
+      "band": "FM",
+      "location": "送信所 香川県高松市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOMG-FM",
+      "freqHz": 86200000,
+      "band": "FM",
+      "location": "送信所 宮崎県宮崎市 演奏所 宮崎県宮崎市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 86200000,
+      "band": "FM",
+      "location": "送信所 宮崎県宮崎市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JORU-FM",
+      "freqHz": 86300000,
+      "band": "FM",
+      "location": "送信所 群馬県高崎市 予備送信所 群馬県前橋市 演奏所 群馬県前橋市",
+      "operatorName": "株式会社エフエム群馬"
+    },
+    {
+      "callsign": "JOPP-FM",
+      "freqHz": 86500000,
+      "band": "FM",
+      "location": "送受信所 兵庫県神戸市灘区 演奏所 兵庫県神戸市中央区 演奏所 大阪府大阪市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 86500000,
+      "band": "FM",
+      "location": "送信所 兵庫県神戸市灘区 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOUK-FM",
+      "freqHz": 86700000,
+      "band": "FM",
+      "location": "送信所 秋田県秋田市 演奏所 秋田県秋田市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 86700000,
+      "band": "FM",
+      "location": "送信所 秋田県秋田市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
       "operatorName": "一般財団法人道路交通情報通信システムセンター"
     },
     {
@@ -1112,612 +1882,17 @@
     },
     {
       "callsign": "JOVS",
-      "freqHz": 85800000,
+      "freqHz": 87000000,
       "band": "FM",
-      "location": "送信所 北海道旭川市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "location": "送信所 北海道函館市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
       "operatorName": "一般財団法人道路交通情報通信システムセンター"
     },
     {
-      "callsign": "JOCG-FM",
-      "freqHz": 85800000,
-      "band": "FM",
-      "location": "送信所 北海道旭川市 演奏所 北海道札幌市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 88000000,
-      "band": "FM",
-      "location": "送信所 北海道室蘭市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOIQ-FM",
-      "freqHz": 88000000,
-      "band": "FM",
-      "location": "送信所 北海道室蘭市 演奏所 北海道札幌市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 88500000,
-      "band": "FM",
-      "location": "送信所 北海道釧路市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOPG-FM",
-      "freqHz": 88500000,
-      "band": "FM",
-      "location": "送信所 北海道釧路市 演奏所 北海道札幌市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 86000000,
-      "band": "FM",
-      "location": "送信所 北海道網走市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOKP-FM",
-      "freqHz": 86000000,
-      "band": "FM",
-      "location": "送信所 北海道網走市 演奏所 北海道札幌市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 87500000,
-      "band": "FM",
-      "location": "送信所 北海道河東郡音更町 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOOG-FM",
-      "freqHz": 87500000,
-      "band": "FM",
-      "location": "送信所 北海道河東郡音更町 演奏所 北海道札幌市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 86000000,
-      "band": "FM",
-      "location": "送信所 青森県青森市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOTG-FM",
-      "freqHz": 86000000,
-      "band": "FM",
-      "location": "送信所 青森県青森市 演奏所 青森県青森市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOWU-FM",
-      "freqHz": 80000000,
-      "band": "FM",
-      "location": "送受信所 青森県五所川原市 演奏所 青森県青森市",
-      "operatorName": "株式会社エフエム青森"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 83100000,
-      "band": "FM",
-      "location": "送信所 岩手県紫波郡紫波町 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOQU-FM",
-      "freqHz": 76100000,
-      "band": "FM",
-      "location": "送信所 岩手県紫波郡紫波町 演奏所 岩手県盛岡市",
-      "operatorName": "株式会社エフエム岩手"
-    },
-    {
-      "callsign": "JOQG-FM",
-      "freqHz": 83100000,
-      "band": "FM",
-      "location": "送信所 岩手県紫波郡紫波町 演奏所 岩手県盛岡市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 82500000,
-      "band": "FM",
-      "location": "送信所 宮城県仙台市太白区 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOJU-FM",
-      "freqHz": 77100000,
-      "band": "FM",
-      "location": "送信所 宮城県仙台市太白区 演奏所 宮城県仙台市青葉区",
-      "operatorName": "株式会社エフエム仙台"
-    },
-    {
-      "callsign": "JOHK-FM",
-      "freqHz": 82500000,
-      "band": "FM",
-      "location": "送信所 宮城県仙台市太白区 演奏所 宮城県仙台市青葉区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 86700000,
-      "band": "FM",
-      "location": "送信所 秋田県秋田市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOPU-FM",
-      "freqHz": 82800000,
-      "band": "FM",
-      "location": "送信所 秋田県秋田市 演奏所 秋田県秋田市",
-      "operatorName": "株式会社エフエム秋田"
-    },
-    {
-      "callsign": "JOUK-FM",
-      "freqHz": 86700000,
-      "band": "FM",
-      "location": "送信所 秋田県秋田市 演奏所 秋田県秋田市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 82100000,
-      "band": "FM",
-      "location": "送信所 山形県山形市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOEV-FM",
-      "freqHz": 80400000,
-      "band": "FM",
-      "location": "送信所 山形県山形市 演奏所 山形県山形市",
-      "operatorName": "株式会社エフエム山形"
-    },
-    {
-      "callsign": "JOJG-FM",
-      "freqHz": 82100000,
-      "band": "FM",
-      "location": "送信所 山形県山形市 演奏所 山形県山形市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 85300000,
-      "band": "FM",
-      "location": "送信所 福島県福島市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOTV-FM",
-      "freqHz": 81800000,
-      "band": "FM",
-      "location": "送信所 福島県福島市 演奏所 福島県郡山市",
-      "operatorName": "株式会社エフエム福島"
-    },
-    {
-      "callsign": "JOFP-FM",
-      "freqHz": 85300000,
-      "band": "FM",
-      "location": "送信所 福島県福島市 演奏所 福島県福島市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 83200000,
-      "band": "FM",
-      "location": "送信所 茨城県桜川市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOEP-FM",
-      "freqHz": 83200000,
-      "band": "FM",
-      "location": "送信所 茨城県桜川市 演奏所 茨城県水戸市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 80300000,
-      "band": "FM",
-      "location": "送信所 栃木県宇都宮市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOSV-FM",
-      "freqHz": 76400000,
-      "band": "FM",
-      "location": "送信所 栃木県宇都宮市 演奏所 栃木県宇都宮市",
-      "operatorName": "株式会社エフエム栃木"
-    },
-    {
-      "callsign": "JOBP-FM",
-      "freqHz": 80300000,
-      "band": "FM",
-      "location": "送信所 栃木県宇都宮市 演奏所 栃木県宇都宮市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 81600000,
-      "band": "FM",
-      "location": "送信所 群馬県高崎市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOTP-FM",
-      "freqHz": 81600000,
-      "band": "FM",
-      "location": "送信所 群馬県高崎市 演奏所 群馬県前橋市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 85100000,
-      "band": "FM",
-      "location": "送信所 埼玉県さいたま市桜区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOLP-FM",
-      "freqHz": 85100000,
-      "band": "FM",
-      "location": "送信所 埼玉県さいたま市桜区 演奏所 埼玉県さいたま市浦和区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JODV-FM",
-      "freqHz": 79500000,
-      "band": "FM",
-      "location": "送信所 埼玉県比企郡ときがわ町 演奏所 埼玉県さいたま市大宮区",
-      "operatorName": "株式会社エフエムナックファイブ"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 80700000,
-      "band": "FM",
-      "location": "送信所 千葉県船橋市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOGV-FM",
-      "freqHz": 78000000,
-      "band": "FM",
-      "location": "送信所 千葉県船橋市 演奏所 千葉県千葉市美浜区",
-      "operatorName": "株式会社ベイエフエム"
-    },
-    {
-      "callsign": "JOMP-FM",
-      "freqHz": 80700000,
-      "band": "FM",
-      "location": "送信所 千葉県船橋市 演奏所 千葉県千葉市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JODW-FM",
-      "freqHz": 89700000,
-      "band": "FM",
-      "location": "送信所 東京都港区 演奏所 東京都千代田区",
-      "operatorName": "株式会社ＩｎｔｅｒＦＭ８９７"
-    },
-    {
-      "callsign": "JOAK-FM",
-      "freqHz": 82500000,
-      "band": "FM",
-      "location": "送信所 東京都墨田区 予備送信所 東京都港区 演奏所 東京都渋谷区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 81900000,
-      "band": "FM",
-      "location": "送信所 神奈川県横浜市磯子区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOGP-FM",
-      "freqHz": 81900000,
-      "band": "FM",
-      "location": "送信所 神奈川県横浜市磯子区 演奏所 神奈川県横浜市中区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOTU-FM",
-      "freqHz": 84700000,
-      "band": "FM",
-      "location": "送信所 神奈川県秦野市 演奏所 神奈川県横浜市西区 予備送信所 神奈川県横浜市磯子区",
-      "operatorName": "横浜エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOXU-FM",
-      "freqHz": 77500000,
-      "band": "FM",
-      "location": "送信所 新潟県西蒲原郡弥彦村 演奏所 新潟県新潟市中央区",
-      "operatorName": "株式会社エフエムラジオ新潟"
-    },
-    {
-      "callsign": "JOQK-FM",
-      "freqHz": 82300000,
-      "band": "FM",
-      "location": "送信所 新潟県西蒲原郡弥彦村 受信所 新潟県西蒲原郡弥彦村 演奏所 新潟県新潟市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 81500000,
-      "band": "FM",
-      "location": "送信所 富山県富山市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOOU-FM",
-      "freqHz": 82700000,
-      "band": "FM",
-      "location": "送信所 富山県富山市 演奏所 富山県富山市",
-      "operatorName": "富山エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOIG-FM",
-      "freqHz": 81500000,
-      "band": "FM",
-      "location": "送信所 富山県富山市 演奏所 富山県富山市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 82200000,
-      "band": "FM",
-      "location": "送信所 石川県野々市市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOHV-FM",
-      "freqHz": 80500000,
-      "band": "FM",
-      "location": "送信所 石川県野々市市 演奏所 石川県金沢市 演奏所 石川県金沢市",
-      "operatorName": "株式会社エフエム石川"
-    },
-    {
-      "callsign": "JOJK-FM",
-      "freqHz": 82200000,
-      "band": "FM",
-      "location": "送信所 石川県野々市市 演奏所 石川県金沢市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 83400000,
-      "band": "FM",
-      "location": "送信所 福井県福井市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOFG-FM",
-      "freqHz": 83400000,
-      "band": "FM",
-      "location": "送信所 福井県福井市 演奏所 福井県福井市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOLU-FM",
-      "freqHz": 76100000,
-      "band": "FM",
-      "location": "送信所 福井県福井市 演奏所 福井県福井市",
-      "operatorName": "福井エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 85600000,
-      "band": "FM",
-      "location": "送信所 山梨県笛吹市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOCV-FM",
-      "freqHz": 83000000,
-      "band": "FM",
-      "location": "送受信所 山梨県笛吹市 演奏所 山梨県甲府市",
-      "operatorName": "株式会社エフエム富士"
-    },
-    {
-      "callsign": "JOKG-FM",
-      "freqHz": 85600000,
-      "band": "FM",
-      "location": "送信所 山梨県笛吹市 演奏所 山梨県甲府市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOZU-FM",
-      "freqHz": 79700000,
-      "band": "FM",
-      "location": "送受信所 長野県松本市 第1演奏所 長野県松本市 第2演奏所 長野県松本市",
-      "operatorName": "長野エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 84000000,
-      "band": "FM",
-      "location": "送信所 長野県上田市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JONK-FM",
-      "freqHz": 84000000,
-      "band": "FM",
-      "location": "送受信所 長野県上田市 演奏所 長野県長野市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 83600000,
-      "band": "FM",
-      "location": "送信所 岐阜県岐阜市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOXV-FM",
-      "freqHz": 80000000,
-      "band": "FM",
-      "location": "送信所 岐阜県岐阜市 演奏所 岐阜県大垣市",
-      "operatorName": "株式会社エフエム岐阜"
-    },
-    {
-      "callsign": "JOOP-FM",
-      "freqHz": 83600000,
-      "band": "FM",
-      "location": "送信所 岐阜県岐阜市 演奏所 岐阜県岐阜市 演奏所 愛知県名古屋市東区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 88800000,
-      "band": "FM",
-      "location": "送信所 静岡県静岡市清水区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOKU-FM",
-      "freqHz": 79200000,
-      "band": "FM",
-      "location": "送信所 静岡県静岡市清水区 演奏所 静岡県浜松市中央区",
-      "operatorName": "静岡エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOPK-FM",
-      "freqHz": 88800000,
-      "band": "FM",
-      "location": "送信所 静岡県静岡市清水区 演奏所 静岡県静岡市駿河区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOCU-FM",
-      "freqHz": 80700000,
-      "band": "FM",
-      "location": "送信所 愛知県名古屋市昭和区 受信所 愛知県名古屋市昭和区 演奏所 愛知県名古屋市中区",
-      "operatorName": "株式会社エフエム愛知"
-    },
-    {
-      "callsign": "JOQV-FM",
-      "freqHz": 77800000,
-      "band": "FM",
-      "location": "送信所 愛知県名古屋市昭和区 演奏所 愛知県名古屋市中区",
-      "operatorName": "株式会社ＺＩＰーＦＭ"
-    },
-    {
-      "callsign": "JOCK-FM",
-      "freqHz": 82500000,
-      "band": "FM",
-      "location": "送受信所 愛知県名古屋市昭和区 演奏所 愛知県名古屋市東区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 81800000,
-      "band": "FM",
-      "location": "送信所 三重県津市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JONP-FM",
-      "freqHz": 81800000,
-      "band": "FM",
-      "location": "送受信所 三重県津市 演奏所 三重県津市 演奏所 愛知県名古屋市東区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JONU-FM",
-      "freqHz": 78900000,
-      "band": "FM",
-      "location": "送受信所 三重県津市 演奏所 三重県津市",
-      "operatorName": "三重エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOUV-FM",
-      "freqHz": 77000000,
-      "band": "FM",
-      "location": "演奏所 滋賀県大津市 送信所 滋賀県湖南市",
-      "operatorName": "株式会社エフエム滋賀"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 84000000,
-      "band": "FM",
-      "location": "送信所 滋賀県湖南市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOQP-FM",
-      "freqHz": 84000000,
-      "band": "FM",
-      "location": "送信所 滋賀県湖南市 第1演奏所 滋賀県大津市 第2演奏所 大阪府大阪市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 82800000,
-      "band": "FM",
-      "location": "送信所 京都府京都市西京区 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOOK-FM",
-      "freqHz": 82800000,
-      "band": "FM",
-      "location": "送受信所 京都府京都市西京区 演奏所 京都府京都市中京区 演奏所 大阪府大阪市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOFV-FM",
-      "freqHz": 80200000,
-      "band": "FM",
-      "location": "演奏所 大阪府大阪市北区 送信所 大阪府大東市",
-      "operatorName": "株式会社ＦＭ８０２"
-    },
-    {
-      "callsign": "JOBK-FM",
-      "freqHz": 88100000,
-      "band": "FM",
-      "location": "送受信所 大阪府大東市 演奏所 大阪府大阪市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOAW-FM",
-      "freqHz": 76500000,
-      "band": "FM",
-      "location": "送信所 大阪府東大阪市 演奏所 大阪府大阪市北区",
-      "operatorName": "株式会社ＦＭ８０２"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 86500000,
-      "band": "FM",
-      "location": "送信所 兵庫県神戸市灘区 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOPP-FM",
-      "freqHz": 86500000,
-      "band": "FM",
-      "location": "送受信所 兵庫県神戸市灘区 演奏所 兵庫県神戸市中央区 演奏所 大阪府大阪市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOIV-FM",
-      "freqHz": 89900000,
-      "band": "FM",
-      "location": "演奏所 兵庫県神戸市中央区 送信所 兵庫県神戸市灘区",
-      "operatorName": "兵庫エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 87400000,
-      "band": "FM",
-      "location": "送信所 奈良県生駒郡斑鳩町 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+      "callsign": "JOIU-FM",
+      "freqHz": 87300000,
+      "band": "FM",
+      "location": "演奏所 沖縄県浦添市 送信所 沖縄県島尻郡南風原町",
+      "operatorName": "株式会社エフエム沖縄"
     },
     {
       "callsign": "JOUP-FM",
@@ -1728,170 +1903,23 @@
     },
     {
       "callsign": "JOVS",
-      "freqHz": 84700000,
+      "freqHz": 87400000,
       "band": "FM",
-      "location": "送信所 和歌山県海南市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "location": "送信所 奈良県生駒郡斑鳩町 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
       "operatorName": "一般財団法人道路交通情報通信システムセンター"
     },
     {
-      "callsign": "JORP-FM",
-      "freqHz": 84700000,
+      "callsign": "JOOG-FM",
+      "freqHz": 87500000,
       "band": "FM",
-      "location": "送受信所 和歌山県海南市 演奏所 和歌山県和歌山市 演奏所 大阪府大阪市中央区",
+      "location": "送信所 北海道河東郡音更町 演奏所 北海道札幌市中央区",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOVS",
-      "freqHz": 85800000,
+      "callsign": "JORK-FM",
+      "freqHz": 87500000,
       "band": "FM",
-      "location": "送信所 鳥取県東伯郡湯梨浜町 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOLG-FM",
-      "freqHz": 85800000,
-      "band": "FM",
-      "location": "送信所 鳥取県東伯郡湯梨浜町 演奏所 鳥取県鳥取市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 84500000,
-      "band": "FM",
-      "location": "送信所 島根県松江市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOVU-FM",
-      "freqHz": 77400000,
-      "band": "FM",
-      "location": "送信所 島根県松江市 演奏所 島根県松江市",
-      "operatorName": "株式会社エフエム山陰"
-    },
-    {
-      "callsign": "JOTK-FM",
-      "freqHz": 84500000,
-      "band": "FM",
-      "location": "送信所 島根県松江市 演奏所 島根県松江市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 88700000,
-      "band": "FM",
-      "location": "送信所 岡山県玉野市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOVV-FM",
-      "freqHz": 76800000,
-      "band": "FM",
-      "location": "送信所 岡山県玉野市 演奏所 岡山県岡山市北区",
-      "operatorName": "岡山エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOKK-FM",
-      "freqHz": 88700000,
-      "band": "FM",
-      "location": "送信所 岡山県玉野市 演奏所 岡山県岡山市北区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOFK-FM",
-      "freqHz": 88300000,
-      "band": "FM",
-      "location": "送信所 広島県広島市南区 演奏所 広島県広島市中区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOGU-FM",
-      "freqHz": 78200000,
-      "band": "FM",
-      "location": "送信所 広島県広島市南区 演奏所 広島県広島市南区",
-      "operatorName": "広島エフエム放送株式会社"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 85300000,
-      "band": "FM",
-      "location": "送信所 山口県防府市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOUU-FM",
-      "freqHz": 79200000,
-      "band": "FM",
-      "location": "送信所 山口県防府市 演奏所 山口県山口市",
-      "operatorName": "株式会社エフエム山口"
-    },
-    {
-      "callsign": "JOUG-FM",
-      "freqHz": 85300000,
-      "band": "FM",
-      "location": "送信所 山口県防府市 演奏所 山口県山口市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 83400000,
-      "band": "FM",
-      "location": "送信所 徳島県徳島市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOMV-FM",
-      "freqHz": 80700000,
-      "band": "FM",
-      "location": "演奏所 徳島県徳島市 送受信所 徳島県徳島市",
-      "operatorName": "株式会社エフエム徳島"
-    },
-    {
-      "callsign": "JOXK-FM",
-      "freqHz": 83400000,
-      "band": "FM",
-      "location": "送信所 徳島県徳島市 演奏所 徳島県徳島市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 86000000,
-      "band": "FM",
-      "location": "送信所 香川県高松市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOYU-FM",
-      "freqHz": 78600000,
-      "band": "FM",
-      "location": "演奏所 香川県高松市 送受信所 香川県高松市",
-      "operatorName": "株式会社エフエム香川"
-    },
-    {
-      "callsign": "JOHP-FM",
-      "freqHz": 86000000,
-      "band": "FM",
-      "location": "送受信所 香川県高松市 演奏所 香川県高松市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 87700000,
-      "band": "FM",
-      "location": "送信所 愛媛県松山市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOEU-FM",
-      "freqHz": 79700000,
-      "band": "FM",
-      "location": "演奏所 愛媛県松山市 送受信所 愛媛県伊予市",
-      "operatorName": "株式会社エフエム愛媛"
-    },
-    {
-      "callsign": "JOZK-FM",
-      "freqHz": 87700000,
-      "band": "FM",
-      "location": "送受信所 愛媛県松山市 演奏所 愛媛県松山市",
+      "location": "送受信所 高知県高知市 演奏所 高知県高知市",
       "operatorName": "日本放送協会"
     },
     {
@@ -1902,122 +1930,24 @@
       "operatorName": "一般財団法人道路交通情報通信システムセンター"
     },
     {
-      "callsign": "JOLV-FM",
-      "freqHz": 81600000,
-      "band": "FM",
-      "location": "送受信所 高知県高知市 演奏所 高知県高知市",
-      "operatorName": "株式会社エフエム高知"
-    },
-    {
-      "callsign": "JORK-FM",
-      "freqHz": 87500000,
-      "band": "FM",
-      "location": "送受信所 高知県高知市 演奏所 高知県高知市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOSK-FM",
-      "freqHz": 85700000,
-      "band": "FM",
-      "location": "送信所 福岡県北九州市八幡東区 第1演奏所 福岡県北九州市小倉北区 第2演奏所 福岡県福岡市中央区",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JODU-FM",
-      "freqHz": 80700000,
-      "band": "FM",
-      "location": "送信所 福岡県福岡市中央区 演奏所 福岡県福岡市中央区",
-      "operatorName": "株式会社エフエム福岡"
-    },
-    {
       "callsign": "JOVS",
-      "freqHz": 84800000,
+      "freqHz": 87700000,
       "band": "FM",
-      "location": "送信所 福岡県福岡市早良区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "location": "送信所 愛媛県松山市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
       "operatorName": "一般財団法人道路交通情報通信システムセンター"
     },
     {
-      "callsign": "JORV-FM",
-      "freqHz": 78700000,
+      "callsign": "JOZK-FM",
+      "freqHz": 87700000,
       "band": "FM",
-      "location": "送信所 福岡県福岡市早良区 演奏所 福岡県北九州市小倉北区",
-      "operatorName": "株式会社ＣＲＯＳＳ ＦＭ"
-    },
-    {
-      "callsign": "JOLK-FM",
-      "freqHz": 84800000,
-      "band": "FM",
-      "location": "送信所 福岡県福岡市早良区 演奏所 福岡県福岡市中央区",
+      "location": "送受信所 愛媛県松山市 演奏所 愛媛県松山市",
       "operatorName": "日本放送協会"
     },
     {
-      "callsign": "JOFW-FM",
-      "freqHz": 76100000,
+      "callsign": "JOIQ-FM",
+      "freqHz": 88000000,
       "band": "FM",
-      "location": "送信所 福岡県那珂川市 演奏所 福岡県福岡市中央区",
-      "operatorName": "ラブエフエム国際放送株式会社"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 81600000,
-      "band": "FM",
-      "location": "送信所 佐賀県唐津市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JONV-FM",
-      "freqHz": 77900000,
-      "band": "FM",
-      "location": "送信所 佐賀県唐津市 演奏所 佐賀県佐賀市",
-      "operatorName": "株式会社エフエム佐賀"
-    },
-    {
-      "callsign": "JOSP-FM",
-      "freqHz": 81600000,
-      "band": "FM",
-      "location": "送受信所 佐賀県唐津市 演奏所 佐賀県佐賀市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 84500000,
-      "band": "FM",
-      "location": "送信所 長崎県長崎市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOHU-FM",
-      "freqHz": 79500000,
-      "band": "FM",
-      "location": "送信所 長崎県長崎市 演奏所 長崎県長崎市",
-      "operatorName": "株式会社エフエム長崎"
-    },
-    {
-      "callsign": "JOAG-FM",
-      "freqHz": 84500000,
-      "band": "FM",
-      "location": "送信所 長崎県長崎市 演奏所 長崎県長崎市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOVS",
-      "freqHz": 85400000,
-      "band": "FM",
-      "location": "送信所 熊本県熊本市西区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOSU-FM",
-      "freqHz": 77400000,
-      "band": "FM",
-      "location": "送受信所 熊本県熊本市西区 演奏所 熊本県熊本市中央区",
-      "operatorName": "株式会社エフエム熊本"
-    },
-    {
-      "callsign": "JOGK-FM",
-      "freqHz": 85400000,
-      "band": "FM",
-      "location": "送信所 熊本県熊本市西区 演奏所 熊本県熊本市中央区",
+      "location": "送信所 北海道室蘭市 演奏所 北海道札幌市中央区",
       "operatorName": "日本放送協会"
     },
     {
@@ -2029,9 +1959,72 @@
     },
     {
       "callsign": "JOVS",
-      "freqHz": 88900000,
+      "freqHz": 88000000,
       "band": "FM",
-      "location": "送信所 大分県別府市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "location": "送信所 北海道室蘭市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOAP-FM",
+      "freqHz": 88100000,
+      "band": "FM",
+      "location": "送信所 沖縄県豊見城市 演奏所 沖縄県那覇市",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOBK-FM",
+      "freqHz": 88100000,
+      "band": "FM",
+      "location": "送受信所 大阪府大東市 演奏所 大阪府大阪市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOFK-FM",
+      "freqHz": 88300000,
+      "band": "FM",
+      "location": "送信所 広島県広島市南区 演奏所 広島県広島市中区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOPG-FM",
+      "freqHz": 88500000,
+      "band": "FM",
+      "location": "送信所 北海道釧路市 演奏所 北海道札幌市中央区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 88500000,
+      "band": "FM",
+      "location": "送信所 北海道釧路市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOKK-FM",
+      "freqHz": 88700000,
+      "band": "FM",
+      "location": "送信所 岡山県玉野市 演奏所 岡山県岡山市北区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 88700000,
+      "band": "FM",
+      "location": "送信所 岡山県玉野市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
+      "operatorName": "一般財団法人道路交通情報通信システムセンター"
+    },
+    {
+      "callsign": "JOPK-FM",
+      "freqHz": 88800000,
+      "band": "FM",
+      "location": "送信所 静岡県静岡市清水区 演奏所 静岡県静岡市駿河区",
+      "operatorName": "日本放送協会"
+    },
+    {
+      "callsign": "JOVS",
+      "freqHz": 88800000,
+      "band": "FM",
+      "location": "送信所 静岡県静岡市清水区 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
       "operatorName": "一般財団法人道路交通情報通信システムセンター"
     },
     {
@@ -2043,59 +2036,31 @@
     },
     {
       "callsign": "JOVS",
-      "freqHz": 86200000,
+      "freqHz": 88900000,
       "band": "FM",
-      "location": "送信所 宮崎県宮崎市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
+      "location": "送信所 大分県別府市 演奏所 東京都中央区 演奏所 大阪府大阪市北区",
       "operatorName": "一般財団法人道路交通情報通信システムセンター"
     },
     {
-      "callsign": "JOMU-FM",
-      "freqHz": 83200000,
+      "callsign": "JOKV-FM",
+      "freqHz": 89400000,
       "band": "FM",
-      "location": "送受信所 宮崎県宮崎市 演奏所 宮崎県宮崎市",
-      "operatorName": "株式会社エフエム宮崎"
+      "location": "送信所 京都府京都市西京区 演奏所 京都府京都市下京区 予備送信所 京都府京都市下京区",
+      "operatorName": "株式会社エフエム京都"
     },
     {
-      "callsign": "JOMG-FM",
-      "freqHz": 86200000,
+      "callsign": "JODW-FM",
+      "freqHz": 89700000,
       "band": "FM",
-      "location": "送信所 宮崎県宮崎市 演奏所 宮崎県宮崎市",
-      "operatorName": "日本放送協会"
+      "location": "送信所 東京都港区 演奏所 東京都千代田区",
+      "operatorName": "株式会社ＩｎｔｅｒＦＭ８９７"
     },
     {
-      "callsign": "JOVS",
-      "freqHz": 85600000,
+      "callsign": "JOIV-FM",
+      "freqHz": 89900000,
       "band": "FM",
-      "location": "送信所 鹿児島県鹿児島市 第1演奏所 東京都中央区 第2演奏所 大阪府大阪市北区",
-      "operatorName": "一般財団法人道路交通情報通信システムセンター"
-    },
-    {
-      "callsign": "JOOV-FM",
-      "freqHz": 79800000,
-      "band": "FM",
-      "location": "送信所 鹿児島県鹿児島市 演奏所 鹿児島県鹿児島市",
-      "operatorName": "株式会社エフエム鹿児島"
-    },
-    {
-      "callsign": "JOHG-FM",
-      "freqHz": 85600000,
-      "band": "FM",
-      "location": "送信所 鹿児島県鹿児島市 演奏所 鹿児島県鹿児島市",
-      "operatorName": "日本放送協会"
-    },
-    {
-      "callsign": "JOIU-FM",
-      "freqHz": 87300000,
-      "band": "FM",
-      "location": "演奏所 沖縄県浦添市 送信所 沖縄県島尻郡南風原町",
-      "operatorName": "株式会社エフエム沖縄"
-    },
-    {
-      "callsign": "JOAP-FM",
-      "freqHz": 88100000,
-      "band": "FM",
-      "location": "送信所 沖縄県豊見城市 演奏所 沖縄県那覇市",
-      "operatorName": "日本放送協会"
+      "location": "演奏所 兵庫県神戸市中央区 送信所 兵庫県神戸市灘区",
+      "operatorName": "兵庫エフエム放送株式会社"
     }
   ]
 }

@@ -19,6 +19,7 @@ const FIXTURES = join(__dirname, 'fixtures');
 const LIST_AM   = readFileSync(join(FIXTURES, 'musen_list_am.html'),    'utf-8');
 const DETAIL_JOWN = readFileSync(join(FIXTURES, 'musen_detail_stv_jown.html'), 'utf-8');
 const DETAIL_NHK_JOVK = readFileSync(join(FIXTURES, 'musen_detail_nhk_jovk.html'), 'utf-8');
+const DETAIL_TOKYOFM = readFileSync(join(FIXTURES, 'musen_detail_tokyofm_joau.html'), 'utf-8');
 
 describe('buildListUrl / buildDetailUrl', () => {
   it('builds AM/SW list URL with correct SelectHSK + paging', () => {
@@ -87,6 +88,17 @@ describe('parseMusenDetailHtml', () => {
     if (!d) return;
     expect(d.callsign).toBe('JOVK');
     expect(d.operatorName).toContain('日本放送協会');
+  });
+
+  it('handles TOKYO FM JOAU-FM 親局 with nested-table 電波の型式 cell — regression: nextElementSibling returned <td>, not <tr>, for label rows whose value tr contains nested <table>', () => {
+    const d = parseMusenDetailHtml(DETAIL_TOKYOFM);
+    expect(d).not.toBeNull();
+    if (!d) return;
+    expect(d.callsign).toBe('JOAU-FM');
+    expect(d.freqHz).toBe(80_000_000);
+    expect(d.band).toBe('FM');
+    expect(d.operatorName).toContain('エフエム東京');
+    expect(d.location).toContain('東京都港区');
   });
 
   it('returns null when freqHz falls outside MW (522-1710 kHz) and FM (76-108 MHz)', () => {

@@ -51,6 +51,14 @@ export function buildListUrl(selectHSK: '03' | '04', sc: number, dc = 100): stri
   return `${BASE}?SK=2&DC=${dc}&SC=${sc}&pageID=3&CONFIRM=0&SelectID=2&SelectHSK=${selectHSK}&MK=BBC`;
 }
 
+// 法人名 (NA フィールド) で絞り込んだ list URL。 SelectHSK=04 の通常検索だけ
+// だと TOKYO FM 親局 (株式会社エフエム東京) や J-WAVE 親局のような中央放送局
+// が結果に出ないことがあるため、 補完取得用に operator name で再検索する用途。
+export function buildListUrlByName(selectHSK: '03' | '04', operatorName: string, sc: number, dc = 100): string {
+  const enc = encodeURIComponent(operatorName);
+  return `${BASE}?SK=2&DC=${dc}&SC=${sc}&pageID=3&CONFIRM=0&SelectID=2&SelectHSK=${selectHSK}&MK=BBC&NA=${enc}`;
+}
+
 // detail page の URL は list page の <a class="m-link" href="..."> から
 // 取り出した DFCD + IT を直接埋め込む。 IT はエントリごとに 'I' / 'J' /
 // その他があり、 list anchor の href にしか書かれていない (固定値ではない)。
@@ -136,14 +144,20 @@ function extractDetailField(root: HTMLElement, labelText: string): string {
       const valueTd = tds[tds.length - 1];
       if (valueTd !== td) return valueTd.text.replace(/\s+/g, ' ').trim();
     }
-    // Pattern B: 次の <tr> の最初の td が値
-    let nextTr = tr.nextElementSibling as HTMLElement | null;
-    while (nextTr && nextTr.tagName !== 'TR') {
-      nextTr = nextTr.nextElementSibling as HTMLElement | null;
-    }
-    if (nextTr) {
-      const nextTd = nextTr.querySelector('td');
-      if (nextTd) return nextTd.text.replace(/\s+/g, ' ').trim();
+    // Pattern B: 次の <tr> の最初の td が値。
+    // 注意: node-html-parser の `nextElementSibling` は nested tables を含む
+    // 階層を正しく追えず、 内側 <td> を返してしまうことがある (例: TOKYO FM
+    // JOAU-FM 親局 detail の 電波の型式 cell — 値 tr 内に nested <table> が
+    // あるため階層がずれる)。 親 tbody / table の `querySelectorAll('tr')`
+    // 経由で「同じ親の TR の中での自分の位置 + 1」 を取れば確実。
+    if (tr.parentNode) {
+      const siblings = (tr.parentNode as HTMLElement).querySelectorAll('tr');
+      const myIdx = Array.prototype.indexOf.call(siblings, tr);
+      const nextTr = myIdx >= 0 ? siblings[myIdx + 1] : null;
+      if (nextTr) {
+        const nextTd = nextTr.querySelector('td');
+        if (nextTd) return nextTd.text.replace(/\s+/g, ' ').trim();
+      }
     }
   }
   return '';
@@ -171,9 +185,15 @@ export function parseMusenDetailHtml(html: string): MusenDetailEntry | null {
   const callsign = csMatch?.[1] ?? '';
   const operatorName = extractDetailField(root, '免許人の氏名又は名称');
   const location = extractDetailField(root, '無線設備の設置場所');
-  const freqField = extractDetailField(root, '電波の型式、周波数及び空中線電力');
-  // 周波数 + 単位 のペアを探す (型式・出力ノイズを跨いで先頭の (数値,単位) を採用)
-  const freqMatch = /(\d+(?:\.\d+)?)\s*(kHz|MHz)/.exec(freqField);
+  // 電波の型式 cell は特殊: nested <table> + malformed <tr> (内側 tr が
+  // 外側 td/tr を auto-close する) で DOM 経由の text 抽出が「F8E」 だけで
+  // 切れて MHz cell まで届かない (TOKYO FM JOAU-FM 親局の典型ケース)。
+  // 対策: 電波の型式 ラベル以降 800 文字を raw HTML から切り出して先頭の
+  // 数値+単位を regex で取る。 全 detail page 共通で機能。
+  const labelIdx = html.indexOf('電波の型式、周波数及び空中線電力');
+  const freqRegion = labelIdx >= 0 ? html.slice(labelIdx, labelIdx + 800) : '';
+  const freqClean = freqRegion.replace(/&nbsp;/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const freqMatch = /(\d+(?:\.\d+)?)\s*(kHz|MHz)/.exec(freqClean);
   if (!callsign || !freqMatch || !operatorName) return null;
   const value = parseFloat(freqMatch[1]);
   const unit = freqMatch[2];
@@ -206,6 +226,51 @@ export interface ScrapeOptions {
   rateLimitMs?: number;
   onProgress?: (done: number, total: number) => void;
   fetchFn?: (url: string) => Promise<string>;
+}
+
+/**
+ * 法人名 keyword 補完 fetch — `scrapeMusenBroadcasts` の通常検索結果から
+ * 漏れる中央放送局 (TOKYO FM JOAU-FM、 J-WAVE JOAV-FM 等) を operatorName
+ * 単位で再検索する。 各 keyword について NA= 検索 → 全 DFCD enumerate →
+ * detail fetch まで実施。
+ */
+export async function scrapeMusenByOperatorNames(
+  selectHSK: '03' | '04',
+  operatorNames: string[],
+  opts: ScrapeOptions = {},
+): Promise<MusenDetailEntry[]> {
+  const fetchFn = opts.fetchFn ?? defaultFetch;
+  const rateLimitMs = opts.rateLimitMs ?? 1000;
+  const allEntries: MusenListEntry[] = [];
+  for (const name of operatorNames) {
+    await sleep(rateLimitMs);
+    const html = await fetchFn(buildListUrlByName(selectHSK, name, 1));
+    const entries = parseMusenListHtml(html);
+    // page 2 以降があれば paginate (typical: 1 keyword で <100 件なので不要)
+    const normalised = html.replace(/\s+/g, ' ');
+    const totalMatch = /全\s*([\d,]+)\s*件中/.exec(normalised);
+    const total = totalMatch ? parseInt(totalMatch[1].replace(/,/g, ''), 10) : entries.length;
+    for (let sc = 101; sc <= total; sc += 100) {
+      await sleep(rateLimitMs);
+      const h2 = await fetchFn(buildListUrlByName(selectHSK, name, sc));
+      entries.push(...parseMusenListHtml(h2));
+    }
+    allEntries.push(...entries);
+  }
+  // 各 DFCD の detail を fetch。 同じ DFCD が複数 keyword でヒットしたら 1 回だけ。
+  const seenDfcd = new Set<string>();
+  const result: MusenDetailEntry[] = [];
+  let done = 0;
+  for (const entry of allEntries) {
+    if (seenDfcd.has(entry.dfcd)) continue;
+    seenDfcd.add(entry.dfcd);
+    await sleep(rateLimitMs);
+    const html = await fetchFn(buildDetailUrl(entry.dfcd, entry.it));
+    const detail = parseMusenDetailHtml(html);
+    if (detail) result.push(detail);
+    opts.onProgress?.(++done, seenDfcd.size);
+  }
+  return result;
 }
 
 async function defaultFetch(url: string): Promise<string> {

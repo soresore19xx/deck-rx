@@ -168,20 +168,21 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   const unitW = unit.length * unitSize * 0.68;
   const totalW = numTotalW + 4 + unitW;
 
-  // The entire (Mode + digits + unit) block is centred as a unit in the
-  // svg width. Without this the digit/unit cluster was centred in the
-  // full width while Mode hung off the left edge, giving a visibly
-  // left-heavy layout (Mode label tight against x=0, big empty band on
-  // the right). Computing the block as one and centring it keeps left
-  // and right margins symmetric.
+  // Mode label stays pinned to the left (x = MODE_LEFT_PAD) so the
+  // user's eye finds it in a constant position regardless of freq
+  // length. The digit + unit cluster centres in the *remaining* width
+  // (from MODE_RESERVE to svgW), so the digits shift slightly right
+  // when there's a Mode label — making room for 3-char labels (NFM /
+  // WFM / VFO) without colliding with the leftmost digit. Without a
+  // Mode label, the cluster centres in the full svg width unchanged.
   const MODE_FS = 14;
-  const MODE_GAP = 2;
-  const MODE_GLYPH_W = 9.5;  // Pango monospace 14 pt glyph advance ≈ 9.5 px
-  const modeW       = modeLabel ? modeLabel.length * MODE_GLYPH_W : 0;
-  const blockW      = (modeLabel ? modeW + MODE_GAP : 0) + totalW;
-  const blockStart  = Math.max(2, (svgW - blockW) / 2);
-  const modeRightX  = blockStart + modeW;
-  let cx = blockStart + (modeLabel ? modeW + MODE_GAP : 0);
+  const MODE_GLYPH_W = 9.5;          // Pango monospace 14 pt glyph advance
+  const MODE_LEFT_PAD = 2;
+  const MODE_RESERVE = modeLabel
+    ? MODE_LEFT_PAD + modeLabel.length * MODE_GLYPH_W + 4   // +4 px gap before digits
+    : 0;
+  const usableW = svgW - MODE_RESERVE;
+  let cx = MODE_RESERVE + (usableW - totalW) / 2;
   const oy = (svgH - DH) / 2;
   let out = `<rect width="${svgW}" height="${svgH}" fill="#000000"/>`;
   // Top-right corner: STEREO badge (FM stereo lock) takes priority over an
@@ -210,7 +211,7 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   // MHz), which is preferable to digit collision.
   if (modeLabel) {
     const my = oy + DH / 2 + MODE_FS * 0.35;
-    out += `<text x="${n(modeRightX)}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace" text-anchor="end">${modeLabel}</text>`;
+    out += `<text x="${n(MODE_LEFT_PAD)}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace">${modeLabel}</text>`;
   }
 
   for (const c of numStr) {

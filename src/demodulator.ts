@@ -51,15 +51,16 @@ export class Demodulator {
   private amIfRate = 0;
   // WFM complex IF LPF on the IQ stream BEFORE the atan2 discriminator.
   // SpyServer's anti-alias is wide (the full IQ rate, e.g. 240-960 kHz),
-  // so without this filter all out-of-band noise reaches the discriminator
-  // — and atan2 of small noise vectors wraps around ±π between samples,
-  // producing audible "click" pops layered onto the demod output. Cutoff
-  // chosen at 90 kHz (≈ FM peak deviation 75 kHz + ~20 % margin) so the
-  // legitimate FM signal sails through but everything outside is rolled
-  // off. 4th-order Butterworth (2 cascaded biquads) gives ~−48 dB / oct
-  // stopband — more than enough to keep wide-band noise from clicking.
-  private wfmIfLpfI: Biquad[] = Array.from({ length: 2 }, () => new Biquad());
-  private wfmIfLpfQ: Biquad[] = Array.from({ length: 2 }, () => new Biquad());
+  // so without this filter every adjacent broadcast within the IF passband
+  // beats through the discriminator. Cutoff chosen at 80 kHz: just past
+  // Carson's-rule one-sided BW (~75 kHz), preserves stereo subcarriers
+  // (highest baseband ~53 kHz) and 100 % FM peak deviation. 8th-order
+  // Butterworth (4 cascaded biquads) gives ~−96 dB / oct stopband — at
+  // a 100 kHz neighbour ≈ −22 dB, at 125 kHz ≈ −41 dB, at 150 kHz ≈
+  // −58 dB, which is what's needed when the user has multiple strong
+  // FM stations 100–300 kHz apart in central 関東.
+  private wfmIfLpfI: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
+  private wfmIfLpfQ: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
   private wfmIfRate = 0;
   // Independent IF LPF copy used only by diagnostics so the production
   // filter state isn't disturbed by spectrum measurements.
@@ -433,17 +434,22 @@ export class Demodulator {
     this.pllBeta = (omegaN * omegaN) / (iqRate * iqRate);
     // Phase-detector LPF cutoff at 5x loop BW for stable PD output
     this.pllPdLpfAlpha = Math.min(1, 2 * Math.PI * (bwHz * 5) / iqRate);
-    // WFM IF LPF: 4th-order Butterworth complex LPF (2 cascaded biquads on
-    // I and Q each) at 90 kHz cutoff. Cuts out-of-band noise that would
-    // otherwise click through the atan2 discriminator. Configured here
-    // because setStereo runs whenever WFM is the active mode (spyService
-    // calls it from startAudio); rate-aware so re-init works on iqRate
-    // change.
+    // WFM IF LPF: 8th-order Butterworth complex LPF (4 cascaded biquads on
+    // I and Q each) at 80 kHz cutoff. Tightened from 4th-order / 90 kHz
+    // because adjacent FM stations 100–300 kHz away in central 関東
+    // beat through the previous configuration's modest stopband. 80 kHz
+    // cutoff still preserves Carson's-rule FM peak (75 kHz) + stereo
+    // subcarrier (53 kHz baseband), so the legitimate signal is intact.
+    // Configured here because setStereo runs whenever WFM is the active
+    // mode (spyService calls it from startAudio); rate-aware so re-init
+    // works on iqRate change.
     if (this.wfmIfRate !== iqRate) {
-      const Q4 = [0.5411961001, 1.3065629649];
-      for (let k = 0; k < 2; k++) {
-        this.wfmIfLpfI[k].setLowPass(iqRate, 90000, Q4[k]);
-        this.wfmIfLpfQ[k].setLowPass(iqRate, 90000, Q4[k]);
+      // Q values for cascaded second-order sections of an 8th-order
+      // Butterworth filter (poles equispaced on the unit circle).
+      const Q8 = [0.5097955791, 0.6013396757, 0.9000182960, 2.5629154236];
+      for (let k = 0; k < 4; k++) {
+        this.wfmIfLpfI[k].setLowPass(iqRate, 80000, Q8[k]);
+        this.wfmIfLpfQ[k].setLowPass(iqRate, 80000, Q8[k]);
       }
       this.wfmIfRate = iqRate;
     }
@@ -464,7 +470,7 @@ export class Demodulator {
       // so wide-band noise can't click the atan2 output. No-op (passthrough)
       // when the filters haven't been configured yet (iqRate unknown).
       if (this.wfmIfRate > 0) {
-        for (let k = 0; k < 2; k++) {
+        for (let k = 0; k < this.wfmIfLpfI.length; k++) {
           I = this.wfmIfLpfI[k].step(I);
           Q = this.wfmIfLpfQ[k].step(Q);
         }
@@ -513,7 +519,7 @@ export class Demodulator {
       // so wide-band noise can't click the atan2 output. No-op (passthrough)
       // when the filters haven't been configured yet (iqRate unknown).
       if (this.wfmIfRate > 0) {
-        for (let k = 0; k < 2; k++) {
+        for (let k = 0; k < this.wfmIfLpfI.length; k++) {
           I = this.wfmIfLpfI[k].step(I);
           Q = this.wfmIfLpfQ[k].step(Q);
         }
@@ -565,7 +571,7 @@ export class Demodulator {
       // so wide-band noise can't click the atan2 output. No-op (passthrough)
       // when the filters haven't been configured yet (iqRate unknown).
       if (this.wfmIfRate > 0) {
-        for (let k = 0; k < 2; k++) {
+        for (let k = 0; k < this.wfmIfLpfI.length; k++) {
           I = this.wfmIfLpfI[k].step(I);
           Q = this.wfmIfLpfQ[k].step(Q);
         }

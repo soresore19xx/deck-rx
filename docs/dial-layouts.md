@@ -10,9 +10,7 @@ One-shot preset-tune button. Configure a preset slot (1-N) in the PI; pressing t
 
 ## Deck RX Dial (Tune)
 
-VFO / preset scrolling, 7-seg frequency, FM stereo lock badge, ATS-Mini-style N (SNR) / S (RSSI) bars, `HH:MM TZ` clock; long-press (≥ 2 s) for master ON/OFF. Header carries the JP DB-resolved station name + 識別信号 callsign + 送信地 (e.g. `NHK第1 JOAK (東京)`).
-
-![Tune dial](lcd-tune.png)
+VFO / preset scrolling, 7-seg frequency, FM stereo lock badge, ATS-Mini-style N (SNR) / S (RSSI) bars, `HH:MM TZ` clock; long-press (≥ 2 s) for master ON/OFF. Header carries the JP DB-resolved station name + 識別信号 callsign + 送信地 (e.g. `NHK第1 JOAK (東京)`). See the Tune dial in the top composite (`lcd-combined.png`) — a synthetic single-dial render isn't shown here because the harness has no SpyServer connect, so the body never tunes a freq.
 
 ## Deck RX Volume + Status
 

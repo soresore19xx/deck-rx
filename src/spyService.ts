@@ -989,29 +989,37 @@ class SpyService {
       // new Buffer of the same length / format that we feed into the
       // existing demod functions unchanged.
       const iqBody = this.fmOptions.ifnr ? this.iqnr.processBuffer(p.body) : p.body;
+      // Audio-level scale derived from the per-mode RF Gain index. AM is
+      // already amplitude-driven so the gain affects audio naturally; FM
+      // (atan2) is amplitude-invariant so the RF gain alone does NOT
+      // change audio level — repurpose fmGain as a post-demod multiplier
+      // so the user-facing dial actually attenuates FM/NFM/SSB/CW audio
+      // (8/8 = full level, 0/8 = silent), not just RSSI. This gives the
+      // user the attenuator control they expect from the Gain row.
+      const maxG = this.deviceInfo?.maxGainIndex ?? 0;
+      const fmAudioScale = maxG > 0 ? (this.fmGain ?? maxG) / maxG : 1;
       let pcm: Int16Array;
       if (this.currentDemodMode === 2) {
-        const maxG = this.deviceInfo?.maxGainIndex ?? 0;
         const amG = this.amGain ?? 0;
         const gainScale = maxG > 0 ? amG / maxG : 1;
         pcm = this.demod.processAM(iqBody, dec, gainScale);
       } else if (this.currentDemodMode === 1) {
         pcm = this.fmOptions.stereo
-          ? this.demod.processWFMStereo(iqBody, dec)
-          : this.demod.processWFM(iqBody, dec);
+          ? this.demod.processWFMStereo(iqBody, dec, 2000 * fmAudioScale)
+          : this.demod.processWFM(iqBody, dec, 3000 * fmAudioScale);
       } else if (this.currentDemodMode === 4 || this.currentDemodMode === 6) {
         // USB (mode 4) / LSB (mode 6) — Weaver SSB demod. f_off = bandwidth/2
         // so the audio band ends up 0..bandwidth (default 2.4 kHz).
         this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
-        pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB');
+        pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB', 48000 * fmAudioScale);
       } else if (this.currentDemodMode === 5) {
         // CW (mode 5) — direct frequency-shift by BFO (default 700 Hz).
         this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
-        pcm = this.demod.processCW(iqBody, dec);
+        pcm = this.demod.processCW(iqBody, dec, 48000 * fmAudioScale);
       } else {
         // NFM (mode 0) — also catches DSB (3) and RAW (7) which fall through
         // to FM until proper demod is implemented.
-        pcm = this.demod.processFM(iqBody, dec);
+        pcm = this.demod.processFM(iqBody, dec, 6000 * fmAudioScale);
       }
       // Diagnostic log every 3 s: detect silent output from DSP issues.
       const _now = Date.now();

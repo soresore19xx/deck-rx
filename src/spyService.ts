@@ -656,6 +656,9 @@ class SpyService {
     // 100 kHz cutoff; 150 kHz → 75 kHz; etc.
     if (this.currentIQRate > 0) {
       this.demod.setWfmIfBandwidth(this.currentIQRate, fm.bandwidth / 2);
+      streamDeck.logger.info(`[spyService] setWfmIfBandwidth iqRate=${this.currentIQRate} bw=${fm.bandwidth} cutoff=${fm.bandwidth / 2}`);
+    } else {
+      streamDeck.logger.warn(`[spyService] applyFMOptions: currentIQRate=0, skipping setWfmIfBandwidth`);
     }
     streamDeck.logger.info(`[spyService] applyFMOptions ${JSON.stringify(fm)}`);
   }
@@ -890,7 +893,14 @@ class SpyService {
     const info = this.deviceInfo;
     // SDR++ formula: actualRate = MaximumSampleRate / 2^decimationStage
     // Config provides decimation OFFSET from MinimumIQDecimation (matches SDR++ srId)
-    const decOffset = cfg.iqDecimation ?? 2;
+    // Default lowered from 2 → 1 (iqRate doubles from ~228 kHz to ~456 kHz on
+    // Airspy HF+) so the Nyquist band sits well past the FM IF passband, and
+    // far-adjacent stations no longer alias back into the user-visible
+    // baseband. With iqRate=228 kHz an FM station 170 kHz off-tune used to
+    // wrap to −58 kHz baseband (inside our IF LPF), so even the narrow BW
+    // settings (90/100 kHz) couldn't suppress it — symptom was "switching BW
+    // barely changes anything; 80 MHz tuned still leaks 80.17 MHz".
+    const decOffset = cfg.iqDecimation ?? 1;
     const decStage = decOffset + info.minIQDecimation;
     const iqRate = Math.round(info.maxSampleRate / (1 << decStage));
     const audioDecimate = Math.max(1, cfg.audioDecimate ?? 1);
@@ -1136,7 +1146,7 @@ class SpyService {
       audioEnabled:  cfg.audioEnabled  ?? false,
       demodMode:     cfg.demodMode     ?? 1,
       lastFrequency: cfg.lastFrequency,
-      iqDecimation:  cfg.iqDecimation  ?? 2,
+      iqDecimation:  cfg.iqDecimation  ?? 1,
       audioDecimate: cfg.audioDecimate ?? 1,
       gain:          cfg.gain,
       amGain:        cfg.amGain,

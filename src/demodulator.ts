@@ -1,4 +1,4 @@
-import { Biquad } from './dspFilters.js';
+import { Biquad, ComplexFirLpf } from './dspFilters.js';
 
 // AM AGC tuning constants (SDR++ port). Equivalents of dsp::demod::AM init
 // args: setPoint (target |IQ|), maxGain (cap), maxOutputAmp (look-ahead
@@ -50,17 +50,17 @@ export class Demodulator {
   private amIfLpfQ: Biquad[] = Array.from({ length: 8 }, () => new Biquad());
   private amIfRate = 0;
   // WFM complex IF LPF on the IQ stream BEFORE the atan2 discriminator.
-  // SpyServer's anti-alias is wide (the full IQ rate, e.g. 240-960 kHz),
-  // so without this filter every adjacent broadcast within the IF passband
-  // beats through the discriminator. Cutoff chosen at 80 kHz: just past
-  // Carson's-rule one-sided BW (~75 kHz), preserves stereo subcarriers
-  // (highest baseband ~53 kHz) and 100 % FM peak deviation. 8th-order
-  // Butterworth (4 cascaded biquads) gives ~−96 dB / oct stopband — at
-  // a 100 kHz neighbour ≈ −22 dB, at 125 kHz ≈ −41 dB, at 150 kHz ≈
-  // −58 dB, which is what's needed when the user has multiple strong
-  // FM stations 100–300 kHz apart in central 関東.
-  private wfmIfLpfI: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
-  private wfmIfLpfQ: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
+  // FIR via Blackman-windowed sinc — linear phase, ~−74 dB stopband
+  // attenuation reached just past the cutoff. The earlier 8th-order
+  // Butterworth IIR had only a −24 dB/oct skirt, so the 100-kHz-spaced
+  // JP-FM adjacent (≈ 1 octave past the BW=110 k cutoff) sat near
+  // −24 dB even at the highest cycle setting; the sinc FIR delivers
+  // > −60 dB at the same point.
+  //
+  // SDR++'s BroadcastFM demodulator design also uses FIR (Hamming /
+  // Blackman) taps — IIR Butterworth in the IF path was deck-rx's
+  // particular shortcut, not industry practice.
+  private wfmIfLpf: ComplexFirLpf = new ComplexFirLpf();
   private wfmIfRate = 0;
   // Independent IF LPF copy used only by diagnostics so the production
   // filter state isn't disturbed by spectrum measurements.
@@ -184,8 +184,7 @@ export class Demodulator {
     for (const b of this.amLpf) b.reset();
     for (const b of this.amIfLpfI) b.reset();
     for (const b of this.amIfLpfQ) b.reset();
-    for (const b of this.wfmIfLpfI) b.reset();
-    for (const b of this.wfmIfLpfQ) b.reset();
+    this.wfmIfLpf.reset();
     this.lprLpf.reset(); this.lmrLpf.reset();
     this.pilotBpf.reset();
     this.pilotPower = 0;
@@ -444,23 +443,19 @@ export class Demodulator {
     this.stereoConfigured = true;
   }
 
-  /** Configure the WFM complex IF LPF — 8th-order Butterworth, cutoff in Hz.
-   *  Called when the user changes FM bandwidth or when iqRate changes. */
+  /** Configure the WFM complex IF LPF (linear-phase windowed-sinc FIR).
+   *  Called when the user changes FM bandwidth or when iqRate changes.
+   *  Transition bandwidth is 25 % of the cutoff: gives a tight skirt but
+   *  bounded tap count (≈ 22·fs/fc taps with Blackman). */
   setWfmIfBandwidth(iqRate: number, cutoffHz: number): void {
-    // Clamp to a sane range: lower bound = pilot frequency × 1.5 so the
-    // 19 kHz pilot stays well inside the passband; upper bound = 95 % of
-    // Nyquist so the digital filter doesn't pin its pole on the unit
-    // circle and ring.
+    // Clamp to a sane range: lower bound keeps the 19 kHz pilot inside the
+    // passband; upper bound stays under Nyquist so the FIR doesn't alias
+    // the stopband ripple back in.
     const minCut = 30_000;
     const maxCut = Math.max(minCut + 1, iqRate * 0.45);
     const fc = Math.max(minCut, Math.min(maxCut, cutoffHz));
-    // Q values for cascaded second-order sections of an 8th-order
-    // Butterworth filter (poles equispaced on the unit circle).
-    const Q8 = [0.5097955791, 0.6013396757, 0.9000182960, 2.5629154236];
-    for (let k = 0; k < 4; k++) {
-      this.wfmIfLpfI[k].setLowPass(iqRate, fc, Q8[k]);
-      this.wfmIfLpfQ[k].setLowPass(iqRate, fc, Q8[k]);
-    }
+    const transBw = Math.max(5000, fc * 0.25);
+    this.wfmIfLpf.setLowPass(iqRate, fc, transBw);
     this.wfmIfRate = iqRate;
   }
   isStereoConfigured(): boolean { return this.stereoConfigured; }
@@ -478,10 +473,9 @@ export class Demodulator {
       // so wide-band noise can't click the atan2 output. No-op (passthrough)
       // when the filters haven't been configured yet (iqRate unknown).
       if (this.wfmIfRate > 0) {
-        for (let k = 0; k < this.wfmIfLpfI.length; k++) {
-          I = this.wfmIfLpfI[k].step(I);
-          Q = this.wfmIfLpfQ[k].step(Q);
-        }
+        this.wfmIfLpf.step(I, Q);
+        I = this.wfmIfLpf.lastI;
+        Q = this.wfmIfLpf.lastQ;
       }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
@@ -527,10 +521,9 @@ export class Demodulator {
       // so wide-band noise can't click the atan2 output. No-op (passthrough)
       // when the filters haven't been configured yet (iqRate unknown).
       if (this.wfmIfRate > 0) {
-        for (let k = 0; k < this.wfmIfLpfI.length; k++) {
-          I = this.wfmIfLpfI[k].step(I);
-          Q = this.wfmIfLpfQ[k].step(Q);
-        }
+        this.wfmIfLpf.step(I, Q);
+        I = this.wfmIfLpf.lastI;
+        Q = this.wfmIfLpf.lastQ;
       }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
@@ -579,10 +572,9 @@ export class Demodulator {
       // so wide-band noise can't click the atan2 output. No-op (passthrough)
       // when the filters haven't been configured yet (iqRate unknown).
       if (this.wfmIfRate > 0) {
-        for (let k = 0; k < this.wfmIfLpfI.length; k++) {
-          I = this.wfmIfLpfI[k].step(I);
-          Q = this.wfmIfLpfQ[k].step(Q);
-        }
+        this.wfmIfLpf.step(I, Q);
+        I = this.wfmIfLpf.lastI;
+        Q = this.wfmIfLpf.lastQ;
       }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;

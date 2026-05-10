@@ -38,6 +38,28 @@ export function isJpRegion(s: unknown): s is JpRegion {
   return typeof s === 'string' && (JP_REGIONS as readonly string[]).includes(s);
 }
 
+// 都道府県 belonging to each 総通局 region. Used by findCallsign to prefer
+// a same-region callsign when multiple license entries share a freq across
+// regions (54 % of freq+band buckets in callsigns.json have 2+ entries —
+// e.g., 1485 kHz MW has 7 different licenses across the country, only one
+// of which is 関東). Without this preference the lookup picked the first
+// entry in iteration order regardless of region, mis-attributing a 京都
+// (JOBE) callsign to a 関東 user listening to ラジオ日本.
+//
+// 関東総通局 jurisdiction includes 山梨県 (administrative, not geographic);
+// the JP DB tags 山梨 entries as `kanto` so the prefecture list mirrors
+// that scope.
+const REGION_PREFECTURES: Record<JpRegion, readonly string[]> = {
+  kanto:    ['東京都', '神奈川県', '千葉県', '埼玉県', '茨城県', '栃木県', '群馬県', '山梨県'],
+  hokkaido: ['北海道'],
+  tohoku:   ['青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県'],
+  tokai:    ['静岡県', '愛知県', '三重県', '岐阜県'],
+  kinki:    ['大阪府', '京都府', '兵庫県', '奈良県', '和歌山県', '滋賀県'],
+  chugoku:  ['鳥取県', '島根県', '岡山県', '広島県', '山口県'],
+  kyushu:   ['福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県'],
+  okinawa:  ['沖縄県'],
+};
+
 export interface JpStation {
   freqHz: number;
   band: JpBand;
@@ -144,38 +166,56 @@ function load(): { auto: JpStation[]; manual: JpStation[]; cs: NonNullable<Calls
 
 // Find the closest 総務省 callsign entry within the same tolerance the
 // station scan uses (MW 500 Hz / FM 5 kHz). Multiple licensed transmitters
-// can sit on the same nominal freq across regions, so we pick the smallest
-// delta and ignore region — the caller (lookupJpStation) has already
-// resolved a single region-correct station entry.
-function findCallsign(freqHz: number, band: 'FM' | 'MW', list: NonNullable<CallsignFile['callsigns']>): string | undefined {
+// can sit on the same nominal freq across regions (54 % of freq+band
+// buckets in our callsigns.json have 2+ entries) so we prefer entries
+// whose `location` mentions a 都道府県 inside `activeRegion` before falling
+// back to the smallest-delta any-region entry. Without this preference a
+// 関東 user listening to ラジオ日本 1485 kHz could land on JOBE (京都)
+// because that entry happened to come first in iteration order.
+function findCallsign(
+  freqHz: number,
+  band: 'FM' | 'MW',
+  list: NonNullable<CallsignFile['callsigns']>,
+  activeRegion?: JpRegion,
+): string | undefined {
   const tol = band === 'FM' ? FM_TOLERANCE_HZ : MW_TOLERANCE_HZ;
-  let best: string | undefined;
-  let bestDelta = Infinity;
+  const prefs = activeRegion ? REGION_PREFECTURES[activeRegion] : undefined;
+  let bestSameRegion: { callsign: string; delta: number } | undefined;
+  let bestAny:        { callsign: string; delta: number } | undefined;
   for (const c of list) {
     if (c.band !== band) continue;
     const d = Math.abs(c.freqHz - freqHz);
-    if (d <= tol && d < bestDelta) { best = c.callsign; bestDelta = d; }
+    if (d > tol) continue;
+    if (!bestAny || d < bestAny.delta) bestAny = { callsign: c.callsign, delta: d };
+    if (prefs && prefs.some(p => c.location.includes(p))) {
+      if (!bestSameRegion || d < bestSameRegion.delta) bestSameRegion = { callsign: c.callsign, delta: d };
+    }
   }
-  return best;
+  return (bestSameRegion ?? bestAny)?.callsign;
 }
 
 /**
- * Region-independent callsign lookup. Returns the 識別信号 for the given
- * freq+band if 総務省 has it, regardless of the current active region.
+ * Standalone callsign lookup. Returns the 識別信号 for the given freq+band
+ * with an optional region preference: when multiple licensed transmitters
+ * share the same freq, an entry whose location names a 都道府県 inside
+ * `activeRegion` wins; otherwise we fall back to the smallest-delta entry
+ * regardless of region (so cross-region presets — e.g., a 関東 user with
+ * a kinki MBSラジオ preset — still get JOOR even though it's not in their
+ * region).
  *
  * Use case: dial display falls back to a preset name when lookupJpStation
- * misses (e.g. user is on 関東 region but tuned 1179 kHz MBSラジオ which
- * is region-tagged 近畿 — the region filter rejects the station entry but
- * the callsign JOOR for 1179 kHz is still meaningful and worth showing).
+ * misses (e.g., 関東 user tunes 1179 kHz MBSラジオ which is region-tagged
+ * 近畿 — the region filter rejects the station entry but the callsign
+ * JOOR for 1179 kHz is still meaningful and worth showing).
  */
-export function lookupCallsign(freqHz: number): string | undefined {
+export function lookupCallsign(freqHz: number, activeRegion?: JpRegion): string | undefined {
   const band: JpBand | null =
     freqHz >= 76_000_000 && freqHz <= 108_000_000 ? 'FM' :
     freqHz >=    522_000 && freqHz <=   1_710_000 ? 'MW' :
     null;
   if (!band) return undefined;
   const { cs } = load();
-  return findCallsign(freqHz, band, cs);
+  return findCallsign(freqHz, band, cs, activeRegion);
 }
 
 export function getJpStationsPath(): string {
@@ -251,7 +291,7 @@ export function lookupJpStation(freqHz: number, activeRegion?: JpRegion): JpStat
   // Annotate with callsign from the sidecar 総務省 DB if not already set.
   // Manually-curated entries that already carry a callsign keep theirs.
   if (!best.callsign) {
-    const cscall = findCallsign(freqHz, band, cs);
+    const cscall = findCallsign(freqHz, band, cs, activeRegion);
     if (cscall) best = { ...best, callsign: cscall };
   }
   return best;

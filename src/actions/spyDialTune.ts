@@ -666,7 +666,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // which is region: kinki), still try to attach the 識別信号 from the
       // 総務省 callsign DB. callsign lookup is region-independent (one freq
       // → one callsign, by license).
-      const callsignSuffix = !auto && p && !this.fallbackActive ? lookupCallsign(freq) : undefined;
+      const callsignSuffix = !auto && p && !this.fallbackActive ? lookupCallsign(freq, spyService.getJpActiveRegion()) : undefined;
       // Header now carries the broadcaster name only — Mode and STEREO have
       // moved into the freq display (Mode = left of digits, STEREO = top-
       // right corner where the clock used to live; the clock relocated to

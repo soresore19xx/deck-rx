@@ -189,12 +189,24 @@ describe('lookupJpStation with sidecar callsign DB (regression: cross-region pre
     const e = lookupJpStation(954_000, 'kanto');
     expect(e?.callsign).toBe('JOKR');
   });
-  it('lookupCallsign is region-independent — 1179 kHz JOOR for kanto user', () => {
+  it('lookupCallsign without region falls back to first match — 1179 kHz JOOR (kinki)', () => {
     // 1179 kHz MBSラジオ is region-tagged kinki, so a kanto user's
     // lookupJpStation returns null. lookupCallsign still surfaces JOOR
-    // so the preset-name fallback path can append it.
+    // even with no region pref (only one entry at this freq).
     expect(lookupJpStation(1_179_000, 'kanto')).toBeNull();
     expect(lookupCallsign(1_179_000)).toBe('JOOR');
+  });
+  it('lookupCallsign with kanto pref still returns JOOR for cross-region 1179 kHz preset (no kanto entry exists)', () => {
+    expect(lookupCallsign(1_179_000, 'kanto')).toBe('JOOR');
+  });
+  it('lookupCallsign region-prefer: 1485 kHz with kanto returns JORL (神奈川) not JOBE (京都) which would win without preference', () => {
+    // 1485 kHz MW has 7+ entries across the country (京都/青森/福岡/山口/
+    // 神奈川/秋田/北海道). Without region preference findCallsign returns
+    // the first delta=0 entry in iteration order — JOBE (京都) won. With
+    // kanto pref the 神奈川 entry (JORL ラジオ日本) takes priority.
+    expect(lookupCallsign(1_485_000, 'kanto')).toBe('JORL');
+    expect(lookupCallsign(1_485_000, 'hokkaido')).toBe('JOYS');  // 北海道北見市
+    expect(lookupCallsign(1_485_000, 'kinki')).toBe('JOBE');     // 京都府福知山市
   });
   it('lookupCallsign returns undefined for out-of-band freq', () => {
     expect(lookupCallsign(50_000_000)).toBeUndefined();

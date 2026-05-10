@@ -82,6 +82,9 @@ export class SpyDialOptions2Col extends SingletonAction<Settings> {
     const csCb = (c: boolean) => { this.connected = c; this.render(); };
     spyService.subscribeConnectionState(csCb);
     this.listeners.push(() => spyService.unsubscribeConnectionState(csCb));
+    const frCb = () => this.render();
+    spyService.subscribeForceRender(frCb);
+    this.listeners.push(() => spyService.unsubscribeForceRender(frCb));
     spyService.connect().catch((e) => streamDeck.logger.error(`[opts2col] ${e}`));
     await ev.action.setImage(svgB64(knobSvg()));
     this.render();

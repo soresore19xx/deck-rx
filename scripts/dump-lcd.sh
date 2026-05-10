@@ -29,6 +29,7 @@ if [[ "${1:-}" == "--docs" ]]; then DOCS_MODE=1; fi
 
 OUT="${HOME}/ICON"
 FLAG=/tmp/deck-rx-lcd-dump
+FORCE=/tmp/deck-rx-lcd-force   # edge-trigger: plugin re-renders every active dial once, then unlinks
 # Each entry: dump-tag => docs-png-label (what render-all-dials.mjs writes
 # into docs/). Tags must match the dumpAndB64 / dumpTuneLcd <tag> argument
 # in src/actions/spy*.ts.
@@ -66,17 +67,24 @@ fi
 cat <<EOF
 
 >> waiting for SVGs (timeout ${TIMEOUT}s)
-   On the Stream Deck, switch through each LCD panel you want captured:
-       ${TAGS[*]}
-   Already-displayed panels are dumped immediately. Pages / profiles
-   that aren't currently shown stay missing — show them, the visible
-   render fires once and writes the SVG, then move to the next.
-   Script keeps polling until all 9 land OR you Ctrl-C with what you have.
+   Stream Deck + shows 4 LCDs at a time, so on each visible page the
+   currently-attached dial actions get re-rendered (dump flag + force
+   flag combo). Switch pages to cover the rest:
+       targets: ${TAGS[*]}
+   Each page change re-fires force-render so the 4 newly-visible dials
+   write their SVGs immediately — no need to physically rotate any
+   dial. Script keeps polling until all targets land OR you Ctrl-C
+   with what you have.
 
 EOF
+# Edge-trigger force-render NOW so currently-visible dials write their SVGs
+# without the user having to interact. Plugin's spyService watcher polls
+# at 250 ms, fires every subscribeForceRender listener, then unlinks.
+touch "$FORCE"
 
 deadline=$((SECONDS + TIMEOUT))
 last=-1
+last_force=$SECONDS
 while (( SECONDS < deadline )); do
   ready=0
   for t in "${TAGS[@]}"; do [[ -s "/tmp/deck-rx-lcd-${t}.svg" ]] && (( ready++ )); done
@@ -85,11 +93,17 @@ while (( SECONDS < deadline )); do
     last=$ready
   fi
   (( ready == ${#TAGS[@]} )) && break
+  # Re-fire force-render every 3 seconds so newly-visible dials (after a
+  # page switch) get rendered without user interaction.
+  if (( SECONDS - last_force >= 3 )); then
+    touch "$FORCE"
+    last_force=$SECONDS
+  fi
   sleep 1
 done
 
 echo ">> disabling dump gate"
-rm -f "$FLAG"
+rm -f "$FLAG" "$FORCE"
 
 # Strip the offline-dim opacity wrapper so the docs PNG shows the bright
 # running colour scheme. The connected-state isn't reachable from the

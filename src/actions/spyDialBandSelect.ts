@@ -42,6 +42,7 @@ export class SpyDialBandSelect extends SingletonAction<Settings> {
   private connStateListener: ((c: boolean) => void) | null = null;
   private tuneModeListener: ((m: TuneMode) => void) | null = null;
   private tuneStepListener: ((s: number) => void) | null = null;
+  private forceRenderListener: (() => void) | null = null;
   private enabled = true;
   private connected = false;
   private currentMode = 0;
@@ -58,6 +59,8 @@ export class SpyDialBandSelect extends SingletonAction<Settings> {
     spyService.subscribeTuneMode(this.tuneModeListener);
     this.tuneStepListener = () => this.render();
     spyService.subscribeTuneStep(this.tuneStepListener);
+    this.forceRenderListener = () => this.render();
+    spyService.subscribeForceRender(this.forceRenderListener);
     spyService.connect().catch((e) => streamDeck.logger.error(`[bandSel] ${e}`));
     await ev.action.setImage(svgB64(knobSvg()));
     this.render();
@@ -68,6 +71,7 @@ export class SpyDialBandSelect extends SingletonAction<Settings> {
     if (this.connStateListener) { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
     if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
     if (this.tuneStepListener) { spyService.unsubscribeTuneStep(this.tuneStepListener); this.tuneStepListener = null; }
+    if (this.forceRenderListener) { spyService.unsubscribeForceRender(this.forceRenderListener); this.forceRenderListener = null; }
     this.act = null;
   }
   override async onDialRotate(ev: DialRotateEvent<Settings>): Promise<void> {

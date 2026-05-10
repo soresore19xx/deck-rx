@@ -188,6 +188,14 @@ class SpyService {
   private deviceListeners  = new Set<DeviceListener>();
   private volumeListeners  = new Set<(v: number, muted: boolean) => void>();
   private enabledListeners = new Set<EnabledListener>();
+  // Force-render watch: dump-lcd.sh touches /tmp/deck-rx-lcd-force to ask
+  // every currently-attached dial to re-render once (so panels without an
+  // auto-render timer — AM Options, FM Options, Combo, etc — produce SVG
+  // dumps without the user having to physically rotate each dial). The
+  // watcher polls every 250 ms, fires all listeners once, then removes
+  // the flag so it's edge-triggered.
+  private forceRenderListeners = new Set<() => void>();
+  private forceRenderTimer: ReturnType<typeof setInterval> | null = null;
   // Master ON/OFF: when false, connect()/scheduleReconnect() are no-ops and
   // any active connection is torn down. Default true (existing users keep
   // current behavior); persisted to config so toggle survives restarts.
@@ -265,7 +273,26 @@ class SpyService {
 
   get currentFreq(): number { return this._currentFreq; }
 
-  constructor() { this.hookClient(); }
+  constructor() { this.hookClient(); this.startForceRenderWatcher(); }
+
+  private startForceRenderWatcher(): void {
+    const FLAG = '/tmp/deck-rx-lcd-force';
+    let fs: typeof import('fs') | null = null;
+    try { fs = require('fs'); } catch { /* harness without fs — skip */ }
+    if (!fs) return;
+    this.forceRenderTimer = setInterval(() => {
+      try {
+        if (!fs!.existsSync(FLAG)) return;
+        try { fs!.unlinkSync(FLAG); } catch { /* race or perms — fine */ }
+        for (const fn of this.forceRenderListeners) {
+          try { fn(); } catch { /* listener errors don't break others */ }
+        }
+      } catch { /* swallow */ }
+    }, 250);
+  }
+
+  subscribeForceRender(fn: () => void): void { this.forceRenderListeners.add(fn); }
+  unsubscribeForceRender(fn: () => void): void { this.forceRenderListeners.delete(fn); }
 
   private hookClient(): void {
     this.client.on('deviceInfo', (info: DeviceInfo) => {

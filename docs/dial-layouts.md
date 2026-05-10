@@ -1,8 +1,12 @@
 # Dial layouts
 
-Each registered Stream Deck encoder action / panel and what it shows.
+Each registered Stream Deck action — encoder dials and the one keypad button — and what it shows.
 
 ![Deck RX — all four LCD panels](lcd-combined.png)
+
+## Deck RX Tune (keypad button)
+
+One-shot preset-tune button. Configure a preset slot (1-N) in the PI; pressing the key sends `setDemodMode` + `setFrequency` to spyService and flashes an OK badge. The button's title shows the slot's station name (or the preset's auto-resolved JP DB / EIBI label) so a row of these buttons becomes a directly-tappable preset rack alongside the dials. Refuses the tune (showAlert) when the slot's freq isn't receivable on the connected SDR (e.g. an HF+ user has a 50 MHz slot in the 31–60 MHz hardware gap).
 
 ## Deck RX Dial (Tune)
 

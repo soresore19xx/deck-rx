@@ -24,125 +24,20 @@ The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a 
 | Auto station-name lookup | ✅ **Japan-area only** for the JP DB — region-switchable from the Tune dial PI (関東 / 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 / 沖縄 ※全 8 region 対応; 関東+沖縄は AM/FM/CFM 一括、他 6 region は民放 FM のみ via 全国 FM 一覧) + region-tagged manual overrides; the EIBI SW DB covers international shortwave (day/time/spur-aware); in-PI `Update Now` for both |
 | Preset list | ✅ deck-rx-owned `data/presets.json` (UTF-8 clean、CJK 局名 OK) + JP DB の active region 局を周波数昇順でマージ; 同 freq は JP DB の局名で上書き; region 切替で list 自動再構築; PI の `Import bookmarks` で SDR++ `frequency_manager_config.json` から取り込み (read-only、merge、name dedup) |
 
-### Encoder dial layout (4 LCDs on Stream Deck +)
-
 ![Deck RX — all four LCD panels](docs/lcd-combined.png)
 
-- **Deck RX Dial** — VFO / preset scrolling, 7-seg frequency, FM stereo lock badge, ATS-Mini-style N (SNR) / S (RSSI) bars, `HH:MM TZ` clock; long-press (≥ 2 s) for master ON/OFF. Header carries the JP DB-resolved station name + 識別信号 callsign + 送信地 (e.g. `NHK第1 JOAK (東京)`).
-
-  ![Tune dial](docs/lcd-tune.png)
-
-- **Deck RX Volume + Status** — 0–150 % volume / mute, conn state, host, device, audio output, icecast publish health. Title bar carries the `HH:MM TZ` clock so the Tune dial's freq area is left to the 7-seg.
-
-  ![Volume + Status dial](docs/lcd-volume.png)
-
-- **Deck RX Combo Options** — unified Band selector (WFM / NFM / AM / USB / LSB / CW) on the left column + mode-dependent Options on the right column. PUSH on a Band row immediately switches the demod mode (no edit-mode roundtrip); the Opts column auto-shapes to AM (BW / CAGC / Sync / Atk / Dec / Gain), FM (Deemph / IFNR / HPF / LPF / Ste / Gain), or SSB (BW / BFO / Gain) depending on the active demod. Mode/Step (preset ⇄ vfo + step cycle) lives at the bottom of the Band column. The Tune dial follows the Band PUSH automatically: it jumps to the first matching-mode preset that's actually receivable on the connected SDR; for SSB / CW where presets typically don't exist, it falls back to a band-representative default (USB → 14.200 MHz, LSB → 7.100 MHz, CW → 7.025 MHz, NFM → 145.000 MHz), so a Band PUSH always moves the dial to a sensible freq even in VFO mode. Returning to AM/WFM finds a matching preset and restores attribution.
-
-  ![Combo Options dial](docs/lcd-options-combo.png)
-
-  ![Combo dial — all 6 demod modes](docs/lcd-combo-modes.png)
-
-- **Deck RX Options** (FM/NFM) — Deemphasis / IFNR / HPF / LPF / Stereo / Gain. Auto-dims and shows `(<live mode> live)` title hint + locks out edits when the active demod isn't FM-family.
-
-  ![FM Options dial](docs/lcd-options-fm.png)
-
-- **Deck RX AM Options** — BW / Carrier AGC / Sync / Attack / Decay / Gain. Auto-dims and shows `(<live mode> live)` (e.g. `AM Options (USB live)`) + locks out edits when active demod isn't AM (symmetric to FM Options above).
-
-  ![AM Options dial](docs/lcd-options-am.png)
-
-- **Deck RX SSB Options** — BW (250 Hz – 2.8 kHz CW + voice) / BFO (CW pitch 400–900 Hz) / Mode / Gain. Active only while USB / LSB / CW is the live demod.
-
-  ![SSB Options dial](docs/lcd-options-ssb.png)
-
-- **Deck RX Band Select** — full-width Band column variant of the Combo dial without the Opts side. Useful when a user pairs it with a separate Options dial of their choice.
-
-  ![Band Select dial](docs/lcd-band-select.png)
-
-- **Deck RX Options Auto** — single-column, auto-shaping Options panel (`<MODE> Options` title). Shows the row set for whatever the active demod is (AM / FM / SSB), no Band column.
-
-  ![Options Auto dial](docs/lcd-options-auto.png)
-
-- **Deck RX Options 2-Col** — two-column comparison view: AM rows on the left, FM rows on the right. The active demod's column is bright; the inactive column shows live values dimmed for at-a-glance contrast.
-
-  ![Options 2-Col dial](docs/lcd-options-2col.png)
-
-See [docs/architecture.md](docs/architecture.md) for layout details, focus highlight colours, and signal-path notes.
+Per-dial layouts and screenshots (Tune / Volume / Combo / FM / AM / SSB / Band Select / Options Auto / Options 2-Col): see [docs/dial-layouts.md](docs/dial-layouts.md).
 
 ## Documentation
 
 - [Repository layout](docs/repository-layout.md)
 - [Build & install](docs/build-install.md)
 - [Server-side setup (SpyServer on Linux ARM/aarch64)](docs/server-setup.md)
+- [Dial layouts](docs/dial-layouts.md) — per-plugin LCD screenshots + per-row UI explanations
 - [Architecture notes](docs/architecture.md) — dial details, signal-path implementation, internal mechanisms
-- [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules
+- [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules, NHK channel inference + 送信地 + callsign annotation
+- [Data sources & attribution](docs/data-sources.md) — 総務省 / 関東総通局 / 沖縄総通局 / EIBI license terms + refresh scripts
 - [Debug helpers](docs/debug-helpers.md) — LCD dump / lint / compare-baseline scripts
-
-## Data sources & attribution
-
-The auto station-name lookup combines several public broadcast databases.
-All upstream data is used under its own terms; deck-rx redistributes the
-station list and callsign DB under the attributions below.
-
-| Source | Coverage | License / Terms |
-|---|---|---|
-| 関東総合通信局 ラジオ放送事業者一覧 | 1都7県 (東京・神奈川・千葉・埼玉・茨城・栃木・群馬・山梨) AM 親局 + 中継局 + FM 補完 + 超短波 + コミュニティ放送 | 公共データ利用規約 第1.0版 |
-| 沖縄総合通信局 ラジオ周波数一覧 | 沖縄県 AM/FM/CFM | 公共データ利用規約 第1.0版 |
-| 総務省 全国民放FM局・ワイドFM局一覧 | 北海道・東北・東海・近畿・中国・九州 民放 FM | 公共データ利用規約 第1.0版 |
-| **総務省 無線局等情報検索** (https://www.tele.soumu.go.jp/musen/) | **callsign (識別信号) DB across all licensed broadcast transmitters** | **公共データ利用規約 第1.0版** |
-| EIBI SW DB | 国際短波放送 (day/time/spur-aware) | EIBI license (publicly accessible, attribution requested) |
-
-公共データ利用規約 第1.0版 (https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html)
-は商用利用も含む再配布を認める一方で、 出典明記と編集・加工した場合
-その旨の記載を求めています。 本リポジトリ内の `com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json`
-および `callsigns.json` は当該規約に準拠して以下の編集を施しています:
-
-- 法人名の brand 化 (法令上の "株式会社..." → 一般に流通する短縮形 / カナ表記)
-- 周波数を Hz 整数に正規化
-- 送信地・市町村名 cell を `siteName` フィールドに分離
-- 識別信号値の前後にあるマスク (`*****`) や `<BR>` を除去し callsign 単独に切り出し
-
-データ更新時は以下のスクリプトで再取得できます (rate-limit 1 req/sec):
-
-```sh
-npx tsx scripts/fetch-callsigns.ts             # AM + FM 全件 sweep (~50 分)
-npx tsx scripts/fetch-callsigns.ts --validate  # AM 1 page (smoke test, ~2 分)
-npx tsx scripts/fetch-callsigns-supplement.ts  # 主要法人 NA= 補完 fetch (~20 分)
-npx tsx scripts/fetch-callsigns-50on.ts        # 50 音 brute sweep (~70 分)
-```
-
-**通常運用は `fetch-callsigns.ts` (全件) + `fetch-callsigns-supplement.ts` (補完)
-の組合せで OK**。 default の SelectHSK=04 検索は 中央放送局 (TOKYO FM JOAU-FM
-/ J-WAVE JOAV-FM 等) を暗黙除外するため、 supplement の `NA=法人名` keyword
-検索で補完が必要。 supplement の `FM_KEYWORDS` / `AM_KEYWORDS` 配列に法人名
-を追記すれば任意の局を補足できる:
-
-```ts
-// scripts/fetch-callsigns-supplement.ts
-const FM_KEYWORDS = [
-  '株式会社エフエム東京',         // TOKYO FM JOAU-FM
-  '株式会社Ｊ－ＷＡＶＥ',         // J-WAVE JOAV-FM
-  '日本放送協会',                 // NHK FM 全国
-  // ↓ 追加例: 「FM横浜の中継局を取りたい」 等
-  // '横浜エフエム放送株式会社',
-];
-```
-
-`fetch-callsigns-50on.ts` は 78 keyword × 2 band の brute force 経路。 70 分
-かかる代わりに supplement で漏れた regional 親局 (FM大阪 / FM群馬 / FM京都
-等) を網羅的に拾える。 通常は不要だが、 「絶対漏らしたくない」 用途のとき。
-
-総務省側に差分取得 API は無いため再取得は常に全量。 1 年後等に何が変わったか
-だけ知りたい場合は `scripts/diff-callsigns.ts` で前回 fetch との差分を表示
-できます (新規 license / 廃止 / 設置場所・法人名変更を分類):
-
-```sh
-cp com.hogehoge.deck-rx.sdPlugin/data/callsigns.json{,.old}
-npx tsx scripts/fetch-callsigns.ts
-npx tsx scripts/diff-callsigns.ts \
-    com.hogehoge.deck-rx.sdPlugin/data/callsigns.json.old \
-    com.hogehoge.deck-rx.sdPlugin/data/callsigns.json
-# 確認 OK なら .old を削除して commit、 一部だけ rollback したい場合は手動編集
-```
 
 ## License
 

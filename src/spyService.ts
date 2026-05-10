@@ -982,8 +982,18 @@ class SpyService {
       if (iqCount < 3) { streamDeck.logger.info(`[spyService] iqData fmt=${p.format} len=${p.body.length} gainDb=${p.gainDb}`); iqCount++; }
       // RSSI + SNR from IQ samples (INT16 LE: 4 bytes per I,Q pair).
       // Powers normalised to int16 full-scale to keep within JS double precision.
+      //
+      // For FM modes (WFM / NFM) the meanP is taken from the post-IF-LPF
+      // power tracked inside the demodulator — otherwise strong neighbours
+      // sitting in the SpyServer's ±228 kHz baseband (e.g. TBS 79.5 MHz
+      // when the user is tuned to 79.7 MHz) contribute to the RSSI and
+      // peg the S-meter on a supposedly empty channel. AM / SSB / CW
+      // keep the raw-IQ measurement because their IF LPFs are narrower
+      // and run inside processAM/SSB/CW; the WFM IF LPF is the relevant
+      // one for FM modes here.
       if (p.format === 'int16') {
         const NORM = 32767 * 32767;
+        const isFm = this.currentDemodMode === 0 || this.currentDemodMode === 1;
         let sumP = 0, sumP2 = 0;
         const N = p.body.length >> 2;
         for (let i = 0; i < N; i++) {
@@ -993,7 +1003,9 @@ class SpyService {
           sumP  += power;
           sumP2 += power * power;
         }
-        const meanP  = sumP  / Math.max(1, N);
+        const meanP  = isFm
+          ? (this.demod.getWfmInBandMeanP() / NORM)
+          : (sumP  / Math.max(1, N));
         const meanP2 = sumP2 / Math.max(1, N);
         // RSSI: RMS power → dBFS, gain-compensated
         const dbfs = meanP > 0 ? 10 * Math.log10(meanP) : -120;

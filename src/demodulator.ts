@@ -61,6 +61,11 @@ export class Demodulator {
   // Blackman) taps — IIR Butterworth in the IF path was deck-rx's
   // particular shortcut, not industry practice.
   private wfmIfLpf: ComplexFirLpf = new ComplexFirLpf();
+  // Post-IF-LPF mean power (I²+Q² averaged over the most recent processed
+  // buffer). spyService uses this to compute an in-band-only RSSI instead
+  // of the raw-IQ-stream power that was inflating the S meter with energy
+  // from strong neighbours sitting inside the SpyServer's wider baseband.
+  private wfmInBandMeanP = 0;
   private wfmIfRate = 0;
   // Independent IF LPF copy used only by diagnostics so the production
   // filter state isn't disturbed by spectrum measurements.
@@ -460,12 +465,20 @@ export class Demodulator {
   }
   isStereoConfigured(): boolean { return this.stereoConfigured; }
 
+  /** Mean (I²+Q²) over the most recent processed buffer measured AFTER the
+   *  WFM IF LPF. Used by spyService for an in-band-only RSSI: the raw IQ
+   *  power includes energy from strong neighbours sitting inside the
+   *  SpyServer baseband (±228 kHz at iqRate=456 kHz) and pegs the S-meter
+   *  on supposedly empty channels next to dense broadcast allotments. */
+  getWfmInBandMeanP(): number { return this.wfmInBandMeanP; }
+
   // FM discriminator — for NFM (no de-emphasis, narrower deviation). Mono PCM out.
   processFM(iq: Buffer, decimate: number, gain = 6000): Int16Array {
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);
     const out = new Int16Array(outSamples * 2);
     let oi = 0;
+    let inBandSumP = 0;
     for (let i = 0; i < inSamples; i++) {
       let I = iq.readInt16LE(i * 4);
       let Q = iq.readInt16LE(i * 4 + 2);
@@ -477,6 +490,7 @@ export class Demodulator {
         I = this.wfmIfLpf.lastI;
         Q = this.wfmIfLpf.lastQ;
       }
+      inBandSumP += I * I + Q * Q;
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let r = 0;
@@ -493,6 +507,7 @@ export class Demodulator {
         oi++;
       }
     }
+    this.wfmInBandMeanP = inSamples > 0 ? inBandSumP / inSamples : 0;
     return out;
   }
 
@@ -514,6 +529,7 @@ export class Demodulator {
     let oi = 0;
     const a = this.deempAlpha;
     const beta = 0.001;
+    let inBandSumP = 0;
     for (let i = 0; i < inSamples; i++) {
       let I = iq.readInt16LE(i * 4);
       let Q = iq.readInt16LE(i * 4 + 2);
@@ -525,6 +541,7 @@ export class Demodulator {
         I = this.wfmIfLpf.lastI;
         Q = this.wfmIfLpf.lastQ;
       }
+      inBandSumP += I * I + Q * Q;
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let r = 0;
@@ -552,6 +569,7 @@ export class Demodulator {
         oi++;
       }
     }
+    this.wfmInBandMeanP = inSamples > 0 ? inBandSumP / inSamples : 0;
     return out;
   }
 
@@ -565,6 +583,7 @@ export class Demodulator {
     const out = new Int16Array(outSamples * 2);
     let oi = 0;
     const a = this.deempAlpha;
+    let inBandSumP = 0;
     for (let i = 0; i < inSamples; i++) {
       let I = iq.readInt16LE(i * 4);
       let Q = iq.readInt16LE(i * 4 + 2);
@@ -576,6 +595,7 @@ export class Demodulator {
         I = this.wfmIfLpf.lastI;
         Q = this.wfmIfLpf.lastQ;
       }
+      inBandSumP += I * I + Q * Q;
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let demod = 0;
@@ -682,6 +702,7 @@ export class Demodulator {
         oi++;
       }
     }
+    this.wfmInBandMeanP = inSamples > 0 ? inBandSumP / inSamples : 0;
     return out;
   }
 

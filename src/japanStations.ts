@@ -159,6 +159,25 @@ function findCallsign(freqHz: number, band: 'FM' | 'MW', list: NonNullable<Calls
   return best;
 }
 
+/**
+ * Region-independent callsign lookup. Returns the 識別信号 for the given
+ * freq+band if 総務省 has it, regardless of the current active region.
+ *
+ * Use case: dial display falls back to a preset name when lookupJpStation
+ * misses (e.g. user is on 関東 region but tuned 1179 kHz MBSラジオ which
+ * is region-tagged 近畿 — the region filter rejects the station entry but
+ * the callsign JOOR for 1179 kHz is still meaningful and worth showing).
+ */
+export function lookupCallsign(freqHz: number): string | undefined {
+  const band: JpBand | null =
+    freqHz >= 76_000_000 && freqHz <= 108_000_000 ? 'FM' :
+    freqHz >=    522_000 && freqHz <=   1_710_000 ? 'MW' :
+    null;
+  if (!band) return undefined;
+  const { cs } = load();
+  return findCallsign(freqHz, band, cs);
+}
+
 export function getJpStationsPath(): string {
   return dataPath();
 }

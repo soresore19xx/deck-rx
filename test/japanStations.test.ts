@@ -7,7 +7,12 @@ process.env.DECK_RX_JP_STATIONS_PATH = resolve(
   __dirname, '..', 'com.hogehoge.deck-rx.sdPlugin', 'data', 'jp-stations.json',
 );
 
-const { lookupJpStation, formatJpStationLabel, isJpRegion, JP_REGIONS, JP_REGION_LABELS } =
+// Same env override for the callsigns sidecar.
+process.env.DECK_RX_CALLSIGNS_PATH = resolve(
+  __dirname, '..', 'com.hogehoge.deck-rx.sdPlugin', 'data', 'callsigns.json',
+);
+
+const { lookupJpStation, lookupCallsign, formatJpStationLabel, isJpRegion, JP_REGIONS, JP_REGION_LABELS } =
   await import('../src/japanStations.js');
 
 // Tests run against the live com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json,
@@ -171,5 +176,27 @@ describe('formatJpStationLabel — display formatting', () => {
     expect(formatJpStationLabel({
       freqHz: 954_000, band: 'MW', name: 'TBSラジオ', callsign: 'JOKR',
     })).toBe('TBSラジオ JOKR');
+  });
+});
+
+describe('lookupJpStation with sidecar callsign DB (regression: cross-region preset)', () => {
+  it('594 kHz NHK東京 親局 → callsign JOAK joined from sidecar', () => {
+    const e = lookupJpStation(594_000, 'kanto');
+    expect(e?.name).toBe('NHK');
+    expect(e?.callsign).toBe('JOAK');
+  });
+  it('954 kHz TBSラジオ → callsign JOKR joined from sidecar', () => {
+    const e = lookupJpStation(954_000, 'kanto');
+    expect(e?.callsign).toBe('JOKR');
+  });
+  it('lookupCallsign is region-independent — 1179 kHz JOOR for kanto user', () => {
+    // 1179 kHz MBSラジオ is region-tagged kinki, so a kanto user's
+    // lookupJpStation returns null. lookupCallsign still surfaces JOOR
+    // so the preset-name fallback path can append it.
+    expect(lookupJpStation(1_179_000, 'kanto')).toBeNull();
+    expect(lookupCallsign(1_179_000)).toBe('JOOR');
+  });
+  it('lookupCallsign returns undefined for out-of-band freq', () => {
+    expect(lookupCallsign(50_000_000)).toBeUndefined();
   });
 });

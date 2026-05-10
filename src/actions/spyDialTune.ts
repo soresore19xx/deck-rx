@@ -10,7 +10,7 @@ import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSv
 import { loadPresets, clearPresetsCache, Preset } from './spyTune.js';
 import { importFromSdrpp } from '../presets.js';
 import { lookupEibi } from '../eibi.js';
-import { lookupJpStation, formatJpStationLabel, isJpRegion, type JpRegion } from '../japanStations.js';
+import { lookupJpStation, lookupCallsign, formatJpStationLabel, isJpRegion, type JpRegion } from '../japanStations.js';
 import { autoDemodForFreq } from '../bandPolicy.js';
 import { bandsForDevice, snapToCoveredFreq, isFreqReceivable } from '../deviceBands.js';
 
@@ -587,11 +587,18 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const { num, unit } = freqParts(freq);
       const modeStr = p ? (MODES[p.mode] ?? '') : '';
       const auto = p ? autoStationLabel(freq, spyService.getJpActiveRegion()) : null;
+      // Preset-name fallback: when JP DB lookup misses (typically because the
+      // preset's freq belongs to a station tagged for a region OTHER than the
+      // one currently active — e.g. user on 関東 tuned 1179 kHz MBSラジオ
+      // which is region: kinki), still try to attach the 識別信号 from the
+      // 総務省 callsign DB. callsign lookup is region-independent (one freq
+      // → one callsign, by license).
+      const callsignSuffix = !auto && p ? lookupCallsign(freq) : undefined;
       // Header now carries the broadcaster name only — Mode and STEREO have
       // moved into the freq display (Mode = left of digits, STEREO = top-
       // right corner where the clock used to live; the clock relocated to
       // the Volume + Status panel's title bar).
-      const baseHeader = p ? (auto ?? p.name) : 'No presets';
+      const baseHeader = p ? (auto ?? (callsignSuffix ? `${p.name} ${callsignSuffix}` : p.name)) : 'No presets';
       const header = !this.enabled ? `OFF  ${baseHeader}`
                    : offline        ? `LINK  ${baseHeader}`
                    : baseHeader;

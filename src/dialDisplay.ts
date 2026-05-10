@@ -169,10 +169,10 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   const totalW = numTotalW + 4 + unitW;
 
   // 7-seg digits stay centred in the svg with their original size — the
-  // optional Mode label is pinned to the *left* of the digits with a tight
-  // 2 px gap, so adding a Mode no longer shifts or shrinks the digits.
+  // optional Mode label is right-anchored to a 2 px gap before the first
+  // digit, so adding a Mode no longer shifts or shrinks the digits, and
+  // doesn't depend on a glyph-width estimate that turned out wrong.
   const MODE_FS = 14;
-  const MODE_CW = 8.5;
   const MODE_GAP = 2;
   let cx = (svgW - totalW) / 2;
   const oy = (svgH - DH) / 2;
@@ -192,14 +192,18 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
     // Mono) needs a font fixup, applied per-copy in dumpTuneLcd.
     out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
   }
-  // Mode label is pinned to the digits' left edge (cx - gap - text width)
-  // so it tracks the centred 7-seg block. Vertically aligned with the
-  // digits' midline. The min-x guard keeps short SVG widths from pulling
-  // the label off the left edge.
+  // Mode label is right-anchored exactly MODE_GAP px before the first
+  // digit. Pango (rsvg-convert path) renders monospace wider than the
+  // SDK's Menlo, so the previous left-anchored width estimate (MODE_CW)
+  // let "AM"/"WFM"/"NFM" glyphs visually overlap the leftmost digit on
+  // common freqs (7325 kHz AM, 80.00 MHz WFM, 145.00 MHz NFM). Pinning
+  // the right edge instead removes the dependency on a glyph-width
+  // guess: no overlap regardless of font, modeLabel may clip on the
+  // left for the rare wide-mode + wide-freq combination (NFM + 145
+  // MHz), which is preferable to digit collision.
   if (modeLabel) {
     const my = oy + DH / 2 + MODE_FS * 0.35;
-    const modeX = Math.max(2, cx - MODE_GAP - modeLabel.length * MODE_CW);
-    out += `<text x="${n(modeX)}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace">${modeLabel}</text>`;
+    out += `<text x="${n(cx - MODE_GAP)}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace" text-anchor="end">${modeLabel}</text>`;
   }
 
   for (const c of numStr) {

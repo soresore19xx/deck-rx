@@ -27,6 +27,14 @@ function decodeSvg(msg) {
   return Buffer.from(v.slice('data:image/svg+xml;base64,'.length), 'base64').toString('utf-8');
 }
 
+// Strip the offline-dim opacity so docs/lcd-combo-modes.png shows the bright
+// running colour scheme. The harness has no SpyServer so connected is
+// always false and dimSvg wraps every render in opacity="0.30"; for static
+// documentation we want the same look users see when actually receiving.
+function stripDim(svg) {
+  return svg.replace(/opacity="0\.30"/g, 'opacity="1"');
+}
+
 for (const [mode, label] of MODES) {
   console.error(`>> rendering ${label} (mode=${mode})`);
   // enabled=true so spyService.connect() runs the demodMode hydration step
@@ -51,7 +59,7 @@ for (const [mode, label] of MODES) {
   const last = fbs.length > 0 ? decodeSvg(fbs[fbs.length - 1]) : '';
   console.error(`   captured ${fbs.length} setFeedback frames`);
   if (last) {
-    writeFileSync(`/tmp/combo-${label}.svg`, last);
+    writeFileSync(`/tmp/combo-${label}.svg`, stripDim(last));
     console.error(`   wrote /tmp/combo-${label}.svg (${last.length} chars)`);
   } else {
     console.error(`   ! no setFeedback captured for ${label}`);
@@ -82,7 +90,7 @@ for (const d of LEGACY) {
   const fbs = cap.stop().filter(m => m?.event === 'setFeedback' && m?.context === CTX);
   const last = fbs.length > 0 ? decodeSvg(fbs[fbs.length - 1]) : '';
   if (last) {
-    writeFileSync(`/tmp/${d.label}.svg`, last);
+    writeFileSync(`/tmp/${d.label}.svg`, stripDim(last));
     console.error(`   wrote /tmp/${d.label}.svg (${last.length} chars, ${fbs.length} frames)`);
   }
   await harness.shutdown();

@@ -592,15 +592,23 @@ export class Demodulator {
         } else {
           if (this.pilotPower > 0.005) this.stereoBadgeLocked = true;
         }
-        // L−R audio gate — smooth ramp instead of binary on/off so noise
-        // burst or weak-pilot pllLocked toggles don't click. EWMA target
-        // = 1 when locked, 0 when unlocked; α=0.05 at audio rate gives a
-        // ~20-sample (≈ 0.4 ms at 48 kHz) ramp — long enough to avoid
-        // the audible click of a single-sample step, short enough that
-        // legitimate stereo locks come up "instantly" to the ear.
-        const stereoGateTarget = this.pllLocked ? 1 : 0;
-        this.stereoGate += (stereoGateTarget - this.stereoGate) * 0.05;
-        const lmrUsed = lmr * this.stereoGate;
+        // L−R audio gate — continuous (no hysteresis, no toggling) function
+        // of pilotPower itself. Below 0.001 the gate is fully closed (no
+        // L-R signal contributes to output); above 0.005 fully open;
+        // linear ramp in between. This avoids the audible click that
+        // binary `pllLocked ? lmr : 0` produced when pllLocked toggled
+        // rapidly on noise (which the phase-coherence pilotPower measure
+        // correctly identifies as not-locked, but with momentary spikes).
+        //
+        // Real stereo broadcasts give pilotPower well above 0.005 so they
+        // gate fully open. Noise floor with the pdI−|pdQ| metric averages
+        // to ~0 → gate fully closed. Weak stereo at 0.001-0.005 gets a
+        // partial gate which sounds natural (proportional to actual
+        // pilot strength) rather than flapping on/off.
+        const gateFactor = this.pilotPower < 0.001 ? 0
+                         : this.pilotPower > 0.005 ? 1
+                         : (this.pilotPower - 0.001) / 0.004;
+        const lmrUsed = lmr * gateFactor;
         this.deempL = a * lpr + (1 - a) * this.deempL;
         this.deempR = a * lmrUsed + (1 - a) * this.deempR;
         let L = this.deempL + this.deempR;

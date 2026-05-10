@@ -15,7 +15,12 @@ const DEEMPH_CYCLE: DeemphasisOpt[] = ['off', '50us', '75us'];
 // SDR++-style WFM IF passband options. 200 kHz preserves full Carson FM
 // (regulated channel width); narrower values trade a touch of HF audio
 // content for adjacent-channel rejection in dense urban allotments.
-const BW_CYCLE_FM: number[] = [200_000, 150_000, 110_000, 80_000];
+// JP broadcast FM uses 100 kHz channel spacing (76.0 / 76.1 / 76.2 …),
+// so the cycle includes 100 kHz (matches a single channel — gives
+// stereo subcarrier 53 kHz tight clipping past Carson) and 90 kHz
+// (mono-leaning, -50 dB at the adjacent centre with 8th-order Butter).
+// 200 kHz is the SDR++ default; 150 / 110 fall in between.
+const BW_CYCLE_FM: number[] = [200_000, 150_000, 110_000, 100_000, 90_000];
 function fmtFmBw(hz: number): string { return `${(hz / 1000) | 0}k`; }
 function nextInArray<T>(arr: T[], cur: T, ticks: number): T {
   const i = arr.indexOf(cur);

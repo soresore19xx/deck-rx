@@ -29,7 +29,7 @@ const OPTS_START_IDX = BAND_COUNT + 1;         // 7
 
 const DEEMPH_CYCLE: DeemphasisOpt[] = ['off', '50us', '75us'];
 const BW_CYCLE_AM = [4000, 6000, 9000, 12000];
-const BW_CYCLE_FM = [200_000, 150_000, 110_000, 80_000];
+const BW_CYCLE_FM = [200_000, 150_000, 110_000, 100_000, 90_000];
 const BW_CYCLE_SSB = [250, 500, 1000, 1800, 2400, 2800];
 const BFO_CYCLE = [400, 500, 600, 700, 800, 900];
 const ATK_MIN = 1, ATK_MAX = 200;

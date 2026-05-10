@@ -36,14 +36,15 @@ export interface FMOptions {
   highPass: boolean;
   lowPass: boolean;
   stereo: boolean;
-  // IF passband one-sided bandwidth (Hz). SDR++-style, regulator-aligned
-  // values for Japanese broadcast FM where the licensed channel is 200
-  // kHz wide (occupied) but the receiver may want a narrower IF for
-  // adjacent rejection in dense urban allotments.
-  //   200000 = full-spec, retains every modulation feature (Carson)
+  // IF passband total channel width (Hz). JP FM broadcast spacing is 100
+  // kHz (76.0 / 76.1 / 76.2 …), so the cycle (BW_CYCLE_FM in the dial
+  // actions) includes 100 kHz and 90 kHz — narrow enough to suppress
+  // the immediate-adjacent station ~−50 dB with 8th-order Butterworth.
+  //   200000 = SDR++ default WFM IF, full Carson, all stereo intact
   //   150000 = light tightening, still keeps stereo subcarrier (53 kHz)
-  //   110000 = community-FM friendly, slight HF audio loss above 14 kHz
-  //   80000  = aggressive adjacent rejection, mono-leaning content
+  //   110000 = stereo-just-fits, decent adjacent rejection
+  //   100000 = matches one JP channel, mono only past this point
+  //    90000 = aggressive adjacent rejection (~-50 dB at 100 kHz neighbour)
   bandwidth: number;
 }
 

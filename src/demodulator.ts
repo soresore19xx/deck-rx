@@ -49,6 +49,18 @@ export class Demodulator {
   private amIfLpfI: Biquad[] = Array.from({ length: 8 }, () => new Biquad());
   private amIfLpfQ: Biquad[] = Array.from({ length: 8 }, () => new Biquad());
   private amIfRate = 0;
+  // WFM complex IF LPF on the IQ stream BEFORE the atan2 discriminator.
+  // SpyServer's anti-alias is wide (the full IQ rate, e.g. 240-960 kHz),
+  // so without this filter all out-of-band noise reaches the discriminator
+  // — and atan2 of small noise vectors wraps around ±π between samples,
+  // producing audible "click" pops layered onto the demod output. Cutoff
+  // chosen at 90 kHz (≈ FM peak deviation 75 kHz + ~20 % margin) so the
+  // legitimate FM signal sails through but everything outside is rolled
+  // off. 4th-order Butterworth (2 cascaded biquads) gives ~−48 dB / oct
+  // stopband — more than enough to keep wide-band noise from clicking.
+  private wfmIfLpfI: Biquad[] = Array.from({ length: 2 }, () => new Biquad());
+  private wfmIfLpfQ: Biquad[] = Array.from({ length: 2 }, () => new Biquad());
+  private wfmIfRate = 0;
   // Independent IF LPF copy used only by diagnostics so the production
   // filter state isn't disturbed by spectrum measurements.
   private diagIfLpfI: Biquad[] = Array.from({ length: 8 }, () => new Biquad());
@@ -171,6 +183,8 @@ export class Demodulator {
     for (const b of this.amLpf) b.reset();
     for (const b of this.amIfLpfI) b.reset();
     for (const b of this.amIfLpfQ) b.reset();
+    for (const b of this.wfmIfLpfI) b.reset();
+    for (const b of this.wfmIfLpfQ) b.reset();
     this.lprLpf.reset(); this.lmrLpf.reset();
     this.pilotBpf.reset();
     this.pilotPower = 0;
@@ -419,6 +433,20 @@ export class Demodulator {
     this.pllBeta = (omegaN * omegaN) / (iqRate * iqRate);
     // Phase-detector LPF cutoff at 5x loop BW for stable PD output
     this.pllPdLpfAlpha = Math.min(1, 2 * Math.PI * (bwHz * 5) / iqRate);
+    // WFM IF LPF: 4th-order Butterworth complex LPF (2 cascaded biquads on
+    // I and Q each) at 90 kHz cutoff. Cuts out-of-band noise that would
+    // otherwise click through the atan2 discriminator. Configured here
+    // because setStereo runs whenever WFM is the active mode (spyService
+    // calls it from startAudio); rate-aware so re-init works on iqRate
+    // change.
+    if (this.wfmIfRate !== iqRate) {
+      const Q4 = [0.5411961001, 1.3065629649];
+      for (let k = 0; k < 2; k++) {
+        this.wfmIfLpfI[k].setLowPass(iqRate, 90000, Q4[k]);
+        this.wfmIfLpfQ[k].setLowPass(iqRate, 90000, Q4[k]);
+      }
+      this.wfmIfRate = iqRate;
+    }
     this.stereoConfigured = true;
   }
   isStereoConfigured(): boolean { return this.stereoConfigured; }
@@ -430,8 +458,17 @@ export class Demodulator {
     const out = new Int16Array(outSamples * 2);
     let oi = 0;
     for (let i = 0; i < inSamples; i++) {
-      const I = iq.readInt16LE(i * 4);
-      const Q = iq.readInt16LE(i * 4 + 2);
+      let I = iq.readInt16LE(i * 4);
+      let Q = iq.readInt16LE(i * 4 + 2);
+      // Complex IF LPF — bandlimit IQ to ±90 kHz before the discriminator
+      // so wide-band noise can't click the atan2 output. No-op (passthrough)
+      // when the filters haven't been configured yet (iqRate unknown).
+      if (this.wfmIfRate > 0) {
+        for (let k = 0; k < 2; k++) {
+          I = this.wfmIfLpfI[k].step(I);
+          Q = this.wfmIfLpfQ[k].step(Q);
+        }
+      }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let r = 0;
@@ -470,8 +507,17 @@ export class Demodulator {
     const a = this.deempAlpha;
     const beta = 0.001;
     for (let i = 0; i < inSamples; i++) {
-      const I = iq.readInt16LE(i * 4);
-      const Q = iq.readInt16LE(i * 4 + 2);
+      let I = iq.readInt16LE(i * 4);
+      let Q = iq.readInt16LE(i * 4 + 2);
+      // Complex IF LPF — bandlimit IQ to ±90 kHz before the discriminator
+      // so wide-band noise can't click the atan2 output. No-op (passthrough)
+      // when the filters haven't been configured yet (iqRate unknown).
+      if (this.wfmIfRate > 0) {
+        for (let k = 0; k < 2; k++) {
+          I = this.wfmIfLpfI[k].step(I);
+          Q = this.wfmIfLpfQ[k].step(Q);
+        }
+      }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let r = 0;
@@ -513,8 +559,17 @@ export class Demodulator {
     let oi = 0;
     const a = this.deempAlpha;
     for (let i = 0; i < inSamples; i++) {
-      const I = iq.readInt16LE(i * 4);
-      const Q = iq.readInt16LE(i * 4 + 2);
+      let I = iq.readInt16LE(i * 4);
+      let Q = iq.readInt16LE(i * 4 + 2);
+      // Complex IF LPF — bandlimit IQ to ±90 kHz before the discriminator
+      // so wide-band noise can't click the atan2 output. No-op (passthrough)
+      // when the filters haven't been configured yet (iqRate unknown).
+      if (this.wfmIfRate > 0) {
+        for (let k = 0; k < 2; k++) {
+          I = this.wfmIfLpfI[k].step(I);
+          Q = this.wfmIfLpfQ[k].step(Q);
+        }
+      }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let demod = 0;

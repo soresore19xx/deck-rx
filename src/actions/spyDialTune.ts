@@ -234,7 +234,13 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // mode had selected. Re-issuing setFrequency to the same hz is a
       // cheap no-op inside spyService, so always perform the jump when
       // a matching-mode preset exists.
-      if (!this.suppressDemodJump && this.dialMode === 'preset') {
+      // Auto-jump runs regardless of dialMode (preset / vfo) — Combo Band
+      // PUSH is an explicit "go to this band" action by the user, so the
+      // freq should follow even when they're in VFO. Conversely, the VFO
+      // dial-rotate handler wraps its autoDemodForFreq-driven setDemodMode
+      // with suppressDemodJump so this listener doesn't yank the freq the
+      // user is actively dialing through.
+      if (!this.suppressDemodJump) {
         // Pick the first preset that BOTH matches the new demod mode AND
         // is receivable on the connected hardware. Without the receivability
         // filter, PUSH-ing NFM on an Airspy HF+ would happily land us on a
@@ -399,8 +405,16 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         // Auto-switch demod mode when VFO crosses a band boundary so the
         // user dialing from FM (90 MHz) down into MW (594 kHz) actually
         // hears AM, not noise. setDemodMode is a no-op when unchanged.
+        // Wrap with suppressDemodJump so demodListener does NOT fallback
+        // here — the user is actively dialing the freq, we do not want
+        // their freq yanked to a band-default just because the boundary
+        // was crossed.
         const desired = autoDemodForFreq(next);
-        if (desired !== null) spyService.setDemodMode(desired);
+        if (desired !== null) {
+          this.suppressDemodJump = true;
+          spyService.setDemodMode(desired);
+          this.suppressDemodJump = false;
+        }
         spyService.setFrequency(next);
       }, 200);
     }

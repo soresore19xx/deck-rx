@@ -15,33 +15,9 @@ const AM_AGC_MAX_OUTPUT = 160000;
 // 57 kHz audio rate, plenty to catch any imminent peak that matters.
 const AM_AGC_LOOK_AHEAD_SAMPLES = 256;
 
-// FM/NFM/WFM carrier-presence gate. Smoothed in-band IQ power (after the
-// IF LPF for WFM) below this threshold means there's no real carrier on
-// the channel — atan2 on pure noise generates random phase wraps that
-// the human ear hears as "ぷち" clicks. Below the threshold we hold the
-// previous demod output and decay toward 0 instead of running atan2.
-//
-// Threshold tuned for 16-bit IQ:
-//   ~ -54 dBFS power (noise floor in moderate antenna setups sits around
-//   -65 to -75 dBFS). Strong urban FM stations sit ≥ -25 dBFS so they
-//   blow past this trivially. Weak DX (≤ -60 dBFS carrier) stays muted —
-//   the trade-off is intentional: deck-rx is a broadcast-listening tool,
-//   not a DX-chasing receiver, so prioritising silent empty channels
-//   over weak-signal pickup matches how it's used.
-const FM_GATE_POWER_THRESHOLD = 10_000;
-const FM_GATE_ENV_ALPHA = 0.001;
-const FM_GATE_DECAY = 0.999;
-
 export class Demodulator {
   private prevI = 0;
   private prevQ = 0;
-  // Carrier-presence gate state (FM family). When smoothed in-band IQ
-  // power is below FM_GATE_POWER_THRESHOLD the channel is empty noise;
-  // running atan2 on noise produces random phase wraps the ear hears as
-  // "ぷち" clicks. Hold the previous demod and decay toward 0 instead of
-  // computing atan2 in that case.
-  private lastFmDemod = 0;
-  private fmGateEnv = 0;
   private amDc = 0;
   // De-emphasis IIR state (WFM)
   private deempY = 0;
@@ -493,19 +469,10 @@ export class Demodulator {
           Q = this.wfmIfLpfQ[k].step(Q);
         }
       }
-      // Carrier-presence gate — see processWFM for the rationale.
-      const instN = I * I + Q * Q;
-      this.fmGateEnv = (1 - FM_GATE_ENV_ALPHA) * this.fmGateEnv + FM_GATE_ENV_ALPHA * instN;
-      let r;
-      if (this.fmGateEnv > FM_GATE_POWER_THRESHOLD) {
-        const denom = I * this.prevI + Q * this.prevQ;
-        const numer = Q * this.prevI - I * this.prevQ;
-        r = Math.atan2(numer, denom);
-        this.lastFmDemod = r;
-      } else {
-        r = this.lastFmDemod * FM_GATE_DECAY;
-        this.lastFmDemod = r;
-      }
+      const denom = I * this.prevI + Q * this.prevQ;
+      const numer = Q * this.prevI - I * this.prevQ;
+      let r = 0;
+      if (Math.abs(denom) + Math.abs(numer) > 1) r = Math.atan2(numer, denom);
       this.prevI = I;
       this.prevQ = Q;
       if (i % decimate === 0 && oi < outSamples) {
@@ -551,21 +518,10 @@ export class Demodulator {
           Q = this.wfmIfLpfQ[k].step(Q);
         }
       }
-      // Carrier-presence gate — track smoothed in-band power (post IF LPF
-      // when configured). Below threshold, hold + decay the previous demod
-      // value to silence noise-floor "ぷち" clicks.
-      const inst = I * I + Q * Q;
-      this.fmGateEnv = (1 - FM_GATE_ENV_ALPHA) * this.fmGateEnv + FM_GATE_ENV_ALPHA * inst;
-      let r;
-      if (this.fmGateEnv > FM_GATE_POWER_THRESHOLD) {
-        const denom = I * this.prevI + Q * this.prevQ;
-        const numer = Q * this.prevI - I * this.prevQ;
-        r = Math.atan2(numer, denom);
-        this.lastFmDemod = r;
-      } else {
-        r = this.lastFmDemod * FM_GATE_DECAY;
-        this.lastFmDemod = r;
-      }
+      const denom = I * this.prevI + Q * this.prevQ;
+      const numer = Q * this.prevI - I * this.prevQ;
+      let r = 0;
+      if (Math.abs(denom) + Math.abs(numer) > 1) r = Math.atan2(numer, denom);
       this.prevI = I;
       this.prevQ = Q;
       // Pilot tracking (always-on while WFM)
@@ -614,22 +570,10 @@ export class Demodulator {
           Q = this.wfmIfLpfQ[k].step(Q);
         }
       }
-      // Carrier-presence gate — see processWFM for the rationale. The
-      // gated `demod` feeds both lpr (mono path) and the pilot extractor;
-      // suppressing it on noise also stops the pilot PLL from latching
-      // onto noise spurs and producing L-R bursts.
-      const instS = I * I + Q * Q;
-      this.fmGateEnv = (1 - FM_GATE_ENV_ALPHA) * this.fmGateEnv + FM_GATE_ENV_ALPHA * instS;
-      let demod;
-      if (this.fmGateEnv > FM_GATE_POWER_THRESHOLD) {
-        const denom = I * this.prevI + Q * this.prevQ;
-        const numer = Q * this.prevI - I * this.prevQ;
-        demod = Math.atan2(numer, denom);
-        this.lastFmDemod = demod;
-      } else {
-        demod = this.lastFmDemod * FM_GATE_DECAY;
-        this.lastFmDemod = demod;
-      }
+      const denom = I * this.prevI + Q * this.prevQ;
+      const numer = Q * this.prevI - I * this.prevQ;
+      let demod = 0;
+      if (Math.abs(denom) + Math.abs(numer) > 1) demod = Math.atan2(numer, denom);
       this.prevI = I;
       this.prevQ = Q;
 

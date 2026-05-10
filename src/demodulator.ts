@@ -531,24 +531,27 @@ export class Demodulator {
       this.pllPhase += this.pllNominalDelta + freqAdj;
       while (this.pllPhase >  Math.PI) this.pllPhase -= 2 * Math.PI;
       while (this.pllPhase < -Math.PI) this.pllPhase += 2 * Math.PI;
-      // Lock indicator (smoothed) — uses the SIGNED in-phase PD component
-      // pdI rather than the magnitude `sqrt(pdI² + pdQ²)`.
+      // Lock indicator (smoothed) — needs to discriminate "locked to a real
+      // pilot" from "PLL latched onto a noise burst" since the PLL tries
+      // to lock onto the strongest in-band signal regardless of what it is.
       //
-      // For a real pilot locked at zero phase error: pdI ≈ A/2 (positive,
-      // constant), pdQ ≈ 0. Magnitude ≈ A/2 in both cases.
+      // For a real pilot at lock: pdI ≈ A/2, pdQ ≈ 0 (clean phase).
+      // For PLL latched to noise: BOTH pdI and pdQ have similar magnitude
+      // (random phase, no preferred direction). Magnitude `sqrt(pdI²+pdQ²)`
+      // is positive in both cases (Rayleigh-biased on noise), and signed
+      // pdI alone gets a noise-floor positive bias too because the PLL
+      // tracks correlated phase even on noise.
       //
-      // For NOISE (no pilot present, PLL drifting): pdI and pdQ are
-      // zero-mean Gaussian after the LPF. The magnitude `sqrt(pdI² + pdQ²)`
-      // follows a Rayleigh distribution with positive mean ≈ σ·sqrt(π/2),
-      // so the EWMA biases UPWARD even when no pilot exists. That bias
-      // is what kept the STEREO badge lit on empty channels — no
-      // threshold tweak fixes a fundamentally biased measurement.
+      // Phase-coherence test: `pdI − |pdQ|`. Real lock → A/2 − 0 = A/2.
+      // Noise lock → both random with similar variance → averages to ~0
+      // (or negative). This cleanly separates "phase coherent on a real
+      // 19 kHz tone" from "PLL is just stalking RF noise."
       //
-      // pdI (signed) averages to ~0 for symmetric noise, so the EWMA
-      // converges to 0 on empty channels and to the actual pilot
-      // amplitude when locked. Threshold-based hysteresis below works
-      // unchanged because real-pilot pdI is positive.
-      this.pilotPower = 0.999 * this.pilotPower + 0.001 * this.pllPdI;
+      // Threshold hysteresis below works unchanged: real-pilot pdI−|pdQ|
+      // is the same magnitude as before, but noise-floor reading drops
+      // toward 0 instead of positive bias.
+      const lockMetric = this.pllPdI - Math.abs(this.pllPdQ);
+      this.pilotPower = 0.999 * this.pilotPower + 0.001 * lockMetric;
       // 38 kHz reference: phase-locked, unit amplitude (just take cosine of doubled phase)
       const ref38 = Math.cos(2 * this.pllPhase);
       // Recover L−R baseband: mix demod with 38 kHz reference (×2 to compensate for

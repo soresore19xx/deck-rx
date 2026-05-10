@@ -168,13 +168,20 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   const unitW = unit.length * unitSize * 0.68;
   const totalW = numTotalW + 4 + unitW;
 
-  // 7-seg digits stay centred in the svg with their original size — the
-  // optional Mode label is right-anchored to a 2 px gap before the first
-  // digit, so adding a Mode no longer shifts or shrinks the digits, and
-  // doesn't depend on a glyph-width estimate that turned out wrong.
+  // The entire (Mode + digits + unit) block is centred as a unit in the
+  // svg width. Without this the digit/unit cluster was centred in the
+  // full width while Mode hung off the left edge, giving a visibly
+  // left-heavy layout (Mode label tight against x=0, big empty band on
+  // the right). Computing the block as one and centring it keeps left
+  // and right margins symmetric.
   const MODE_FS = 14;
   const MODE_GAP = 2;
-  let cx = (svgW - totalW) / 2;
+  const MODE_GLYPH_W = 9.5;  // Pango monospace 14 pt glyph advance ≈ 9.5 px
+  const modeW       = modeLabel ? modeLabel.length * MODE_GLYPH_W : 0;
+  const blockW      = (modeLabel ? modeW + MODE_GAP : 0) + totalW;
+  const blockStart  = Math.max(2, (svgW - blockW) / 2);
+  const modeRightX  = blockStart + modeW;
+  let cx = blockStart + (modeLabel ? modeW + MODE_GAP : 0);
   const oy = (svgH - DH) / 2;
   let out = `<rect width="${svgW}" height="${svgH}" fill="#000000"/>`;
   // Top-right corner: STEREO badge (FM stereo lock) takes priority over an
@@ -203,7 +210,7 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   // MHz), which is preferable to digit collision.
   if (modeLabel) {
     const my = oy + DH / 2 + MODE_FS * 0.35;
-    out += `<text x="${n(cx - MODE_GAP)}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace" text-anchor="end">${modeLabel}</text>`;
+    out += `<text x="${n(modeRightX)}" y="${n(my)}" fill="#aaaaaa" font-size="${MODE_FS}" font-family="monospace" text-anchor="end">${modeLabel}</text>`;
   }
 
   for (const c of numStr) {

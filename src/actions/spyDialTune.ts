@@ -46,6 +46,29 @@ function formatStep(hz: number): string {
   return `${hz}`;
 }
 
+// Sensible default freq per demod mode. Used when the demodListener fires
+// and the preset list has NO matching-mode entry — typical for SSB/CW since
+// JP DB and most SDR++ imports include only AM + FM stations. Without this
+// fallback the freq would stick on the previous mode's value, leaving the
+// user staring at e.g. "USB live, dial reads 80.0 MHz" which is non-sensical
+// (FM band freq under SSB demod = noise) and confusing.
+//
+// Picks (active 国内 ham conventions):
+//   NFM 0  : 145.000 MHz  (2 m amateur)
+//   WFM 1  :  80.000 MHz  (TOKYO FM, 関東 representative broadcast freq)
+//   AM  2  :     594 kHz  (NHK第1 東京)
+//   USB 4  :  14.200 MHz  (20 m phone)
+//   CW  5  :   7.025 MHz  (40 m CW band, 国内 amateurs cluster here)
+//   LSB 6  :   7.100 MHz  (40 m phone)
+const MODE_DEFAULT_FREQ: Record<number, number> = {
+  0: 145_000_000,
+  1:  80_000_000,
+  2:     594_000,
+  4:  14_200_000,
+  5:   7_025_000,
+  6:   7_100_000,
+};
+
 // autoDemodForFreq lives in src/bandPolicy.ts so the unit-test harness can
 // exercise the band-policy decisions without importing the Stream Deck SDK
 // or the spyService singleton.
@@ -72,6 +95,12 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private currentFreq = 0;
   private stepHz = 9000;
   private slotIndex = 0;
+  // True when the demodListener fallback fired because the new mode had
+  // no matching preset (USB/LSB/CW typical). Render switches to currentFreq
+  // for the freq display + skips the preset-name fallback for the header so
+  // we don't mis-attribute "TBS Radio" to a 14.200 MHz USB ham QSO. Cleared
+  // automatically when a later mode change finds a matching preset.
+  private fallbackActive = false;
   private borderSide: 'left'|'right'|'center'|'none' = 'none';
   private syncListener: ((s: SyncInfo) => void) | null = null;
   private connectListener: (() => void) | null = null;
@@ -205,19 +234,23 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // mode had selected. Re-issuing setFrequency to the same hz is a
       // cheap no-op inside spyService, so always perform the jump when
       // a matching-mode preset exists.
-      if (!this.suppressDemodJump
-          && this.dialMode === 'preset'
-          && this.presets.length > 0) {
+      if (!this.suppressDemodJump && this.dialMode === 'preset') {
         // Pick the first preset that BOTH matches the new demod mode AND
         // is receivable on the connected hardware. Without the receivability
         // filter, PUSH-ing NFM on an Airspy HF+ would happily land us on a
         // 50 MHz preset (6 m amateur, in the HF+ 31–60 MHz hardware gap)
         // and the user would hear noise. If no covered preset matches we
-        // simply don't jump — the user can VFO-tune or pick another band.
+        // fall back to MODE_DEFAULT_FREQ so the user at least lands on a
+        // sensible band-representative freq instead of the previous mode's
+        // value (the SSB/CW PUSH case — JP DB / SDR++ import don't include
+        // amateur SSB stations, so findIndex would be -1 forever).
         const dev = spyService.getDeviceInfo();
-        const idx = this.presets.findIndex(p => p.mode === mode && (!dev || isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency)));
+        const idx = this.presets.length > 0
+          ? this.presets.findIndex(p => p.mode === mode && (!dev || isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency)))
+          : -1;
         if (idx >= 0) {
           this.slotIndex = idx;
+          this.fallbackActive = false;
           const p = this.presets[idx];
           if (p?.freq) {
             this.currentFreq = p.freq;
@@ -230,6 +263,18 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
             // The next user-driven setSettings via onDialRotate carries
             // a spread of the full settings and naturally persists the
             // new slot.
+          }
+        } else {
+          // No matching preset — fall back to a band-representative default
+          // so band PUSH (USB / LSB / CW typically) actually moves the dial.
+          // slotIndex is intentionally NOT touched: when the user later
+          // PUSHes back to AM/FM, the matching-preset path above restores
+          // the original slot.
+          const def = MODE_DEFAULT_FREQ[mode];
+          if (def && (!dev || isFreqReceivable(def, dev.deviceType, dev.minFrequency, dev.maxFrequency))) {
+            this.currentFreq = def;
+            this.fallbackActive = true;
+            spyService.setFrequency(def);
           }
         }
       }
@@ -583,26 +628,42 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     const offlineSvg = svgB64(seg7svg('-----', '', 200, 55, 0, 1.0, '', '', false));
     if (this.dialMode === 'preset') {
       const p = this.presets[this.slotIndex];
-      const freq = p?.freq ?? 0;
+      // Fallback path (USB/LSB/CW band PUSH with no matching preset): the
+      // demodListener wrote currentFreq to a band-default that doesn't
+      // correspond to ANY preset, so the freq display + station-name
+      // lookup must use currentFreq rather than presets[slotIndex].freq —
+      // otherwise we'd render the previous mode's preset freq (e.g. 80 MHz
+      // FM) under the new SSB demod, which is exactly the bug this fix
+      // addresses. Mode label switches to the live demod, station name
+      // falls back to whatever JP DB / callsign DB resolves for the new
+      // freq (typically nothing for amateur SSB) — preset.name is
+      // intentionally NOT used here since "TBS Radio" on 14.200 MHz USB
+      // would mis-attribute.
+      const freq = this.fallbackActive ? this.currentFreq : (p?.freq ?? 0);
       const { num, unit } = freqParts(freq);
-      const modeStr = p ? (MODES[p.mode] ?? '') : '';
-      const auto = p ? autoStationLabel(freq, spyService.getJpActiveRegion()) : null;
+      const liveDemod = spyService.getDemodMode();
+      const modeStr = this.fallbackActive
+        ? (MODES[liveDemod] ?? '')
+        : (p ? (MODES[p.mode] ?? '') : '');
+      const auto = (this.fallbackActive || p) ? autoStationLabel(freq, spyService.getJpActiveRegion()) : null;
       // Preset-name fallback: when JP DB lookup misses (typically because the
       // preset's freq belongs to a station tagged for a region OTHER than the
       // one currently active — e.g. user on 関東 tuned 1179 kHz MBSラジオ
       // which is region: kinki), still try to attach the 識別信号 from the
       // 総務省 callsign DB. callsign lookup is region-independent (one freq
       // → one callsign, by license).
-      const callsignSuffix = !auto && p ? lookupCallsign(freq) : undefined;
+      const callsignSuffix = !auto && p && !this.fallbackActive ? lookupCallsign(freq) : undefined;
       // Header now carries the broadcaster name only — Mode and STEREO have
       // moved into the freq display (Mode = left of digits, STEREO = top-
       // right corner where the clock used to live; the clock relocated to
       // the Volume + Status panel's title bar).
-      const baseHeader = p ? (auto ?? (callsignSuffix ? `${p.name} ${callsignSuffix}` : p.name)) : 'No presets';
-      const header = !this.enabled ? `OFF  ${baseHeader}`
-                   : offline        ? `LINK  ${baseHeader}`
+      const baseHeader = this.fallbackActive
+        ? (auto ?? '')                                                              // SSB/CW fallback: no preset name attribution
+        : (p ? (auto ?? (callsignSuffix ? `${p.name} ${callsignSuffix}` : p.name)) : 'No presets');
+      const header = !this.enabled ? (baseHeader ? `OFF  ${baseHeader}` : 'OFF')
+                   : offline        ? (baseHeader ? `LINK  ${baseHeader}` : 'LINK')
                    : baseHeader;
-      const isFM = p?.mode === 1;
+      const isFM = !this.fallbackActive && p?.mode === 1;
       const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', modeStr, isFM && showStereo));
       const headerImg = D(makeHeaderSvg(header, false));
       const freqImg   = D(freqSvg);

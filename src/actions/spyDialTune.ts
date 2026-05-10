@@ -608,12 +608,17 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     const stereoLock = spyService.getStereoBadgeLock();
     const rssiDbfs = spyService.getRssiDbfs();
     const snrDb    = spyService.getSnrDb();
-    // RSSI: -100..-20 dBFS → 0..100 %. Red threshold (10/17 ≈ 59 %) ≈ -53 dBFS.
-    // Tuned so a "moderate FM station" (~−50 dBFS via Airspy HF+) shows a few red
-    // segments — matching ATS-Mini's S9 visual feedback.
-    const rssiPct = Math.max(0, Math.min(100, (rssiDbfs + 100) * 100 / 80));
-    // SNR: 0..50 dB → 0..100 %.
-    const snrPct  = Math.max(0, Math.min(100, snrDb * 100 / 50));
+    // RSSI: -100..-10 dBFS → 0..100 %. Earlier scale capped at -20 dBFS but
+    // strong urban FM stations (NHK-FM / J-WAVE / TOKYO FM via Airspy HF+
+    // in 関東) routinely sit at -15 dBFS or higher, pegging the bar. Wider
+    // headroom keeps "strong" and "very strong" visually distinct without
+    // dramatically shifting the moderate-signal mid-range (S9 ≈ -50 dBFS
+    // shifts from 62 % → 55 %).
+    const rssiPct = Math.max(0, Math.min(100, (rssiDbfs + 100) * 100 / 90));
+    // SNR: 0..60 dB → 0..100 %. spyService clamps snrDbRaw to [-10, 60],
+    // so /50 left the 50-60 dB band invisible (all read 100 %); /60 uses
+    // the full clamped range.
+    const snrPct  = Math.max(0, Math.min(100, snrDb * 100 / 60));
     const snrNum  = snrDb > 0.5 ? `${Math.round(snrDb)}` : '-';
     const rssiNum = rssiDbfs > -119 ? `${Math.round(rssiDbfs)}` : '-';
     // When master OFF, blank the meters and ignore stereo lock — the radio

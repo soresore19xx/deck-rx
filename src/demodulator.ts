@@ -452,7 +452,7 @@ export class Demodulator {
   isStereoConfigured(): boolean { return this.stereoConfigured; }
 
   // FM discriminator — for NFM (no de-emphasis, narrower deviation). Mono PCM out.
-  processFM(iq: Buffer, decimate: number, gain = 12000): Int16Array {
+  processFM(iq: Buffer, decimate: number, gain = 6000): Int16Array {
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);
     const out = new Int16Array(outSamples * 2);
@@ -499,7 +499,7 @@ export class Demodulator {
   // before decimation cleans the demod signal to the broadcast audio
   // band before further filtering, restoring the expected mono-quieter-
   // than-stereo behaviour.
-  processWFM(iq: Buffer, decimate: number, gain = 8000): Int16Array {
+  processWFM(iq: Buffer, decimate: number, gain = 3000): Int16Array {
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);
     const out = new Int16Array(outSamples * 2);
@@ -551,7 +551,7 @@ export class Demodulator {
   // WFM stereo — pilot-tone stereo decoding at IQ rate, then decimate.
   // Pipeline: FM-demod → [L+R LPF] [pilot → PLL → 38kHz ref → L-R mix → LPF]
   // → de-emph → matrix (lpr ± lmr) → output L,R interleaved.
-  processWFMStereo(iq: Buffer, decimate: number, gain = 6000): Int16Array {
+  processWFMStereo(iq: Buffer, decimate: number, gain = 2000): Int16Array {
     if (!this.stereoConfigured) return this.processWFM(iq, decimate, gain);
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);

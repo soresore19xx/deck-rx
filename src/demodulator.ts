@@ -99,12 +99,21 @@ export class Demodulator {
   /** Linear power of 19 kHz pilot, smoothed. ~10x larger when stereo broadcast. */
   getPilotPower(): number { return this.pilotPower; }
   /** True iff the FM stereo PLL has hysteretic lock on the 19 kHz pilot.
-   *  This is the right signal for the dial's STEREO badge — pilotPower
-   *  alone fluctuates without hysteresis, so a noise burst or weak
-   *  off-station tune can briefly tip it over a raw threshold and flap
-   *  the badge. pllLocked applies the 3:1 hysteresis (lock at >0.0008,
-   *  unlock at <0.0003) used internally for L−R gating. */
+   *  Used internally to gate L−R into the audio path. Thresholds (lock
+   *  >0.0008 / unlock <0.0003) are intentionally LOW so weak / fluctuating
+   *  pilots still produce audible stereo when present. NOT suitable for
+   *  the STEREO badge — noise floor at 19 kHz alone can sustain pilot
+   *  power above 0.0008 on a quiet channel, falsely tripping the lock.
+   *  Use `getStereoBadgeLock()` for the dial's badge instead. */
   getPllLocked(): boolean { return this.pllLocked; }
+  /** Stricter hysteretic lock (lock >0.005 / unlock <0.002) for the
+   *  STEREO badge — well above the typical noise-floor pilot power on
+   *  empty channels but below the bottom of the "actually receiving
+   *  stereo" range (~0.001-0.05 per architecture.md). 5:2 hysteresis
+   *  prevents flap; reset() clears so a freq / mode change starts at
+   *  unlocked. */
+  getStereoBadgeLock(): boolean { return this.stereoBadgeLocked; }
+  private stereoBadgeLocked = false;
   // Diagnostic — RMS of IQ before/after the production IF LPF for one packet.
   private amDiagPreRms = 0;
   private amDiagPostRms = 0;
@@ -169,6 +178,7 @@ export class Demodulator {
     this.pllPdI = 0;
     this.pllPdQ = 0;
     this.pllLocked = false;
+    this.stereoBadgeLocked = false;
     this.ssbPhase = 0;
     for (const b of this.ssbLpfI) b.reset();
     for (const b of this.ssbLpfQ) b.reset();
@@ -537,6 +547,16 @@ export class Demodulator {
           if (this.pilotPower < 0.0003) this.pllLocked = false;
         } else {
           if (this.pilotPower > 0.0008) this.pllLocked = true;
+        }
+        // Separate hysteretic state with stricter thresholds for the
+        // dial's STEREO badge — the L−R audio gate above wants to capture
+        // weak stereo (low thresholds), but the badge should only show
+        // when we're confidently above noise-floor pilot power on a quiet
+        // channel.
+        if (this.stereoBadgeLocked) {
+          if (this.pilotPower < 0.002) this.stereoBadgeLocked = false;
+        } else {
+          if (this.pilotPower > 0.005) this.stereoBadgeLocked = true;
         }
         const lmrUsed = this.pllLocked ? lmr : 0;
         this.deempL = a * lpr + (1 - a) * this.deempL;

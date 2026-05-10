@@ -597,14 +597,15 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private async updateDisplay(action: unknown): Promise<void> {
     if (!action) return;
     const a = action as { setFeedback: (f: Record<string, unknown>) => Promise<void> };
-    // pllLocked is the hysteretic lock signal (3:1 ratio: lock >0.0008,
-    // unlock <0.0003) used internally for L−R gating. Earlier the badge
-    // checked `getPilotPower() > 0.005` directly which has no hysteresis
-    // and would flap on noise floor or briefly latch on weak signal even
-    // after the stereo decoder had given up — exposed by users seeing
-    // STEREO with no actual stereo audio. Using the proper lock flag
-    // matches the L−R gate so the badge state ↔ actual stereo audio.
-    const stereoLock = spyService.getPllLocked();
+    // Stereo badge uses the demodulator's STRICTER hysteretic lock
+    // (0.005 lock / 0.002 unlock) — the L−R audio gate's pllLocked
+    // (0.0008 / 0.0003) is intentionally lenient to capture weak
+    // stereo, but on a quiet channel the noise floor at 19 kHz alone
+    // sustains pilotPower above 0.0008 and would falsely light the
+    // badge. The stricter thresholds sit below the bottom of the
+    // "actually receiving stereo" range (~0.001-0.05 per architecture
+    // notes) but above realistic noise floor.
+    const stereoLock = spyService.getStereoBadgeLock();
     const rssiDbfs = spyService.getRssiDbfs();
     const snrDb    = spyService.getSnrDb();
     // RSSI: -100..-20 dBFS → 0..100 %. Red threshold (10/17 ≈ 59 %) ≈ -53 dBFS.

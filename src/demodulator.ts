@@ -98,6 +98,13 @@ export class Demodulator {
   private pllLocked = false;  // hysteresis state
   /** Linear power of 19 kHz pilot, smoothed. ~10x larger when stereo broadcast. */
   getPilotPower(): number { return this.pilotPower; }
+  /** True iff the FM stereo PLL has hysteretic lock on the 19 kHz pilot.
+   *  This is the right signal for the dial's STEREO badge — pilotPower
+   *  alone fluctuates without hysteresis, so a noise burst or weak
+   *  off-station tune can briefly tip it over a raw threshold and flap
+   *  the badge. pllLocked applies the 3:1 hysteresis (lock at >0.0008,
+   *  unlock at <0.0003) used internally for L−R gating. */
+  getPllLocked(): boolean { return this.pllLocked; }
   // Diagnostic — RMS of IQ before/after the production IF LPF for one packet.
   private amDiagPreRms = 0;
   private amDiagPostRms = 0;

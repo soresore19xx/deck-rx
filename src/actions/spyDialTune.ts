@@ -597,7 +597,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private async updateDisplay(action: unknown): Promise<void> {
     if (!action) return;
     const a = action as { setFeedback: (f: Record<string, unknown>) => Promise<void> };
-    const stereoLock = spyService.getPilotPower() > 0.005;
+    // pllLocked is the hysteretic lock signal (3:1 ratio: lock >0.0008,
+    // unlock <0.0003) used internally for L−R gating. Earlier the badge
+    // checked `getPilotPower() > 0.005` directly which has no hysteresis
+    // and would flap on noise floor or briefly latch on weak signal even
+    // after the stereo decoder had given up — exposed by users seeing
+    // STEREO with no actual stereo audio. Using the proper lock flag
+    // matches the L−R gate so the badge state ↔ actual stereo audio.
+    const stereoLock = spyService.getPllLocked();
     const rssiDbfs = spyService.getRssiDbfs();
     const snrDb    = spyService.getSnrDb();
     // RSSI: -100..-20 dBFS → 0..100 %. Red threshold (10/17 ≈ 59 %) ≈ -53 dBFS.
@@ -632,9 +639,13 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       'rssi-num': T(live ? rssiNum : '-'),
     };
     // Only show the STEREO badge when the user actually has stereo decoding
-    // enabled — otherwise we're outputting mono and the badge is misleading
-    // (pilot lock detection still runs regardless of the option).
-    const showStereo = this.enabled && stereoLock && spyService.getFMOptions().stereo;
+    // enabled AND the active demod is WFM (mode 1) — otherwise we're
+    // outputting mono and the badge is misleading (pilot lock detection
+    // still runs regardless of the option, and stale pllLocked from a
+    // previous WFM tune could leak into the next non-FM mode's render
+    // window).
+    const liveModeIsWfm = spyService.getDemodMode() === 1;
+    const showStereo = this.enabled && stereoLock && liveModeIsWfm && spyService.getFMOptions().stereo;
     // While offline (TCP link down with master ON), show "-----" instead of
     // the freq digits — the dial otherwise shows a frequency that isn't really
     // being received. Master OFF keeps the freq visible (it's where we'll

@@ -715,6 +715,7 @@ class SpyService {
   }
   /** WFM pilot power (smoothed). Use with a threshold to detect stereo broadcasts. */
   getPilotPower(): number { return this.demod.getPilotPower(); }
+  getPllLocked(): boolean { return this.demod.getPllLocked(); }
   /** Smoothed signal level in dBFS, gain-compensated. Range typically -120..0. */
   getRssiDbfs(): number { return this.rssiSmoothed; }
   /** Smoothed SNR estimate in dB, derived from instantaneous power variance. */

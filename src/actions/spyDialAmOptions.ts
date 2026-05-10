@@ -4,6 +4,10 @@ import { spyService, AMOptions, TuneMode, tuneStepValuesForMode } from '../spySe
 import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
+// Demod mode index → label, used to enrich the dial title with what is
+// CURRENTLY live when the dial itself is locked out (AM not the active mode).
+const MODE_LABELS = ['NFM', 'WFM', 'AM', 'DSB', 'USB', 'CW', 'LSB', 'RAW'] as const;
+
 type Settings = { borderSide?: 'left' | 'right' | 'center' | 'none' };
 
 function formatTuneStep(hz: number): string {
@@ -105,6 +109,9 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
   private enabled = true;
   private connected = false;
   private isAmMode = true;
+  // Track the actual demod mode so the title can name what's live when the
+  // dial is locked out (e.g. "AM Options  (USB live)" when SSB is active).
+  private currentMode = 2;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     this.act = ev.action as unknown as typeof this.act;
@@ -117,6 +124,7 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     spyService.subscribeEnabled(this.enabledListener);
     this.demodListener = (mode) => {
       const wasAm = this.isAmMode;
+      this.currentMode = mode;
       this.isAmMode = mode === 2;
       // If we lost the Gain row by switching out of AM, snap selection back.
       if (wasAm && !this.isAmMode && this.selectedIdx >= OPTIONS.length) {
@@ -153,6 +161,12 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
   }
 
   override async onDialRotate(ev: DialRotateEvent<Settings>): Promise<void> {
+    // AM Options dial only operates while AM is the active demod. When the
+    // user is on FM / SSB / CW the dial is dimmed (lock visual cue); we also
+    // short-circuit edit/scroll here so any unintended spin is a no-op
+    // instead of silently mutating AM-only state the user can't hear.
+    // Mirrors the symmetric behaviour in spyDialOptions.ts (FM Options).
+    if (!this.isAmMode) return;
     const ticks = ev.payload.ticks;
     const tuneMode = spyService.getTuneMode();
     const showStep = tuneMode === 'vfo';
@@ -188,6 +202,9 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
 
   override onDialDown(_ev: DialDownEvent<Settings>): void {}
   override onDialUp(_ev: DialUpEvent<Settings>): void {
+    // PUSH ignored when the live demod isn't AM — same rationale as
+    // onDialRotate: nothing on this dial affects audio in the current mode.
+    if (!this.isAmMode) return;
     if (this.editMode) {
       this.editMode = false;
       this.focused = false;
@@ -213,11 +230,16 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     if (showStep) rows.push({ label: 'Step', value: formatTuneStep(tuneStepHz) });
     if (this.isAmMode) rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
     const sel = this.focused ? this.selectedIdx : -1;
-    const dim = !this.enabled || !this.connected;
-    // Title shows the dial's purpose; if the live demod is something other
-    // than AM, append a hint so the user isn't fooled into thinking edits
-    // here will affect what they're hearing right now.
-    const title = this.isAmMode ? 'AM Options' : 'AM Options  (FM live)';
+    // Dim when master switch / TCP link is down OR when the live demod
+    // mode isn't AM — the dim treatment + the title's "(<mode> live)" hint
+    // together signal that the dial is locked out, and onDialRotate /
+    // onDialUp short-circuit so any spin or push is a no-op.
+    const dim = !this.enabled || !this.connected || !this.isAmMode;
+    // Title shows the dial's purpose; when the live demod is something
+    // other than AM, append a hint with the actual current mode so the
+    // user knows why the dial is dimmed.
+    const liveMode = MODE_LABELS[this.currentMode] ?? `mode${this.currentMode}`;
+    const title = this.isAmMode ? 'AM Options' : `AM Options  (${liveMode} live)`;
     this.act.setFeedback({
       'options-display': dumpAndB64('am-options', dimSvg(optionsPanelSvg(rows, sel, this.editMode, this.borderSide, title), dim)),
     }).catch(() => {});

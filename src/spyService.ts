@@ -585,6 +585,22 @@ class SpyService {
       this.muteUntil = Math.max(this.muteUntil, Date.now() + 250);
       this.demod.reset();
       this.client.setFrequency(this.pendingFreq);
+      // Re-apply gain after the retune so SpyServer re-syncs the HF+
+      // internal AGC. After a rapid burst of retunes the HF+'s AGC can
+      // settle on a low gain and stay there, leaving the IQ stream at
+      // near-noise amplitude even when the new freq has a strong station
+      // (observed iqRms ~6 after 15 rotations / 5 s of dial flicking).
+      // Re-issuing SETTING_GAIN to the server kicks the AGC out of the
+      // stuck state. Only sends if deviceInfo + a known gain index exist.
+      if (this.deviceInfo && this.audioRunning) {
+        const isAm = this.currentDemodMode === 2;
+        const gainIdx = (isAm ? this.amGain : this.fmGain) ?? this.deviceInfo.maxGainIndex;
+        const digitalGain = computeDigitalGain(
+          this.deviceInfo.deviceType, gainIdx, this.currentDecStage, this.deviceInfo.maxGainIndex,
+        );
+        this.client.setSetting(SETTING_GAIN, gainIdx);
+        this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
+      }
       streamDeck.logger.info(`[spyService] sentFreq ${this.pendingFreq}`);
     }, 50);
     // Persist (debounced 500 ms) so next startup restores the same freq + mode

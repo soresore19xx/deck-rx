@@ -96,6 +96,7 @@ export class Demodulator {
   // Pilot lock indicator (magnitude of phase-detector DC components)
   private pilotPower = 0;  // PLL lock magnitude (smoothed)
   private pllLocked = false;  // hysteresis state
+  private stereoGate = 0;     // smoothed L−R audio gate (0..1, ramped from pllLocked)
   /** Linear power of 19 kHz pilot, smoothed. ~10x larger when stereo broadcast. */
   getPilotPower(): number { return this.pilotPower; }
   /** True iff the FM stereo PLL has hysteretic lock on the 19 kHz pilot.
@@ -178,6 +179,7 @@ export class Demodulator {
     this.pllPdI = 0;
     this.pllPdQ = 0;
     this.pllLocked = false;
+    this.stereoGate = 0;
     this.stereoBadgeLocked = false;
     this.ssbPhase = 0;
     for (const b of this.ssbLpfI) b.reset();
@@ -449,8 +451,17 @@ export class Demodulator {
     return out;
   }
 
-  // WFM mono — discriminator + de-emphasis IIR + audio filters. Stereo-interleaved out (L=R).
-  // Also runs the pilot BPF in parallel so the UI can detect stereo broadcasts.
+  // WFM mono — discriminator + L+R LPF + de-emphasis IIR + audio filters.
+  // Stereo-interleaved out (L=R).
+  //
+  // The lprLpf (15 kHz LPF on the post-discriminator signal) used to be
+  // stereo-only. Without it, a strong-signal mono listening tune carries
+  // pilot tone (19 kHz) and stereo subcarrier sidebands (23-53 kHz) all
+  // the way through the gentle de-emph IIR — audible high-frequency
+  // noise, MORE than the stereo path produces. Running lprLpf at IQ rate
+  // before decimation cleans the demod signal to the broadcast audio
+  // band before further filtering, restoring the expected mono-quieter-
+  // than-stereo behaviour.
   processWFM(iq: Buffer, decimate: number, gain = 8000): Int16Array {
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);
@@ -472,8 +483,13 @@ export class Demodulator {
         const p = this.pilotBpf.step(r);
         this.pilotPower = (1 - beta) * this.pilotPower + beta * p * p;
       }
+      // L+R-band LPF cuts the pilot + stereo subcarrier + above-band noise
+      // before decimation. Falls through to the raw discriminator signal
+      // when stereo isn't configured (e.g., before startAudio has set
+      // iqRate).
+      const lpr = this.stereoConfigured ? this.lprLpf.step(r) : r;
       if (i % decimate === 0 && oi < outSamples) {
-        this.deempY = a * r + (1 - a) * this.deempY;
+        this.deempY = a * lpr + (1 - a) * this.deempY;
         let v = this.deempY;
         if (this.lpfEnabled) v = this.lpfL.step(v);
         if (this.hpfEnabled) v = this.hpfL.step(v);
@@ -576,7 +592,15 @@ export class Demodulator {
         } else {
           if (this.pilotPower > 0.005) this.stereoBadgeLocked = true;
         }
-        const lmrUsed = this.pllLocked ? lmr : 0;
+        // L−R audio gate — smooth ramp instead of binary on/off so noise
+        // burst or weak-pilot pllLocked toggles don't click. EWMA target
+        // = 1 when locked, 0 when unlocked; α=0.05 at audio rate gives a
+        // ~20-sample (≈ 0.4 ms at 48 kHz) ramp — long enough to avoid
+        // the audible click of a single-sample step, short enough that
+        // legitimate stereo locks come up "instantly" to the ear.
+        const stereoGateTarget = this.pllLocked ? 1 : 0;
+        this.stereoGate += (stereoGateTarget - this.stereoGate) * 0.05;
+        const lmrUsed = lmr * this.stereoGate;
         this.deempL = a * lpr + (1 - a) * this.deempL;
         this.deempR = a * lmrUsed + (1 - a) * this.deempR;
         let L = this.deempL + this.deempR;

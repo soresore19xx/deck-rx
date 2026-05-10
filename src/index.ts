@@ -46,6 +46,22 @@ const safeLog = (msg: string) => { try { process.stderr.write(msg + '\n'); } cat
 process.on('uncaughtException', (err) => { safeLog(`[deck-rx] uncaughtException: ${err}`); });
 process.on('unhandledRejection', (r)  => { safeLog(`[deck-rx] unhandledRejection: ${r}`); });
 
+// Orphan watchdog: when the parent (Stream Deck app or the integration-test
+// harness) dies, macOS / Linux reparent this process to init (PID 1). We
+// detect that via a parent-pid change and exit, so a stale test harness
+// can't leave a zombie plugin trying to reconnect to a dead WebSocket for
+// hours (2026-05-11 incident: PID 42848 lingered 12 h after render-all-
+// dials.mjs was killed mid-run, polluting logs and the local SpyServer
+// connection). Polled every 5 s — negligible CPU, and a 5 s detection
+// window is fine for an orphan plugin nobody is talking to.
+const originalPpid = process.ppid;
+setInterval(() => {
+  if (process.ppid !== originalPpid) {
+    safeLog(`[deck-rx] parent ${originalPpid} died, reparented to ${process.ppid} — exiting orphan`);
+    process.exit(0);
+  }
+}, 5000);
+
 streamDeck.actions.registerAction(new SpyTune());
 streamDeck.actions.registerAction(new SpyDialTune());
 streamDeck.actions.registerAction(new SpyDialOptions());

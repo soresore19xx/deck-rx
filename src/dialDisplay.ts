@@ -239,7 +239,7 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   // continuation of the freq cluster instead of a corner ornament.
   // Same x-anchor as the unit so they line up vertically.
   if (subDigits) {
-    out += `<text x="${n(cx + 4)}" y="${n(oy + 9)}" font-family="monospace" font-size="11" fill="#ffffff">.${subDigits}</text>`;
+    out += `<text x="${n(cx + 4)}" y="${n(oy + 12)}" font-family="monospace" font-size="14" fill="#ffffff">.${subDigits}</text>`;
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}">${out}</svg>`;
 }

@@ -109,7 +109,10 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     // Acceleration: faster spin → larger step
     const absTicks = Math.abs(ticks);
     const accel = absTicks > 5 ? 5 : absTicks > 2 ? 3 : this.step;
-    const cur = spyService.getVolume() * 100;
+    // Read cur as integer % (volume is quantized to 0.01 in spyService
+    // so this is exact). Keep next integer too so display reads 100,
+    // 102, 104 … with no 99/101 jitter around the unity mark.
+    const cur = Math.round(spyService.getVolume() * 100);
     const next = Math.max(0, Math.min(150, cur + ticks * accel));
     spyService.setVolume(next / 100);
   }

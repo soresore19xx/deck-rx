@@ -839,7 +839,12 @@ class SpyService {
   isMuted(): boolean { return this.muted; }
   /** Apply immediately; persist on disk debounced (300ms). */
   setVolume(v: number): void {
-    this.volume = Math.max(0, Math.min(1.5, v));
+    // Quantize to 1 % increments. Float multiplication earlier in the
+    // chain (e.g. setVolume(101 / 100) → 1.0099999999999998) would
+    // round-trip back to 101 % once but to 100 % the next call,
+    // showing the user '99 / 101' jitter around the unity mark.
+    const clamped = Math.max(0, Math.min(1.5, v));
+    this.volume = Math.round(clamped * 100) / 100;
     for (const fn of this.volumeListeners) fn(this.volume, this.muted);
     this.schedulePersistVolume();
   }

@@ -620,28 +620,18 @@ class SpyService {
   private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
   setFrequency(hz: number, opts: { smooth?: boolean } = {}): void {
     this._currentFreq = hz;
-    // Three retune flavours:
+    // Two retune flavours:
     //   smooth=false (default) — preset PUSH, band fallback, connect
     //     seed: one big freq jump. 100 ms mute + resetForRetune() so
     //     the atan2 phase wrap / AM AGC level step / sync PLL drag is
-    //     hidden under mute and the demod re-converges on the new
-    //     station.
-    //   smooth=true + non-AM — VFO rotate in WFM/NFM/SSB/CW: don't
-    //     reset (FIR buffers / lpr / lmr / EWMA would never settle)
-    //     and don't mute (would stack into sustained silence under
-    //     rapid dialling). Accept per-step click.
-    //   smooth=true + AM — VFO rotate in AM: brief 30 ms mute +
-    //     resetForRetune. AM has a sync PLL + DC tracker + carrier
-    //     AGC that get audibly confused trying to follow a 1 kHz step,
-    //     producing a wobble / chirp on every dial click. The 30 ms
-    //     mute covers the PLL re-lock; resetForRetune doesn't touch
-    //     anything AM-irrelevant (atan2 prevI/Q is unused in AM).
-    const isAm = this.currentDemodMode === 2;
+    //     hidden under mute and the demod re-converges fresh.
+    //   smooth=true — VFO rotate of any mode: don't reset, don't mute.
+    //     Trying to reset+mute on smooth AM retune made the sync PLL
+    //     louder and longer (re-locked from zero on every step
+    //     instead of just adapting the tracked offset), so we keep
+    //     the demod running through retunes for every mode.
     if (!opts.smooth) {
       this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
-      this.demod.resetForRetune();
-    } else if (isAm) {
-      this.muteUntil = Math.max(this.muteUntil, Date.now() + 30);
       this.demod.resetForRetune();
     }
     this.pendingFreq = hz;

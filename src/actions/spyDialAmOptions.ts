@@ -87,8 +87,9 @@ const OPTIONS: OptionDef[] = [
 // FM Options dial when in AM (or vice versa) wouldn't take effect anyway,
 // and showing both at once led to "two Gain rows visible" confusion.
 // Synthetic rows after OPTIONS:
-//   [OPTIONS.length]:        Mode (Preset / VFO) — always shown
-//   [OPTIONS.length+1]:      Step — VFO only
+//   [OPTIONS.length]:        Preset/Step — single row, short PUSH toggles
+//                            edit (rotate cycles step), LONG PUSH 1 s
+//                            toggles preset ↔ vfo.
 //   [last]:                  Gain — only while in AM mode
 const MODE_ROW_INDEX = OPTIONS.length;
 
@@ -107,6 +108,8 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
   private tuneModeListener: ((m: TuneMode) => void) | null = null;
   private tuneStepListener: ((s: number) => void) | null = null;
   private forceRenderListener: (() => void) | null = null;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressFired = false;
   private enabled = true;
   private connected = false;
   private isAmMode = true;
@@ -172,11 +175,8 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     // Mirrors the symmetric behaviour in spyDialOptions.ts (FM Options).
     if (!this.isAmMode) return;
     const ticks = ev.payload.ticks;
-    const tuneMode = spyService.getTuneMode();
-    const showStep = tuneMode === 'vfo';
-    const stepRowIdx = MODE_ROW_INDEX + 1;
-    const gainRowIdx = MODE_ROW_INDEX + 1 + (showStep ? 1 : 0);
-    const totalRows = MODE_ROW_INDEX + 1 + (showStep ? 1 : 0) + (this.isAmMode ? 1 : 0);
+    const gainRowIdx = MODE_ROW_INDEX + 1;
+    const totalRows = MODE_ROW_INDEX + 1 + (this.isAmMode ? 1 : 0);
     if (this.editMode) {
       const idx = this.selectedIdx;
       if (idx < OPTIONS.length) {
@@ -186,8 +186,8 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
           await spyService.setAMOption(k as keyof AMOptions, v as never);
         }
       } else if (idx === MODE_ROW_INDEX) {
-        spyService.setTuneMode(tuneMode === 'preset' ? 'vfo' : 'preset');
-      } else if (showStep && idx === stepRowIdx) {
+        // Preset/Step row — rotate cycles step list (wrap-around). Mode
+        // toggle is on a 1 s long-press, see onDialDown.
         const cur = spyService.getTuneStepHz();
         const list = tuneStepValuesForMode(spyService.getDemodMode());
         const ci = list.indexOf(cur);
@@ -204,10 +204,22 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     }
   }
 
-  override onDialDown(_ev: DialDownEvent<Settings>): void {}
+  override onDialDown(_ev: DialDownEvent<Settings>): void {
+    if (!this.isAmMode) return;
+    if (this.selectedIdx !== MODE_ROW_INDEX) return;
+    this.longPressFired = false;
+    if (this.longPressTimer) clearTimeout(this.longPressTimer);
+    this.longPressTimer = setTimeout(() => {
+      this.longPressTimer = null;
+      this.longPressFired = true;
+      spyService.setTuneMode(spyService.getTuneMode() === 'preset' ? 'vfo' : 'preset');
+    }, 1000);
+  }
   override onDialUp(_ev: DialUpEvent<Settings>): void {
     // PUSH ignored when the live demod isn't AM — same rationale as
     // onDialRotate: nothing on this dial affects audio in the current mode.
+    if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+    if (this.longPressFired) { this.longPressFired = false; return; }
     if (!this.isAmMode) return;
     if (this.editMode) {
       this.editMode = false;
@@ -226,12 +238,13 @@ export class SpyDialAmOptions extends SingletonAction<Settings> {
     const maxGain = spyService.getMaxGain();
     const tuneMode = spyService.getTuneMode();
     const tuneStepHz = spyService.getTuneStepHz();
-    const showStep = tuneMode === 'vfo';
     const rows: OptionsPanelRow[] = [
       ...OPTIONS.map((d) => ({ label: d.label, value: d.format(o) })),
     ];
-    rows.push({ label: 'Mode', value: tuneMode === 'preset' ? 'Preset' : 'VFO' });
-    if (showStep) rows.push({ label: 'Step', value: formatTuneStep(tuneStepHz) });
+    rows.push({
+      label: 'Preset/Step',
+      value: tuneMode === 'preset' ? 'Preset' : formatTuneStep(tuneStepHz),
+    });
     if (this.isAmMode) rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
     const sel = this.focused ? this.selectedIdx : -1;
     // Dim when master switch / TCP link is down OR when the live demod

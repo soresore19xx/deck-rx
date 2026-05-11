@@ -1,6 +1,6 @@
 import { action, DialDownEvent, DialRotateEvent, DialUpEvent, SingletonAction, WillAppearEvent, WillDisappearEvent, DidReceiveSettingsEvent } from '@elgato/streamdeck';
 import streamDeck from '@elgato/streamdeck';
-import { spyService, SSBOptions, TuneMode, TUNE_STEP_VALUES } from '../spyService.js';
+import { spyService, SSBOptions, TuneMode, tuneStepValuesForMode } from '../spyService.js';
 import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
 
@@ -79,6 +79,8 @@ export class SpyDialSsbOptions extends SingletonAction<Settings> {
   private tuneModeListener: ((m: TuneMode) => void) | null = null;
   private tuneStepListener: ((s: number) => void) | null = null;
   private forceRenderListener: (() => void) | null = null;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressFired = false;
   private enabled = true;
   private connected = false;
   // SSB / CW = mode 4 / 5 / 6. The dial is dim and ignores edits otherwise.
@@ -131,11 +133,8 @@ export class SpyDialSsbOptions extends SingletonAction<Settings> {
 
   override async onDialRotate(ev: DialRotateEvent<Settings>): Promise<void> {
     const ticks = ev.payload.ticks;
-    const tuneMode = spyService.getTuneMode();
-    const showStep = tuneMode === 'vfo';
-    const stepRowIdx = MODE_ROW_INDEX + 1;
-    const gainRowIdx = MODE_ROW_INDEX + 1 + (showStep ? 1 : 0);
-    const totalRows = MODE_ROW_INDEX + 1 + (showStep ? 1 : 0) + (this.isSsbMode ? 1 : 0);
+    const gainRowIdx = MODE_ROW_INDEX + 1;
+    const totalRows = MODE_ROW_INDEX + 1 + (this.isSsbMode ? 1 : 0);
     if (this.editMode) {
       const idx = this.selectedIdx;
       if (idx < OPTIONS.length) {
@@ -148,10 +147,10 @@ export class SpyDialSsbOptions extends SingletonAction<Settings> {
           await spyService.setSSBOption(k as keyof SSBOptions, v as never);
         }
       } else if (idx === MODE_ROW_INDEX) {
-        spyService.setTuneMode(tuneMode === 'preset' ? 'vfo' : 'preset');
-      } else if (showStep && idx === stepRowIdx) {
+        // Preset/Step row: rotate cycles step list (wrap). Mode toggle on
+        // 1 s long-press, see onDialDown.
         const cur = spyService.getTuneStepHz();
-        const list = TUNE_STEP_VALUES;
+        const list = tuneStepValuesForMode(spyService.getDemodMode());
         const ci = list.indexOf(cur);
         const dir = ticks > 0 ? 1 : -1;
         const ni = (((ci < 0 ? 0 : ci) + dir) + list.length) % list.length;
@@ -166,8 +165,19 @@ export class SpyDialSsbOptions extends SingletonAction<Settings> {
     }
   }
 
-  override onDialDown(_ev: DialDownEvent<Settings>): void {}
+  override onDialDown(_ev: DialDownEvent<Settings>): void {
+    if (this.selectedIdx !== MODE_ROW_INDEX) return;
+    this.longPressFired = false;
+    if (this.longPressTimer) clearTimeout(this.longPressTimer);
+    this.longPressTimer = setTimeout(() => {
+      this.longPressTimer = null;
+      this.longPressFired = true;
+      spyService.setTuneMode(spyService.getTuneMode() === 'preset' ? 'vfo' : 'preset');
+    }, 1000);
+  }
   override onDialUp(_ev: DialUpEvent<Settings>): void {
+    if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+    if (this.longPressFired) { this.longPressFired = false; return; }
     if (this.editMode) {
       this.editMode = false;
       this.focused = false;
@@ -185,12 +195,13 @@ export class SpyDialSsbOptions extends SingletonAction<Settings> {
     const maxGain = spyService.getMaxGain();
     const tuneMode = spyService.getTuneMode();
     const tuneStepHz = spyService.getTuneStepHz();
-    const showStep = tuneMode === 'vfo';
     const rows: OptionsPanelRow[] = [
       ...OPTIONS.map((d) => ({ label: d.label, value: d.format(o) })),
     ];
-    rows.push({ label: 'Mode', value: tuneMode === 'preset' ? 'Preset' : 'VFO' });
-    if (showStep) rows.push({ label: 'Step', value: formatTuneStep(tuneStepHz) });
+    rows.push({
+      label: 'Preset/Step',
+      value: tuneMode === 'preset' ? 'Preset' : formatTuneStep(tuneStepHz),
+    });
     if (this.isSsbMode) rows.push({ label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' });
     const sel = this.focused ? this.selectedIdx : -1;
     // Dim when offline OR when the active mode is not SSB / CW (the dial is

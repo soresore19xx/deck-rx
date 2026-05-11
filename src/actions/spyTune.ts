@@ -4,7 +4,7 @@ import type { JsonObject } from '@elgato/utils';
 import { spyService } from '../spyService.js';
 import { svgB64, tuneSvg } from '../icons.js';
 import { formatFreqLabel } from '../dialDisplay.js';
-import { getJpStationsForRegion, type JpRegion, type JpStation } from '../japanStations.js';
+import { type JpRegion } from '../japanStations.js';
 import { loadDeckRxPresets, flattenPresets } from '../presets.js';
 import { isFreqReceivable } from '../deviceBands.js';
 
@@ -17,34 +17,20 @@ type TuneSettings = { slot?: number };
 let presetsCache: Preset[] | null = null;
 let presetsCacheRegion: JpRegion | undefined | null = null;
 
-/** Convert a JP DB station entry into the same Preset shape SDR++ uses, so
- *  both sources merge cleanly into one list.
- *  Bandwidth defaults: FM band → 200 kHz, MW band → 9 kHz.
- *  Mode: FM band → 1 (WFM), MW band → 2 (AM). */
-function jpStationToPreset(s: JpStation): Preset {
-  const isFm = s.band === 'FM';
-  return {
-    name: s.name,
-    freq: s.freqHz,
-    bandwidth: isFm ? 200_000 : 9_000,
-    mode: isFm ? 1 : 2,
-  };
-}
-
 /**
- * Build the full preset list, optionally tagged for a JP region.
- * Sources, in merge order:
- *   1. deck-rx-owned presets.json bookmarks (UTF-8 clean, supports CJK
- *      broadcaster names — populated by hand or via the PI "Import from
- *      SDR++" button which reads SDR++'s frequency_manager_config.json)
- *   2. JP DB entries for the requested region (auto entries tagged with
- *      region + manualStations entries either tagged for the same region
- *      or untagged = truly global)
- * On freq collision the JP DB entry overrides the deck-rx entry —
- * preserves the band-correct broadcaster name from the most recent scrape
- * rather than whatever label the user typed in. The freq + bandwidth +
- * mode of the deck-rx entry are still effectively replaced (the preset
- * cycler uses the JP DB defaults).
+ * Build the preset list. SDR++'s frequency_manager_config.json (imported via
+ * the PI "Import from SDR++" button into the deck-rx-owned presets.json)
+ * is the SOLE SOURCE of preset records — the count equals the bookmark
+ * file's entry count regardless of active region.
+ *
+ * The `region` argument is kept for cache-keying because the dial's
+ * render-time `autoStationLabel(freq, region)` enriches each row's
+ * displayed name from the JP DB / callsign DB for the active region, and
+ * the cache should rebuild on a region switch so the PI list refreshes
+ * its labels. Records themselves are NOT added from the JP DB — earlier
+ * we merged in every region station which inflated the preset roster
+ * with entries the user never imported.
+ *
  * Result is sorted by freq ascending.
  */
 export async function loadPresets(region?: JpRegion): Promise<Preset[]> {
@@ -52,15 +38,7 @@ export async function loadPresets(region?: JpRegion): Promise<Preset[]> {
   const local: Preset[] = flattenPresets(file).map(b => ({
     name: b.name, freq: b.freq, bandwidth: b.bandwidth, mode: b.mode,
   }));
-
-  const byFreq = new Map<number, Preset>();
-  for (const p of local) byFreq.set(p.freq, p);
-  if (region) {
-    for (const s of getJpStationsForRegion(region)) {
-      byFreq.set(s.freqHz, jpStationToPreset(s));  // JP DB wins on freq collision
-    }
-  }
-  const result = Array.from(byFreq.values()).sort((a, b) => a.freq - b.freq);
+  const result = local.sort((a, b) => a.freq - b.freq);
   presetsCache = result;
   presetsCacheRegion = region;
   return result;

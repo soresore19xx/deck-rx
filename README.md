@@ -4,6 +4,10 @@ Stream Deck + plugin to control a remote [SpyServer](https://airspy.com/) and li
 
 The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a NanoPi), pulls down INT16 IQ samples, demodulates them in TypeScript, and pipes the resulting PCM through `ffmpeg` to a chosen macOS CoreAudio device.
 
+![Deck RX — all four LCD panels](docs/lcd-combined.png)
+
+Per-dial layouts and screenshots (Tune / Volume / Combo / FM / AM / SSB / Band Select / Options Auto / Options 2-Col): see [docs/dial-layouts.md](docs/dial-layouts.md).
+
 ## Requirements
 
 | | |
@@ -38,10 +42,6 @@ Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / 
 | IFNR (IF Noise Reduction) | ✅ FM/NFM only (SDR++ FMIF tracking-filter port) |
 | Auto station-name lookup | ✅ **Japan-area only** for the JP DB — region-switchable from the Tune dial PI across all 8 regions (関東 / 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 / 沖縄): 関東 + 沖縄 cover AM / FM / CFM together, the other 6 regions cover commercial FM via the 全国 FM 一覧 source; region-tagged manual overrides supported; the EIBI SW DB covers international shortwave (day / time / spur-aware); in-PI `Update Now` for both |
 | Preset list | ✅ records come solely from the deck-rx-owned `data/presets.json` (the SDR++ `frequency_manager_config.json` mirror); the dial render-time station name is enriched from the JP DB / callsign DB for the active region but the preset *count* stays bound to the SDR++ file. PI button `Import bookmarks` re-syncs on demand; optional `Auto-sync on startup` checkbox runs the import once at every plugin launch |
-
-![Deck RX — all four LCD panels](docs/lcd-combined.png)
-
-Per-dial layouts and screenshots (Tune / Volume / Combo / FM / AM / SSB / Band Select / Options Auto / Options 2-Col): see [docs/dial-layouts.md](docs/dial-layouts.md).
 
 ## Documentation
 

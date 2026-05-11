@@ -684,7 +684,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // intentionally NOT used here since "TBS Radio" on 14.200 MHz USB
       // would mis-attribute.
       const freq = this.fallbackActive ? this.currentFreq : (p?.freq ?? 0);
-      const { num, unit } = freqParts(freq);
+      let { num, unit } = freqParts(freq);
       const liveDemod = spyService.getDemodMode();
       const modeStr = this.fallbackActive
         ? (MODES[liveDemod] ?? '')
@@ -711,10 +711,20 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // SSB / CW want sub-kHz precision in the display since net freqs
       // are quoted to 100 Hz / 10 Hz; the 5-digit 7-seg only goes to
       // 1 kHz, so the trailing 3 digits (full Hz part of the kHz tail)
-      // get a small upper-right readout.
+      // get a small upper-right readout. main kHz is TRUNCATED (not
+      // rounded) so "7000.500" stays as main "7000" + sub ".500"
+      // instead of becoming "7001" + ".500" which read as 7001.500
+      // even though the actual freq is 7000500 Hz.
       const liveMode = this.fallbackActive ? liveDemod : (p?.mode ?? 1);
       const isSsbCw = liveMode === 4 || liveMode === 5 || liveMode === 6;
-      const subDigits = isSsbCw ? String(Math.abs(freq) % 1000).padStart(3, '0') : '';
+      let subDigits = '';
+      if (isSsbCw) {
+        const f = Math.max(0, Math.floor(freq));
+        const kHz = Math.floor(f / 1000);
+        subDigits = String(f - kHz * 1000).padStart(3, '0');
+        num = String(kHz);
+        unit = 'kHz';
+      }
       const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', modeStr, isFM && showStereo, subDigits));
       const headerImg = D(makeHeaderSvg(header, false));
       const freqImg   = D(freqSvg);
@@ -735,7 +745,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       });
     } else {
       const freq = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
-      const { num, unit } = freqParts(freq);
+      let { num, unit } = freqParts(freq);
       const auto = autoStationLabel(freq, spyService.getJpActiveRegion());
       // VFO header: station name when known, otherwise blank. The "VFO"
       // prefix and step value were removed — Mode is shown left of the
@@ -748,7 +758,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
                    : baseHeader;
       const liveDemodVfo = spyService.getDemodMode();
       const isSsbCwVfo = liveDemodVfo === 4 || liveDemodVfo === 5 || liveDemodVfo === 6;
-      const subDigitsVfo = isSsbCwVfo ? String(Math.abs(freq) % 1000).padStart(3, '0') : '';
+      let subDigitsVfo = '';
+      if (isSsbCwVfo) {
+        const f = Math.max(0, Math.floor(freq));
+        const kHz = Math.floor(f / 1000);
+        subDigitsVfo = String(f - kHz * 1000).padStart(3, '0');
+        num = String(kHz);
+        unit = 'kHz';
+      }
       const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', 'VFO', showStereo, subDigitsVfo));
       const headerImg = D(makeHeaderSvg(header, false));
       const freqImg   = D(freqSvg);

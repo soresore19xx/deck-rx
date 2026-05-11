@@ -625,18 +625,21 @@ class SpyService {
     //     seed: one big freq jump. 100 ms mute + resetForRetune() so
     //     the atan2 phase wrap / AM AGC level step / sync PLL drag is
     //     hidden under mute and the demod re-converges fresh.
-    //   smooth=true — VFO rotate. Don't reset state (FIR / EWMA need
-    //     to stay settled). For AM ALSO snap the sync lock gate
-    //     closed (resetAmSyncGate) so the asymmetric 500 ms falling
-    //     EWMA on amSyncCos doesn't bleed PLL phase-error noise into
-    //     audio for half a second after each step. The PLL itself
-    //     keeps its tracked phase / freq, the gate just snaps to
-    //     'muted' and re-opens within 5 ms once lock is re-acquired.
+    //   smooth=true non-AM — pure pass-through.
+    //   smooth=true AM — 200 ms mute (no demod state reset). AM sync
+    //     mode produces a long phase-error noise burst on retune as
+    //     the PLL re-locks; gate snap (commit 510ed2a) alone wasn't
+    //     enough. A direct mute on the audio output covers the full
+    //     re-lock window. PLL phase / freq state stay intact so the
+    //     PLL adapts fast — by the time mute lifts the new carrier is
+    //     locked and audio is clean. Cascade retunes stack the mute
+    //     window so under rapid dial the user hears silence until
+    //     they stop, then audio resumes on the final freq.
     if (!opts.smooth) {
       this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
       this.demod.resetForRetune();
     } else if (this.currentDemodMode === 2) {
-      this.demod.resetAmSyncGate();
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + 200);
     }
     this.pendingFreq = hz;
     if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);

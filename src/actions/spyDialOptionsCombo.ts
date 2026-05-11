@@ -61,11 +61,12 @@ function formatTuneStep(hz: number): string {
 // Mode/Step row content: shows "Mode: Preset" while in preset mode, otherwise
 // "Step: 9k" while in VFO mode.
 function modeStepRow(tuneMode: TuneMode, stepHz: number): OptionsPanelRow {
-  // Combined Preset/Step row — short PUSH toggles edit (rotate cycles
-  // step), LONG PUSH (≥ 1 s) toggles preset ↔ vfo. Single label so the
-  // user can see both controls are bound to this row.
+  // Combined preset/step row — short PUSH toggles edit (rotate cycles
+  // step), LONG PUSH (≥ 1 s) toggles preset ↔ vfo. Label abbreviated
+  // to 'Pre/Stp' because the Combo dial's band column is only
+  // 100 px wide and 'Preset/Step' overflowed into the value column.
   const v = tuneMode === 'preset' ? 'Preset' : formatTuneStep(stepHz);
-  return { label: 'Preset/Step', value: v };
+  return { label: 'Pre/Stp', value: v };
 }
 
 function buildAmOptsRows(o: AMOptions, gain: number, maxGain: number): OptionsPanelRow[] {

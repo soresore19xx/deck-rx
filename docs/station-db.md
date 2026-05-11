@@ -13,7 +13,7 @@ The JP DB is **region-aware**. The PI exposes a `JP region` dropdown (関東 / �
 
 The selection is persisted to `config.json` as `jpRegion` (default `kanto` for backward compat). `manualStations` entries also carry an optional `region` tag — when present, they only hit when that region is active; **untagged manual entries remain truly global** (any region can match them, useful for nationwide identifiers if any).
 
-**Scraper implementation status**: all 8 regions covered, but **with different breadth**:
+**Per-region coverage**: all 8 regions are scraped; depth varies by source:
 
 | Region | Source | Coverage |
 |---|---|---|

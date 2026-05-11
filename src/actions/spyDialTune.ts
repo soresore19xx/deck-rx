@@ -411,7 +411,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         // the user keeps whichever Band / Mode they last selected, and
         // chooses a different one explicitly via Combo / Band Select
         // when they want to cross into a different demod regime.
-        spyService.setFrequency(next);
+        // smooth=true: VFO dial rotate is a continuous flick of small
+        // freq changes. Don't mute / reset the demod per step — those
+        // would overlap into silence and stop the audio chain dead.
+        spyService.setFrequency(next, { smooth: true });
       }, 200);
     }
   }

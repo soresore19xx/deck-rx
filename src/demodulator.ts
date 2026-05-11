@@ -176,6 +176,33 @@ export class Demodulator {
     return out;
   }
 
+  /** Lightweight reset for a preset-style freq jump — clears only the
+   *  state that would otherwise produce an audible click/thump:
+   *
+   *   - prevI / prevQ: atan2 of (old-station IQ vs new-station IQ) wraps
+   *     the phase by a large random amount → big click on the first
+   *     post-tune sample. Zeroing makes the first sample's demod = 0.
+   *   - amDc / amAgcAmp / amSyncPhase: AM DC tracker + AGC + sync PLL
+   *     are calibrated to the old station's amplitude / carrier, so
+   *     they output a level step (heard as a thump) on the new station
+   *     until they re-converge. Resetting puts them in fresh-start
+   *     state which converges within ~50 ms of the new IQ arriving.
+   *
+   *  FIR buffers, EWMA de-emph, audio LPF / HPF biquads, lpr / lmr
+   *  filter state are LEFT INTACT — these all decay or self-flush
+   *  naturally and zeroing them just creates a different transient
+   *  (e.g. wiped EWMA = no audio for ~1 ms). Targeted reset = less
+   *  click without the audio-chain dropout we removed from VFO
+   *  rotate. */
+  resetForRetune(): void {
+    this.prevI = 0; this.prevQ = 0;
+    this.amDc = 0;
+    this.amAgcAmp = 0;
+    this.amSyncPhase = 0;
+    this.amSyncFreq = 0;
+    this.amSyncCos = 0;
+  }
+
   reset(): void {
     this.prevI = 0; this.prevQ = 0;
     this.amDc = 0;

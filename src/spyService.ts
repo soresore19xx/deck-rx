@@ -600,19 +600,21 @@ class SpyService {
   private freqDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingFreq = 0;
   private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
-  setFrequency(hz: number): void {
+  setFrequency(hz: number, opts: { smooth?: boolean } = {}): void {
     this._currentFreq = hz;
-    // SDR++ reference: a runtime freq change is JUST a single
-    // setSetting(IQ_FREQUENCY, hz) — no mute, no streaming stop/start, no
-    // gain re-apply, NO demod reset. The previous deck-rx flow called
-    // demod.reset() twice per setFrequency (once immediately, once
-    // after the 50 ms debounce). Under rapid dial flicking the
-    // immediate resets fired many times per second, clearing the FIR
-    // buffer / lpr/lmr LPFs / EWMA de-emph / PLL state on every call
-    // — none of those filter states ever had time to build up steady-
-    // state output, so audio dropped to near-zero. Letting the demod
-    // run continuously through retunes accepts a brief "wrong-freq"
-    // pop but keeps the audio chain alive, matching SDR++.
+    // Two retune flavours:
+    //   smooth=false (default) — preset PUSH, band fallback, connect-time
+    //     seed: a single big freq jump. Apply a 100 ms mute and a
+    //     light-weight demod resetForRetune() to suppress the inevitable
+    //     click/thump (atan2 phase wrap, AM AGC level step).
+    //   smooth=true — VFO dial rotate: the user is actively turning the
+    //     dial, lots of small freq changes per second. Don't reset (the
+    //     filter state would never settle) and don't mute (would
+    //     overlap into sustained silence). Accept the per-step click.
+    if (!opts.smooth) {
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
+      this.demod.resetForRetune();
+    }
     this.pendingFreq = hz;
     if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);
     this.freqDebounceTimer = setTimeout(() => {

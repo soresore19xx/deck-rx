@@ -43,6 +43,15 @@ Per-dial layouts and screenshots (Tune / Volume / Combo / FM / AM / SSB / Band S
 - [Data sources & attribution](docs/data-sources.md) — Japan-only sources (総務省 MIC / 関東総通局 / 沖縄総通局) plus the international EIBI shortwave DB; license terms + refresh scripts
 - [Debug helpers](docs/debug-helpers.md) — LCD dump / lint / compare-baseline scripts
 
+## Credits / References
+
+The DSP algorithms and the LCD UI are inspired by / ported from two open-source projects:
+
+- **[SDR++](https://github.com/AlexandreRouma/SDRPlusPlus)** by Alexandre Rouma — Carrier AGC (`dsp::loop::AGC` + `dsp::demod::AM` CARRIER mode), FMIF noise reduction, SpyServer protocol layout, runtime tune sequence.
+- **[ATS-Mini](https://github.com/esp32-si4732/ats-mini)** by the esp32-si4732 project — segmented N (SNR) / S (RSSI) bar styling, metallic dial-knob graphic, EIBI shortwave schedule consumer.
+
+If the upstream ATS-Mini URL has moved, please file an issue.
+
 ## License
 
 Personal project. No license granted.

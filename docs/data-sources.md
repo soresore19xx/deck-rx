@@ -24,38 +24,40 @@ station list and callsign DB under the attributions below.
 
 ## Refresh / re-fetch scripts
 
-データ更新時は以下のスクリプトで再取得できます (rate-limit 1 req/sec):
+To refresh the dataset, run one of the following scripts (rate-limited to 1 req/sec):
 
 ```sh
-npx tsx scripts/fetch-callsigns.ts             # AM + FM 全件 sweep (~50 分)
-npx tsx scripts/fetch-callsigns.ts --validate  # AM 1 page (smoke test, ~2 分)
-npx tsx scripts/fetch-callsigns-supplement.ts  # 主要法人 NA= 補完 fetch (~20 分)
-npx tsx scripts/fetch-callsigns-50on.ts        # 50 音 brute sweep (~70 分)
+npx tsx scripts/fetch-callsigns.ts             # AM + FM full sweep (~50 min)
+npx tsx scripts/fetch-callsigns.ts --validate  # AM 1 page (smoke test, ~2 min)
+npx tsx scripts/fetch-callsigns-supplement.ts  # NA= keyword fill for major operators (~20 min)
+npx tsx scripts/fetch-callsigns-50on.ts        # 50-on brute sweep (~70 min)
 ```
 
-**通常運用は `fetch-callsigns.ts` (全件) + `fetch-callsigns-supplement.ts` (補完)
-の組合せで OK**。 default の SelectHSK=04 検索は 中央放送局 (TOKYO FM JOAU-FM
-/ J-WAVE JOAV-FM 等) を暗黙除外するため、 supplement の `NA=法人名` keyword
-検索で補完が必要。 supplement の `FM_KEYWORDS` / `AM_KEYWORDS` 配列に法人名
-を追記すれば任意の局を補足できる:
+**Typical operation: `fetch-callsigns.ts` (full sweep) + `fetch-callsigns-supplement.ts`
+(supplemental fill) is enough.** The default `SelectHSK=04` query at the MIC search
+endpoint omits the central broadcast stations (TOKYO FM JOAU-FM, J-WAVE JOAV-FM,
+etc.), so the supplement script back-fills them via `NA=<corporate name>` keyword
+searches. Append additional corporate names to the supplement's `FM_KEYWORDS` /
+`AM_KEYWORDS` arrays to cover any station you want included (entries are Japanese
+broadcaster legal names — Japan-only context):
 
 ```ts
 // scripts/fetch-callsigns-supplement.ts
 const FM_KEYWORDS = [
   '株式会社エフエム東京',         // TOKYO FM JOAU-FM
   '株式会社Ｊ－ＷＡＶＥ',         // J-WAVE JOAV-FM
-  '日本放送協会',                 // NHK FM 全国
-  // ↓ 追加例: 「FM横浜の中継局を取りたい」 等
+  '日本放送協会',                 // NHK FM (nationwide)
+  // ↓ Add additional entries if needed, e.g. to pull in regional Yokohama FM relays:
   // '横浜エフエム放送株式会社',
 ];
 ```
 
-`fetch-callsigns-50on.ts` は 78 keyword × 2 band の brute force 経路。 70 分
-かかる代わりに supplement で漏れた regional 親局 (FM大阪 / FM群馬 / FM京都
-等) を網羅的に拾える。 通常は不要だが、 「絶対漏らしたくない」 用途のとき。
+`fetch-callsigns-50on.ts` is a 78-keyword × 2-band brute-force sweep. It takes
+~70 min but exhaustively catches regional flagship stations the supplement may
+miss (FM大阪 / FM群馬 / FM京都, etc.). Normally not needed; reserve for the
+"absolutely don't miss anything" case.
 
-総務省側に差分取得 API は無いため再取得は常に全量。 1 年後等に何が変わったか
-だけ知りたい場合は `scripts/diff-callsigns.ts` で前回 fetch との差分を表示
+差分を取得する場合は `scripts/diff-callsigns.ts` で前回 fetch との差分を表示
 できます (新規 license / 廃止 / 設置場所・法人名変更を分類):
 
 ```sh

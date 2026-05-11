@@ -203,6 +203,17 @@ export class Demodulator {
     this.amSyncCos = 0;
   }
 
+  /** Reset ONLY the AM sync lock gate (amSyncCos → 0). Called on
+   *  smooth AM retune so the lockGate snaps closed immediately
+   *  (mutes audio), then re-opens fast (5 ms attack) once the PLL
+   *  re-acquires. Without this the falling time constant on the
+   *  lock-loss side is 500 ms, so the PLL's phase-error noise
+   *  bled into audio for half a second after each dial click.
+   *  PLL phase + freq are NOT reset — they keep tracking from the
+   *  previous freq's lock state, re-acquire fast on the new
+   *  carrier offset. */
+  resetAmSyncGate(): void { this.amSyncCos = 0; }
+
   reset(): void {
     this.prevI = 0; this.prevQ = 0;
     this.amDc = 0;

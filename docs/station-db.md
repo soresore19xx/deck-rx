@@ -21,9 +21,23 @@ The selection is persisted to `config.json` as `jpRegion` (default `kanto` for b
 | 沖縄 | 沖縄総合通信事務所 ラジオ放送局チャンネル一覧 | AM (中波) + FM補完 (※ MHz inline) + FM + CFM |
 | 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 | 総務省 全国民放FM局・ワイドFM局一覧 (`fm-list.html`) | **民放 FM only** — NHK FM や AM や CFM は含まれない (region-tagged manualStations で補完) |
 
-**Why the asymmetry**: 関東 / 沖縄 の 総通局ページには周波数 table が直接掲載されているが、北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 の 総通局ページには周波数情報がほぼ無く（事業者一覧や中継局リストへのリンク集止まり）、スクレイプできない。代替として全国 FM 一括ページ (`fm-list.html`) を使用 — 1 ページで全国民放 FM をカバーし、`<div class="area_list">` の `<h2 class="area_list_title <area>">` クラス (`hokkaido` / `tohoku` / `tokai` / `kinki` / `cyugoku` / `kyusyu_okinawa` ※`cyugoku` はページ側のスペル) で region 区分け、`<ul class="housou">` で broadcaster + 周波数を抽出する。九州 (kyushu) と 沖縄 は同じ `kyusyu_okinawa` エリアブロックに同居しているが、各 broadcaster の `<li id="<prefecture>">` がある場合はそれで振り分け、id が無い broadcaster は名前の "沖縄" / "琉球" 文字列で 沖縄判定 (FM放送局 ul には saga 1 つしか id 付きが無いため fallback 必須)。沖縄判定された broadcaster はこのソースから除外され、独自の沖縄 scraper の結果と重複しない。沖縄ページ (`soumu.go.jp/soutsu/okinawa/johotuusin/ho_rd_frequency.html`) は関東と異なるレイアウト — 中波 (AM) table は **行=地域・列=局名で転置**され、FM-補完中継局の周波数は `※` MHz マーカーで AM セル内にインライン (`738<br>※92.1` = AM 738 kHz + FM 92.1 MHz)。CFM table は 3 列 (市町村名 / 局名 / 周波数)。`parseSoumuOkinawaHtml` がこれらを扱う。
+関東 / 沖縄 は 総通局ページから AM + FM + CFM を直接取得できるため auto coverage が広い。 その他 6 region は **全国民放 FM 一括ページ** (`fm-list.html`) を主ソースとして民放 FM を取得する構成。 NHK FM や AM 局など auto-source に含まれない局を該当 region で利用したい場合は **`manualStations[]` で region tag 付き手書き追加**でカバーする ([後述](#add--remove--edit-a-manualstations-entry))。
 
-**北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 で NHK FM や AM 局を欲しい場合**: `manualStations[]` に手書きで追加する（[後述](#add--remove--edit-a-manualstations-entry)）。各 entry には `region` フィールドを付けると、その region がアクティブなときだけ lookup される — 例えば現状のプリセットでは ABCラジオ (1008, kinki), MBSラジオ (1179, kinki), TBCラジオ (1260, tohoku), RKB毎日放送 (1278, kyushu), HBCラジオ (1287, hokkaido), ラジオ大阪 (1314, kinki), 東海ラジオ (1332, tokai), RCCラジオ (1350, chugoku), STVラジオ (1440, hokkaido), AFN Eagle 810 (kanto), NHKラジオ第2 (693, kanto) を region tag 付きで登録している。region 無しで登録すれば全 region で hit する truly global override になる。
+現プリセットの `manualStations[]` 例 (region tag 付き):
+
+| Region | Entries |
+|---|---|
+| kanto | AFN Eagle 810、 NHKラジオ第2 (693) |
+| tohoku | TBCラジオ (1260) |
+| tokai | 東海ラジオ (1332) |
+| kinki | ABCラジオ (1008)、 MBSラジオ (1179)、 ラジオ大阪 (1314) |
+| chugoku | RCCラジオ (1350) |
+| kyushu | RKB毎日放送 (1278) |
+| hokkaido | HBCラジオ (1287)、 STVラジオ (1440) |
+
+`region` フィールドを省いた entry は **全 region で hit する truly global override** として扱われます。
+
+DOM selector / parser 実装の詳細は `src/japanStationsScraper.ts` のコメントを参照してください。
 
 ## Preset list — deck-rx presets / JP DB マージ + SDR++ Import
 

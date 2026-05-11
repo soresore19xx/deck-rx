@@ -6,7 +6,7 @@ station list and callsign DB under the attributions below.
 
 | Source | Coverage | License / Terms |
 |---|---|---|
-| EIBI SW DB | International shortwave broadcasts (day / time / spur-aware) | EIBI license (publicly accessible, attribution requested) |
+| EIBI SW DB (http://eibispace.de/) | International shortwave broadcasts (day / time / spur-aware) | EIBI license (publicly accessible, attribution requested) |
 | 関東総合通信局 ラジオ放送事業者一覧 | 1都7県 (東京・神奈川・千葉・埼玉・茨城・栃木・群馬・山梨) AM 親局 + 中継局 + FM 補完 + 超短波 + コミュニティ放送 | 公共データ利用規約 第1.0版 |
 | 沖縄総合通信局 ラジオ周波数一覧 | 沖縄県 AM/FM/CFM | 公共データ利用規約 第1.0版 |
 | 総務省 全国民放FM局・ワイドFM局一覧 | 北海道・東北・東海・近畿・中国・九州 民放 FM | 公共データ利用規約 第1.0版 |

@@ -54,4 +54,6 @@ If the upstream ATS-Mini URL has moved, please file an issue.
 
 ## License
 
-Personal project. No license granted.
+GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+deck-rx contains ports / re-implementations of algorithms from [SDR++](https://github.com/AlexandreRouma/SDRPlusPlus) (GPL-3.0-or-later), so the project is licensed under the same terms — fork / modify / redistribute freely under GPL-3.0+.

@@ -4,6 +4,12 @@ Each registered Stream Deck action — encoder dials and the one keypad button �
 
 ![Deck RX — all four LCD panels](lcd-combined.png)
 
+## Offline / disconnected state
+
+When the SpyServer connection drops (cable pull, server reboot, master OFF), every dial dims and signals `LINK` / `OFFLINE`. The Tune dial swaps its 7-seg digits for dashes and prefixes the header with `LINK` (last station name kept so the user can see what they were on); Status panel switches `Conn` to red `OFFLINE`; meters drop to zero / `-`. State cache (Host, Dev, AOut, last freq + mode) is preserved so the reconnect is seamless — the plugin auto-reconnects, all values snap back.
+
+![Deck RX — offline state composite](lcd-combined-offline.png)
+
 ## Deck RX Tune (keypad button)
 
 One-shot preset-tune button. Configure a preset slot (1-N) in the PI; pressing the key sends `setDemodMode` + `setFrequency` to spyService and flashes an OK badge. The button's title shows the slot's station name (or the preset's auto-resolved JP DB / EIBI label) so a row of these buttons becomes a directly-tappable preset rack alongside the dials. Refuses the tune (showAlert) when the slot's freq isn't receivable on the connected SDR (e.g. an HF+ user has a 50 MHz slot in the 31–60 MHz hardware gap).

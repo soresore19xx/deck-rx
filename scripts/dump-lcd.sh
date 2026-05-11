@@ -17,11 +17,20 @@
 #      frame
 #
 # Usage:
-#   scripts/dump-lcd.sh           # write to ~/ICON/deck-rx-lcd-*.{svg,png}
-#   scripts/dump-lcd.sh --docs    # write to docs/lcd-*.png as well
-#                                 # (uses the README's lcd-<label>.png naming
-#                                 # so commit drops the new screenshots
-#                                 # straight into the dial-layouts gallery)
+#   scripts/dump-lcd.sh           # snapshot the active Stream Deck page
+#                                 # (one force-render + 2.5 s settle); write
+#                                 # whatever 4 dials are on-screen to
+#                                 # ~/ICON/deck-rx-lcd-*.{svg,png}. Off-page
+#                                 # dials are quietly skipped — typical use.
+#   scripts/dump-lcd.sh --all     # multi-page mode: wait up to 180 s for
+#                                 # every dial in TAGS to appear (user
+#                                 # cycles through pages); exit 1 if any
+#                                 # never rendered.
+#   scripts/dump-lcd.sh --docs    # also write docs/lcd-*.png (uses the
+#                                 # README's lcd-<label>.png naming so a
+#                                 # commit drops new screenshots into the
+#                                 # dial-layouts gallery). Combinable with
+#                                 # --all.
 set -uo pipefail
 
 DOCS_MODE=0
@@ -45,7 +54,14 @@ declare -A LABEL=(
   [ssb-options]="options-ssb"
 )
 TAGS=("${!LABEL[@]}")
-TIMEOUT=180   # seconds to wait for the user to cycle through panels
+# Default behaviour: capture whatever the active Stream Deck page renders
+# in 2.5 seconds of force-render firings, then exit. The earlier 180 s
+# wait was for the multi-page "cover all 9 dials" workflow — most usage
+# is just "snapshot what's on screen right now" so a short window is
+# friendlier. --all keeps the old multi-page polling loop.
+TIMEOUT=2.5
+ALL_MODE=0
+if [[ "${1:-}" == "--all"  || "${2:-}" == "--all"  ]]; then ALL_MODE=1; TIMEOUT=180; fi
 
 mkdir -p "$OUT"
 
@@ -64,43 +80,51 @@ else
   echo "   time out."
 fi
 
-cat <<EOF
+if (( ALL_MODE )); then
+  cat <<EOF
 
->> waiting for SVGs (timeout ${TIMEOUT}s)
-   Stream Deck + shows 4 LCDs at a time, so on each visible page the
-   currently-attached dial actions get re-rendered (dump flag + force
-   flag combo). Switch pages to cover the rest:
+>> waiting for SVGs (timeout ${TIMEOUT}s, --all mode)
+   Switch pages on the Stream Deck to cover every dial in:
        targets: ${TAGS[*]}
    Each page change re-fires force-render so the 4 newly-visible dials
-   write their SVGs immediately — no need to physically rotate any
-   dial. Script keeps polling until all targets land OR you Ctrl-C
-   with what you have.
+   write their SVGs immediately. Script keeps polling until all
+   targets land OR you Ctrl-C with what you have.
 
 EOF
+else
+  echo ">> snapshotting active page (force-render + 2.5 s settle)"
+fi
 # Edge-trigger force-render NOW so currently-visible dials write their SVGs
 # without the user having to interact. Plugin's spyService watcher polls
 # at 250 ms, fires every subscribeForceRender listener, then unlinks.
 touch "$FORCE"
 
-deadline=$((SECONDS + TIMEOUT))
-last=-1
-last_force=$SECONDS
-while (( SECONDS < deadline )); do
+if (( ALL_MODE )); then
+  deadline=$((SECONDS + TIMEOUT))
+  last=-1
+  last_force=$SECONDS
+  while (( SECONDS < deadline )); do
+    ready=0
+    for t in "${TAGS[@]}"; do [[ -s "/tmp/deck-rx-lcd-${t}.svg" ]] && (( ready++ )); done
+    if (( ready != last )); then
+      printf "   captured %d/%d\n" "$ready" "${#TAGS[@]}"
+      last=$ready
+    fi
+    (( ready == ${#TAGS[@]} )) && break
+    if (( SECONDS - last_force >= 3 )); then
+      touch "$FORCE"
+      last_force=$SECONDS
+    fi
+    sleep 1
+  done
+else
+  # Single-shot: give the watcher ~2.5 s to fire force-render, render
+  # the active dials, and write SVGs.
+  sleep 2.5
   ready=0
   for t in "${TAGS[@]}"; do [[ -s "/tmp/deck-rx-lcd-${t}.svg" ]] && (( ready++ )); done
-  if (( ready != last )); then
-    printf "   captured %d/%d\n" "$ready" "${#TAGS[@]}"
-    last=$ready
-  fi
-  (( ready == ${#TAGS[@]} )) && break
-  # Re-fire force-render every 3 seconds so newly-visible dials (after a
-  # page switch) get rendered without user interaction.
-  if (( SECONDS - last_force >= 3 )); then
-    touch "$FORCE"
-    last_force=$SECONDS
-  fi
-  sleep 1
-done
+  printf "   captured %d of %d possible tags (active page only)\n" "$ready" "${#TAGS[@]}"
+fi
 
 echo ">> disabling dump gate"
 rm -f "$FLAG" "$FORCE"
@@ -132,9 +156,14 @@ done
 
 if (( ${#missing[@]} > 0 )); then
   echo
-  echo "!! missing (panel never rendered): ${missing[*]}"
-  echo "   To capture these, show them on the Stream Deck and re-run."
-  exit 1
+  if (( ALL_MODE )); then
+    echo "!! missing (panel never rendered): ${missing[*]}"
+    echo "   To capture these, show them on the Stream Deck and re-run."
+    exit 1
+  fi
+  # Default single-shot: missing tags are expected (off-page dials).
+  # No error, just inform.
+  echo "   skipped (not on active page): ${missing[*]}"
 fi
 
 echo

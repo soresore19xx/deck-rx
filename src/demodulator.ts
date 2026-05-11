@@ -673,23 +673,18 @@ export class Demodulator {
         } else {
           if (this.pilotPower > 0.005) this.stereoBadgeLocked = true;
         }
-        // L−R audio gate — continuous (no hysteresis, no toggling) function
-        // of pilotPower itself. Below 0.001 the gate is fully closed (no
-        // L-R signal contributes to output); above 0.005 fully open;
-        // linear ramp in between. This avoids the audible click that
-        // binary `pllLocked ? lmr : 0` produced when pllLocked toggled
-        // rapidly on noise (which the phase-coherence pilotPower measure
-        // correctly identifies as not-locked, but with momentary spikes).
-        //
-        // Real stereo broadcasts give pilotPower well above 0.005 so they
-        // gate fully open. Noise floor with the pdI−|pdQ| metric averages
-        // to ~0 → gate fully closed. Weak stereo at 0.001-0.005 gets a
-        // partial gate which sounds natural (proportional to actual
-        // pilot strength) rather than flapping on/off.
-        const gateFactor = this.pilotPower < 0.001 ? 0
-                         : this.pilotPower > 0.005 ? 1
-                         : (this.pilotPower - 0.001) / 0.004;
-        const lmrUsed = lmr * gateFactor;
+        // Pass L-R through unconditionally — match SDR++ behaviour. Earlier
+        // we gated lmr → 0 when pilotPower was below threshold so an empty
+        // channel produced clean mono, but a Vector Audio Scope comparison
+        // at 70 MHz (pure noise) showed the cost: deck-rx's correlation
+        // pinned at +1.00 (L = R = mono noise, Lissajous collapsed to a
+        // line) while SDR++ showed a proper uncorrelated cloud because
+        // its L-R subcarrier demod ran unconditionally and contributed
+        // an independent noise stream (the IF energy near 38 kHz) to the
+        // R channel. Removing the gate restores SDR++-equivalent stereo
+        // image on noise; on real broadcasts the gate was always fully
+        // open above pilotPower 0.005 anyway, so no change there.
+        const lmrUsed = lmr;
         this.deempL = a * lpr + (1 - a) * this.deempL;
         this.deempR = a * lmrUsed + (1 - a) * this.deempR;
         let L = this.deempL + this.deempR;

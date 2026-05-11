@@ -199,16 +199,6 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
     // SDK renders monospace as Menlo; the dump path (Pango → Liberation
     // Mono) needs a font fixup, applied per-copy in dumpTuneLcd.
     out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
-  } else if (subDigits) {
-    // Sub-kHz fractional digits for SSB / CW modes — the 7-seg main
-    // display has at most 5 digits and rounds to the nearest kHz, but
-    // SSB / CW listeners want sub-kHz resolution (typical net freq
-    // notation 14.2025 MHz, 7.041_15 MHz, etc.). Render the trailing
-    // 3 digits in the upper-right corner where the clock would
-    // otherwise be — SSB / CW modes don't show a clock so there's no
-    // collision. Same right-anchored position as the clock keeps the
-    // dumpTuneLcd Pango fixup applicable.
-    out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">.${subDigits}</text>`;
   }
   // Mode label is right-anchored exactly MODE_GAP px before the first
   // digit. Pango (rsvg-convert path) renders monospace wider than the
@@ -244,6 +234,13 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
   }
 
   out += `<text x="${n(cx+4)}" y="${n(oy+DH-1)}" font-family="monospace" font-size="${n(unitSize)}" fill="white">${unit}</text>`;
+  // Sub-kHz fractional digits for SSB / CW modes — sit just above the
+  // unit text, right of the 7-seg block, so the eye reads them as a
+  // continuation of the freq cluster instead of a corner ornament.
+  // Same x-anchor as the unit so they line up vertically.
+  if (subDigits) {
+    out += `<text x="${n(cx + 4)}" y="${n(oy + 9)}" font-family="monospace" font-size="11" fill="#ffffff">.${subDigits}</text>`;
+  }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}">${out}</svg>`;
 }
 

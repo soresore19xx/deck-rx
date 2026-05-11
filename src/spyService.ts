@@ -620,19 +620,25 @@ class SpyService {
   private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
   setFrequency(hz: number, opts: { smooth?: boolean } = {}): void {
     this._currentFreq = hz;
-    // Two retune flavours:
+    // Three retune flavours:
     //   smooth=false (default) — preset PUSH, band fallback, connect
     //     seed: one big freq jump. 100 ms mute + resetForRetune() so
     //     the atan2 phase wrap / AM AGC level step / sync PLL drag is
     //     hidden under mute and the demod re-converges fresh.
-    //   smooth=true — VFO rotate of any mode: don't reset, don't mute.
-    //     Trying to reset+mute on smooth AM retune made the sync PLL
-    //     louder and longer (re-locked from zero on every step
-    //     instead of just adapting the tracked offset), so we keep
-    //     the demod running through retunes for every mode.
+    //   smooth=true + non-AM — VFO rotate in WFM/NFM/SSB/CW: pure
+    //     pass-through, no mute, no reset.
+    //   smooth=true + AM — VFO rotate in AM: 50 ms mute WITHOUT reset.
+    //     Earlier we tried mute+reset (commit c3ce67d) — that re-
+    //     locked the sync PLL / AGC from zero on every step which
+    //     produced an even worse chirp / clip burst. Mute alone lets
+    //     the AGC keep tracking through the dial step silently and
+    //     emerges with its level adapted, no clip.
+    const isAm = this.currentDemodMode === 2;
     if (!opts.smooth) {
       this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
       this.demod.resetForRetune();
+    } else if (isAm) {
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + 50);
     }
     this.pendingFreq = hz;
     if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);

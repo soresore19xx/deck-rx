@@ -560,6 +560,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
           ok: true,
           added: res.added,
           skipped: res.skipped,
+          migrated: res.migrated,
           lists: res.lists,
         });
       } catch (e) {

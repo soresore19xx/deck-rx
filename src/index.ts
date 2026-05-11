@@ -88,7 +88,7 @@ streamDeck.connect();
     if (!spyService.isAutoSyncSdrpp()) return;
     const res = await importFromSdrpp();
     clearPresetsCache();
-    streamDeck.logger.info(`[deck-rx] autoSyncSdrpp added=${res.added} skipped=${res.skipped} lists=${res.lists}`);
+    streamDeck.logger.info(`[deck-rx] autoSyncSdrpp added=${res.added} skipped=${res.skipped} migrated=${res.migrated} lists=${res.lists}`);
   } catch (e) {
     streamDeck.logger.warn(`[deck-rx] autoSyncSdrpp failed: ${e instanceof Error ? e.message : String(e)}`);
   }

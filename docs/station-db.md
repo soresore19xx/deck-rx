@@ -25,23 +25,24 @@ The selection is persisted to `config.json` as `jpRegion` (default `kanto` for b
 
 **北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 で NHK FM や AM 局を欲しい場合**: `manualStations[]` に手書きで追加する（[後述](#add--remove--edit-a-manualstations-entry)）。各 entry には `region` フィールドを付けると、その region がアクティブなときだけ lookup される — 例えば現状のプリセットでは ABCラジオ (1008, kinki), MBSラジオ (1179, kinki), TBCラジオ (1260, tohoku), RKB毎日放送 (1278, kyushu), HBCラジオ (1287, hokkaido), ラジオ大阪 (1314, kinki), 東海ラジオ (1332, tokai), RCCラジオ (1350, chugoku), STVラジオ (1440, hokkaido), AFN Eagle 810 (kanto), NHKラジオ第2 (693, kanto) を region tag 付きで登録している。region 無しで登録すれば全 region で hit する truly global override になる。
 
-## Preset list — deck-rx presets / JP DB merge + SDR++ Import
+## Preset list — deck-rx presets / SDR++ Import
 
-The Tune dial preset list is the merge of the **deck-rx-owned `data/presets.json` + the JP DB stations for the active region**, sorted in ascending frequency order. It is assembled by `loadPresets(activeRegion)` in `src/actions/spyTune.ts`:
+The Tune dial preset list is sourced solely from **the deck-rx-owned `data/presets.json`** (the SDR++ `frequency_manager_config.json` mirror), sorted in ascending frequency order. It is assembled by `loadPresets(activeRegion)` in `src/actions/spyTune.ts`:
 
 1. Read **`com.hogehoge.deck-rx.sdPlugin/data/presets.json`** (UTF-8 clean, CJK broadcaster names round-trip as-is). The loaders are `loadDeckRxPresets / saveDeckRxPresets` in `src/presets.ts`.
-2. Call `getJpStationsForRegion(activeRegion)` to pull the active region's auto + region-tagged manual entries, then convert them into `Preset` records as `{ FM → mode 1 / 200 kHz, MW → mode 2 / 9 kHz }`.
-3. On exact frequency match, **the JP DB wins** (the name is the latest scrape's broadcaster brand; any hand-written deck-rx name is discarded). After dedup, sort ascending by frequency.
+2. Flatten the nested bookmarks via `flattenPresets`, then sort ascending by frequency. **No JP DB merge** — the JP DB / callsign DB only enriches the *displayed name* at render time via `autoStationLabel(freq, region)`; the preset *count* stays bound to `presets.json`.
+
+The `region` argument is kept for cache-keying so a region switch invalidates the cache and forces the PI dropdown to re-render labels for the new region.
 
 **Region-switch behaviour**: changing `JP region` in the PI fires the `spyService.subscribeJpRegion` listener, which invalidates the preset cache (`clearPresetsCache()`) → rebuilds via `loadPresets(newRegion)` → re-emits the `presets` event back to the PI so the dropdown refreshes.
 
-**Import from SDR++ (PI button)**: reads SDR++'s `frequency_manager_config.json` and **merges** it into deck-rx `presets.json` (existing deck-rx entries are not overwritten; bookmarks with the same name are skipped). The SDR++ config itself is not touched (read-only). Why a separate Import path is needed:
+**Import from SDR++ (PI button)**: reads SDR++'s `frequency_manager_config.json` and **merges** it into deck-rx `presets.json`. Dedup is **frequency-keyed** (not name-keyed): an SDR++ entry whose frequency already exists on the deck-rx side is skipped regardless of name. A pre-merge pass also runs `dedupBookmarksByFreq` on the destination to collapse any historical duplicate-frequency entries (preferring the JP DB CJK name when one matches). The SDR++ config itself is not touched (read-only). Why a separate Import path is needed:
 
 - SDR++'s bookmark serialiser is **only stable for ASCII / Latin-1**. A user-environment case where CJK characters broke the file has been confirmed (2026-05 `frequency_manager_config.json` corruption incident — Python `json.dump` changed the indent / numeric types and SDR++ failed to launch).
 - So deck-rx is designed **not to write SDR++'s config directly**. deck-rx keeps its own UTF-8-clean `presets.json` and imports from SDR++ on a *read-only* basis.
 - After import, the user is free to edit deck-rx's `presets.json` (add CJK station names, use any naming) without affecting SDR++ at all.
 
-**Import button flow**: clicking `Import bookmarks` in the PI's `SDR++` row fires the `importSdrppPresets` action via `spyService` → `presets.ts::importFromSdrpp` runs → on completion the PI receives `sdrImported {ok, added, skipped}` and the preset list refreshes. Bookmarks with the same name are skipped (user edits are preserved).
+**Import button flow**: clicking `Import bookmarks` in the PI's `SDR++` row fires the `importSdrppPresets` action via `spyService` → `presets.ts::importFromSdrpp` runs → on completion the PI receives `sdrImported {ok, added, skipped, migrated}` and the preset list refreshes. `added` = new entries, `skipped` = freq already on the deck-rx side, `migrated` = historical duplicate-freq entries collapsed during the pre-merge pass.
 
 **Test fixture path override**: the `DECK_RX_PRESETS_PATH` / `DECK_RX_SDR_CONFIG_PATH` env vars redirect the deck-rx presets path and the SDR++ config path respectively (used by tests). `presetsPath()` / `sdrConfigPath()` in `src/presets.ts` evaluate the env on every call, so flipping the env in a test is enough to get isolated behaviour.
 

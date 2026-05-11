@@ -90,6 +90,7 @@ describe('importFromSdrpp', () => {
     const res = await importFromSdrpp();
     expect(res.added).toBe(3);   // fixture has 3 bookmarks total
     expect(res.skipped).toBe(0);
+    expect(res.migrated).toBe(0);
     const p = await loadDeckRxPresets();
     expect(Object.keys(p.lists).sort()).toEqual(['General', 'Imported']);
     // 80 MHz hits the kanto JP DB (TOKYO FM at 80.000 MHz), so the SDR++
@@ -139,6 +140,71 @@ describe('importFromSdrpp', () => {
   it('rejects when SDR++ config is missing', async () => {
     process.env.DECK_RX_SDR_CONFIG_PATH = join(sandbox, 'no-such-file.json');
     await expect(importFromSdrpp()).rejects.toThrow();
+  });
+
+  it('dedup is freq-keyed: SDR++ ASCII name skipped when same freq already CJK-named', async () => {
+    // Regression: prior to the freq-keyed dedup, this scenario produced
+    // duplicate-freq entries in presets.json (one ASCII + one CJK).
+    writeFileSync(process.env.DECK_RX_PRESETS_PATH!, JSON.stringify({
+      lists: {
+        General: {
+          bookmarks: {
+            'HBCラジオ': { frequency: 1287000, bandwidth: 9000, mode: 2 },
+          },
+        },
+      },
+    }), 'utf-8');
+    const sdrSrc = join(sandbox, 'sdrpp-collide.json');
+    writeFileSync(sdrSrc, JSON.stringify({
+      lists: {
+        General: {
+          bookmarks: {
+            'MW HBC Radio': { frequency: 1287000, bandwidth: 9000, mode: 2 },
+          },
+        },
+      },
+    }, null, 4));
+    process.env.DECK_RX_SDR_CONFIG_PATH = sdrSrc;
+    const res = await importFromSdrpp();
+    expect(res.added).toBe(0);
+    expect(res.skipped).toBe(1);
+    const p = await loadDeckRxPresets();
+    const general = Object.values(p.lists.General.bookmarks);
+    expect(general.filter(b => b.frequency === 1287000).length).toBe(1);
+    expect(p.lists.General.bookmarks['HBCラジオ']).toBeTruthy();
+    expect(p.lists.General.bookmarks['MW HBC Radio']).toBeUndefined();
+  });
+
+  it('migrates pre-existing duplicate-freq entries (ASCII + CJK) on next import', async () => {
+    // Simulates the 2026-05 regression state: presets.json grew to hold
+    // both the old ASCII name and the post-CJK-rename name at the same
+    // freq. Next import must collapse them via dedupBookmarksByFreq.
+    writeFileSync(process.env.DECK_RX_PRESETS_PATH!, JSON.stringify({
+      lists: {
+        General: {
+          bookmarks: {
+            'MW HBC Radio': { frequency: 1287000, bandwidth: 9000, mode: 2 },
+            'HBCラジオ':    { frequency: 1287000, bandwidth: 9000, mode: 2 },
+            'MW STV Radio': { frequency: 1440000, bandwidth: 9000, mode: 2 },
+            'STVラジオ':    { frequency: 1440000, bandwidth: 9000, mode: 2 },
+            // Untouched non-duplicate entries pass through
+            'Test SW 1':    { frequency: 9910000, bandwidth: 5000, mode: 2 },
+          },
+        },
+      },
+    }), 'utf-8');
+    // Empty SDR++ source so nothing is added — exercise the pre-clean only
+    const sdrSrc = join(sandbox, 'sdrpp-empty.json');
+    writeFileSync(sdrSrc, JSON.stringify({ lists: { General: { bookmarks: {} } } }, null, 4));
+    process.env.DECK_RX_SDR_CONFIG_PATH = sdrSrc;
+    const res = await importFromSdrpp();
+    expect(res.migrated).toBe(2);
+    const p = await loadDeckRxPresets();
+    expect(p.lists.General.bookmarks['HBCラジオ']).toBeTruthy();
+    expect(p.lists.General.bookmarks['STVラジオ']).toBeTruthy();
+    expect(p.lists.General.bookmarks['MW HBC Radio']).toBeUndefined();
+    expect(p.lists.General.bookmarks['MW STV Radio']).toBeUndefined();
+    expect(p.lists.General.bookmarks['Test SW 1']).toBeTruthy();
   });
 
   it('replaces ASCII placeholder names with the JP DB CJK broadcaster name', async () => {

@@ -92,34 +92,101 @@ export function flattenPresets(p: PresetFile): Array<{ name: string; freq: numbe
 }
 
 /**
- * Import bookmarks from an SDR++ frequency_manager_config.json into the
- * deck-rx presets store. Merge rule: an existing deck-rx bookmark with the
- * SAME name (within the same list) is preserved (skipped); new bookmarks
- * are added; the SDR++ list name is preserved on the deck-rx side so a
- * round-trip of "import → save" is idempotent.
+ * Collapse duplicate-frequency bookmarks within a single list. When two
+ * entries share a freq (typically an old ASCII placeholder from a
+ * pre-CJK-rename import era + the JP-DB-renamed CJK entry), keep one and
+ * drop the others. Preference order: an entry whose name matches the JP
+ * DB lookup → an entry whose name is non-ASCII → the first-inserted
+ * entry. Returns the collapsed list + the number of entries removed.
  *
- * The SDR++ config file is NOT touched — read-only. Returns counts so the
- * PI can show "imported N, skipped M" feedback.
+ * Exposed so importFromSdrpp can pre-clean the destination before the
+ * merge step, which guarantees that historical duplicates (introduced
+ * when the import dedup was name-keyed instead of freq-keyed) get
+ * collapsed on the next import.
  */
-export async function importFromSdrpp(sdrPath = sdrConfigPath()): Promise<{ added: number; skipped: number; lists: number }> {
+function dedupBookmarksByFreq(bookmarks: Record<string, PresetEntry>): { result: Record<string, PresetEntry>; removed: number } {
+  const byFreq = new Map<number, Array<[string, PresetEntry]>>();
+  for (const [name, e] of Object.entries(bookmarks)) {
+    const f = Math.round(e.frequency);
+    const arr = byFreq.get(f) ?? [];
+    arr.push([name, e]);
+    byFreq.set(f, arr);
+  }
+  let removed = 0;
+  const result: Record<string, PresetEntry> = {};
+  const isAscii = (s: string) => /^[\x00-\x7F]*$/.test(s);
+  for (const [freq, entries] of byFreq) {
+    if (entries.length === 1) {
+      const [n, e] = entries[0];
+      result[n] = e;
+      continue;
+    }
+    const jp = lookupJpStation(freq);
+    let pick: [string, PresetEntry] | undefined;
+    if (jp?.name) {
+      const match = entries.find(([n]) => n === jp.name);
+      pick = match ?? [jp.name, entries[0][1]];
+    } else {
+      pick = entries.find(([n]) => !isAscii(n)) ?? entries[0];
+    }
+    result[pick[0]] = pick[1];
+    removed += entries.length - 1;
+  }
+  return { result, removed };
+}
+
+/**
+ * Import bookmarks from an SDR++ frequency_manager_config.json into the
+ * deck-rx presets store.
+ *
+ * Dedup is **frequency-keyed** (not name-keyed): if the destination
+ * already has a bookmark at the same freq, the SDR++ entry is skipped
+ * regardless of whether the name matches. This prevents the "MW tbc
+ * tohoku" (SDR++ ASCII) + "TBCラジオ" (post-rename CJK) double-add
+ * regression that name-keyed dedup allowed.
+ *
+ * Before the merge step, the destination list is run through
+ * dedupBookmarksByFreq() so any historical duplicates from earlier
+ * imports get collapsed in-place — counted as `migrated`.
+ *
+ * The SDR++ config file is NOT touched — read-only. Returns counts so
+ * the PI can show "imported N / skipped M / migrated K" feedback.
+ */
+export async function importFromSdrpp(sdrPath = sdrConfigPath()): Promise<{ added: number; skipped: number; migrated: number; lists: number }> {
   const raw = await readFile(sdrPath, 'utf-8');
   const src = JSON.parse(raw) as PresetFile;
   const dst = await loadDeckRxPresets();
-  let added = 0, skipped = 0, lists = 0;
+  let added = 0, skipped = 0, migrated = 0, lists = 0;
   for (const [listName, list] of Object.entries(src.lists ?? {})) {
+    const isNewList = !dst.lists[listName];
     const dstList = dst.lists[listName] ?? { bookmarks: {} };
-    let listChanged = false;
+    // Pre-clean: collapse any duplicate-freq entries already in the dst.
+    const cleaned = dedupBookmarksByFreq(dstList.bookmarks);
+    dstList.bookmarks = cleaned.result;
+    migrated += cleaned.removed;
+    let listChanged = cleaned.removed > 0;
+
+    // Build a freq → name map for freq-keyed dedup during the merge.
+    const existingByFreq = new Map<number, string>();
+    for (const [n, e] of Object.entries(dstList.bookmarks)) {
+      existingByFreq.set(Math.round(e.frequency), n);
+    }
     for (const [bmName, bm] of Object.entries(list.bookmarks ?? {})) {
       const freq = Math.round(bm.frequency);
       // Replace the SDR++ ASCII placeholder ("MW HBC Radio", "FM TBS"…)
       // with the JP DB's CJK broadcaster name when one exists at that
-      // freq+band. lookupJpStation searches across all regions when no
-      // active region is supplied, so a Tokyo-region kanto config still
-      // hits Hokkaido / 関西 / 九州 manualStations entries (HBCラジオ,
-      // MBSラジオ, RKB毎日放送, etc.). SW / NW / unknown freqs fall
-      // through to the SDR++ name unchanged.
+      // freq+band. SW / NW / unknown freqs fall through to the SDR++
+      // name unchanged.
       const jp = lookupJpStation(freq);
       const finalName = jp?.name ?? bmName;
+      // Primary check: freq-keyed dedup (the actual identity of a station).
+      if (existingByFreq.has(freq)) {
+        skipped++;
+        continue;
+      }
+      // Secondary check: a different freq is already bookmarked under the
+      // same name. Skip to preserve the user's hand-edited entry — the
+      // bookmarks dict is name-keyed so adding would overwrite.
       if (dstList.bookmarks[finalName]) {
         skipped++;
         continue;
@@ -129,16 +196,17 @@ export async function importFromSdrpp(sdrPath = sdrConfigPath()): Promise<{ adde
         bandwidth: bm.bandwidth,
         mode: bm.mode,
       };
+      existingByFreq.set(freq, finalName);
       added++;
       listChanged = true;
     }
-    if (listChanged && !dst.lists[listName]) {
+    if (isNewList && listChanged) {
       lists++;
     }
     dst.lists[listName] = dstList;
   }
   await saveDeckRxPresets(dst);
-  return { added, skipped, lists };
+  return { added, skipped, migrated, lists };
 }
 
 export function getDeckRxPresetsPath(): string { return presetsPath(); }

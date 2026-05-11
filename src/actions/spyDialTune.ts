@@ -708,7 +708,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
                    : offline        ? (baseHeader ? `LINK  ${baseHeader}` : 'LINK')
                    : baseHeader;
       const isFM = !this.fallbackActive && p?.mode === 1;
-      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', modeStr, isFM && showStereo));
+      // SSB / CW want sub-kHz precision in the display since net freqs
+      // are quoted to 100 Hz / 10 Hz; the 5-digit 7-seg only goes to
+      // 1 kHz, so the trailing 3 digits (full Hz part of the kHz tail)
+      // get a small upper-right readout.
+      const liveMode = this.fallbackActive ? liveDemod : (p?.mode ?? 1);
+      const isSsbCw = liveMode === 4 || liveMode === 5 || liveMode === 6;
+      const subDigits = isSsbCw ? String(Math.abs(freq) % 1000).padStart(3, '0') : '';
+      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', modeStr, isFM && showStereo, subDigits));
       const headerImg = D(makeHeaderSvg(header, false));
       const freqImg   = D(freqSvg);
       const borderImg = makeBorderSvg(this.borderSide);
@@ -739,7 +746,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       const header = !this.enabled ? (baseHeader ? `OFF  ${baseHeader}` : 'OFF')
                    : offline        ? (baseHeader ? `LINK  ${baseHeader}` : 'LINK')
                    : baseHeader;
-      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', 'VFO', showStereo));
+      const liveDemodVfo = spyService.getDemodMode();
+      const isSsbCwVfo = liveDemodVfo === 4 || liveDemodVfo === 5 || liveDemodVfo === 6;
+      const subDigitsVfo = isSsbCwVfo ? String(Math.abs(freq) % 1000).padStart(3, '0') : '';
+      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', 'VFO', showStereo, subDigitsVfo));
       const headerImg = D(makeHeaderSvg(header, false));
       const freqImg   = D(freqSvg);
       const borderImg = makeBorderSvg(this.borderSide);

@@ -147,7 +147,7 @@ const SEGS: Record<string, string> = {
   'W': 'bcdef',
 };
 
-export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number, extraT = 0, scale = 1.0, clockHHMM = '', modeLabel = '', stereo = false): string {
+export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number, extraT = 0, scale = 1.0, clockHHMM = '', modeLabel = '', stereo = false, subDigits = ''): string {
   const n = (v: number) => v.toFixed(1);
   const DH  = svgH * 0.65 * scale;
   const DW  = DH * 0.56;
@@ -199,6 +199,16 @@ export function seg7svg(numStr: string, unit: string, svgW: number, svgH: number
     // SDK renders monospace as Menlo; the dump path (Pango → Liberation
     // Mono) needs a font fixup, applied per-copy in dumpTuneLcd.
     out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">${clockHHMM}</text>`;
+  } else if (subDigits) {
+    // Sub-kHz fractional digits for SSB / CW modes — the 7-seg main
+    // display has at most 5 digits and rounds to the nearest kHz, but
+    // SSB / CW listeners want sub-kHz resolution (typical net freq
+    // notation 14.2025 MHz, 7.041_15 MHz, etc.). Render the trailing
+    // 3 digits in the upper-right corner where the clock would
+    // otherwise be — SSB / CW modes don't show a clock so there's no
+    // collision. Same right-anchored position as the clock keeps the
+    // dumpTuneLcd Pango fixup applicable.
+    out += `<text x="${n(svgW - 4)}" y="20" fill="#ffffff" font-size="13" font-family="monospace" text-anchor="end">.${subDigits}</text>`;
   }
   // Mode label is right-anchored exactly MODE_GAP px before the first
   // digit. Pango (rsvg-convert path) renders monospace wider than the

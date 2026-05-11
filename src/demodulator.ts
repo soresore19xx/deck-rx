@@ -430,9 +430,15 @@ export class Demodulator {
     const wasEnabled = this.amSyncEnabled;
     this.amSyncEnabled = enabled;
     if (audioRate > 0) {
-      // 30 Hz natural freq: fast enough to pull-in ±1 kHz offsets in
-      // ~1 second, slow enough to ignore the 50 Hz+ audio band on AM.
-      const wn = 2 * Math.PI * 30 / audioRate;  // rad/sample
+      // 80 Hz natural freq: pulls in ±1 kHz offsets in ~400 ms (the
+      // VFO retune mute window). 80 Hz is below the typical AM audio
+      // band lower edge after the user's HPF (default 30 Hz, but
+      // most useful broadcasts have little energy < 100 Hz), so the
+      // loop won't track baseband audio and produce distortion. The
+      // previous 30 Hz wn was tuned for SW propagation drift but
+      // took ~1 second to re-lock after a VFO step, bleeding phase
+      // noise into the audio for 500 ms of every dial click.
+      const wn = 2 * Math.PI * 80 / audioRate;  // rad/sample
       const zeta = 0.707;
       this.amSyncAlpha = 2 * zeta * wn;
       this.amSyncBeta  = wn * wn;

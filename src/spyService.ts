@@ -604,18 +604,19 @@ class SpyService {
     this._currentFreq = hz;
     // SDR++ reference: a runtime freq change is JUST a single
     // setSetting(IQ_FREQUENCY, hz) — no mute, no streaming stop/start, no
-    // gain re-apply. Previously deck-rx muted the audio for 200 ms on
-    // setFrequency entry + another 250 ms after the 50-ms debounce
-    // fired; under rapid dial flicking those mute windows overlapped
-    // into sustained silence even though the freq commands themselves
-    // were landing on the server. Drop the mute and accept the retune
-    // pop — matches how SDR++ behaves on the same hardware.
-    this.demod.reset();
+    // gain re-apply, NO demod reset. The previous deck-rx flow called
+    // demod.reset() twice per setFrequency (once immediately, once
+    // after the 50 ms debounce). Under rapid dial flicking the
+    // immediate resets fired many times per second, clearing the FIR
+    // buffer / lpr/lmr LPFs / EWMA de-emph / PLL state on every call
+    // — none of those filter states ever had time to build up steady-
+    // state output, so audio dropped to near-zero. Letting the demod
+    // run continuously through retunes accepts a brief "wrong-freq"
+    // pop but keeps the audio chain alive, matching SDR++.
     this.pendingFreq = hz;
     if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);
     this.freqDebounceTimer = setTimeout(() => {
       this.freqDebounceTimer = null;
-      this.demod.reset();
       this.client.setFrequency(this.pendingFreq);
       streamDeck.logger.info(`[spyService] sentFreq ${this.pendingFreq}`);
     }, 50);

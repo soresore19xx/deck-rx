@@ -2,13 +2,32 @@
 
 [← Back to README](../README.md)
 
+## Developer prerequisites
+
+| | Version |
+|--|--|
+| macOS | 11+ |
+| Stream Deck software | 6.6 or later |
+| Stream Deck **+** hardware (encoder + LCD) | for the dial actions |
+| Node.js (via nodebrew / nvm / fnm etc.) | 20 or later |
+| Stream Deck CLI (`streamdeck` command) | install with `npm install -g @elgato/cli` |
+| MacPorts: ffmpeg, switchaudio-osx | runtime audio bridge |
+| MacPorts: librsvg, ImageMagick, sox | optional — only needed for the LCD dump / audio analysis scripts |
+
 ```sh
-# Prerequisites (MacPorts):
+# Runtime prerequisites
 sudo port install ffmpeg switchaudio-osx
 
+# Stream Deck CLI (provides the `streamdeck` command used below)
+npm install -g @elgato/cli
+
+# Project install + build
 npm install
 npm run build
 ```
+
+The Node SDK package (`@elgato/streamdeck`) is pulled in by `npm install` —
+no separate global install required.
 
 After the first build, symlink the plugin into Stream Deck's plugin directory **before**
 restarting Stream Deck (otherwise builds will not be reflected):

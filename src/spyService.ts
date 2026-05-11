@@ -1239,7 +1239,7 @@ class SpyService {
     const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
     const cfg = JSON.parse(raw) as Partial<Config>;
     return {
-      host:          cfg.host          ?? '192.168.0.142',
+      host:          cfg.host          ?? '192.168.1.100',
       port:          cfg.port          ?? 8888,
       enabled:       cfg.enabled       ?? true,
       audioEnabled:  cfg.audioEnabled  ?? false,

@@ -639,10 +639,10 @@ class SpyService {
       this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
       this.demod.resetForRetune();
     } else if (this.currentDemodMode === 2) {
-      // 400 ms covers the AM sync PLL's pull-in time at wn=80 Hz for
-      // a 1 kHz offset (see setAmSync). Shorter mute let phase-error
-      // noise bleed past the mute window before lock completed.
-      this.muteUntil = Math.max(this.muteUntil, Date.now() + 400);
+      // 200 ms matches the AM sync PLL's pull-in at wn=150 Hz (see
+      // setAmSync). Earlier 400 ms covered a slower 80 Hz PLL;
+      // bumping wn allows the mute window to halve.
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + 200);
     }
     this.pendingFreq = hz;
     if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);

@@ -593,19 +593,19 @@ class SpyService {
   private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
   setFrequency(hz: number): void {
     this._currentFreq = hz;
-    // Initial long mute covers the debounce + the start of SpyServer's
-    // retune. Re-muted again from the apply timer for the rest of the
-    // settling window (new station carrier amplitude, amDc convergence).
-    this.muteUntil = Math.max(this.muteUntil, Date.now() + 200);
+    // SDR++ reference: a runtime freq change is JUST a single
+    // setSetting(IQ_FREQUENCY, hz) — no mute, no streaming stop/start, no
+    // gain re-apply. Previously deck-rx muted the audio for 200 ms on
+    // setFrequency entry + another 250 ms after the 50-ms debounce
+    // fired; under rapid dial flicking those mute windows overlapped
+    // into sustained silence even though the freq commands themselves
+    // were landing on the server. Drop the mute and accept the retune
+    // pop — matches how SDR++ behaves on the same hardware.
     this.demod.reset();
     this.pendingFreq = hz;
     if (this.freqDebounceTimer) clearTimeout(this.freqDebounceTimer);
     this.freqDebounceTimer = setTimeout(() => {
       this.freqDebounceTimer = null;
-      // Refresh mute + demod state around the actual SpyServer command —
-      // server retune (~50-100 ms) + new-station IQ packet arrival pop +
-      // amDc / AGC re-convergence in the demodulator.
-      this.muteUntil = Math.max(this.muteUntil, Date.now() + 250);
       this.demod.reset();
       this.client.setFrequency(this.pendingFreq);
       streamDeck.logger.info(`[spyService] sentFreq ${this.pendingFreq}`);

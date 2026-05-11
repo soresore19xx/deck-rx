@@ -39,8 +39,8 @@ Per-dial layouts and screenshots (Tune / Volume / Combo / FM / AM / SSB / Band S
 - [Server-side setup (SpyServer on Linux ARM/aarch64)](docs/server-setup.md)
 - [Dial layouts](docs/dial-layouts.md) — per-plugin LCD screenshots + per-row UI explanations
 - [Architecture notes](docs/architecture.md) — dial details, signal-path implementation, internal mechanisms
-- [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules, NHK channel inference + 送信地 + callsign annotation
-- [Data sources & attribution](docs/data-sources.md) — 総務省 / 関東総通局 / 沖縄総通局 / EIBI license terms + refresh scripts
+- [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules, NHK channel inference + transmitter-site + callsign annotation
+- [Data sources & attribution](docs/data-sources.md) — Japan-only sources (総務省 MIC / 関東総通局 / 沖縄総通局) plus the international EIBI shortwave DB; license terms + refresh scripts
 - [Debug helpers](docs/debug-helpers.md) — LCD dump / lint / compare-baseline scripts
 
 ## License

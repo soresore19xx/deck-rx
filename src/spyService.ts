@@ -222,6 +222,15 @@ class SpyService {
   // changes so the new region's lookup result shows up immediately.
   private jpActiveRegion: JpRegion = 'kanto';
   private autoSyncSdrpp = false;
+  // Audio recording tap state.
+  private audioTapFd: number | null = null;       // open file descriptor while recording
+  private audioTapPath = '';                       // current WAV path
+  private audioTapBytes = 0;                       // bytes of PCM data written (for header finalisation)
+  private audioTapRate = 0;
+  private audioTapChannels = 0;
+  // Throttle the flag-existence check — fs.existsSync per IQ packet would
+  // make 50+ syscalls/s. Sample at most every 500 ms.
+  private audioTapLastCheck = 0;
   private jpRegionListeners = new Set<(r: JpRegion) => void>();
   private fmOptions: FMOptions = { ...DEFAULT_FM_OPTIONS };
   private amOptions: AMOptions = { ...DEFAULT_AM_OPTIONS };
@@ -1132,6 +1141,12 @@ class SpyService {
           pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
         }
       }
+      // Audio tap — file-flag-triggered, same pattern as the LCD-dump hook.
+      // touch /tmp/deck-rx-audio-record to start; rm /tmp/deck-rx-audio-record
+      // to stop. While the flag exists every PCM buffer is appended to a
+      // single WAV file (path printed in the log) so the user can compare
+      // the deck-rx output to a SDR++ recording of the same station.
+      this.tapAudio(pcm, audioRate, channels);
       this.audioOutput.write(pcm);
     };
     this.client.on('iqData', this.iqListener);
@@ -1198,6 +1213,80 @@ class SpyService {
       jpRegion:      isJpRegion(cfg.jpRegion) ? cfg.jpRegion : undefined,
       autoSyncSdrpp: !!cfg.autoSyncSdrpp,
     };
+  }
+
+  /** Audio output tap — when /tmp/deck-rx-audio-record exists, every PCM
+   *  buffer is appended to a WAV file so the user can capture deck-rx's
+   *  audio output for offline analysis (e.g. spectrum comparison with a
+   *  SDR++ recording of the same station). The flag's existence is
+   *  polled at 2 Hz; toggling the flag opens/closes the WAV cleanly with
+   *  a finalised RIFF header.
+   *
+   *  This is intentionally not a per-listener pub/sub API — the file-flag
+   *  pattern matches the existing LCD-dump hook, doesn't require any
+   *  external Node script, and the user can scp the WAV elsewhere. */
+  private tapAudio(pcm: Int16Array, rate: number, channels: number): void {
+    const FLAG = '/tmp/deck-rx-audio-record';
+    const now = Date.now();
+    if (now - this.audioTapLastCheck > 500) {
+      this.audioTapLastCheck = now;
+      const fs = require('fs') as typeof import('fs');
+      const wanted = fs.existsSync(FLAG);
+      if (wanted && this.audioTapFd === null) {
+        const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
+        const path = `/tmp/deck-rx-audio-${ts}.wav`;
+        try {
+          const fd = fs.openSync(path, 'w');
+          // Reserve a 44-byte RIFF header; we patch in the data-chunk size
+          // on close so the file is playable even mid-stream (some apps
+          // will play it as-is and skip past the trailing silence).
+          const stub = Buffer.alloc(44);
+          stub.write('RIFF', 0);  stub.writeUInt32LE(36, 4);   stub.write('WAVE', 8);
+          stub.write('fmt ', 12); stub.writeUInt32LE(16, 16);  stub.writeUInt16LE(1, 20);    // PCM
+          stub.writeUInt16LE(channels, 22);
+          stub.writeUInt32LE(rate, 24);
+          stub.writeUInt32LE(rate * channels * 2, 28);
+          stub.writeUInt16LE(channels * 2, 32); stub.writeUInt16LE(16, 34);
+          stub.write('data', 36); stub.writeUInt32LE(0, 40);
+          fs.writeSync(fd, stub);
+          this.audioTapFd = fd;
+          this.audioTapPath = path;
+          this.audioTapBytes = 0;
+          this.audioTapRate = rate;
+          this.audioTapChannels = channels;
+          streamDeck.logger.info(`[spyService] audio tap → ${path} (${rate} Hz × ${channels} ch)`);
+        } catch (e) {
+          streamDeck.logger.warn(`[spyService] audio tap open failed: ${e}`);
+        }
+      } else if (!wanted && this.audioTapFd !== null) {
+        try {
+          const fd = this.audioTapFd;
+          const dataBytes = this.audioTapBytes;
+          // Patch RIFF size and data-chunk size
+          const sizes = Buffer.alloc(8);
+          sizes.writeUInt32LE(36 + dataBytes, 0);  // file size − 8
+          fs.writeSync(fd, sizes.slice(0, 4), 0, 4, 4);
+          const dataSize = Buffer.alloc(4);
+          dataSize.writeUInt32LE(dataBytes, 0);
+          fs.writeSync(fd, dataSize, 0, 4, 40);
+          fs.closeSync(fd);
+          streamDeck.logger.info(`[spyService] audio tap closed: ${this.audioTapPath} (${dataBytes} bytes)`);
+        } catch { /* fd may already be gone */ }
+        this.audioTapFd = null;
+        this.audioTapPath = '';
+        this.audioTapBytes = 0;
+      }
+    }
+    if (this.audioTapFd !== null) {
+      // Write the raw PCM bytes — pcm is an Int16Array, so its underlying
+      // ArrayBuffer is the little-endian byte sequence WAV expects.
+      try {
+        const buf = Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+        const fs = require('fs') as typeof import('fs');
+        fs.writeSync(this.audioTapFd, buf);
+        this.audioTapBytes += buf.length;
+      } catch { /* fd error — drop silently */ }
+    }
   }
 
   isAutoSyncSdrpp(): boolean { return !!this.autoSyncSdrpp; }

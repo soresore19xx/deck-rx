@@ -21,23 +21,9 @@ The selection is persisted to `config.json` as `jpRegion` (default `kanto` for b
 | 沖縄 | 沖縄総合通信事務所 ラジオ放送局チャンネル一覧 | AM (中波) + FM補完 (※ MHz inline) + FM + CFM |
 | 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 | 総務省 全国民放FM局・ワイドFM局一覧 (`fm-list.html`) | **民放 FM only** — NHK FM や AM や CFM は含まれない (region-tagged manualStations で補完) |
 
-関東 / 沖縄 は 総通局ページから AM + FM + CFM を直接取得できるため auto coverage が広い。 その他 6 region は **全国民放 FM 一括ページ** (`fm-list.html`) を主ソースとして民放 FM を取得する構成。 NHK FM や AM 局など auto-source に含まれない局を該当 region で利用したい場合は **`manualStations[]` で region tag 付き手書き追加**でカバーする ([後述](#add--remove--edit-a-manualstations-entry))。
+関東 / 沖縄 は 総通局ページから AM + FM + CFM を直接取得できるため auto coverage が広い。 その他 6 region は **全国民放 FM 一括ページ** (`fm-list.html`) を主ソースに民放 FM を取得する構成。 DOM selector / parser 実装の詳細は `src/japanStationsScraper.ts` のコメントを参照してください。
 
-現プリセットの `manualStations[]` 例 (region tag 付き):
-
-| Region | Entries |
-|---|---|
-| kanto | AFN Eagle 810、 NHKラジオ第2 (693) |
-| tohoku | TBCラジオ (1260) |
-| tokai | 東海ラジオ (1332) |
-| kinki | ABCラジオ (1008)、 MBSラジオ (1179)、 ラジオ大阪 (1314) |
-| chugoku | RCCラジオ (1350) |
-| kyushu | RKB毎日放送 (1278) |
-| hokkaido | HBCラジオ (1287)、 STVラジオ (1440) |
-
-`region` フィールドを省いた entry は **全 region で hit する truly global override** として扱われます。
-
-DOM selector / parser 実装の詳細は `src/japanStationsScraper.ts` のコメントを参照してください。
+**北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 で NHK FM や AM 局を欲しい場合**: `manualStations[]` に手書きで追加する（[後述](#add--remove--edit-a-manualstations-entry)）。各 entry には `region` フィールドを付けると、その region がアクティブなときだけ lookup される — 例えば現状のプリセットでは ABCラジオ (1008, kinki), MBSラジオ (1179, kinki), TBCラジオ (1260, tohoku), RKB毎日放送 (1278, kyushu), HBCラジオ (1287, hokkaido), ラジオ大阪 (1314, kinki), 東海ラジオ (1332, tokai), RCCラジオ (1350, chugoku), STVラジオ (1440, hokkaido), AFN Eagle 810 (kanto), NHKラジオ第2 (693, kanto) を region tag 付きで登録している。region 無しで登録すれば全 region で hit する truly global override になる。
 
 ## Preset list — deck-rx presets / JP DB マージ + SDR++ Import
 

@@ -251,7 +251,8 @@ export function optionsPanelDualSvg(
   const COL_W = SVG_W / 2;
   const TITLE_H = title ? 12 : 0;
   const HEADER_H = 12;
-  const ROW_H = 11;  // tightened from 12 so 6 rows + title + col-hdr fit
+  const ROW_H = 10;  // tightened from 11 so 7 rows + title + col-hdr fit
+                     // (FM column grew from 6 → 7 rows after BW added)
   const FS = 10;
   const FRAME_C = '#888888';
   const DIVIDER_C = '#444444';

@@ -121,6 +121,10 @@ interface Config {
   muted?: boolean;
   tuneMode?: 'preset' | 'vfo';
   tuneStepHz?: number;
+  // Per-demod-mode last-used step. Keyed on the numeric mode index
+  // (0=NFM, 1=WFM, 2=AM, 4=USB, 5=CW, 6=LSB). Restored on setDemodMode
+  // so each band sticks to its own step preference.
+  tuneStepByMode?: Record<number, number>;
   jpRegion?: JpRegion;    // Active region for JP DB lookup + Update Now scrape target
   // When true, plugin runs importFromSdrpp() once at startup to merge any
   // new bookmarks the user added to SDR++ since the last sync. Off by
@@ -291,6 +295,12 @@ class SpyService {
   // settings.mode / settings.stepHz.
   private tuneMode: TuneMode = 'preset';
   private tuneStepHz: number = 9000;
+  // Per-mode last-used step value. setDemodMode saves the active step
+  // to this.tuneStepByMode[outgoingMode] and restores from
+  // this.tuneStepByMode[incomingMode] (when remembered). So switching
+  // WFM → AM goes back to e.g. 9 kHz instead of clamping the 100 kHz
+  // WFM step into AM's nearest valid value.
+  private tuneStepByMode: Record<number, number> = {};
   private tuneModeListeners = new Set<TuneModeListener>();
   private tuneStepListeners = new Set<TuneStepListener>();
   // Debounced SpyServer apply for rapid dial rotations.
@@ -447,6 +457,14 @@ class SpyService {
       }
       if (typeof cfg.tuneStepHz === 'number' && cfg.tuneStepHz > 0) {
         this.tuneStepHz = cfg.tuneStepHz;
+      }
+      if (cfg.tuneStepByMode && typeof cfg.tuneStepByMode === 'object') {
+        for (const [k, v] of Object.entries(cfg.tuneStepByMode)) {
+          const m = Number(k);
+          if (Number.isFinite(m) && typeof v === 'number' && v > 0) {
+            this.tuneStepByMode[m] = v;
+          }
+        }
       }
       if (isJpRegion(cfg.jpRegion)) {
         this.jpActiveRegion = cfg.jpRegion;
@@ -858,8 +876,13 @@ class SpyService {
   setTuneStepHz(hz: number): void {
     if (!(hz > 0) || this.tuneStepHz === hz) return;
     this.tuneStepHz = hz;
+    // Remember per-mode so a future setDemodMode round trip restores
+    // the value the user explicitly picked here, not just a clamped
+    // version of an unrelated other-mode step.
+    this.tuneStepByMode[this.currentDemodMode] = hz;
     for (const fn of this.tuneStepListeners) fn(hz);
     this.persistField('tuneStepHz', hz).catch(() => {});
+    this.persistField('tuneStepByMode', this.tuneStepByMode).catch(() => {});
   }
 
   getDemodMode(): number { return this.currentDemodMode; }
@@ -871,21 +894,28 @@ class SpyService {
   setDemodMode(mode: number): void {
     if (this.currentDemodMode === mode) return;
     const prevMode = this.currentDemodMode;
+    // Remember the step the user had for the outgoing mode so a future
+    // round trip restores it. Cheap and lets WFM 100 kHz / AM 9 kHz /
+    // SSB 100 Hz / etc. each stay sticky per band.
+    this.tuneStepByMode[prevMode] = this.tuneStepHz;
     this.currentDemodMode = mode;
     this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
     this.demod.reset();
     this.iqnr.setMode(mode as DemodMode, this.currentIQRate);
-    // Snap the persisted step into the new mode's candidate list so
-    // dial cycling stays inside band-appropriate values (e.g. 1 MHz step
-    // from WFM → 25 kHz when flipping to AM). No-op if the value already
-    // matches one of the new mode's entries.
+    // Restore the step we last used in this mode, if known and still
+    // valid for the mode's candidate list. Otherwise fall back to
+    // snapping the previous step into the new mode's range.
     const newStepList = tuneStepValuesForMode(mode);
-    const snapped = snapTuneStepToList(this.tuneStepHz, newStepList);
-    if (snapped !== this.tuneStepHz) {
-      this.tuneStepHz = snapped;
-      this.persistField('tuneStepHz', snapped).catch(() => {});
+    const remembered = this.tuneStepByMode[mode];
+    const next = (typeof remembered === 'number' && newStepList.includes(remembered))
+      ? remembered
+      : snapTuneStepToList(this.tuneStepHz, newStepList);
+    if (next !== this.tuneStepHz) {
+      this.tuneStepHz = next;
+      this.persistField('tuneStepHz', next).catch(() => {});
       for (const fn of this.tuneStepListeners) fn(this.tuneStepHz);
     }
+    this.persistField('tuneStepByMode', this.tuneStepByMode).catch(() => {});
     // SSB / CW need the Weaver oscillator (and BFO for CW) re-tuned whenever
     // the active mode lands on 4 / 5 / 6. applySsbOptions is a no-op for
     // other modes.

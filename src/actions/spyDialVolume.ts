@@ -109,11 +109,15 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     // Acceleration: faster spin → larger step
     const absTicks = Math.abs(ticks);
     const accel = absTicks > 5 ? 5 : absTicks > 2 ? 3 : this.step;
-    // Read cur as integer % (volume is quantized to 0.01 in spyService
-    // so this is exact). Keep next integer too so display reads 100,
-    // 102, 104 … with no 99/101 jitter around the unity mark.
+    // Snap current to the nearest multiple of accel BEFORE adding
+    // ticks. Without this, a stored odd-% value (e.g. 99 from a
+    // previous step-1 session or a persisted half-step) stays
+    // odd-only on subsequent step-2 rotations (99 → 101 → 99 → 101,
+    // never landing on 100). With the snap, the FIRST rotation
+    // aligns to the grid; subsequent rotations stay on the grid.
     const cur = Math.round(spyService.getVolume() * 100);
-    const next = Math.max(0, Math.min(150, cur + ticks * accel));
+    const snapped = Math.round(cur / accel) * accel;
+    const next = Math.max(0, Math.min(150, snapped + ticks * accel));
     spyService.setVolume(next / 100);
   }
 

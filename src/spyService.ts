@@ -620,17 +620,28 @@ class SpyService {
   private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
   setFrequency(hz: number, opts: { smooth?: boolean } = {}): void {
     this._currentFreq = hz;
-    // Two retune flavours:
-    //   smooth=false (default) — preset PUSH, band fallback, connect-time
-    //     seed: a single big freq jump. Apply a 100 ms mute and a
-    //     light-weight demod resetForRetune() to suppress the inevitable
-    //     click/thump (atan2 phase wrap, AM AGC level step).
-    //   smooth=true — VFO dial rotate: the user is actively turning the
-    //     dial, lots of small freq changes per second. Don't reset (the
-    //     filter state would never settle) and don't mute (would
-    //     overlap into sustained silence). Accept the per-step click.
+    // Three retune flavours:
+    //   smooth=false (default) — preset PUSH, band fallback, connect
+    //     seed: one big freq jump. 100 ms mute + resetForRetune() so
+    //     the atan2 phase wrap / AM AGC level step / sync PLL drag is
+    //     hidden under mute and the demod re-converges on the new
+    //     station.
+    //   smooth=true + non-AM — VFO rotate in WFM/NFM/SSB/CW: don't
+    //     reset (FIR buffers / lpr / lmr / EWMA would never settle)
+    //     and don't mute (would stack into sustained silence under
+    //     rapid dialling). Accept per-step click.
+    //   smooth=true + AM — VFO rotate in AM: brief 30 ms mute +
+    //     resetForRetune. AM has a sync PLL + DC tracker + carrier
+    //     AGC that get audibly confused trying to follow a 1 kHz step,
+    //     producing a wobble / chirp on every dial click. The 30 ms
+    //     mute covers the PLL re-lock; resetForRetune doesn't touch
+    //     anything AM-irrelevant (atan2 prevI/Q is unused in AM).
+    const isAm = this.currentDemodMode === 2;
     if (!opts.smooth) {
       this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
+      this.demod.resetForRetune();
+    } else if (isAm) {
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + 30);
       this.demod.resetForRetune();
     }
     this.pendingFreq = hz;

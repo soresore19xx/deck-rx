@@ -4,6 +4,16 @@ Stream Deck + plugin to control a remote [SpyServer](https://airspy.com/) and li
 
 The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a NanoPi), pulls down INT16 IQ samples, demodulates them in TypeScript, and pipes the resulting PCM through `ffmpeg` to a chosen macOS CoreAudio device.
 
+## Requirements
+
+| | |
+|---|---|
+| OS | **macOS** (Apple Silicon or Intel) — CoreAudio output via ffmpeg's audiotoolbox device path |
+| Host app | **Elgato Stream Deck** app v6+, with a Stream Deck **+** (the encoder + LCD model). Other Stream Deck models load the plugin but the dial / LCD actions only render usefully on the `+` |
+| Runtime tooling (MacPorts) | `sudo port install ffmpeg switchaudio-osx` — `ffmpeg` is the demod → audio bridge, `switchaudio-osx` resolves output device names. `nodejs20` (or compatible) is required when developing; the Stream Deck app ships its own bundled Node for running installed plugins. |
+| Optional (dev / dump scripts) | `sudo port install librsvg ImageMagick sox git-filter-repo` — `rsvg-convert` for SVG→PNG dumps, `montage` for composite dumps, `sox` for the audio-tap analysis flow, `git-filter-repo` only if scrubbing repo history |
+| Remote SDR | Any SpyServer-compatible receiver. Tested with **Airspy HF+ Discovery** (HF 0.5–31 MHz + VHF 60–260 MHz, 31–60 MHz hardware gap) running SpyServer on a Linux ARM/aarch64 (NanoPi etc.); see [docs/server-setup.md](docs/server-setup.md) for the server side. Airspy R2 / Mini and RTL-SDR also expected to work but are less exercised. |
+
 ## Features
 
 | Item | Status |

@@ -61,9 +61,11 @@ function formatTuneStep(hz: number): string {
 // Mode/Step row content: shows "Mode: Preset" while in preset mode, otherwise
 // "Step: 9k" while in VFO mode.
 function modeStepRow(tuneMode: TuneMode, stepHz: number): OptionsPanelRow {
-  return tuneMode === 'preset'
-    ? { label: 'Mode', value: 'Preset' }
-    : { label: 'Step', value: formatTuneStep(stepHz) };
+  // Combined Preset/Step row — short PUSH toggles edit (rotate cycles
+  // step), LONG PUSH (≥ 1 s) toggles preset ↔ vfo. Single label so the
+  // user can see both controls are bound to this row.
+  const v = tuneMode === 'preset' ? 'Preset' : formatTuneStep(stepHz);
+  return { label: 'Preset/Step', value: v };
 }
 
 function buildAmOptsRows(o: AMOptions, gain: number, maxGain: number): OptionsPanelRow[] {
@@ -101,22 +103,15 @@ function classifyMode(mode: number): 'am' | 'ssb' | 'fm' {
   return 'fm'; // 0 (WFM) / 1 (NFM) / fallback
 }
 
-// Common edit handler for the Mode/Step row (selectedIdx === MODE_STEP_IDX).
+// Rotate handler for the Preset/Step row: always cycles step with
+// wrap-around. Mode toggle is on a 1 s long-press (see onDialDown).
 function applyModeStepEdit(ticks: number): void {
-  if (spyService.getTuneMode() === 'preset') {
-    spyService.setTuneMode('vfo');
-    return;
-  }
   const list = tuneStepValuesForMode(spyService.getDemodMode());
   const ci = list.indexOf(spyService.getTuneStepHz());
   const safeI = ci < 0 ? 0 : ci;
   const dir = ticks > 0 ? 1 : -1;
-  const next = safeI + dir;
-  if (next < 0 || next >= list.length) {
-    spyService.setTuneMode('preset');
-  } else {
-    spyService.setTuneStepHz(list[next]);
-  }
+  const next = ((safeI + dir) + list.length) % list.length;
+  spyService.setTuneStepHz(list[next]);
 }
 
 @action({ UUID: 'com.hogehoge.deck-rx.dial-options-combo' })
@@ -140,6 +135,8 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
   private enabled = true;
   private connected = false;
   private currentMode = 0;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressFired = false;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     this.act = ev.action as unknown as typeof this.act;
@@ -223,9 +220,24 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
     }
   }
 
-  override onDialDown(_ev: DialDownEvent<Settings>): void {}
+  override onDialDown(_ev: DialDownEvent<Settings>): void {
+    // 1-second long-press on the Preset/Step row toggles preset ↔ vfo.
+    // Short PUSH falls through to onDialUp's existing toggle-edit
+    // behaviour. Only armed on MODE_STEP_IDX so other rows still get
+    // their normal PUSH semantics.
+    if (this.selectedIdx !== MODE_STEP_IDX) return;
+    this.longPressFired = false;
+    if (this.longPressTimer) clearTimeout(this.longPressTimer);
+    this.longPressTimer = setTimeout(() => {
+      this.longPressTimer = null;
+      this.longPressFired = true;
+      spyService.setTuneMode(spyService.getTuneMode() === 'preset' ? 'vfo' : 'preset');
+    }, 1000);
+  }
 
   override onDialUp(_ev: DialUpEvent<Settings>): void {
+    if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+    if (this.longPressFired) { this.longPressFired = false; return; }
     const idx = this.selectedIdx;
     if (idx < BAND_COUNT) {
       // Band row → immediate setDemodMode (no edit-mode roundtrip). The

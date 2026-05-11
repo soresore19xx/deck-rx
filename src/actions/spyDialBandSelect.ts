@@ -19,16 +19,22 @@ function fmtStep(hz: number): string {
   return `${hz}Hz`;
 }
 function modeStepRow(tuneMode: TuneMode, stepHz: number): OptionsPanelRow {
-  return tuneMode === 'preset' ? { label: 'Mode', value: 'Preset' } : { label: 'Step', value: fmtStep(stepHz) };
+  // Single row, two controls: short PUSH toggles edit-mode (rotate cycles
+  // step), LONG PUSH (≥ 1 s) toggles preset ↔ vfo. Label is constant
+  // 'Preset/Step' so the user knows both are accessible; value reflects
+  // the current mode + step.
+  const v = tuneMode === 'preset' ? 'Preset' : fmtStep(stepHz);
+  return { label: 'Preset/Step', value: v };
 }
 function applyModeStepEdit(ticks: number): void {
-  if (spyService.getTuneMode() === 'preset') { spyService.setTuneMode('vfo'); return; }
+  // Rotate ALWAYS cycles step within the current list with wrap-around.
+  // Mode toggle moved to long-press; rotation no longer escapes off the
+  // list edges into the wrong control.
   const list = TUNE_STEP_VALUES;
   const ci = list.indexOf(spyService.getTuneStepHz());
   const dir = ticks > 0 ? 1 : -1;
-  const next = (ci < 0 ? 0 : ci) + dir;
-  if (next < 0 || next >= list.length) spyService.setTuneMode('preset');
-  else spyService.setTuneStepHz(list[next]);
+  const next = (((ci < 0 ? 0 : ci) + dir) + list.length) % list.length;
+  spyService.setTuneStepHz(list[next]);
 }
 
 @action({ UUID: 'com.hogehoge.deck-rx.dial-band-select' })
@@ -43,6 +49,8 @@ export class SpyDialBandSelect extends SingletonAction<Settings> {
   private tuneModeListener: ((m: TuneMode) => void) | null = null;
   private tuneStepListener: ((s: number) => void) | null = null;
   private forceRenderListener: (() => void) | null = null;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressFired = false;
   private enabled = true;
   private connected = false;
   private currentMode = 0;
@@ -81,8 +89,22 @@ export class SpyDialBandSelect extends SingletonAction<Settings> {
     this.selectedIdx = ((this.selectedIdx + (ev.payload.ticks > 0 ? 1 : -1)) + total) % total;
     this.render();
   }
-  override onDialDown(_: DialDownEvent<Settings>): void {}
+  override onDialDown(_: DialDownEvent<Settings>): void {
+    // Start a 1-second long-press timer for the Mode/Step row: holding
+    // PUSH for ≥ 1 s toggles preset ↔ vfo. Short PUSH (< 1 s) falls
+    // through to the existing onDialUp toggle-edit behaviour.
+    if (this.selectedIdx !== MODE_STEP_IDX) return;
+    this.longPressFired = false;
+    if (this.longPressTimer) clearTimeout(this.longPressTimer);
+    this.longPressTimer = setTimeout(() => {
+      this.longPressTimer = null;
+      this.longPressFired = true;
+      spyService.setTuneMode(spyService.getTuneMode() === 'preset' ? 'vfo' : 'preset');
+    }, 1000);
+  }
   override onDialUp(_: DialUpEvent<Settings>): void {
+    if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+    if (this.longPressFired) { this.longPressFired = false; return; }
     const idx = this.selectedIdx;
     if (idx < BAND_COUNT) {
       spyService.setDemodMode(BAND_MODES[idx]);

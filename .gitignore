@@ -37,3 +37,6 @@ conversation-*.txt
 
 # Personal developer notes (host paths / incident logs — keep out of public repo)
 docs/dev-notes.md
+
+# Project-local AI assistant guidance (kept untracked for public repo)
+/CLAUDE.md

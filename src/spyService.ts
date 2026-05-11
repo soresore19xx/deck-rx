@@ -122,6 +122,11 @@ interface Config {
   tuneMode?: 'preset' | 'vfo';
   tuneStepHz?: number;
   jpRegion?: JpRegion;    // Active region for JP DB lookup + Update Now scrape target
+  // When true, plugin runs importFromSdrpp() once at startup to merge any
+  // new bookmarks the user added to SDR++ since the last sync. Off by
+  // default — user opts in via the PI checkbox so we don't silently mutate
+  // deck-rx's presets.json on boot.
+  autoSyncSdrpp?: boolean;
 }
 
 type SyncListener     = (s: SyncInfo) => void;
@@ -216,6 +221,7 @@ class SpyService {
   // survives restart. Listeners (Tune dial) re-render their header when this
   // changes so the new region's lookup result shows up immediately.
   private jpActiveRegion: JpRegion = 'kanto';
+  private autoSyncSdrpp = false;
   private jpRegionListeners = new Set<(r: JpRegion) => void>();
   private fmOptions: FMOptions = { ...DEFAULT_FM_OPTIONS };
   private amOptions: AMOptions = { ...DEFAULT_AM_OPTIONS };
@@ -284,7 +290,21 @@ class SpyService {
 
   get currentFreq(): number { return this._currentFreq; }
 
-  constructor() { this.hookClient(); this.startForceRenderWatcher(); }
+  /** Resolves once the initial config load has populated startup-only
+   *  fields (autoSyncSdrpp, jpActiveRegion). Plugin entry awaits this
+   *  before deciding whether to run importFromSdrpp() at startup. */
+  readonly ready: Promise<void>;
+
+  constructor() {
+    this.hookClient();
+    this.startForceRenderWatcher();
+    // Eagerly hydrate config so flags like autoSyncSdrpp are available
+    // BEFORE the first connect().
+    this.ready = this.loadConfig().then((cfg) => {
+      if (typeof cfg.autoSyncSdrpp === 'boolean') this.autoSyncSdrpp = cfg.autoSyncSdrpp;
+      if (isJpRegion(cfg.jpRegion)) this.jpActiveRegion = cfg.jpRegion;
+    }).catch(() => { /* missing / unreadable config — fine, defaults apply */ });
+  }
 
   private startForceRenderWatcher(): void {
     const FLAG = '/tmp/deck-rx-lcd-force';
@@ -421,6 +441,9 @@ class SpyService {
       }
       if (isJpRegion(cfg.jpRegion)) {
         this.jpActiveRegion = cfg.jpRegion;
+      }
+      if (typeof cfg.autoSyncSdrpp === 'boolean') {
+        this.autoSyncSdrpp = cfg.autoSyncSdrpp;
       }
       for (const fn of this.tuneModeListeners) fn(this.tuneMode);
       for (const fn of this.tuneStepListeners) fn(this.tuneStepHz);
@@ -1189,7 +1212,14 @@ class SpyService {
       tuneMode:      cfg.tuneMode === 'preset' || cfg.tuneMode === 'vfo' ? cfg.tuneMode : undefined,
       tuneStepHz:    typeof cfg.tuneStepHz === 'number' && cfg.tuneStepHz > 0 ? cfg.tuneStepHz : undefined,
       jpRegion:      isJpRegion(cfg.jpRegion) ? cfg.jpRegion : undefined,
+      autoSyncSdrpp: !!cfg.autoSyncSdrpp,
     };
+  }
+
+  isAutoSyncSdrpp(): boolean { return !!this.autoSyncSdrpp; }
+  async setAutoSyncSdrpp(b: boolean): Promise<void> {
+    this.autoSyncSdrpp = !!b;
+    await this.persistField('autoSyncSdrpp', this.autoSyncSdrpp).catch(() => {});
   }
 
   async getAudioPersistedConfig(): Promise<{

@@ -87,6 +87,7 @@
   </div>
   <div class="row"><label>SDR++</label>
     <button type="button" id="sdrImportBtn">Import bookmarks</button>
+    <label style="margin-left:8px;"><input type="checkbox" id="autoSyncSdrpp"> Auto-sync on startup</label>
     <span class="status" id="sdrImportStatus"></span>
   </div>
   <div class="row"><span class="status" id="status"></span></div>
@@ -111,6 +112,7 @@
       sendToPlugin({ action: 'getEibiStatus' });
       sendToPlugin({ action: 'getJpStationsStatus' });
       sendToPlugin({ action: 'getJpRegion' });
+      sendToPlugin({ action: 'getAutoSyncSdrpp' });
     };
     websocket.onmessage = function(evt) {
       var msg = JSON.parse(evt.data);
@@ -174,6 +176,9 @@
         if (msg.payload.region) {
           document.getElementById('jpRegionSelect').value = msg.payload.region;
         }
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'autoSyncSdrpp') {
+        document.getElementById('autoSyncSdrpp').checked = !!msg.payload.value;
       }
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'sdrImported') {
         var sbtn = document.getElementById('sdrImportBtn');
@@ -361,6 +366,9 @@
     document.getElementById('sdrImportStatus').className = 'status';
     document.getElementById('sdrImportStatus').textContent = '';
     sendToPlugin({ action: 'importSdrppPresets' });
+  });
+  document.getElementById('autoSyncSdrpp').addEventListener('change', function() {
+    sendToPlugin({ action: 'setAutoSyncSdrpp', value: !!this.checked });
   });
 </script>
 </html>

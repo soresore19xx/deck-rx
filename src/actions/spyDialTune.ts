@@ -573,6 +573,20 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         });
       }
     }
+    if (ev.payload['action'] === 'getAutoSyncSdrpp') {
+      await streamDeck.ui.sendToPropertyInspector({
+        action: 'autoSyncSdrpp',
+        value: spyService.isAutoSyncSdrpp(),
+      });
+    }
+    if (ev.payload['action'] === 'setAutoSyncSdrpp') {
+      const v = !!(ev.payload as { value?: unknown }).value;
+      await spyService.setAutoSyncSdrpp(v);
+      await streamDeck.ui.sendToPropertyInspector({
+        action: 'autoSyncSdrpp',
+        value: spyService.isAutoSyncSdrpp(),
+      });
+    }
     if (ev.payload['action'] === 'setJpRegion') {
       const r = (ev.payload as { region?: unknown }).region;
       if (isJpRegion(r)) {

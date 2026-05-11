@@ -1,5 +1,8 @@
 import fs from 'fs';
 import streamDeck from '@elgato/streamdeck';
+import { spyService } from './spyService.js';
+import { importFromSdrpp } from './presets.js';
+import { clearPresetsCache } from './actions/spyTune.js';
 import { SpyTune } from './actions/spyTune.js';
 import { SpyDialTune } from './actions/spyDialTune.js';
 import { SpyDialOptions } from './actions/spyDialOptions.js';
@@ -73,3 +76,20 @@ streamDeck.actions.registerAction(new SpyDialOptionsAuto());
 streamDeck.actions.registerAction(new SpyDialOptions2Col());
 streamDeck.actions.registerAction(new SpyDialSsbOptions());
 streamDeck.connect();
+
+// One-shot SDR++ auto-sync at startup — opt-in via PI checkbox. Waits for
+// spyService.ready so we know the autoSyncSdrpp flag has been hydrated
+// from config before deciding. Failures are logged but never block plugin
+// startup (SDR++ may not be installed, file may be locked while SDR++ is
+// running, etc.).
+(async () => {
+  try {
+    await spyService.ready;
+    if (!spyService.isAutoSyncSdrpp()) return;
+    const res = await importFromSdrpp();
+    clearPresetsCache();
+    streamDeck.logger.info(`[deck-rx] autoSyncSdrpp added=${res.added} skipped=${res.skipped} lists=${res.lists}`);
+  } catch (e) {
+    streamDeck.logger.warn(`[deck-rx] autoSyncSdrpp failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+})();

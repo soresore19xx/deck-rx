@@ -11,7 +11,6 @@ import { loadPresets, clearPresetsCache, Preset } from './spyTune.js';
 import { importFromSdrpp } from '../presets.js';
 import { lookupEibi } from '../eibi.js';
 import { lookupJpStation, lookupCallsign, formatJpStationLabel, isJpRegion, type JpRegion } from '../japanStations.js';
-import { autoDemodForFreq } from '../bandPolicy.js';
 import { bandsForDevice, snapToCoveredFreq, isFreqReceivable } from '../deviceBands.js';
 
 // Station-name auto-lookup priority:
@@ -402,19 +401,16 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       if (this.tuneTimer) clearTimeout(this.tuneTimer);
       this.tuneTimer = setTimeout(() => {
         this.tuneTimer = null;
-        // Auto-switch demod mode when VFO crosses a band boundary so the
-        // user dialing from FM (90 MHz) down into MW (594 kHz) actually
-        // hears AM, not noise. setDemodMode is a no-op when unchanged.
-        // Wrap with suppressDemodJump so demodListener does NOT fallback
-        // here — the user is actively dialing the freq, we do not want
-        // their freq yanked to a band-default just because the boundary
-        // was crossed.
-        const desired = autoDemodForFreq(next);
-        if (desired !== null) {
-          this.suppressDemodJump = true;
-          spyService.setDemodMode(desired);
-          this.suppressDemodJump = false;
-        }
+        // Do NOT auto-switch demod mode on VFO dial rotate. Earlier we
+        // called autoDemodForFreq(next) and forced the mode whenever the
+        // freq crossed a band boundary (FM → VHF-lo → HF → MW → …) so a
+        // long downward spin from 90 MHz to 594 kHz would correctly land
+        // in AM. The cost: the user could never STAY on WFM at, say, 70
+        // MHz, because rotating into that band auto-snapped to NFM and
+        // there was no way to override. VFO is the manual-control mode;
+        // the user keeps whichever Band / Mode they last selected, and
+        // chooses a different one explicitly via Combo / Band Select
+        // when they want to cross into a different demod regime.
         spyService.setFrequency(next);
       }, 200);
     }

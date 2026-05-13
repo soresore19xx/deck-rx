@@ -60,6 +60,13 @@
   <div class="row" id="icecastBitrateRow" style="display:none"><label>Bitrate</label>
     <input type="text" id="icecastBitrate" placeholder="128k" style="flex:0 0 80px" />
   </div>
+  <div class="row"><label>ffmpeg</label>
+    <select id="ffmpegBinary" style="flex:1">
+      <option value="">auto</option>
+      <option value="/opt/local/bin/ffmpeg">/opt/local/bin/ffmpeg (4.x)</option>
+      <option value="/opt/local/bin/ffmpeg7">/opt/local/bin/ffmpeg7 (7.x)</option>
+    </select>
+  </div>
   <hr style="border-color:#444;margin:8px 0"/>
   <div class="row"><label>Server</label>
     <input type="text" id="hostInput" placeholder="192.168.1.100" />
@@ -136,6 +143,7 @@
         document.getElementById('icecastUrl').value = msg.payload.icecastUrl || '';
         document.getElementById('icecastPassword').value = msg.payload.icecastPassword || '';
         document.getElementById('icecastBitrate').value = msg.payload.bitrate || '128k';
+        document.getElementById('ffmpegBinary').value = msg.payload.ffmpegBinary || '';
         updateOutputVisibility(mode);
       }
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'serverConfig') {
@@ -255,6 +263,7 @@
     var icecastUrl = document.getElementById('icecastUrl').value.trim();
     var icecastPassword = document.getElementById('icecastPassword').value;
     var bitrate = document.getElementById('icecastBitrate').value.trim() || '128k';
+    var ffmpegBinary = document.getElementById('ffmpegBinary').value;
     sendToPlugin({
       action: 'setAudioConfig',
       audioEnabled: enabled,
@@ -263,6 +272,7 @@
       icecastUrl: icecastUrl,
       icecastPassword: icecastPassword,
       bitrate: bitrate,
+      ffmpegBinary: ffmpegBinary,
     });
   }
   // Debounce text-input changes (URL / bitrate) so we don't tear down audio
@@ -282,6 +292,7 @@
   document.getElementById('icecastUrl').addEventListener('input', scheduleSaveAudio);
   document.getElementById('icecastPassword').addEventListener('input', scheduleSaveAudio);
   document.getElementById('icecastBitrate').addEventListener('input', scheduleSaveAudio);
+  document.getElementById('ffmpegBinary').addEventListener('change', saveAudioConfig);
 
   // Host/Port: debounce while user is typing so we don't tear down + reconnect
   // on every keystroke. Apply 800 ms after the last edit.

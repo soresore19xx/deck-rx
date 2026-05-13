@@ -461,6 +461,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         icecastUrl:      audioCfg.icecastUrl,
         icecastPassword: audioCfg.icecastPassword,
         bitrate:         audioCfg.bitrate,
+        ffmpegBinary:    audioCfg.ffmpegBinary,
       });
     }
     if (ev.payload['action'] === 'setAudioConfig') {
@@ -471,6 +472,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         icecastUrl?: string;
         icecastPassword?: string;
         bitrate?: string;
+        ffmpegBinary?: string;
       };
       const ffmpeg: Record<string, unknown> = {};
       if (p.deviceName !== undefined)      ffmpeg.deviceName = p.deviceName;
@@ -478,6 +480,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       if (p.icecastUrl !== undefined)      ffmpeg.icecastUrl = p.icecastUrl;
       if (p.icecastPassword !== undefined) ffmpeg.icecastPassword = p.icecastPassword;
       if (p.bitrate !== undefined)         ffmpeg.bitrate = p.bitrate;
+      if (p.ffmpegBinary !== undefined)    ffmpeg.binary = p.ffmpegBinary || undefined;
       await spyService.updateAudioConfig({
         audioEnabled: p.audioEnabled,
         ffmpeg: Object.keys(ffmpeg).length > 0 ? ffmpeg : undefined,

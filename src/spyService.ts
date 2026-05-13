@@ -113,6 +113,11 @@ interface Config {
     icecastUrl?: string;
     icecastPassword?: string;
     bitrate?: string;
+    // Absolute path to the ffmpeg binary, e.g. "/opt/local/bin/ffmpeg7".
+    // Overrides the AudioOutput.ts auto-detect when set. Persists across
+    // logins (env var DECK_RX_FFMPEG_PATH was the previous mechanism;
+    // this is its config-level equivalent).
+    binary?: string;
   };
   fm?: Partial<FMOptions>;
   am?: Partial<AMOptions>;
@@ -1039,6 +1044,7 @@ class SpyService {
         icecastUrl:      cfg.ffmpeg?.icecastUrl,
         icecastPassword: cfg.ffmpeg?.icecastPassword,
         bitrate:         cfg.ffmpeg?.bitrate,
+        binary:          cfg.ffmpeg?.binary,
       });
       ffOut.setStateChangeHandler((broken, info) => {
         if (this.audioOutputBroken === broken) return;
@@ -1377,6 +1383,7 @@ class SpyService {
     icecastUrl: string;
     icecastPassword: string;
     bitrate: string;
+    ffmpegBinary: string;
   }> {
     const cfg = await this.loadConfig();
     // Split any embedded password out of icecastUrl so the PI can hand the
@@ -1395,6 +1402,7 @@ class SpyService {
       icecastUrl:      urlClean,
       icecastPassword: pwd,
       bitrate:         cfg.ffmpeg?.bitrate ?? '128k',
+      ffmpegBinary:    cfg.ffmpeg?.binary ?? '',
     };
   }
 

@@ -2,11 +2,20 @@ import { spawn, ChildProcess } from 'child_process';
 import streamDeck from '@elgato/streamdeck';
 import { getFfmpegDeviceIndexMap } from './audioDevices.js';
 
-// Resolve ffmpeg absolute path (Stream Deck plugin runs with limited PATH)
+// Resolve ffmpeg absolute path (Stream Deck plugin runs with limited PATH).
+// Overridable via DECK_RX_FFMPEG_PATH so the user can try ffmpeg7
+// (`DECK_RX_FFMPEG_PATH=/opt/local/bin/ffmpeg7`) without recompiling, in
+// case the 4.x audiotoolbox sink turns out to be the root cause of the
+// long-uptime "ffmpeg keeps writing but audio is silent" symptom.
 const FFMPEG = (() => {
-  const candidates = ['/opt/local/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg'];
+  const override = process.env.DECK_RX_FFMPEG_PATH;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('fs');
+  if (override) {
+    try { fs.accessSync(override); return override; }
+    catch { streamDeck.logger.warn(`[FfmpegOutput] DECK_RX_FFMPEG_PATH="${override}" not accessible, falling through to defaults`); }
+  }
+  const candidates = ['/opt/local/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg'];
   for (const p of candidates) { try { fs.accessSync(p); return p; } catch {} }
   return 'ffmpeg';
 })();
@@ -28,6 +37,7 @@ export interface FfmpegConfig {
   icecastUrl?: string;     // icecast://user@host:port/mount  (no password; combined at spawn)
   icecastPassword?: string;// kept separate so the PI can mask it (type="password")
   bitrate?: string;        // e.g. "128k"
+  binary?: string;         // absolute path to ffmpeg binary; overrides auto-detect (e.g. "/opt/local/bin/ffmpeg7")
 }
 
 /** Build the final icecast URL passed to ffmpeg by injecting `password` into
@@ -128,8 +138,18 @@ export class FfmpegOutput implements AudioOutput {
         url,
       );
     }
-    streamDeck.logger.info(`[FfmpegOutput] spawn ${FFMPEG} ${args.join(' ')}`);
-    this.proc = spawn(FFMPEG, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    // Per-instance binary override: PI / config can set a specific ffmpeg
+    // build (e.g. /opt/local/bin/ffmpeg7) without touching the env var.
+    // Falls back to auto-detected FFMPEG (which already honours
+    // DECK_RX_FFMPEG_PATH if set).
+    const fs = require('fs');           // eslint-disable-line @typescript-eslint/no-require-imports
+    let ffmpegBin = FFMPEG;
+    if (this.cfg.binary) {
+      try { fs.accessSync(this.cfg.binary); ffmpegBin = this.cfg.binary; }
+      catch { streamDeck.logger.warn(`[FfmpegOutput] cfg.binary="${this.cfg.binary}" not accessible, using ${FFMPEG}`); }
+    }
+    streamDeck.logger.info(`[FfmpegOutput] spawn ${ffmpegBin} ${args.join(' ')}`);
+    this.proc = spawn(ffmpegBin, args, { stdio: ['pipe', 'ignore', 'pipe'] });
     this.spawnAt = Date.now();
     let lastStderr = '';
     this.proc.stderr?.on('data', (d: Buffer) => {

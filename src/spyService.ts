@@ -216,6 +216,13 @@ class SpyService {
   // the flag so it's edge-triggered.
   private forceRenderListeners = new Set<() => void>();
   private forceRenderTimer: ReturnType<typeof setInterval> | null = null;
+  // IQ stream subscribers — the FFT Display dial taps the raw IQ packet
+  // here instead of re-implementing the SpyClient handshake. Buffer is the
+  // raw int16 IQ packet body; subscribers MUST process it synchronously
+  // (or copy) since the buffer is reused by the SpyClient for the next
+  // packet. iqRate / freq are the current SpyServer baseband rate and the
+  // VFO center frequency at the time of the packet.
+  private iqStreamListeners = new Set<(iq: Buffer, iqRate: number, freq: number) => void>();
   // Master ON/OFF: when false, connect()/scheduleReconnect() are no-ops and
   // any active connection is torn down. Default true (existing users keep
   // current behavior); persisted to config so toggle survives restarts.
@@ -343,6 +350,16 @@ class SpyService {
 
   subscribeForceRender(fn: () => void): void { this.forceRenderListeners.add(fn); }
   unsubscribeForceRender(fn: () => void): void { this.forceRenderListeners.delete(fn); }
+
+  /** Subscribe to the raw IQ packet stream. Used by the FFT Display dial.
+   *  Buffer is reused by SpyClient between packets — subscribers must
+   *  process synchronously or copy what they need before returning. */
+  subscribeIqStream(fn: (iq: Buffer, iqRate: number, freq: number) => void): void {
+    this.iqStreamListeners.add(fn);
+  }
+  unsubscribeIqStream(fn: (iq: Buffer, iqRate: number, freq: number) => void): void {
+    this.iqStreamListeners.delete(fn);
+  }
 
   private hookClient(): void {
     this.client.on('deviceInfo', (info: DeviceInfo) => {
@@ -1099,6 +1116,15 @@ class SpyService {
         const snrDbRaw = 10 * Math.log10(snrLin);
         const snrDb = Math.max(-10, Math.min(60, snrDbRaw));
         this.snrSmoothed = 0.9 * this.snrSmoothed + 0.1 * snrDb;
+      }
+      // Fan out the raw IQ packet to stream subscribers (FFT Display dial).
+      // Must run BEFORE the audioOutput early return so subscribers still
+      // see packets when the audio path is being rebuilt mid-stream.
+      if (this.iqStreamListeners.size > 0 && p.format === 'int16') {
+        for (const fn of this.iqStreamListeners) {
+          try { fn(p.body, this.currentIQRate, this._currentFreq); }
+          catch (e) { streamDeck.logger.warn(`[spyService] iqStream listener threw: ${e}`); }
+        }
       }
       if (!this.audioOutput) return;
       const dec = this.currentAudioDecimate;

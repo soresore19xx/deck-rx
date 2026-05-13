@@ -127,6 +127,19 @@
         "layout": "layouts/dial-volume.json",
         "TriggerDescription": { "Rotate": "Adjust volume", "Push": "Toggle mute", "LongTouch": "" }
       }
+    },
+    {
+      "UUID": "com.hogehoge.deck-rx.dial-fft",
+      "Name": "Deck RX FFT Display",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "Real-time SDR++-style FFT spectrum centered on the current VFO",
+      "PropertyInspectorPath": "ui/dial-fft/inspector.html",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "FFT" }],
+      "Encoder": {
+        "layout": "layouts/dial-fft.json",
+        "TriggerDescription": { "Rotate": "Zoom (active axis)", "Push": "Reset zoom / Long-press: H↔V", "LongTouch": "" }
+      }
     }
   ],
   "OS": [{ "Platform": "mac", "MinimumVersion": "10.15" }],

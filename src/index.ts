@@ -13,6 +13,7 @@ import { SpyDialBandSelect } from './actions/spyDialBandSelect.js';
 import { SpyDialOptionsAuto } from './actions/spyDialOptionsAuto.js';
 import { SpyDialOptions2Col } from './actions/spyDialOptions2Col.js';
 import { SpyDialSsbOptions } from './actions/spyDialSsbOptions.js';
+import { SpyDialFft } from './actions/spyDialFft.js';
 
 // PID_FILE defaults to /tmp/deck-rx.pid for the production plugin instance.
 // Overridable via DECK_RX_PID_FILE so the integration-test harness can spawn
@@ -75,6 +76,7 @@ streamDeck.actions.registerAction(new SpyDialBandSelect());
 streamDeck.actions.registerAction(new SpyDialOptionsAuto());
 streamDeck.actions.registerAction(new SpyDialOptions2Col());
 streamDeck.actions.registerAction(new SpyDialSsbOptions());
+streamDeck.actions.registerAction(new SpyDialFft());
 streamDeck.connect();
 
 // One-shot SDR++ auto-sync at startup — opt-in via PI checkbox. Waits for

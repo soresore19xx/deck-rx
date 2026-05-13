@@ -104,12 +104,18 @@ export class FfmpegOutput implements AudioOutput {
     const args = [
       '-hide_banner', '-loglevel', 'error',
       '-fflags', 'nobuffer', '-flags', 'low_delay',
+      '-flush_packets', '1',
       '-f', 's16le', '-ar', String(sampleRate), '-ac', String(channels),
       '-i', 'pipe:0',
-      // Async resampling tolerates input rate drift up to 1 second of samples
-      // before injecting silence/dropping samples. Avoids silent stalls when
-      // SpyServer's IQ rate slightly differs from nominal.
-      '-af', `aresample=${OUT_RATE}:async=${OUT_RATE}:first_pts=0`,
+      // Synchronous resample, no `async` mode. The Airspy crystal and the
+      // CoreAudio output device crystal drift by a few hundred ppm in
+      // practice. ffmpeg's `async` resampler "absorbs" that drift by
+      // queueing samples — over 10+ minutes of operation, the queue
+      // grows to multiple seconds, showing up as a "preset switch lag
+      // grows the longer the plugin runs" symptom. Dropping async makes
+      // ffmpeg drop/duplicate samples instead of queueing (occasional
+      // imperceptible micro-click instead of growing latency).
+      '-af', `aresample=${OUT_RATE}`,
     ];
     if (this.cfg.mode === 'local') {
       // macOS AudioToolbox: resolve device NAME to current ffmpeg index every

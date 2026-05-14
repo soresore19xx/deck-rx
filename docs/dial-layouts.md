@@ -83,6 +83,10 @@ PI parameters: FFT frame rate (1–120 fps, default 16), smoothing factor (1–6
 
 Pixel → bin map switches automatically between max-hold (when ≥ 1 bin/pixel, preserves peaks) and linear interpolation (when < 1 bin/pixel at high zoom, smooths the comb pattern that naive nearest-neighbour mapping would otherwise produce).
 
+![FFT Display dial](lcd-fft.png)
+
+Live capture above: NHK第二 (954 kHz) with H mode at 2.5× zoom (±91.2 kHz span) and V at 0.8× of the PI-configured dB range. The strong carrier peak sits exactly on the red VFO crosshair; weaker adjacent-station sidelobes spread to either side. Same dial in V mode would show the orange `[V]` badge instead.
+
 ---
 
 See [architecture.md](architecture.md) for layout details, focus highlight colours, and signal-path notes.

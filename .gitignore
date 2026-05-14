@@ -40,3 +40,6 @@ docs/dev-notes.md
 
 # Project-local AI assistant guidance (kept untracked for public repo)
 /CLAUDE.md
+
+# Naudiodon / native-binding segfault dumps (segfault-handler writes here)
+/crash.log

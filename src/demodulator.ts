@@ -15,6 +15,22 @@ const AM_AGC_MAX_OUTPUT = 160000;
 // 57 kHz audio rate, plenty to catch any imminent peak that matters.
 const AM_AGC_LOOK_AHEAD_SAMPLES = 256;
 
+// CW AGC. The audio output of processCW is a tone at the BFO pitch whose
+// envelope tracks the RF signal amplitude. Without AGC, weak CW signals
+// sit barely above the noise floor and the user has to crank Vol >100 %
+// to hear them; with AGC, the BFO tone is normalised to a comfortable
+// level regardless of signal strength.
+//
+// SET_POINT is chosen well below int16 saturation so a clipped peak
+// (large gain × strong tone) reduces to a faint harmonic, not a click.
+// MAX_GAIN bounds how loud quiet bands get — without a ceiling, an empty
+// CW channel would amplify the noise floor to full-scale screaming.
+// ATTACK is fast (~30 ms) so a new station snaps to level; DECAY is
+// slow (~500 ms) so the gain doesn't pump up during the natural key-up
+// gaps in CW telegraphy.
+const CW_AGC_SET_POINT = 12000;
+const CW_AGC_MAX_GAIN  = 5000;
+
 export class Demodulator {
   private prevI = 0;
   private prevQ = 0;
@@ -98,8 +114,17 @@ export class Demodulator {
   // pull-in so the loud carrier-baseband beat doesn't blast the speaker.
   private amSyncCos = 0;
   // Stereo decode filters (run at IQ rate)
-  private lprLpf = new Biquad();    // L+R lowpass 15 kHz
-  private lmrLpf = new Biquad();    // L-R lowpass 15 kHz
+  // L+R / L−R audio LPFs — 8th-order Butterworth (4 cascaded biquads) at
+  // 15 kHz. Single-biquad 2nd-order wasn't tight enough: at 15 kHz cutoff,
+  // a 2nd-order LPF only attenuates the 19 kHz pilot by ~2 dB and the
+  // 23-53 kHz (L-R) DSB-SC subcarrier residue by ~5-9 dB. With ffmpeg ↓
+  // audiotoolbox the resampler's own 24 kHz LPF cleaned that up; the
+  // naudiodon path streams the raw 114 kHz audio to CoreAudio HAL, so
+  // any high-frequency residue plays back as audible 19+ kHz whine /
+  // subcarrier ghost ("distortion"). 8th-order gets the pilot to
+  // ≈ −48 dB and the subcarrier to ≈ −100 dB, well below audibility.
+  private lprLpf: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
+  private lmrLpf: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
   private pilotBpf = new Biquad();  // 19 kHz pilot bandpass (PLL pre-filter)
   private stereoConfigured = false;
   // PLL state (Costas-style, locks to 19 kHz pilot, generates 38 kHz reference)
@@ -228,7 +253,8 @@ export class Demodulator {
     for (const b of this.amIfLpfI) b.reset();
     for (const b of this.amIfLpfQ) b.reset();
     this.wfmIfLpf.reset();
-    this.lprLpf.reset(); this.lmrLpf.reset();
+    for (const b of this.lprLpf) b.reset();
+    for (const b of this.lmrLpf) b.reset();
     this.pilotBpf.reset();
     this.pilotPower = 0;
     this.pllPhase = 0;
@@ -242,6 +268,19 @@ export class Demodulator {
     for (const b of this.ssbLpfI) b.reset();
     for (const b of this.ssbLpfQ) b.reset();
     this.cwPhase = 0;
+    for (const b of this.cwLpf) b.reset();
+    this.cwAgcAmp = 0;
+  }
+
+  /** Configure CW AGC. Attack/decay are per-sample IIR factors at audioRate
+   *  (typically 114 kHz). Conversion from SDR++-style "rate Hz" is α = rate/fs.
+   *  enabled=false disables AGC entirely; the fixed gain in processCW is used
+   *  instead. */
+  setCwAgc(enabled: boolean, attack?: number, decay?: number): void {
+    this.cwAgcEnabled = enabled;
+    if (typeof attack === 'number') this.cwAgcAttack = Math.max(0, Math.min(1, attack));
+    if (typeof decay  === 'number') this.cwAgcDecay  = Math.max(0, Math.min(1, decay));
+    if (!enabled) this.cwAgcAmp = 0;
   }
 
   /** Configure the SSB Weaver oscillator + LPF. Idempotent — re-applies
@@ -272,17 +311,47 @@ export class Demodulator {
   private cwPhaseInc = 0;
   private cwConfiguredIqRate = 0;
   private cwConfiguredBfo = 0;
+  // Audio LPF for CW: 4th-order Butterworth (2 cascaded biquads) running
+  // at iqRate BEFORE decimation. Doubles as anti-alias for the upcoming
+  // decimation (cutoff at audioBwHz gives -113 dB by 57 kHz decimation
+  // Nyquist) and as the final audio band limit. Without this the BFO
+  // mixer's broadband output aliases HF noise onto the CW tone when
+  // a non-anti-aliasing output stage (CoreAudio HAL at 114 kHz via
+  // naudiodon) downsamples to the device rate.
+  private cwLpf: Biquad[] = Array.from({ length: 2 }, () => new Biquad());
+  private cwConfiguredAudioRate = 0;
+  private cwConfiguredAudioBw = 0;
+  // CW AGC state — see CW_AGC_* constants above. Enabled by default.
+  // amp = EWMA tracker of |filt| (peak follower for the BFO tone envelope).
+  // Reset via reset() / resetForRetune() so a new station starts from a
+  // fresh tracker (otherwise the previous station's amplitude history bias
+  // the gain for the first few seconds).
+  private cwAgcEnabled = true;
+  private cwAgcAmp = 0;
+  private cwAgcAttack = 30 / 114000;  // SDR++-style rate / fs at audioRate 114 kHz
+  private cwAgcDecay  = 2  / 114000;
 
   /** Configure for CW reception. f_bfo (default 700 Hz) is the audible
    *  pitch the unmodulated carrier will be shifted to. Pre-tune the
    *  receiver so the CW signal sits exactly on the suppressed-carrier
    *  reference (= IQ DC); the BFO mix lifts it into the audio band. */
-  setupCw(iqRate: number, _audioRate: number, bfoHz = 700): void {
-    if (this.cwConfiguredIqRate === iqRate && this.cwConfiguredBfo === bfoHz) return;
-    this.cwPhaseInc = 2 * Math.PI * bfoHz / iqRate;
-    this.cwConfiguredIqRate = iqRate;
-    this.cwConfiguredBfo = bfoHz;
-    void _audioRate; // reserved for a future narrow audio bandpass
+  setupCw(iqRate: number, audioRate: number, bfoHz = 700, audioBwHz = 2400): void {
+    if (this.cwConfiguredIqRate !== iqRate || this.cwConfiguredBfo !== bfoHz) {
+      this.cwPhaseInc = 2 * Math.PI * bfoHz / iqRate;
+      this.cwConfiguredIqRate = iqRate;
+      this.cwConfiguredBfo = bfoHz;
+    }
+    if (this.cwConfiguredAudioRate !== iqRate || this.cwConfiguredAudioBw !== audioBwHz) {
+      // 4th-order Butterworth at iqRate, cutoff = audioBwHz. Provides
+      // both anti-alias (for the upcoming decimation by audioDecimate)
+      // and audio band-limit in a single cascade.
+      const Q4 = [0.5411961001, 1.3065629649];
+      for (let k = 0; k < 2; k++) {
+        this.cwLpf[k].setLowPass(iqRate, audioBwHz, Q4[k]);
+      }
+      this.cwConfiguredAudioRate = iqRate;
+      this.cwConfiguredAudioBw = audioBwHz;
+    }
   }
 
   /** CW demodulator: rotate the complex IQ stream by +f_bfo so the
@@ -292,10 +361,20 @@ export class Demodulator {
   // for typical 国内 amateur signals lands well below AM envelope levels.
   // Same 4x boost (12000 → 48000) as processSSB above for matching
   // output loudness.
-  processCW(iq: Buffer, decimate: number, gain = 48000): Int16Array {
+  // When AGC is enabled (default), the `gain` parameter is ignored — the
+  // AGC normalises the BFO tone envelope to CW_AGC_SET_POINT regardless
+  // of signal strength. When AGC is off, `gain` is applied directly
+  // (legacy fixed-gain path); the 96000 default matches what the loud-
+  // ness-compensated fixed-gain mode was using.
+  processCW(iq: Buffer, decimate: number, gain = 96000): Int16Array {
     const inSamples = iq.length >> 2;
     const outSamples = Math.floor(inSamples / decimate);
     const out = new Int16Array(outSamples * 2);
+    const agcOn = this.cwAgcEnabled;
+    const atk = this.cwAgcAttack;
+    const dec = this.cwAgcDecay;
+    const invAtk = 1 - atk;
+    const invDec = 1 - dec;
     let oi = 0;
     for (let i = 0; i < inSamples; i++) {
       const I = iq.readInt16LE(i * 4);
@@ -307,8 +386,31 @@ export class Demodulator {
       const audio = I * c - Q * s;
       this.cwPhase += this.cwPhaseInc;
       if (this.cwPhase > 2 * Math.PI) this.cwPhase -= 2 * Math.PI;
+      // LPF cascade at iqRate — runs on EVERY input sample (not just the
+      // emitted ones). This both anti-aliases the upcoming decimation and
+      // limits the audio band.
+      const filt = this.cwLpf[1].step(this.cwLpf[0].step(audio));
       if (i % decimate !== 0 || oi >= outSamples) continue;
-      const v = (audio * gain) / 16000;
+      let v: number;
+      if (agcOn) {
+        // Peak-follower on |filt|: rising amplitude tracked with attack α,
+        // falling with decay α. Decay deliberately slow so the gain stays
+        // up during key-up gaps in CW telegraphy instead of pumping up
+        // every dot/dash pause.
+        const absFilt = filt < 0 ? -filt : filt;
+        if (absFilt > this.cwAgcAmp) {
+          this.cwAgcAmp = this.cwAgcAmp * invAtk + absFilt * atk;
+        } else {
+          this.cwAgcAmp = this.cwAgcAmp * invDec + absFilt * dec;
+        }
+        const agcGain = Math.min(
+          CW_AGC_SET_POINT / Math.max(this.cwAgcAmp, 1e-3),
+          CW_AGC_MAX_GAIN,
+        );
+        v = filt * agcGain;
+      } else {
+        v = (filt * gain) / 16000;
+      }
       const sample = v >= 32767 ? 32767 : v <= -32767 ? -32767 : (v | 0);
       out[oi * 2] = sample;
       out[oi * 2 + 1] = sample;
@@ -470,8 +572,13 @@ export class Demodulator {
 
   /** Configure stereo decode filters and PLL for given IQ rate. */
   setStereo(iqRate: number): void {
-    this.lprLpf.setLowPass(iqRate, 15000);
-    this.lmrLpf.setLowPass(iqRate, 15000);
+    // 8th-order Butterworth Q values, k=1..4 of cascade:
+    // Q_k = 1 / (2·sin((2k−1)·π/16)) = 0.5098, 0.6013, 0.9000, 2.5629
+    const Q8 = [0.5097955791, 0.6012682811, 0.8999762110, 2.5629154802];
+    for (let k = 0; k < 4; k++) {
+      this.lprLpf[k].setLowPass(iqRate, 15000, Q8[k]);
+      this.lmrLpf[k].setLowPass(iqRate, 15000, Q8[k]);
+    }
     this.pilotBpf.setBandPass(iqRate, 19000, 30);
     // PLL coefficients: standard 2nd-order PLL with damping = 1/√2,
     // loop bandwidth ~50 Hz (FM stereo industry typical 30-100 Hz).
@@ -602,7 +709,9 @@ export class Demodulator {
       // before decimation. Falls through to the raw discriminator signal
       // when stereo isn't configured (e.g., before startAudio has set
       // iqRate).
-      const lpr = this.stereoConfigured ? this.lprLpf.step(r) : r;
+      const lpr = this.stereoConfigured
+        ? this.lprLpf[3].step(this.lprLpf[2].step(this.lprLpf[1].step(this.lprLpf[0].step(r))))
+        : r;
       if (i % decimate === 0 && oi < outSamples) {
         this.deempY = a * lpr + (1 - a) * this.deempY;
         let v = this.deempY;
@@ -649,7 +758,7 @@ export class Demodulator {
       this.prevQ = Q;
 
       // L+R baseband from FM-demodulated signal
-      const lpr = this.lprLpf.step(demod);
+      const lpr = this.lprLpf[3].step(this.lprLpf[2].step(this.lprLpf[1].step(this.lprLpf[0].step(demod))));
       // Pilot extraction (narrow BPF for clean 19 kHz tone)
       const pilot = this.pilotBpf.step(demod);
       // ── PLL ── lock VCO phase to pilot ──────────────────────────────
@@ -698,7 +807,8 @@ export class Demodulator {
       const ref38 = Math.cos(2 * this.pllPhase);
       // Recover L−R baseband: mix demod with 38 kHz reference (×2 to compensate for
       // the cos·cos averaging factor of 1/2), then LPF
-      const lmr = this.lmrLpf.step(demod * ref38 * 2);
+      const lmrIn = demod * ref38 * 2;
+      const lmr = this.lmrLpf[3].step(this.lmrLpf[2].step(this.lmrLpf[1].step(this.lmrLpf[0].step(lmrIn))));
 
       if (i % decimate === 0 && oi < outSamples) {
         // Hysteresis: typical stereo broadcasts give pilotPower ~0.001-0.05

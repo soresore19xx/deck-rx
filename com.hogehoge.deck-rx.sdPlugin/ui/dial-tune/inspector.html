@@ -48,6 +48,12 @@
       <option value="icecast">Icecast Stream</option>
     </select>
   </div>
+  <div class="row" id="engineRow"><label>Engine</label>
+    <select id="audioEngine">
+      <option value="ffmpeg">ffmpeg → audiotoolbox</option>
+      <option value="naudiodon">naudiodon (PortAudio)</option>
+    </select>
+  </div>
   <div class="row" id="deviceRow"><label>Device</label>
     <select id="deviceSelect"><option value="-1">-- Loading... --</option></select>
   </div>
@@ -144,6 +150,7 @@
         document.getElementById('icecastPassword').value = msg.payload.icecastPassword || '';
         document.getElementById('icecastBitrate').value = msg.payload.bitrate || '128k';
         document.getElementById('ffmpegBinary').value = msg.payload.ffmpegBinary || '';
+        document.getElementById('audioEngine').value = msg.payload.audioEngine || 'ffmpeg';
         updateOutputVisibility(mode);
       }
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'serverConfig') {
@@ -264,6 +271,7 @@
     var icecastPassword = document.getElementById('icecastPassword').value;
     var bitrate = document.getElementById('icecastBitrate').value.trim() || '128k';
     var ffmpegBinary = document.getElementById('ffmpegBinary').value;
+    var audioEngine = document.getElementById('audioEngine').value;
     sendToPlugin({
       action: 'setAudioConfig',
       audioEnabled: enabled,
@@ -273,6 +281,7 @@
       icecastPassword: icecastPassword,
       bitrate: bitrate,
       ffmpegBinary: ffmpegBinary,
+      audioEngine: audioEngine,
     });
   }
   // Debounce text-input changes (URL / bitrate) so we don't tear down audio
@@ -293,6 +302,7 @@
   document.getElementById('icecastPassword').addEventListener('input', scheduleSaveAudio);
   document.getElementById('icecastBitrate').addEventListener('input', scheduleSaveAudio);
   document.getElementById('ffmpegBinary').addEventListener('change', saveAudioConfig);
+  document.getElementById('audioEngine').addEventListener('change', saveAudioConfig);
 
   // Host/Port: debounce while user is typing so we don't tear down + reconnect
   // on every keystroke. Apply 800 ms after the last edit.

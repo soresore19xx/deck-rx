@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import streamDeck from '@elgato/streamdeck';
 import { getFfmpegDeviceIndexMap } from './audioDevices.js';
+import { Biquad } from './dspFilters.js';
 
 // Resolve ffmpeg absolute path (Stream Deck plugin runs with limited PATH).
 // Overridable via DECK_RX_FFMPEG_PATH so the user can try ffmpeg7
@@ -239,38 +240,130 @@ export class FfmpegOutput implements AudioOutput {
 }
 
 // ──── naudiodon (lazy require — avoids ABI crash at startup) ─────────────────
+//
+// naudiodon is a PortAudio binding. Native bindings must be rebuilt for the
+// Stream Deck app's bundled Node (currently 20.20.0). See scripts/postinstall.sh
+// for the rebuild + libportaudio.dylib (arm64) replacement.
+//
+// Why naudiodon over the ffmpeg → audiotoolbox sink: ffmpeg's audiotoolbox
+// output wedges after ~5 h of continuous playback (the sink stops draining
+// internally; ffmpeg keeps accepting writes but no audio reaches the device).
+// Switching to naudiodon (PortAudio → CoreAudio directly, no intermediate
+// process) is the structural fix.
 
 export interface NaudiodonConfig {
-  deviceId?: number;  // -1 = default
+  deviceId?: number;     // -1 = default; negative or undefined → use deviceName
+  deviceName?: string;   // CoreAudio device name (with or without trailing space).
+                         // Resolved to id at start time via naudiodon.getDevices().
 }
 
 export class NaudiodonOutput implements AudioOutput {
-  private ai: any = null;
+  private ai: unknown = null;
+  // Output-stage anti-alias safety net. 8th-order Butterworth (4 cascaded
+  // biquads) per channel at 22 kHz cutoff. Equivalent to what ffmpeg's
+  // `aresample=48000` did implicitly via its built-in anti-alias FIR; we
+  // lose that when we bypass ffmpeg and feed CoreAudio HAL directly, so
+  // any demod that leaves > 22 kHz residue (FM stereo pilot @ 19 kHz,
+  // L−R DSB-SC subcarrier @ 23-53 kHz, CW pre-LPF noise, etc.) plays
+  // back as audible whine or distortion at the DAC. With this safety net
+  // in place each demod still does its own band-shaping for mode-
+  // specific clarity, but a future demod that forgets won't tank the
+  // listening experience.
+  private lpfL: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
+  private lpfR: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
+  private lpfConfiguredAt = 0;
 
   constructor(private cfg: NaudiodonConfig = {}) {}
 
+  private configureLpfIfNeeded(sampleRate: number): void {
+    if (this.lpfConfiguredAt === sampleRate) return;
+    // 8th-order Butterworth Q values for the 4-stage cascade
+    const Q8 = [0.5097955791, 0.6012682811, 0.8999762110, 2.5629154802];
+    // Cutoff 22 kHz: above the full WFM stereo audio band (15 kHz) with
+    // margin, below the 24 kHz that would clip any 23 kHz residual L-R
+    // subcarrier component.
+    const cutoff = Math.min(22000, sampleRate * 0.45);
+    for (let k = 0; k < 4; k++) {
+      this.lpfL[k].setLowPass(sampleRate, cutoff, Q8[k]);
+      this.lpfR[k].setLowPass(sampleRate, cutoff, Q8[k]);
+    }
+    this.lpfConfiguredAt = sampleRate;
+  }
+
+  /** Resolve a deviceName (loose match, trims trailing whitespace which the
+   *  CoreAudio device names sometimes carry) to a PortAudio device id, or
+   *  return -1 (= system default) if not found. */
+  private resolveDeviceId(naudiodon: { getDevices: () => Array<{ id: number; name: string; maxOutputChannels: number }> }): number {
+    if (typeof this.cfg.deviceId === 'number' && this.cfg.deviceId >= 0) return this.cfg.deviceId;
+    if (!this.cfg.deviceName || this.cfg.deviceName === 'default') return -1;
+    const wanted = this.cfg.deviceName.trim();
+    const match = naudiodon.getDevices().find((d) =>
+      d.maxOutputChannels > 0 && d.name.trim() === wanted,
+    );
+    if (!match) {
+      streamDeck.logger.warn(`[NaudiodonOutput] device "${wanted}" not found, falling back to default`);
+      return -1;
+    }
+    return match.id;
+  }
+
   async start(sampleRate: number, channels: number): Promise<void> {
+    // Lazy require — keeps a missing or ABI-mismatched .node binding from
+    // crashing the plugin process at module load. Errors here surface as a
+    // throw the caller can catch (spyService logs + leaves audio disabled).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const naudiodon = require('naudiodon');
+    const naudiodon = require('naudiodon') as {
+      AudioIO: new (opts: unknown) => { start: () => void; write: (b: Buffer) => void; quit: () => void };
+      SampleFormat16Bit: number;
+      getDevices: () => Array<{ id: number; name: string; maxOutputChannels: number }>;
+    };
+    const deviceId = this.resolveDeviceId(naudiodon);
+    this.configureLpfIfNeeded(sampleRate);
+    for (const b of this.lpfL) b.reset();
+    for (const b of this.lpfR) b.reset();
+    streamDeck.logger.info(`[NaudiodonOutput] start sampleRate=${sampleRate} channels=${channels} deviceId=${deviceId} (cfg deviceName=${this.cfg.deviceName ?? '-'})`);
     this.ai = new naudiodon.AudioIO({
       outOptions: {
         channelCount: channels,
         sampleFormat: naudiodon.SampleFormat16Bit,
         sampleRate,
-        deviceId: this.cfg.deviceId ?? -1,
+        deviceId,
         closeOnError: false,
+        // maxQueue default = 2 buffers (~72 ms cushion at 4096 sample
+        // packets / 114 kHz). Too thin for a stable SpyServer-vs-DX7s
+        // clock-drift absorption — underruns produce intermittent
+        // silence frames perceived as a buzz ("ビリビリ") on continuous
+        // FM audio. 8 buffers (~290 ms) gives generous headroom while
+        // still keeping the dial-to-audio latency tolerable.
+        maxQueue: 8,
       },
     });
-    this.ai.start();
+    (this.ai as { start: () => void }).start();
   }
 
   write(pcm: Int16Array): void {
     if (!this.ai) return;
-    this.ai.write(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+    // Apply the output-stage LPF in-place. PCM is interleaved stereo
+    // (LRLRLR...). Each channel runs through its own 4-biquad cascade.
+    // Filter is in Float math but the output gets clipped + integerised
+    // back to Int16 before naudiodon.write.
+    const lL = this.lpfL, lR = this.lpfR;
+    const n = pcm.length;
+    for (let i = 0; i < n; i += 2) {
+      let l = pcm[i];
+      let r = pcm[i + 1];
+      l = lL[3].step(lL[2].step(lL[1].step(lL[0].step(l))));
+      r = lR[3].step(lR[2].step(lR[1].step(lR[0].step(r))));
+      pcm[i]     = l >= 32767 ? 32767 : l <= -32768 ? -32768 : (l | 0);
+      pcm[i + 1] = r >= 32767 ? 32767 : r <= -32768 ? -32768 : (r | 0);
+    }
+    (this.ai as { write: (b: Buffer) => void }).write(
+      Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength),
+    );
   }
 
   async stop(): Promise<void> {
-    try { this.ai?.quit(); } catch {}
+    try { (this.ai as { quit?: () => void } | null)?.quit?.(); } catch {}
     this.ai = null;
   }
 }

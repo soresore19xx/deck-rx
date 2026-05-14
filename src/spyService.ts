@@ -106,7 +106,7 @@ interface Config {
   amGain?: number;        // RF gain index used while in AM mode
   fmGain?: number;        // RF gain index used while in NFM/WFM (and other non-AM)
   audioOutput?: 'naudiodon' | 'ffmpeg';
-  naudiodon?: { deviceId?: number };
+  naudiodon?: { deviceId?: number; deviceName?: string };
   ffmpeg?: {
     mode?: 'local' | 'icecast';
     deviceName?: string;
@@ -795,8 +795,13 @@ class SpyService {
       // USB / LSB — Weaver f_off = bandwidth / 2 (so audio band 0..bandwidth)
       this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
     } else if (m === 5) {
-      // CW — BFO pitch directly
+      // CW — BFO pitch directly + AGC defaults. Attack ≈ 30 Hz (~33 ms
+      // time constant) catches new stations quickly; decay ≈ 2 Hz
+      // (~500 ms) keeps the gain up across the key-up gaps in CW
+      // telegraphy so it doesn't pump on every dot/dash pause.
       this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
+      const fs = this.currentAudioRate;
+      this.demod.setCwAgc(true, 30 / fs, 2 / fs);
     }
     streamDeck.logger.info(`[spyService] applySsbOptions ${JSON.stringify(this.ssbOptions)}`);
   }
@@ -1036,7 +1041,10 @@ class SpyService {
     // Build audio output
     if (cfg.audioOutput === 'naudiodon') {
       this.audioOutput = new NaudiodonOutput(cfg.naudiodon ?? {});
-      this.currentAudioDeviceName = `naudiodon#${cfg.naudiodon?.deviceId ?? -1}`;
+      // Surface the resolved name when we have one; falls back to id for old
+      // configs that only set deviceId.
+      this.currentAudioDeviceName = cfg.naudiodon?.deviceName
+        || (cfg.naudiodon?.deviceId !== undefined ? `naudiodon#${cfg.naudiodon.deviceId}` : 'naudiodon default');
     } else {
       const ffOut = new FfmpegOutput({
         mode:            cfg.ffmpeg?.mode        ?? 'local',
@@ -1167,7 +1175,7 @@ class SpyService {
       } else if (this.currentDemodMode === 5) {
         // CW (mode 5) — direct frequency-shift by BFO (default 700 Hz).
         this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
-        pcm = this.demod.processCW(iqBody, dec, 48000 * fmAudioScale);
+        pcm = this.demod.processCW(iqBody, dec, 96000 * fmAudioScale);
       } else {
         // NFM (mode 0) — also catches DSB (3) and RAW (7) which fall through
         // to FM until proper demod is implemented.
@@ -1384,6 +1392,7 @@ class SpyService {
     icecastPassword: string;
     bitrate: string;
     ffmpegBinary: string;
+    audioEngine: 'ffmpeg' | 'naudiodon';
   }> {
     const cfg = await this.loadConfig();
     // Split any embedded password out of icecastUrl so the PI can hand the
@@ -1403,6 +1412,7 @@ class SpyService {
       icecastPassword: pwd,
       bitrate:         cfg.ffmpeg?.bitrate ?? '128k',
       ffmpegBinary:    cfg.ffmpeg?.binary ?? '',
+      audioEngine:     (cfg.audioOutput === 'naudiodon' ? 'naudiodon' : 'ffmpeg'),
     };
   }
 

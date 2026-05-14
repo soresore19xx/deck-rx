@@ -3,6 +3,7 @@ import streamDeck from '@elgato/streamdeck';
 import { spyService, AMOptions, FMOptions, SSBOptions, DeemphasisOpt, TuneMode, tuneStepValuesForMode } from '../spyService.js';
 import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelBandSvg, OptionsPanelRow, dimSvg } from '../icons.js';
+import { DialRow, DialRowState, clampIdx, dialDispose, dialDown, dialRotate, dialUp } from './dialRowHelper.js';
 
 // F-2 unified Combo dial: left column lists 6 demod bands (WFM/NFM/AM/USB/LSB/
 // CW) plus a Mode/Step bottom row, right column shows the option rows for the
@@ -58,54 +59,12 @@ function formatTuneStep(hz: number): string {
   return `${hz}Hz`;
 }
 
-// Mode/Step row content: shows "Mode: Preset" while in preset mode, otherwise
-// "Step: 9k" while in VFO mode.
-function modeStepRow(tuneMode: TuneMode, stepHz: number): OptionsPanelRow {
-  // Combined preset/step row — short PUSH toggles edit (rotate cycles
-  // step), LONG PUSH (≥ 1 s) toggles preset ↔ vfo. Label abbreviated
-  // to 'Pre/Stp' because the Combo dial's band column is only
-  // 100 px wide and 'Preset/Step' overflowed into the value column.
-  const v = tuneMode === 'preset' ? 'Preset' : formatTuneStep(stepHz);
-  return { label: 'Pre/Stp', value: v };
-}
-
-function buildAmOptsRows(o: AMOptions, gain: number, maxGain: number): OptionsPanelRow[] {
-  return [
-    { label: 'BW',   value: fmtBw(o.bandwidth) },
-    { label: 'CAGC', value: o.carrierAgc ? 'On' : 'Off' },
-    { label: 'Sync', value: o.sync ? 'On' : 'Off' },
-    { label: 'Atk',  value: o.agcAttack.toFixed(2) },
-    { label: 'Dec',  value: o.agcDecay.toFixed(2) },
-    { label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' },
-  ];
-}
-function buildFmOptsRows(o: FMOptions, gain: number, maxGain: number): OptionsPanelRow[] {
-  return [
-    { label: 'BW',     value: fmtBw(o.bandwidth) },
-    { label: 'Deemph', value: o.deemphasis === 'off' ? 'Off' : o.deemphasis },
-    { label: 'IFNR',   value: o.ifnr     ? 'On' : 'Off' },
-    { label: 'HPF',    value: o.highPass ? 'On' : 'Off' },
-    { label: 'LPF',    value: o.lowPass  ? 'On' : 'Off' },
-    { label: 'Ste',    value: o.stereo   ? 'On' : 'Off' },
-    { label: 'Gain',   value: maxGain > 0 ? `${gain}/${maxGain}` : '-' },
-  ];
-}
-function buildSsbOptsRows(o: SSBOptions, gain: number, maxGain: number): OptionsPanelRow[] {
-  return [
-    { label: 'BW',   value: fmtBw(o.bandwidthHz) },
-    { label: 'BFO',  value: `${o.bfoPitchHz}` },
-    { label: 'Gain', value: maxGain > 0 ? `${gain}/${maxGain}` : '-' },
-  ];
-}
-
 function classifyMode(mode: number): 'am' | 'ssb' | 'fm' {
   if (mode === 2) return 'am';
   if (mode === 4 || mode === 5 || mode === 6) return 'ssb';
   return 'fm'; // 0 (WFM) / 1 (NFM) / fallback
 }
 
-// Rotate handler for the Preset/Step row: always cycles step with
-// wrap-around. Mode toggle is on a 1 s long-press (see onDialDown).
 function applyModeStepEdit(ticks: number): void {
   const list = tuneStepValuesForMode(spyService.getDemodMode());
   const ci = list.indexOf(spyService.getTuneStepHz());
@@ -115,11 +74,86 @@ function applyModeStepEdit(ticks: number): void {
   spyService.setTuneStepHz(list[next]);
 }
 
+// Build the unified row list for navigation/edit dispatch. Layout matches
+// the index map in the file-top comment: 0-5 band rows (skip edit on PUSH,
+// fire setDemodMode), 6 Mode/Step row (edit cycles step, long-press
+// toggles preset/vfo), 7+ opts rows (mode-dependent).
+function buildAllRows(currentMode: number): DialRow[] {
+  const rows: DialRow[] = [];
+  // Band column
+  for (let i = 0; i < BAND_COUNT; i++) {
+    rows.push({
+      label: BAND_LABELS[i],
+      value: '',
+      skipEditToggle: true,
+      onShortPush: () => spyService.setDemodMode(BAND_MODES[i]),
+    });
+  }
+  // Mode/Step row
+  const tuneMode = spyService.getTuneMode();
+  const stepHz = spyService.getTuneStepHz();
+  rows.push({
+    label: 'Pre/Stp',
+    value: tuneMode === 'preset' ? 'Preset' : formatTuneStep(stepHz),
+    onEdit: (t) => applyModeStepEdit(t),
+    onLongPush: () => spyService.setTuneMode(tuneMode === 'preset' ? 'vfo' : 'preset'),
+  });
+  // Opts column — mode-dependent
+  const cls = classifyMode(currentMode);
+  if (cls === 'am') {
+    const am = spyService.getAMOptions();
+    const amGain = spyService.getAmGain(), maxGain = spyService.getMaxGain();
+    rows.push(
+      { label: 'BW',   value: fmtBw(am.bandwidth),
+        onEdit: (t) => spyService.setAMOption('bandwidth', nextInArray(BW_CYCLE_AM, am.bandwidth, t)) },
+      { label: 'CAGC', value: am.carrierAgc ? 'On' : 'Off',
+        onEdit: () => spyService.setAMOption('carrierAgc', !am.carrierAgc) },
+      { label: 'Sync', value: am.sync ? 'On' : 'Off',
+        onEdit: () => spyService.setAMOption('sync', !am.sync) },
+      { label: 'Atk',  value: am.agcAttack.toFixed(2),
+        onEdit: (t) => spyService.setAMOption('agcAttack', adjustLog(am.agcAttack, t, ATK_MIN, ATK_MAX)) },
+      { label: 'Dec',  value: am.agcDecay.toFixed(2),
+        onEdit: (t) => spyService.setAMOption('agcDecay', adjustLog(am.agcDecay, t, DEC_MIN, DEC_MAX)) },
+      { label: 'Gain', value: maxGain > 0 ? `${amGain}/${maxGain}` : '-',
+        onEdit: (t) => spyService.setAmGain(spyService.getAmGain() + t) },
+    );
+  } else if (cls === 'ssb') {
+    const s = spyService.getSSBOptions();
+    const fmGain = spyService.getFmGain(), maxGain = spyService.getMaxGain();
+    rows.push(
+      { label: 'BW',   value: fmtBw(s.bandwidthHz),
+        onEdit: (t) => spyService.setSSBOption('bandwidthHz', nextInArray(BW_CYCLE_SSB, s.bandwidthHz, t)) },
+      { label: 'BFO',  value: `${s.bfoPitchHz}`,
+        onEdit: (t) => spyService.setSSBOption('bfoPitchHz', nextInArray(BFO_CYCLE, s.bfoPitchHz, t)) },
+      { label: 'Gain', value: maxGain > 0 ? `${fmGain}/${maxGain}` : '-',
+        onEdit: (t) => spyService.setFmGain(spyService.getFmGain() + t) },
+    );
+  } else {
+    const fm = spyService.getFMOptions();
+    const fmGain = spyService.getFmGain(), maxGain = spyService.getMaxGain();
+    rows.push(
+      { label: 'BW',     value: fmtBw(fm.bandwidth),
+        onEdit: (t) => spyService.setFMOption('bandwidth', nextInArray(BW_CYCLE_FM, fm.bandwidth, t)) },
+      { label: 'Deemph', value: fm.deemphasis === 'off' ? 'Off' : fm.deemphasis,
+        onEdit: (t) => spyService.setFMOption('deemphasis', nextInArray(DEEMPH_CYCLE, fm.deemphasis, t)) },
+      { label: 'IFNR',   value: fm.ifnr ? 'On' : 'Off',
+        onEdit: () => spyService.setFMOption('ifnr', !fm.ifnr) },
+      { label: 'HPF',    value: fm.highPass ? 'On' : 'Off',
+        onEdit: () => spyService.setFMOption('highPass', !fm.highPass) },
+      { label: 'LPF',    value: fm.lowPass ? 'On' : 'Off',
+        onEdit: () => spyService.setFMOption('lowPass', !fm.lowPass) },
+      { label: 'Ste',    value: fm.stereo ? 'On' : 'Off',
+        onEdit: () => spyService.setFMOption('stereo', !fm.stereo) },
+      { label: 'Gain',   value: maxGain > 0 ? `${fmGain}/${maxGain}` : '-',
+        onEdit: (t) => spyService.setFmGain(spyService.getFmGain() + t) },
+    );
+  }
+  return rows;
+}
+
 @action({ UUID: 'com.hogehoge.deck-rx.dial-options-combo' })
 export class SpyDialOptionsCombo extends SingletonAction<Settings> {
-  private selectedIdx = 0;
-  private editMode = false;
-  private focused = false;
+  private rowState = new DialRowState();
   private borderSide: 'left' | 'right' | 'center' | 'none' = 'none';
   private act: { setImage: (s: string) => Promise<void>; setFeedback: (f: Record<string, unknown>) => Promise<void> } | null = null;
   private fmListener: ((o: FMOptions) => void) | null = null;
@@ -136,8 +170,6 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
   private enabled = true;
   private connected = false;
   private currentMode = 0;
-  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
-  private longPressFired = false;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     this.act = ev.action as unknown as typeof this.act;
@@ -154,7 +186,11 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
     spyService.subscribeAmGain(this.amGainListener);
     this.enabledListener = (on) => { this.enabled = on; this.render(); };
     spyService.subscribeEnabled(this.enabledListener);
-    this.demodListener = (mode) => { this.currentMode = mode; this.clampCursor(); this.render(); };
+    this.demodListener = (mode) => {
+      this.currentMode = mode;
+      clampIdx(this.rowState, buildAllRows(mode).length);
+      this.render();
+    };
     spyService.subscribeDemodMode(this.demodListener);
     this.connStateListener = (c) => { this.connected = c; this.render(); };
     spyService.subscribeConnectionState(this.connStateListener);
@@ -181,6 +217,7 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
     if (this.tuneModeListener)  { spyService.unsubscribeTuneMode(this.tuneModeListener);      this.tuneModeListener = null; }
     if (this.tuneStepListener)  { spyService.unsubscribeTuneStep(this.tuneStepListener);      this.tuneStepListener = null; }
     if (this.forceRenderListener) { spyService.unsubscribeForceRender(this.forceRenderListener); this.forceRenderListener = null; }
+    dialDispose(this.rowState);
     this.act = null;
   }
 
@@ -189,146 +226,34 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
     this.render();
   }
 
-  // Total continuous-cursor row count (mode-dependent because Opts column
-  // length depends on the current demod mode).
-  private totalRows(): number {
-    return OPTS_START_IDX + this.optsRowCount();
-  }
-  private optsRowCount(): number {
-    switch (classifyMode(this.currentMode)) {
-      case 'am':  return 6;
-      case 'fm':  return 6;
-      case 'ssb': return 3;
-    }
-  }
-  // Keep selectedIdx valid when the Opts-column length shrinks (e.g., mode
-  // change from FM=6 rows to SSB=3 rows). If the cursor was past the last
-  // valid row, snap back to the last opts row.
-  private clampCursor(): void {
-    const max = this.totalRows() - 1;
-    if (this.selectedIdx > max) this.selectedIdx = max;
-  }
-
   override async onDialRotate(ev: DialRotateEvent<Settings>): Promise<void> {
-    const ticks = ev.payload.ticks;
-    if (this.editMode) {
-      await this.applyEdit(ticks);
-    } else {
-      this.focused = true;
-      const total = this.totalRows();
-      this.selectedIdx = ((this.selectedIdx + (ticks > 0 ? 1 : -1)) + total) % total;
-      this.render();
-    }
+    await dialRotate(this.rowState, buildAllRows(this.currentMode), ev.payload.ticks, () => this.render());
   }
 
   override onDialDown(_ev: DialDownEvent<Settings>): void {
-    // 1-second long-press on the Preset/Step row toggles preset ↔ vfo.
-    // Short PUSH falls through to onDialUp's existing toggle-edit
-    // behaviour. Only armed on MODE_STEP_IDX so other rows still get
-    // their normal PUSH semantics.
-    if (this.selectedIdx !== MODE_STEP_IDX) return;
-    this.longPressFired = false;
-    if (this.longPressTimer) clearTimeout(this.longPressTimer);
-    this.longPressTimer = setTimeout(() => {
-      this.longPressTimer = null;
-      this.longPressFired = true;
-      spyService.setTuneMode(spyService.getTuneMode() === 'preset' ? 'vfo' : 'preset');
-    }, 1000);
+    dialDown(this.rowState, buildAllRows(this.currentMode));
   }
 
-  override onDialUp(_ev: DialUpEvent<Settings>): void {
-    if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-    if (this.longPressFired) { this.longPressFired = false; return; }
-    const idx = this.selectedIdx;
-    if (idx < BAND_COUNT) {
-      // Band row → immediate setDemodMode (no edit-mode roundtrip). The
-      // service is idempotent on same-mode, so a deliberate confirm-press is
-      // cheap when the cursor was already on the active band.
-      spyService.setDemodMode(BAND_MODES[idx]);
-      this.focused = true;
-      this.render();
-      return;
-    }
-    // Mode/Step row or Opts row → toggle edit mode.
-    if (this.editMode) {
-      this.editMode = false;
-      this.focused = false;
-    } else {
-      this.editMode = true;
-      this.focused = true;
-    }
-    this.render();
-  }
-
-  // Apply edit-mode rotation deltas. Only meaningful when selectedIdx ≥
-  // MODE_STEP_IDX; band-column rows (idx < BAND_COUNT) never enter edit mode.
-  private async applyEdit(ticks: number): Promise<void> {
-    const idx = this.selectedIdx;
-    if (idx === MODE_STEP_IDX) {
-      applyModeStepEdit(ticks);
-      return;
-    }
-    const optsIdx = idx - OPTS_START_IDX;
-    const cls = classifyMode(this.currentMode);
-    if (cls === 'am') {
-      const cur = spyService.getAMOptions();
-      switch (optsIdx) {
-        case 0: await spyService.setAMOption('bandwidth',   nextInArray(BW_CYCLE_AM, cur.bandwidth, ticks)); break;
-        case 1: await spyService.setAMOption('carrierAgc',  !cur.carrierAgc); break;
-        case 2: await spyService.setAMOption('sync',        !cur.sync); break;
-        case 3: await spyService.setAMOption('agcAttack',   adjustLog(cur.agcAttack, ticks, ATK_MIN, ATK_MAX)); break;
-        case 4: await spyService.setAMOption('agcDecay',    adjustLog(cur.agcDecay,  ticks, DEC_MIN, DEC_MAX)); break;
-        case 5: await spyService.setAmGain(spyService.getAmGain() + ticks); break;
-      }
-    } else if (cls === 'ssb') {
-      const cur = spyService.getSSBOptions();
-      switch (optsIdx) {
-        case 0: await spyService.setSSBOption('bandwidthHz', nextInArray(BW_CYCLE_SSB, cur.bandwidthHz, ticks)); break;
-        case 1: await spyService.setSSBOption('bfoPitchHz',  nextInArray(BFO_CYCLE,    cur.bfoPitchHz,  ticks)); break;
-        case 2: await spyService.setFmGain(spyService.getFmGain() + ticks); break;
-      }
-    } else {
-      const cur = spyService.getFMOptions();
-      switch (optsIdx) {
-        case 0: await spyService.setFMOption('bandwidth', nextInArray(BW_CYCLE_FM, cur.bandwidth, ticks)); break;
-        case 1: {
-          const i = DEEMPH_CYCLE.indexOf(cur.deemphasis);
-          const n = (i + (ticks > 0 ? 1 : -1) + DEEMPH_CYCLE.length) % DEEMPH_CYCLE.length;
-          await spyService.setFMOption('deemphasis', DEEMPH_CYCLE[n]);
-          break;
-        }
-        case 2: await spyService.setFMOption('ifnr',     !cur.ifnr); break;
-        case 3: await spyService.setFMOption('highPass', !cur.highPass); break;
-        case 4: await spyService.setFMOption('lowPass',  !cur.lowPass); break;
-        case 5: await spyService.setFMOption('stereo',   !cur.stereo); break;
-        case 6: await spyService.setFmGain(spyService.getFmGain() + ticks); break;
-      }
-    }
-  }
-
-  private buildOptsRows(): OptionsPanelRow[] {
-    const fmGain  = spyService.getFmGain();
-    const amGain  = spyService.getAmGain();
-    const maxGain = spyService.getMaxGain();
-    switch (classifyMode(this.currentMode)) {
-      case 'am':  return buildAmOptsRows(spyService.getAMOptions(),  amGain, maxGain);
-      case 'ssb': return buildSsbOptsRows(spyService.getSSBOptions(), fmGain, maxGain);
-      case 'fm':  return buildFmOptsRows(spyService.getFMOptions(),  fmGain, maxGain);
-    }
+  override async onDialUp(_ev: DialUpEvent<Settings>): Promise<void> {
+    await dialUp(this.rowState, buildAllRows(this.currentMode), () => this.render());
   }
 
   private render(): void {
     if (!this.act) return;
-    const tuneMode = spyService.getTuneMode();
-    const stepHz = spyService.getTuneStepHz();
-    const ms = modeStepRow(tuneMode, stepHz);
-    const opts = this.buildOptsRows();
+    const allRows = buildAllRows(this.currentMode);
+    // Split the unified DialRow[] into the render-time inputs that
+    // optionsPanelBandSvg expects.
+    const ms: OptionsPanelRow = {
+      label: allRows[MODE_STEP_IDX]?.label ?? 'Pre/Stp',
+      value: allRows[MODE_STEP_IDX]?.value ?? '',
+    };
+    const opts: OptionsPanelRow[] = allRows.slice(OPTS_START_IDX).map((r) => ({ label: r.label, value: r.value }));
     const activeBandIdx = (BAND_MODES as readonly number[]).indexOf(this.currentMode);
-    const sel = this.focused ? this.selectedIdx : -1;
+    const sel = this.rowState.focused ? this.rowState.selectedIdx : -1;
     const dim = !this.enabled || !this.connected;
     void this.borderSide;
     this.act.setFeedback({
-      'options-display': dumpAndB64('options-combo', dimSvg(optionsPanelBandSvg(BAND_LABELS, activeBandIdx, ms, opts, sel, this.editMode), dim)),
+      'options-display': dumpAndB64('options-combo', dimSvg(optionsPanelBandSvg(BAND_LABELS, activeBandIdx, ms, opts, sel, this.rowState.editMode), dim)),
     }).catch(() => {});
   }
 }

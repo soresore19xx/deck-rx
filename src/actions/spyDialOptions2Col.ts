@@ -7,6 +7,7 @@ import streamDeck from '@elgato/streamdeck';
 import { spyService, AMOptions, FMOptions, SSBOptions, DeemphasisOpt } from '../spyService.js';
 import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelDualSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
+import { DialRow, DialRowState, clampIdx, dialDispose, dialDown, dialRotate, dialUp } from './dialRowHelper.js';
 
 type Settings = { borderSide?: 'left' | 'right' | 'center' | 'none' };
 
@@ -21,7 +22,67 @@ const adjustLog = (c: number, t: number, lo: number, hi: number) => Math.max(lo,
 const nextInArray = <T,>(arr: readonly T[], cur: T, t: number): T => arr[(arr.indexOf(cur) + (t > 0 ? 1 : -1) + arr.length) % arr.length];
 const fmtBw = (hz: number) => hz >= 1000 ? (Number.isInteger(hz/1000) ? (hz/1000).toFixed(0)+'k' : (hz/1000).toFixed(1)+'k') : String(hz);
 
-function buildAm(am: AMOptions, gain: number, max: number): OptionsPanelRow[] {
+// Active mode → DialRow[] with embedded handlers. Drives navigation and
+// edit dispatch. Returns only the active mode's rows; the side-by-side
+// AM/FM render path below uses display-only OptionsPanelRow[] arrays.
+function buildActiveRows(mode: number): DialRow[] {
+  const isSsb = mode === 4 || mode === 5 || mode === 6;
+  const isAm = mode === 2;
+  if (isSsb) {
+    const s = spyService.getSSBOptions();
+    const fmGain = spyService.getFmGain(), maxGain = spyService.getMaxGain();
+    return [
+      { label: 'BW',   value: fmtBw(s.bandwidthHz),
+        onEdit: (t) => spyService.setSSBOption('bandwidthHz', nextInArray(BW_CYCLE_SSB, s.bandwidthHz, t)) },
+      { label: 'BFO',  value: `${s.bfoPitchHz}`,
+        onEdit: (t) => spyService.setSSBOption('bfoPitchHz', nextInArray(BFO_CYCLE, s.bfoPitchHz, t)) },
+      { label: 'Gain', value: maxGain > 0 ? `${fmGain}/${maxGain}` : '-',
+        onEdit: (t) => spyService.setFmGain(spyService.getFmGain() + t) },
+    ];
+  }
+  if (isAm) {
+    const am = spyService.getAMOptions();
+    const amGain = spyService.getAmGain(), maxGain = spyService.getMaxGain();
+    return [
+      { label: 'BW',   value: fmtBw(am.bandwidth),
+        onEdit: (t) => spyService.setAMOption('bandwidth', nextInArray(BW_CYCLE_AM, am.bandwidth, t)) },
+      { label: 'CAGC', value: am.carrierAgc ? 'On' : 'Off',
+        onEdit: () => spyService.setAMOption('carrierAgc', !am.carrierAgc) },
+      { label: 'Sync', value: am.sync ? 'On' : 'Off',
+        onEdit: () => spyService.setAMOption('sync', !am.sync) },
+      { label: 'Atk',  value: am.agcAttack.toFixed(2),
+        onEdit: (t) => spyService.setAMOption('agcAttack', adjustLog(am.agcAttack, t, ATK_MIN, ATK_MAX)) },
+      { label: 'Dec',  value: am.agcDecay.toFixed(2),
+        onEdit: (t) => spyService.setAMOption('agcDecay', adjustLog(am.agcDecay, t, DEC_MIN, DEC_MAX)) },
+      { label: 'Gain', value: maxGain > 0 ? `${amGain}/${maxGain}` : '-',
+        onEdit: (t) => spyService.setAmGain(spyService.getAmGain() + t) },
+    ];
+  }
+  // FM-family default
+  const fm = spyService.getFMOptions();
+  const fmGain = spyService.getFmGain(), maxGain = spyService.getMaxGain();
+  return [
+    { label: 'BW',     value: fmtBw(fm.bandwidth),
+      onEdit: (t) => spyService.setFMOption('bandwidth', nextInArray(BW_CYCLE_FM, fm.bandwidth, t)) },
+    { label: 'Deemph', value: fm.deemphasis === 'off' ? 'Off' : fm.deemphasis,
+      onEdit: (t) => spyService.setFMOption('deemphasis', nextInArray(DEEMPH_CYCLE, fm.deemphasis, t)) },
+    { label: 'IFNR',   value: fm.ifnr ? 'On' : 'Off',
+      onEdit: () => spyService.setFMOption('ifnr', !fm.ifnr) },
+    { label: 'HPF',    value: fm.highPass ? 'On' : 'Off',
+      onEdit: () => spyService.setFMOption('highPass', !fm.highPass) },
+    { label: 'LPF',    value: fm.lowPass ? 'On' : 'Off',
+      onEdit: () => spyService.setFMOption('lowPass', !fm.lowPass) },
+    { label: 'Ste',    value: fm.stereo ? 'On' : 'Off',
+      onEdit: () => spyService.setFMOption('stereo', !fm.stereo) },
+    { label: 'Gain',   value: maxGain > 0 ? `${fmGain}/${maxGain}` : '-',
+      onEdit: (t) => spyService.setFmGain(spyService.getFmGain() + t) },
+  ];
+}
+
+// Display-only row arrays used by the side-by-side render path. No
+// handlers — the active mode's navigation lives in buildActiveRows
+// above; these just provide labels/values for the inactive column.
+function buildAmDisplay(am: AMOptions, gain: number, max: number): OptionsPanelRow[] {
   return [
     { label: 'BW', value: fmtBw(am.bandwidth) },
     { label: 'CAGC', value: am.carrierAgc ? 'On' : 'Off' },
@@ -31,7 +92,7 @@ function buildAm(am: AMOptions, gain: number, max: number): OptionsPanelRow[] {
     { label: 'Gain', value: max > 0 ? `${gain}/${max}` : '-' },
   ];
 }
-function buildFm(fm: FMOptions, gain: number, max: number): OptionsPanelRow[] {
+function buildFmDisplay(fm: FMOptions, gain: number, max: number): OptionsPanelRow[] {
   return [
     { label: 'BW', value: fmtBw(fm.bandwidth) },
     { label: 'Deemph', value: fm.deemphasis === 'off' ? 'Off' : fm.deemphasis },
@@ -42,7 +103,7 @@ function buildFm(fm: FMOptions, gain: number, max: number): OptionsPanelRow[] {
     { label: 'Gain', value: max > 0 ? `${gain}/${max}` : '-' },
   ];
 }
-function buildSsb(s: SSBOptions, gain: number, max: number): OptionsPanelRow[] {
+function buildSsbDisplay(s: SSBOptions, gain: number, max: number): OptionsPanelRow[] {
   return [
     { label: 'BW', value: fmtBw(s.bandwidthHz) },
     { label: 'BFO', value: `${s.bfoPitchHz}` },
@@ -52,9 +113,7 @@ function buildSsb(s: SSBOptions, gain: number, max: number): OptionsPanelRow[] {
 
 @action({ UUID: 'com.hogehoge.deck-rx.dial-options-2col' })
 export class SpyDialOptions2Col extends SingletonAction<Settings> {
-  private selectedIdx = 0;
-  private editMode = false;
-  private focused = false;
+  private rowState = new DialRowState();
   private borderSide: 'left' | 'right' | 'center' | 'none' = 'none';
   private act: { setImage: (s: string) => Promise<void>; setFeedback: (f: Record<string, unknown>) => Promise<void> } | null = null;
   private listeners: Array<() => void> = [];
@@ -78,7 +137,11 @@ export class SpyDialOptions2Col extends SingletonAction<Settings> {
     const enCb = (on: boolean) => { this.enabled = on; this.render(); };
     spyService.subscribeEnabled(enCb);
     this.listeners.push(() => spyService.unsubscribeEnabled(enCb));
-    const dmCb = (mode: number) => { this.currentMode = mode; this.selectedIdx = 0; this.render(); };
+    const dmCb = (mode: number) => {
+      this.currentMode = mode;
+      clampIdx(this.rowState, buildActiveRows(mode).length);
+      this.render();
+    };
     spyService.subscribeDemodMode(dmCb);
     this.listeners.push(() => spyService.unsubscribeDemodMode(dmCb));
     const csCb = (c: boolean) => { this.connected = c; this.render(); };
@@ -94,6 +157,7 @@ export class SpyDialOptions2Col extends SingletonAction<Settings> {
   override onWillDisappear(_: WillDisappearEvent<Settings>): void {
     for (const off of this.listeners) off();
     this.listeners = [];
+    dialDispose(this.rowState);
     this.act = null;
   }
   override onDidReceiveSettings(ev: DidReceiveSettingsEvent<Settings>): void {
@@ -101,69 +165,29 @@ export class SpyDialOptions2Col extends SingletonAction<Settings> {
     this.render();
   }
   override async onDialRotate(ev: DialRotateEvent<Settings>): Promise<void> {
-    const ticks = ev.payload.ticks;
-    if (this.editMode) { await this.applyEdit(ticks); return; }
-    this.focused = true;
-    const isSsb = this.currentMode === 4 || this.currentMode === 5 || this.currentMode === 6;
-    const total = isSsb ? 3 : 6;
-    this.selectedIdx = ((this.selectedIdx + (ticks > 0 ? 1 : -1)) + total) % total;
-    this.render();
+    await dialRotate(this.rowState, buildActiveRows(this.currentMode), ev.payload.ticks, () => this.render());
   }
-  override onDialDown(_: DialDownEvent<Settings>): void {}
-  override onDialUp(_: DialUpEvent<Settings>): void {
-    this.editMode = !this.editMode;
-    this.focused = this.editMode;
-    this.render();
+  override onDialDown(_: DialDownEvent<Settings>): void {
+    dialDown(this.rowState, buildActiveRows(this.currentMode));
   }
-  private async applyEdit(ticks: number): Promise<void> {
-    const idx = this.selectedIdx;
-    const isAm = this.currentMode === 2;
-    const isSsb = this.currentMode === 4 || this.currentMode === 5 || this.currentMode === 6;
-    if (isSsb) {
-      const cur = spyService.getSSBOptions();
-      switch (idx) {
-        case 0: await spyService.setSSBOption('bandwidthHz', nextInArray(BW_CYCLE_SSB, cur.bandwidthHz, ticks)); break;
-        case 1: await spyService.setSSBOption('bfoPitchHz', nextInArray(BFO_CYCLE, cur.bfoPitchHz, ticks)); break;
-        case 2: await spyService.setFmGain(spyService.getFmGain() + ticks); break;
-      }
-    } else if (isAm) {
-      const cur = spyService.getAMOptions();
-      switch (idx) {
-        case 0: await spyService.setAMOption('bandwidth', nextInArray(BW_CYCLE_AM, cur.bandwidth, ticks)); break;
-        case 1: await spyService.setAMOption('carrierAgc', !cur.carrierAgc); break;
-        case 2: await spyService.setAMOption('sync', !cur.sync); break;
-        case 3: await spyService.setAMOption('agcAttack', adjustLog(cur.agcAttack, ticks, ATK_MIN, ATK_MAX)); break;
-        case 4: await spyService.setAMOption('agcDecay', adjustLog(cur.agcDecay, ticks, DEC_MIN, DEC_MAX)); break;
-        case 5: await spyService.setAmGain(spyService.getAmGain() + ticks); break;
-      }
-    } else {
-      const cur = spyService.getFMOptions();
-      switch (idx) {
-        case 0: await spyService.setFMOption('bandwidth', nextInArray(BW_CYCLE_FM, cur.bandwidth, ticks)); break;
-        case 1: await spyService.setFMOption('deemphasis', nextInArray(DEEMPH_CYCLE, cur.deemphasis, ticks)); break;
-        case 2: await spyService.setFMOption('ifnr', !cur.ifnr); break;
-        case 3: await spyService.setFMOption('highPass', !cur.highPass); break;
-        case 4: await spyService.setFMOption('lowPass', !cur.lowPass); break;
-        case 5: await spyService.setFMOption('stereo', !cur.stereo); break;
-        case 6: await spyService.setFmGain(spyService.getFmGain() + ticks); break;
-      }
-    }
+  override async onDialUp(_: DialUpEvent<Settings>): Promise<void> {
+    await dialUp(this.rowState, buildActiveRows(this.currentMode), () => this.render());
   }
   private render(): void {
     if (!this.act) return;
     const isSsb = this.currentMode === 4 || this.currentMode === 5 || this.currentMode === 6;
     const isAm = this.currentMode === 2;
     const fmGain = spyService.getFmGain(), amGain = spyService.getAmGain(), maxGain = spyService.getMaxGain();
-    const sel = this.focused ? this.selectedIdx : -1;
+    const sel = this.rowState.focused ? this.rowState.selectedIdx : -1;
     const dim = !this.enabled || !this.connected;
     let svg: string;
     if (isSsb) {
-      const rows = buildSsb(spyService.getSSBOptions(), fmGain, maxGain);
-      svg = optionsPanelSvg(rows, sel, this.editMode, this.borderSide, 'SSB Options');
+      const rows = buildSsbDisplay(spyService.getSSBOptions(), fmGain, maxGain);
+      svg = optionsPanelSvg(rows, sel, this.rowState.editMode, this.borderSide, 'SSB Options');
     } else {
-      const amRows = buildAm(spyService.getAMOptions(), amGain, maxGain);
-      const fmRows = buildFm(spyService.getFMOptions(), fmGain, maxGain);
-      svg = optionsPanelDualSvg(amRows, fmRows, isAm ? 'AM' : 'FM', sel, this.editMode, 'Options 2-Col');
+      const amRows = buildAmDisplay(spyService.getAMOptions(), amGain, maxGain);
+      const fmRows = buildFmDisplay(spyService.getFMOptions(), fmGain, maxGain);
+      svg = optionsPanelDualSvg(amRows, fmRows, isAm ? 'AM' : 'FM', sel, this.rowState.editMode, 'Options 2-Col');
     }
     this.act.setFeedback({
       'options-display': dumpAndB64('options-2col', dimSvg(svg, dim)),

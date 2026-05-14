@@ -120,6 +120,7 @@ export class SpyDialOptions extends SingletonAction<Settings> {
     if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
     if (this.tuneStepListener) { spyService.unsubscribeTuneStep(this.tuneStepListener); this.tuneStepListener = null; }
     if (this.forceRenderListener) { spyService.unsubscribeForceRender(this.forceRenderListener); this.forceRenderListener = null; }
+    if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
     this.act = null;
   }
 

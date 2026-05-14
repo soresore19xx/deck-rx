@@ -97,7 +97,13 @@ export class SpyDialSsbOptions extends SingletonAction<Settings> {
     this.enabledListener = (on) => { this.enabled = on; this.render(); };
     spyService.subscribeEnabled(this.enabledListener);
     this.demodListener = (mode) => {
+      const wasSsb = this.isSsbMode;
       this.isSsbMode = mode === 4 || mode === 5 || mode === 6;
+      // If we lost the Gain row by switching out of SSB, snap selection
+      // back. Mirrors the same clamp in spyDialOptions / AmOptions.
+      if (wasSsb && !this.isSsbMode && this.selectedIdx >= OPTIONS.length) {
+        this.selectedIdx = OPTIONS.length - 1;
+      }
       this.render();
     };
     spyService.subscribeDemodMode(this.demodListener);
@@ -123,6 +129,7 @@ export class SpyDialSsbOptions extends SingletonAction<Settings> {
     if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
     if (this.tuneStepListener) { spyService.unsubscribeTuneStep(this.tuneStepListener); this.tuneStepListener = null; }
     if (this.forceRenderListener) { spyService.unsubscribeForceRender(this.forceRenderListener); this.forceRenderListener = null; }
+    if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
     this.act = null;
   }
 

@@ -70,6 +70,19 @@ Two-column comparison view: AM rows on the left, FM rows on the right. The activ
 
 ![Options 2-Col dial](lcd-options-2col.png)
 
+## Deck RX FFT Display
+
+Full-width 200×100 real-time IQ spectrum centred on the current VFO. Cyan-tinted SDR++-style fill + outline; red crosshair marks DC (= VFO freq); dashed grid every 20 dB; dB floor / ceiling tick labels on the side. Header carries the center freq (left) and the displayed span (right) with the current zoom multiplier (e.g. `±28.5 kHz 4x`) plus an axis-mode badge (`[H]` = horizontal zoom in cyan, `[V]` = vertical dB-range zoom in orange) so the user always knows which axis the dial is currently driving.
+
+Controls:
+- **Rotate** — zoom on the active axis. H ladder (1× → 32×, 26 steps, fine near 1× / coarse past 8×); V ladder (0.4× → 2.0× of the PI-configured dB range around its midpoint, 12 steps).
+- **Short PUSH** — reset the active axis to its default (1× for H, 1.0× for V).
+- **Long PUSH (≥ 600 ms)** — toggle between H ↔ V axis modes.
+
+PI parameters: FFT frame rate (1–120 fps, default 16), smoothing factor (1–64, SDR++ convention α = 1/value, default 16), FFT size (256 / 512 / 1024 / 2048, default 512), dB floor (default -110), dB ceiling (default -20).
+
+Pixel → bin map switches automatically between max-hold (when ≥ 1 bin/pixel, preserves peaks) and linear interpolation (when < 1 bin/pixel at high zoom, smooths the comb pattern that naive nearest-neighbour mapping would otherwise produce).
+
 ---
 
 See [architecture.md](architecture.md) for layout details, focus highlight colours, and signal-path notes.

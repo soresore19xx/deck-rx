@@ -11,13 +11,13 @@
 | Stream Deck **+** hardware (encoder + LCD) | for the dial actions |
 | Node.js (via nodebrew / nvm / fnm etc.) | 20 or later, for development |
 | Stream Deck CLI (`streamdeck` command) | `npm install -g @elgato/cli` |
-| MacPorts: `portaudio`, `switchaudio-osx` | runtime audio bridge (always needed) |
+| MacPorts: `portaudio` | runtime audio bridge (always needed — naudiodon talks PortAudio directly) |
 | MacPorts: `ffmpeg` | optional — only if you want the icecast publish path |
 | Xcode Command Line Tools | needed by node-gyp for the native rebuild |
 | MacPorts: `librsvg`, `ImageMagick`, `sox` | optional — LCD dump / audio analysis scripts |
 
 ```sh
-sudo port install portaudio switchaudio-osx
+sudo port install portaudio
 # Optional, only if you'll use the icecast publish path:
 sudo port install ffmpeg
 # node-gyp toolchain:
@@ -25,6 +25,12 @@ xcode-select --install   # if not already installed
 # Stream Deck CLI (provides the `streamdeck` command):
 npm install -g @elgato/cli
 ```
+
+(Earlier versions of deck-rx also required `switchaudio-osx` for the PI
+output-device dropdown. That dependency was dropped in favour of
+`naudiodon.getDevices()` / `getHostAPIs()`, which return the same
+CoreAudio device list and current system default — in-process, no
+external CLI.)
 
 ## First install
 
@@ -151,9 +157,10 @@ Copy `com.hogehoge.deck-rx.sdPlugin/config.example.json` to `config.json`
 and adjust:
 
 - `host` / `port` — your SpyServer address.
-- `naudiodon.deviceName` — CoreAudio output device name (verbatim from
-  `SwitchAudioSource -t output -a`), or `"default"` to follow the system
-  default device.
+- `naudiodon.deviceName` — CoreAudio output device name (one of the
+  entries naudiodon enumerates via `getDevices()`; the PI dropdown
+  shows the same names), or `"default"` to follow the system default
+  device.
 - `ffmpeg.mode` — `"local"` for normal listening (audio goes through
   naudiodon), `"icecast"` to publish PCM as MP3 to an icecast server.
 - `ffmpeg.icecastUrl` / `ffmpeg.icecastPassword` / `ffmpeg.bitrate` —
@@ -166,7 +173,9 @@ You can also reach these settings from the **Tune dial Property Inspector**
 without editing `config.json` directly:
 
 - `Output: Local Device` — pick a CoreAudio device from the dropdown
-  (populated via `SwitchAudioSource -t output -a`).
+  (populated via `naudiodon.getDevices()` filtered to output-capable
+  devices; the "System Default (XXX)" label is sourced from
+  `naudiodon.getHostAPIs().HostAPIs[0].defaultOutput`).
 - `Output: Icecast Stream` — fill in the source URL and source-password.
 
 Switching between Local and Icecast tears the previous audio sink down

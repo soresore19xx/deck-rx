@@ -30,7 +30,14 @@ fi
 
 # Pick the highest Stream Deck Node version directory present (Stream Deck
 # usually only bundles one). e.g. 20.20.0
-SD_NODE_VER=$(ls -1 "$SD_NODE_DIR" | sort -V | tail -1)
+# NOTE: filter to directories — `$SD_NODE_DIR` also contains a `manifest.json`
+# sibling file that `sort -V | tail -1` would pick up instead of "20.20.0",
+# silently passing `--target=manifest.json` to node-gyp.
+SD_NODE_VER=$(find "$SD_NODE_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V | tail -1)
+if [ -z "$SD_NODE_VER" ]; then
+  echo "[rebuild-native] no Node version directory under $SD_NODE_DIR" >&2
+  exit 1
+fi
 echo "[rebuild-native] target Stream Deck Node: $SD_NODE_VER"
 
 cd "$(dirname "$0")/.."

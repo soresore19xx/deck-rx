@@ -462,8 +462,6 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         icecastUrl:      audioCfg.icecastUrl,
         icecastPassword: audioCfg.icecastPassword,
         bitrate:         audioCfg.bitrate,
-        ffmpegBinary:    audioCfg.ffmpegBinary,
-        audioEngine:     audioCfg.audioEngine,
       });
     }
     if (ev.payload['action'] === 'setAudioConfig') {
@@ -474,22 +472,15 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         icecastUrl?: string;
         icecastPassword?: string;
         bitrate?: string;
-        ffmpegBinary?: string;
-        audioEngine?: 'ffmpeg' | 'naudiodon';
       };
       const ffmpeg: Record<string, unknown> = {};
-      if (p.deviceName !== undefined)      ffmpeg.deviceName = p.deviceName;
       if (p.outputMode !== undefined)      ffmpeg.mode = p.outputMode;
       if (p.icecastUrl !== undefined)      ffmpeg.icecastUrl = p.icecastUrl;
       if (p.icecastPassword !== undefined) ffmpeg.icecastPassword = p.icecastPassword;
       if (p.bitrate !== undefined)         ffmpeg.bitrate = p.bitrate;
-      if (p.ffmpegBinary !== undefined)    ffmpeg.binary = p.ffmpegBinary || undefined;
-      // naudiodon shares the device-name picker with ffmpeg (PortAudio uses
-      // CoreAudio device names verbatim, so the same dropdown list works).
       const naudiodon: Record<string, unknown> = {};
       if (p.deviceName !== undefined)      naudiodon.deviceName = p.deviceName;
       const updates: Record<string, unknown> = { audioEnabled: p.audioEnabled };
-      if (p.audioEngine !== undefined)     updates.audioOutput = p.audioEngine;
       if (Object.keys(ffmpeg).length > 0)    updates.ffmpeg = ffmpeg;
       if (Object.keys(naudiodon).length > 0) updates.naudiodon = naudiodon;
       await spyService.updateAudioConfig(updates)

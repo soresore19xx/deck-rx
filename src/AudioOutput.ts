@@ -1,21 +1,11 @@
 import { spawn, ChildProcess } from 'child_process';
 import streamDeck from '@elgato/streamdeck';
-import { getFfmpegDeviceIndexMap } from './audioDevices.js';
 import { Biquad } from './dspFilters.js';
 
 // Resolve ffmpeg absolute path (Stream Deck plugin runs with limited PATH).
-// Overridable via DECK_RX_FFMPEG_PATH so the user can try ffmpeg7
-// (`DECK_RX_FFMPEG_PATH=/opt/local/bin/ffmpeg7`) without recompiling, in
-// case the 4.x audiotoolbox sink turns out to be the root cause of the
-// long-uptime "ffmpeg keeps writing but audio is silent" symptom.
 const FFMPEG = (() => {
-  const override = process.env.DECK_RX_FFMPEG_PATH;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('fs');
-  if (override) {
-    try { fs.accessSync(override); return override; }
-    catch { streamDeck.logger.warn(`[FfmpegOutput] DECK_RX_FFMPEG_PATH="${override}" not accessible, falling through to defaults`); }
-  }
   const candidates = ['/opt/local/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg'];
   for (const p of candidates) { try { fs.accessSync(p); return p; } catch {} }
   return 'ffmpeg';
@@ -25,20 +15,23 @@ export interface AudioOutput {
   start(sampleRate: number, channels: number): Promise<void>;
   write(pcm: Int16Array): void;
   /** Stop and wait for the underlying audio sink to fully release its
-   *  device. Required so a subsequent start() can grab AudioToolbox at
-   *  the right sample rate without racing the previous ffmpeg. */
+   *  device. Required so a subsequent start() can grab the device at the
+   *  right sample rate without racing the previous sink. */
   stop(): Promise<void>;
 }
 
-// ──── ffmpeg ─────────────────────────────────────────────────────────────────
+// ──── ffmpeg (icecast publish only) ──────────────────────────────────────────
+//
+// Local audio output is handled by NaudiodonOutput (PortAudio → CoreAudio).
+// FfmpegOutput is kept solely to host the icecast SOURCE protocol — ffmpeg
+// doubles as the MP3 encoder (libmp3lame) and the HTTP PUT client to the
+// icecast mount, both of which would need separate JS implementations to
+// remove this dependency.
 
 export interface FfmpegConfig {
-  mode: 'local' | 'icecast';
-  deviceName?: string;     // macOS device name (resolved to index at start time)
   icecastUrl?: string;     // icecast://user@host:port/mount  (no password; combined at spawn)
   icecastPassword?: string;// kept separate so the PI can mask it (type="password")
   bitrate?: string;        // e.g. "128k"
-  binary?: string;         // absolute path to ffmpeg binary; overrides auto-detect (e.g. "/opt/local/bin/ffmpeg7")
 }
 
 /** Build the final icecast URL passed to ffmpeg by injecting `password` into
@@ -98,65 +91,29 @@ export class FfmpegOutput implements AudioOutput {
   }
 
   private async spawnFfmpeg(sampleRate: number, channels: number): Promise<void> {
-    // Resample to 48 kHz before AudioToolbox output. Some virtual / Loopback
-    // devices misbehave on non-standard rates (e.g., 57 kHz) after running for
-    // a while, causing audio to drop out silently.
+    // Resample to 48 kHz before the icecast MP3 encoder so all listeners get
+    // a uniform stream regardless of the demod-mode audio rate.
     const OUT_RATE = 48000;
+    // ICECAST via MP3. Password is held separately and injected here so
+    // it never appears in the persisted icecastUrl (PI masks it via
+    // type="password").
+    const url = buildIcecastUrl(this.cfg.icecastUrl!, this.cfg.icecastPassword);
     const args = [
       '-hide_banner', '-loglevel', 'error',
       '-fflags', 'nobuffer', '-flags', 'low_delay',
       '-flush_packets', '1',
       '-f', 's16le', '-ar', String(sampleRate), '-ac', String(channels),
       '-i', 'pipe:0',
-      // Synchronous resample, no `async` mode. The Airspy crystal and the
-      // CoreAudio output device crystal drift by a few hundred ppm in
-      // practice. ffmpeg's `async` resampler "absorbs" that drift by
-      // queueing samples — over 10+ minutes of operation, the queue
-      // grows to multiple seconds, showing up as a "preset switch lag
-      // grows the longer the plugin runs" symptom. Dropping async makes
-      // ffmpeg drop/duplicate samples instead of queueing (occasional
-      // imperceptible micro-click instead of growing latency).
+      // Synchronous resample, no `async` mode. Avoids the multi-second
+      // queue growth the async resampler accumulates over long uptimes.
       '-af', `aresample=${OUT_RATE}`,
+      '-acodec', 'libmp3lame',
+      '-b:a', this.cfg.bitrate ?? '128k',
+      '-f', 'mp3',
+      url,
     ];
-    if (this.cfg.mode === 'local') {
-      // macOS AudioToolbox: resolve device NAME to current ffmpeg index every
-      // start (indices renumber when devices add/remove).
-      let dev = 'default';
-      if (this.cfg.deviceName && this.cfg.deviceName !== 'default') {
-        try {
-          const map = await getFfmpegDeviceIndexMap();
-          const idx = map.get(this.cfg.deviceName);
-          if (idx !== undefined) dev = String(idx);
-          else streamDeck.logger.warn(`[FfmpegOutput] device "${this.cfg.deviceName}" not found, using default`);
-        } catch (e) {
-          streamDeck.logger.warn(`[FfmpegOutput] device lookup failed: ${e}, using default`);
-        }
-      }
-      args.push('-f', 'audiotoolbox', dev);
-    } else {
-      // ICECAST via MP3. Password is held separately and injected here so
-      // it never appears in the persisted icecastUrl (PI masks it via
-      // type="password").
-      const url = buildIcecastUrl(this.cfg.icecastUrl!, this.cfg.icecastPassword);
-      args.push(
-        '-acodec', 'libmp3lame',
-        '-b:a', this.cfg.bitrate ?? '128k',
-        '-f', 'mp3',
-        url,
-      );
-    }
-    // Per-instance binary override: PI / config can set a specific ffmpeg
-    // build (e.g. /opt/local/bin/ffmpeg7) without touching the env var.
-    // Falls back to auto-detected FFMPEG (which already honours
-    // DECK_RX_FFMPEG_PATH if set).
-    const fs = require('fs');           // eslint-disable-line @typescript-eslint/no-require-imports
-    let ffmpegBin = FFMPEG;
-    if (this.cfg.binary) {
-      try { fs.accessSync(this.cfg.binary); ffmpegBin = this.cfg.binary; }
-      catch { streamDeck.logger.warn(`[FfmpegOutput] cfg.binary="${this.cfg.binary}" not accessible, using ${FFMPEG}`); }
-    }
-    streamDeck.logger.info(`[FfmpegOutput] spawn ${ffmpegBin} ${args.join(' ')}`);
-    this.proc = spawn(ffmpegBin, args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    streamDeck.logger.info(`[FfmpegOutput] spawn ${FFMPEG} ${args.join(' ')}`);
+    this.proc = spawn(FFMPEG, args, { stdio: ['pipe', 'ignore', 'pipe'] });
     this.spawnAt = Date.now();
     let lastStderr = '';
     this.proc.stderr?.on('data', (d: Buffer) => {
@@ -207,8 +164,9 @@ export class FfmpegOutput implements AudioOutput {
         }
       }, 500);
     });
-    // Minimal silence prefill (40ms) — enough to suppress AudioToolbox first-
-    // callback pop without adding noticeable end-to-end latency.
+    // Minimal silence prefill (40ms) — gives the icecast encoder a clean
+    // priming buffer before live PCM starts arriving, without adding any
+    // noticeable end-to-end latency.
     const silenceSamples = Math.round(sampleRate * 0.04) * channels;
     const silence = Buffer.alloc(silenceSamples * 2); // int16
     if (this.proc.stdin?.writable) this.proc.stdin.write(silence);
@@ -229,7 +187,7 @@ export class FfmpegOutput implements AudioOutput {
       const finish = () => { resolve(); };
       // Most ffmpeg shutdowns finish < 100 ms after SIGTERM, but a stuck
       // child shouldn't block start() forever — escalate to SIGKILL after
-      // 800 ms so AudioToolbox is guaranteed released before the next spawn.
+      // 800 ms.
       const escalate = setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 800);
       const timeout  = setTimeout(() => { clearTimeout(escalate); finish(); }, 1500);
       proc.once('exit', () => { clearTimeout(escalate); clearTimeout(timeout); finish(); });

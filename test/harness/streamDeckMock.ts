@@ -88,7 +88,7 @@ const DEFAULT_CONFIG = {
   host: '127.0.0.1',
   port: 8888,
   enabled: false,         // master OFF — no SpyClient.connect
-  audioEnabled: false,    // no ffmpeg spawn
+  audioEnabled: false,    // no audio sink spawn
   demodMode: 1,
   jpRegion: 'kanto',
 };

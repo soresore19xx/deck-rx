@@ -6,11 +6,13 @@
   "iqDecimation": 2,
   "audioDecimate": 4,
   "gain": 0,
-  "audioOutput": "ffmpeg",
+  "naudiodon": {
+    "deviceName": "default"
+  },
   "ffmpeg": {
     "mode": "local",
-    "deviceName": "default",
-    "icecastUrl": "icecast://source:changeme@example.com:8000/spyserver",
+    "icecastUrl": "icecast://source@example.com:8000/spyserver",
+    "icecastPassword": "changeme",
     "bitrate": "128k"
   },
   "fm": {

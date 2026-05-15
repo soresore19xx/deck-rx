@@ -2,7 +2,7 @@
 
 Stream Deck + plugin to control a remote [SpyServer](https://airspy.com/) and listen to AM/SW/FM radio directly from the Stream Deck encoder dials.
 
-The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a NanoPi), pulls down INT16 IQ samples, demodulates them in TypeScript, and pipes the resulting PCM through `ffmpeg` to a chosen macOS CoreAudio device.
+The plugin connects over TCP to a SpyServer (e.g., an Airspy HF+ Discovery on a NanoPi), pulls down INT16 IQ samples, demodulates them in TypeScript, and feeds the resulting PCM to a chosen macOS CoreAudio device via the in-process `naudiodon` (PortAudio) sink. An optional icecast publish path (PCM → MP3 → icecast SOURCE) is also available for streaming to a remote server.
 
 ![Deck RX — all four LCD panels](docs/lcd-combined.png)
 
@@ -12,9 +12,9 @@ Per-dial layouts and screenshots (Tune / Volume / Combo / FM / AM / SSB / Band S
 
 | | |
 |---|---|
-| OS | **macOS** (Apple Silicon or Intel) — CoreAudio output via ffmpeg's audiotoolbox device path |
+| OS | **macOS** (Apple Silicon or Intel) — CoreAudio output via `naudiodon` (PortAudio binding) |
 | Host app | **Elgato Stream Deck** app v6+, with a Stream Deck **+** (the encoder + LCD model). Other Stream Deck models load the plugin but the dial / LCD actions only render usefully on the `+` |
-| Runtime tooling (MacPorts) | `sudo port install ffmpeg switchaudio-osx portaudio` — `ffmpeg` is the default demod → audio bridge (option `ffmpeg7` also supported via the PI), `switchaudio-osx` resolves output device names, `portaudio` (arm64) is needed when the user picks the alternative `naudiodon` audio engine. The Stream Deck app ships its own bundled Node for running installed plugins; run `npm run rebuild-native` once after `npm install` to rebuild the naudiodon native binding against that bundled Node ABI. |
+| Runtime tooling (MacPorts) | `sudo port install switchaudio-osx portaudio` — `switchaudio-osx` populates the PI's output-device dropdown, `portaudio` (arm64) backs the `naudiodon` local-audio sink. Add `sudo port install ffmpeg` only if you plan to use the icecast publish path (ffmpeg hosts the MP3 encoder + icecast SOURCE client). The Stream Deck app ships its own bundled Node for running installed plugins; run `npm run rebuild-native` once after `npm install` to rebuild the naudiodon native binding against that bundled Node ABI. |
 | Remote SDR | Any SpyServer-compatible receiver. Tested with **Airspy HF+ Discovery** (HF 0.5–31 MHz + VHF 60–260 MHz, 31–60 MHz hardware gap) running SpyServer on a Linux ARM/aarch64 (NanoPi etc.); see [docs/server-setup.md](docs/server-setup.md) for the server side. Airspy R2 / Mini and RTL-SDR also expected to work but are less exercised. |
 
 Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / `sox` for the dump + analysis scripts) is documented in [docs/build-install.md](docs/build-install.md).
@@ -44,7 +44,7 @@ Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / 
 | Auto station-name lookup | ✅ **Japan-area only** for the JP DB — region-switchable from the Tune dial PI across all 8 regions (関東 / 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 / 沖縄): 関東 + 沖縄 cover AM / FM / CFM together, the other 6 regions cover commercial FM via the 全国 FM 一覧 source; region-tagged manual overrides supported; the EIBI SW DB covers international shortwave (day / time / spur-aware); in-PI `Update Now` for both |
 | Preset list | ✅ records come solely from the deck-rx-owned `data/presets.json` (the SDR++ `frequency_manager_config.json` mirror); the dial render-time station name is enriched from the JP DB / callsign DB for the active region but the preset *count* stays bound to the SDR++ file. PI button `Import bookmarks` re-syncs on demand (frequency-keyed dedup — re-importing collapses any pre-existing duplicate-frequency entries, preferring the JP DB CJK name); optional `Auto-sync on startup` checkbox runs the import once at every plugin launch |
 | FFT Display dial | ✅ full-width 200×100 LCD encoder action showing the live IQ spectrum centered on the VFO. SDR++-style colour palette, configurable frame rate (1–120 fps) / smoothing factor / FFT size (256–2048) / dB floor & ceiling via the PI. Dial rotate = zoom on the active axis (H = horizontal span, 26 step ladder 1×–32×; V = vertical dB range, 12 step ladder 0.4×–2.0×), long-press toggles between H and V mode, short-press resets the active axis. Pixel→bin map switches between max-hold (≥1 bin/pixel, peak preserving) and linear-interp (<1 bin/pixel, smooths the comb that high zoom would otherwise produce) |
-| Audio engine selector | ✅ Tune dial PI dropdown picks between `ffmpeg → audiotoolbox` (battle-tested, free resample + format conversion, but the audiotoolbox sink wedges every ~5 h of continuous playback) and in-process `naudiodon` (PortAudio binding straight to CoreAudio, no wedge, slightly different volume + needs an ABI-matched native rebuild against the Stream Deck app's bundled Node — see `npm run rebuild-native`). PI also lets the user pin a specific ffmpeg binary path (auto / 4.x / 7.x) so users with both MacPorts builds installed can compare |
+| Audio sink | ✅ Local output goes through `naudiodon` (PortAudio → CoreAudio HAL) — no intermediate ffmpeg process, so it doesn't suffer the audiotoolbox-sink wedge that an earlier ffmpeg-based local path exhibited every ~5 h of continuous playback. The native binding needs an ABI-matched rebuild against the Stream Deck app's bundled Node (`npm run rebuild-native`). The PI's `Output` selector switches the sink between local (`naudiodon`) and icecast publish (`ffmpeg` internally, MP3 over the icecast SOURCE protocol). |
 
 ## Documentation
 

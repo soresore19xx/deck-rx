@@ -105,19 +105,15 @@ interface Config {
   gain?: number;          // legacy single-gain field (migrated to amGain on first load)
   amGain?: number;        // RF gain index used while in AM mode
   fmGain?: number;        // RF gain index used while in NFM/WFM (and other non-AM)
-  audioOutput?: 'naudiodon' | 'ffmpeg';
   naudiodon?: { deviceId?: number; deviceName?: string };
+  // ffmpeg sub-object now configures the icecast publish path only.
+  // `mode === 'icecast'` selects FfmpegOutput; otherwise local audio goes
+  // through NaudiodonOutput.
   ffmpeg?: {
     mode?: 'local' | 'icecast';
-    deviceName?: string;
     icecastUrl?: string;
     icecastPassword?: string;
     bitrate?: string;
-    // Absolute path to the ffmpeg binary, e.g. "/opt/local/bin/ffmpeg7".
-    // Overrides the AudioOutput.ts auto-detect when set. Persists across
-    // logins (env var DECK_RX_FFMPEG_PATH was the previous mechanism;
-    // this is its config-level equivalent).
-    binary?: string;
   };
   fm?: Partial<FMOptions>;
   am?: Partial<AMOptions>;
@@ -1038,21 +1034,14 @@ class SpyService {
 
     streamDeck.logger.info(`[spyService] startAudio decStage=${decStage} iqRate=${iqRate} audioRate=${audioRate} gain=${gain}`);
 
-    // Build audio output
-    if (cfg.audioOutput === 'naudiodon') {
-      this.audioOutput = new NaudiodonOutput(cfg.naudiodon ?? {});
-      // Surface the resolved name when we have one; falls back to id for old
-      // configs that only set deviceId.
-      this.currentAudioDeviceName = cfg.naudiodon?.deviceName
-        || (cfg.naudiodon?.deviceId !== undefined ? `naudiodon#${cfg.naudiodon.deviceId}` : 'naudiodon default');
-    } else {
+    // Build audio output. The engine is picked from the output mode, not a
+    // separate setting: local → naudiodon, icecast → ffmpeg (the only path
+    // that still implements icecast SOURCE + MP3 encode in-process).
+    if (cfg.ffmpeg?.mode === 'icecast') {
       const ffOut = new FfmpegOutput({
-        mode:            cfg.ffmpeg?.mode        ?? 'local',
-        deviceName:      cfg.ffmpeg?.deviceName,
         icecastUrl:      cfg.ffmpeg?.icecastUrl,
         icecastPassword: cfg.ffmpeg?.icecastPassword,
         bitrate:         cfg.ffmpeg?.bitrate,
-        binary:          cfg.ffmpeg?.binary,
       });
       ffOut.setStateChangeHandler((broken, info) => {
         if (this.audioOutputBroken === broken) return;
@@ -1063,16 +1052,20 @@ class SpyService {
         for (const fn of this.audioOutputBrokenListeners) fn(broken, this.audioOutputErrorTag);
       });
       this.audioOutput = ffOut;
-      this.currentAudioDeviceName = cfg.ffmpeg?.mode === 'icecast'
-        ? 'icecast'
-        : (cfg.ffmpeg?.deviceName || 'default');
+      this.currentAudioDeviceName = 'icecast';
+    } else {
+      this.audioOutput = new NaudiodonOutput(cfg.naudiodon ?? {});
+      // Surface the resolved name when we have one; falls back to id for old
+      // configs that only set deviceId.
+      this.currentAudioDeviceName = cfg.naudiodon?.deviceName
+        || (cfg.naudiodon?.deviceId !== undefined ? `naudiodon#${cfg.naudiodon.deviceId}` : 'naudiodon default');
     }
     await this.audioOutput.start(audioRate, channels);
     this.demod.reset();
     this.currentIQRate = iqRate;
     this.iqnr.setMode(this.currentDemodMode as DemodMode, iqRate);
-    // Mute initial period to suppress ffmpeg/AudioToolbox startup pop and
-    // demodulator transient (atan2 with near-zero prev I/Q, AM DC settling).
+    // Mute initial period to suppress device-startup pop and demodulator
+    // transient (atan2 with near-zero prev I/Q, AM DC settling).
     this.muteUntil = Math.max(this.muteUntil, Date.now() + 500);
 
     // Attach IQ data listener BEFORE enabling streaming
@@ -1290,7 +1283,6 @@ class SpyService {
       gain:          cfg.gain,
       amGain:        cfg.amGain,
       fmGain:        cfg.fmGain,
-      audioOutput:   cfg.audioOutput   ?? 'ffmpeg',
       naudiodon:     cfg.naudiodon,
       ffmpeg:        cfg.ffmpeg,
       fm:            cfg.fm,
@@ -1391,8 +1383,6 @@ class SpyService {
     icecastUrl: string;
     icecastPassword: string;
     bitrate: string;
-    ffmpegBinary: string;
-    audioEngine: 'ffmpeg' | 'naudiodon';
   }> {
     const cfg = await this.loadConfig();
     // Split any embedded password out of icecastUrl so the PI can hand the
@@ -1406,13 +1396,11 @@ class SpyService {
     const pwd = explicitPwd || (m ? m[2] : '');
     return {
       audioEnabled:    !!cfg.audioEnabled,
-      deviceName:      cfg.ffmpeg?.deviceName ?? 'default',
+      deviceName:      cfg.naudiodon?.deviceName ?? 'default',
       outputMode:      (cfg.ffmpeg?.mode === 'icecast' ? 'icecast' : 'local'),
       icecastUrl:      urlClean,
       icecastPassword: pwd,
       bitrate:         cfg.ffmpeg?.bitrate ?? '128k',
-      ffmpegBinary:    cfg.ffmpeg?.binary ?? '',
-      audioEngine:     (cfg.audioOutput === 'naudiodon' ? 'naudiodon' : 'ffmpeg'),
     };
   }
 

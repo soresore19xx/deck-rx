@@ -46,20 +46,42 @@
     let uuid = null;
     let registerEvent = null;
 
-    function connect(inPort, inUUID, inRegisterEvent, inActionInfo) {
+    // Stream Deck SDK calls this with FIVE positional args:
+    // (inPort, inPluginUUID, inRegisterEvent, inInfo, inActionInfo).
+    // The PREVIOUS signature accepted only four, so the variable named
+    // inActionInfo actually received inInfo (application info — no
+    // payload.settings). That meant the hydrate path silently fell back
+    // to the HTML default `value="16"` etc. every time the PI opened,
+    // even though save() was sending setSettings correctly. The bug
+    // showed up as "values reset on Stream Deck App restart" because
+    // there was no observable difference between persisted vs default
+    // until the user actually changed a value and then re-opened.
+    function connect(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
       uuid = inUUID;
       registerEvent = inRegisterEvent;
       actionInfo = JSON.parse(inActionInfo);
       ws = new WebSocket('ws://127.0.0.1:' + inPort);
       ws.onopen = () => {
         ws.send(JSON.stringify({ event: registerEvent, uuid }));
-        const s = actionInfo.payload.settings || {};
-        if (s.frameRate)  document.getElementById('frameRate').value  = s.frameRate;
-        if (s.smoothing)  document.getElementById('smoothing').value  = s.smoothing;
-        if (s.fftSize)    document.getElementById('fftSize').value    = String(s.fftSize);
-        if (s.dbFloor != null) document.getElementById('dbFloor').value = s.dbFloor;
-        if (s.dbCeil  != null) document.getElementById('dbCeil').value  = s.dbCeil;
+        // Request the latest persisted settings from Stream Deck App —
+        // actionInfo.payload.settings is a snapshot at PI-open time but
+        // an explicit getSettings + didReceiveSettings handshake is the
+        // SDK-recommended way to handle hydration robustly. The reply
+        // comes back through ws.onmessage below.
+        ws.send(JSON.stringify({ event: 'getSettings', context: uuid }));
+        hydrate(actionInfo.payload.settings || {});
       };
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+        if (msg.event === 'didReceiveSettings') hydrate(msg.payload.settings || {});
+      };
+    }
+    function hydrate(s) {
+      if (s.frameRate)  document.getElementById('frameRate').value  = s.frameRate;
+      if (s.smoothing)  document.getElementById('smoothing').value  = s.smoothing;
+      if (s.fftSize)    document.getElementById('fftSize').value    = String(s.fftSize);
+      if (s.dbFloor != null) document.getElementById('dbFloor').value = s.dbFloor;
+      if (s.dbCeil  != null) document.getElementById('dbCeil').value  = s.dbCeil;
     }
 
     function save() {
@@ -78,10 +100,16 @@
       return Math.max(lo, Math.min(hi, v));
     }
 
+    // Direct registration — this <script> sits below the input / select
+    // elements in body, so the DOM is already populated when the script
+    // runs. Wrapping in DOMContentLoaded would silently no-op: Stream
+    // Deck App loads the PI HTML completely BEFORE calling
+    // connectElgatoStreamDeckSocket, so the event has already fired and
+    // a late addEventListener('DOMContentLoaded', ...) never runs. That
+    // was the original bug — change listeners never got attached and
+    // values typed into the PI were lost on next open.
     ['frameRate','smoothing','fftSize','dbFloor','dbCeil'].forEach((id) => {
-      document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById(id).addEventListener('change', save);
-      });
+      document.getElementById(id).addEventListener('change', save);
     });
 
     window.connectElgatoStreamDeckSocket = connect;

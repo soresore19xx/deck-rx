@@ -278,6 +278,13 @@ class SpyService {
   // (mean²/variance is high for stable carriers, low for noise-dominated signals)
   private snrSmoothed = 0;     // dB
   private muteUntil = 0;  // ms epoch — output silence until this time
+  // Tracks whether the previous PCM buffer was muted, so we can apply a
+  // short fade-out on mute entry and fade-in on mute lift. Without ramps,
+  // the旧freq → 0 and 0 → 新freq amplitude steps at the queue boundary
+  // (naudiodon side, ~145 ms after the spyService mute window) play out
+  // as audible ボツッ clicks, especially on AM where the resetForRetune'd
+  // AGC has not yet re-converged to the new carrier level.
+  private lastBufferMuted = false;
   // Live RF gain control — held separately for AM and non-AM (FM/NFM/etc)
   // because the strong-signal IMD problem on the AM band requires lower gain
   // than is comfortable on FM. undefined means "not yet hydrated" — set to
@@ -654,7 +661,12 @@ class SpyService {
     //     window so under rapid dial the user hears silence until
     //     they stop, then audio resumes on the final freq.
     if (!opts.smooth) {
-      this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
+      // AM: the resetForRetune() zeros amDc / amAgcAmp / amSyncPhase,
+      // and the carrier AGC needs ~150–200 ms to re-converge to the
+      // new station's level. 100 ms (the FM/WFM value) left a residual
+      // level step audible as ボツッ; 200 ms covers the AGC settle.
+      const muteMs = this.currentDemodMode === 2 ? 200 : 100;
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + muteMs);
       this.demod.resetForRetune();
     } else if (this.currentDemodMode === 2) {
       // 200 ms matches the AM sync PLL's pull-in at wn=150 Hz (see
@@ -1214,15 +1226,58 @@ class SpyService {
         streamDeck.logger.info(`[spyService] spec/prod freq=${tuned} ${fmt(prod)}`);
         lastSpec = _now;
       }
-      if (Date.now() < this.muteUntil || this.muted) {
-        pcm.fill(0);
-      } else if (this.volume !== 1) {
-        const v = this.volume;
-        for (let i = 0; i < pcm.length; i++) {
-          const s = pcm[i] * v;
-          pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
+      const muted = Date.now() < this.muteUntil || this.muted;
+      // 8 ms ramp at the audioRate (channels-interleaved). Long enough to
+      // hide the amplitude step at the mute boundary; short enough that
+      // the listener doesn't notice a fade. naudiodon's ~145 ms cushion
+      // (maxQueue=4) still delays the audible boundary, but with the
+      // step itself ramped the boundary becomes a soft envelope instead
+      // of a click.
+      const FADE_MS = 8;
+      const fadeFrames = Math.max(1, Math.floor(audioRate * FADE_MS / 1000));
+      const fadeLen = Math.min(fadeFrames * channels, pcm.length);
+      if (muted) {
+        if (!this.lastBufferMuted) {
+          // Fade-out at mute entry: ramp the head of this buffer from
+          // 1 → 0 (applying volume), then zero the rest. The previous
+          // buffer played at full volume so the head continues from
+          // there smoothly.
+          const v = this.volume;
+          for (let i = 0; i < fadeLen; i++) {
+            const g = (1 - i / fadeLen) * v;
+            const s = pcm[i] * g;
+            pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
+          }
+          pcm.fill(0, fadeLen);
+        } else {
+          pcm.fill(0);
+        }
+      } else {
+        if (this.lastBufferMuted) {
+          // Fade-in at mute lift: ramp the head from 0 → 1 (applying
+          // volume), then apply volume to the rest as usual.
+          const v = this.volume;
+          for (let i = 0; i < fadeLen; i++) {
+            const g = (i / fadeLen) * v;
+            const s = pcm[i] * g;
+            pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
+          }
+          if (this.volume !== 1) {
+            const v2 = this.volume;
+            for (let i = fadeLen; i < pcm.length; i++) {
+              const s = pcm[i] * v2;
+              pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
+            }
+          }
+        } else if (this.volume !== 1) {
+          const v = this.volume;
+          for (let i = 0; i < pcm.length; i++) {
+            const s = pcm[i] * v;
+            pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
+          }
         }
       }
+      this.lastBufferMuted = muted;
       // Audio tap — file-flag-triggered, same pattern as the LCD-dump hook.
       // touch /tmp/deck-rx-audio-record to start; rm /tmp/deck-rx-audio-record
       // to stop. While the flag exists every PCM buffer is appended to a

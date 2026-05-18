@@ -291,9 +291,15 @@ export class NaudiodonOutput implements AudioOutput {
         // packets / 114 kHz). Too thin for a stable SpyServer-vs-DX7s
         // clock-drift absorption — underruns produce intermittent
         // silence frames perceived as a buzz ("ビリビリ") on continuous
-        // FM audio. 8 buffers (~290 ms) gives generous headroom while
-        // still keeping the dial-to-audio latency tolerable.
-        maxQueue: 8,
+        // FM audio. 4 buffers (~145 ms) leaves drift headroom while
+        // staying close to the spyService preset-jump mute window
+        // (100 ms): with 8 buffers the queue held ~290 ms of old-freq
+        // PCM after a preset change, so the post-mute boundary fell
+        // INSIDE the queue and the 旧 freq → zero → 新 freq step pair
+        // played out as audible click/click. Halving the cushion moves
+        // the boundary much closer to the mute window so the steps
+        // overlap into the mute zone instead of leaking past it.
+        maxQueue: 4,
       },
     });
     (this.ai as { start: () => void }).start();

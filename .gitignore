@@ -43,3 +43,5 @@ docs/dev-notes.md
 
 # Naudiodon / native-binding segfault dumps (segfault-handler writes here)
 /crash.log
+native/samplerate/build/
+

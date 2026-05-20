@@ -15,7 +15,8 @@ export default defineConfig({
     commonjs(),
     typescript(),
   ],
-  external: ['naudiodon', 'net', 'fs', 'path', 'os', 'events', 'fs/promises', 'child_process',
+  external: ['naudiodon', 'deck-rx-asrc',
+             'net', 'fs', 'path', 'os', 'events', 'fs/promises', 'child_process',
              'node:fs', 'node:path', 'node:process', 'node:crypto', 'stream', 'http', 'https',
              'url', 'zlib', 'buffer', 'crypto', 'tls'],
 });

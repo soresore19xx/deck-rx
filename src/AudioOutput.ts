@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import streamDeck from '@elgato/streamdeck';
 import { Biquad } from './dspFilters.js';
+import { SampleRateConverter, AsrcQuality } from './asrc.js';
 
 // Resolve ffmpeg absolute path (Stream Deck plugin runs with limited PATH).
 const FFMPEG = (() => {
@@ -13,7 +14,12 @@ const FFMPEG = (() => {
 
 export interface AudioOutput {
   start(sampleRate: number, channels: number): Promise<void>;
-  write(pcm: Int16Array): void;
+  /** Write PCM to the sink. `muted` tells the sink that this buffer is
+   *  zero-filled (or near-zero — fade ramps qualify) so it can suspend
+   *  any audio-rate observers that would otherwise read garbage out of
+   *  the silence (e.g. the ASRC drift-compensation control loop, which
+   *  only makes sense over an actively-playing buffer). */
+  write(pcm: Int16Array, muted?: boolean): void;
   /** Stop and wait for the underlying audio sink to fully release its
    *  device. Required so a subsequent start() can grab the device at the
    *  right sample rate without racing the previous sink. */
@@ -231,6 +237,25 @@ export class NaudiodonOutput implements AudioOutput {
   private lpfR: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
   private lpfConfiguredAt = 0;
 
+  // Drift-compensation ASRC. The writer (SpyServer demod) and the reader
+  // (DX7s/CoreAudio) run on independent crystals that drift by a few ppm.
+  // Over hours that accumulates to tens of ms, exhausts the PortAudio
+  // queue cushion, and plays back as audible underrun ("ビリビリ"). We
+  // pass every PCM buffer through libsamplerate before naudiodon.write
+  // and tune the resampling ratio in a slow control loop from the
+  // Writable stream's writableLength backlog. This is the same mechanism
+  // SDR++ uses internally for its audio sinks. See src/asrc.ts.
+  private asrc: SampleRateConverter | null = null;
+  // PI controller state — see updateAsrcRatio() for the tuning rationale.
+  private writesSinceTune = 0;
+  private writableLenEma = 0;       // bytes, exponential moving average
+  private currentRatio = 1.0;
+  // Static base ratio for input→device rate conversion (CoreAudio
+  // sidestep). The ASRC ratio at steady state == baseRatio; dynamic
+  // adjustments add a small ±ppm drift correction on top.
+  private baseRatio = 1.0;
+  private deviceSampleRate = 0;
+
   constructor(private cfg: NaudiodonConfig = {}) {}
 
   private configureLpfIfNeeded(sampleRate: number): void {
@@ -271,46 +296,126 @@ export class NaudiodonOutput implements AudioOutput {
     // throw the caller can catch (spyService logs + leaves audio disabled).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const naudiodon = require('naudiodon') as {
-      AudioIO: new (opts: unknown) => { start: () => void; write: (b: Buffer) => void; quit: () => void };
+      AudioIO: new (opts: unknown) => { start: () => void; write: (b: Buffer) => void; quit: () => void; writableLength?: number };
       SampleFormat16Bit: number;
-      getDevices: () => Array<{ id: number; name: string; maxOutputChannels: number }>;
+      getDevices: () => Array<{ id: number; name: string; maxOutputChannels: number; defaultSampleRate: number }>;
     };
     const deviceId = this.resolveDeviceId(naudiodon);
+    // Open the PortAudio stream at the DEVICE's preferred sample rate
+    // (e.g. DX7s = 96 kHz). When we open at the demod's audio rate
+    // (114 kHz) instead, PortAudio hands the stream to CoreAudio which
+    // resamples internally with a static rate — that resampler has no
+    // drift compensation, so a few-ppm crystal mismatch between Airspy
+    // and DX7s accumulates into queue creep (latency) or underrun
+    // ("ビリビリ") over hours. SDR++ avoids this by opening at the
+    // device-native rate; we do the same here, and the in-tree ASRC
+    // (libsamplerate) handles BOTH the static input→device rate
+    // conversion AND the dynamic ppm-scale drift correction.
+    const devices = naudiodon.getDevices();
+    const effectiveId = deviceId >= 0 ? deviceId : devices.find(d => d.maxOutputChannels > 0)?.id ?? 0;
+    const dev = devices.find(d => d.id === effectiveId);
+    const deviceRate = dev?.defaultSampleRate || sampleRate;
+    this.deviceSampleRate = deviceRate;
+    this.baseRatio = deviceRate / sampleRate;
+    // LPF runs at INPUT rate (114 kHz), before downsampling. Cutoff
+    // 22 kHz is well below the device-rate Nyquist (48 kHz at 96 kHz
+    // device) so no aliasing on the downsample.
     this.configureLpfIfNeeded(sampleRate);
     for (const b of this.lpfL) b.reset();
     for (const b of this.lpfR) b.reset();
-    streamDeck.logger.info(`[NaudiodonOutput] start sampleRate=${sampleRate} channels=${channels} deviceId=${deviceId} (cfg deviceName=${this.cfg.deviceName ?? '-'})`);
+    // ASRC starts at baseRatio (rate-conversion only); the dynamic
+    // control loop adds ±ppm drift correction on top. SINC_FASTEST is
+    // overkill for 114→96 kHz (cheap polyphase quality is fine here)
+    // but the upgrade from Linear is essentially free at our sample
+    // budget and removes any audible high-freq artefact.
+    this.asrc = new SampleRateConverter({ channels, quality: AsrcQuality.SincFastest, ratio: this.baseRatio });
+    this.writesSinceTune = 0;
+    this.writableLenEma = 0;
+    this.currentRatio = this.baseRatio;
+    streamDeck.logger.info(`[NaudiodonOutput] start inputRate=${sampleRate} deviceRate=${deviceRate} channels=${channels} deviceId=${effectiveId} (cfg deviceName=${this.cfg.deviceName ?? '-'}) baseRatio=${this.baseRatio.toFixed(6)} asrc=${this.asrc.active ? 'on' : 'passthrough'}`);
     this.ai = new naudiodon.AudioIO({
       outOptions: {
         channelCount: channels,
         sampleFormat: naudiodon.SampleFormat16Bit,
-        sampleRate,
+        sampleRate: deviceRate,  // ← device native, no CoreAudio resample
         deviceId,
         closeOnError: false,
-        // maxQueue default = 2 buffers (~72 ms cushion at 4096 sample
-        // packets / 114 kHz). Too thin for a stable SpyServer-vs-DX7s
-        // clock-drift absorption — underruns produce intermittent
-        // silence frames perceived as a buzz ("ビリビリ") on continuous
-        // FM audio. 4 buffers (~145 ms) leaves drift headroom while
-        // staying close to the spyService preset-jump mute window
-        // (100 ms): with 8 buffers the queue held ~290 ms of old-freq
-        // PCM after a preset change, so the post-mute boundary fell
-        // INSIDE the queue and the 旧 freq → zero → 新 freq step pair
-        // played out as audible click/click. Halving the cushion moves
-        // the boundary much closer to the mute window so the steps
-        // overlap into the mute zone instead of leaking past it.
-        maxQueue: 4,
+        // 8 buffers cushion at the device rate. With ASRC keeping the
+        // JS-side Writable backlog centred via the control loop and
+        // CoreAudio no longer fighting us with a static resampler in
+        // between, the queue should track close to its set point.
+        maxQueue: 8,
       },
     });
     (this.ai as { start: () => void }).start();
   }
 
-  write(pcm: Int16Array): void {
+  /** Slow integrating control loop that nudges the ASRC ratio so the
+   *  writer/reader clock drift doesn't accumulate. Called from write()
+   *  once every TUNE_INTERVAL writes, NOT every write (the change is
+   *  ppm-scale and observation noise dominates at short timescales).
+   *
+   *  Signal: the naudiodon Writable stream's writableLength (bytes
+   *  queued in JS waiting for the internal _write callback to drain
+   *  them into PortAudio). When PortAudio's downstream queue is full,
+   *  _write blocks, writableLength rises. When the reader keeps up,
+   *  writableLength stays near zero. So a sustained-high writableLength
+   *  means "writer is faster than reader" → lower the ratio so we
+   *  output fewer samples per input, slowing the writer.
+   *
+   *  Sustained-zero writableLength is the opposite case but harder to
+   *  distinguish from "we just happen to be between buffer arrivals" —
+   *  we use a low EMA threshold and a slower upward step. */
+  private updateAsrcRatio(): void {
+    if (!this.asrc?.active) return;
+    const ai = this.ai as { writableLength?: number } | null;
+    const wl = ai?.writableLength ?? 0;
+    // EMA smoothing: α = 1/8 → ~300 ms window at TUNE_INTERVAL=4 (~36 ms
+    // per packet × 4 packets per tune). Tracks drift faster than the
+    // earlier α = 1/16, but still ignores per-packet arrival jitter.
+    this.writableLenEma = this.writableLenEma * 7 / 8 + wl / 8;
+    // Target a small but non-zero backlog: TARGET. The previous v2
+    // soak used a wide dead zone (LOW=2048, HIGH=16384) — the EMA
+    // settled inside that band and the ratio got stuck off-axis (0.9924
+    // for 12 h), eventually starving the queue into underrun. Switch
+    // to a TIGHT band around TARGET + long-term pull toward baseRatio
+    // so the ratio always relaxes back to the rate-conversion-only
+    // operating point unless drift actively pushes it away.
+    const TARGET = 6000;       // bytes (~30 ms at 96 kHz × 2 ch × 2 byte)
+    const BAND   = 1500;       // ± from TARGET for active drift correction
+    const STEP   = 5e-6;       // 5 ppm per tune (smaller, more stable)
+    const RESTORE_STEP = 1e-6; // 1 ppm pull toward baseRatio every tune
+    const MIN_RATIO = this.baseRatio * 0.999;  // ±0.1 % from base
+    const MAX_RATIO = this.baseRatio * 1.001;
+    let next = this.currentRatio;
+    if (this.writableLenEma > TARGET + BAND) {
+      next -= STEP;
+    } else if (this.writableLenEma < TARGET - BAND) {
+      next += STEP;
+    } else {
+      // In-band: nudge ratio toward baseRatio. Prevents the off-axis
+      // lock-in that bit us before. If drift is real and persistent,
+      // the wl will keep pushing the EMA out of band and the STEP-
+      // direction correction wins over the RESTORE pull.
+      if (next > this.baseRatio) next -= RESTORE_STEP;
+      else if (next < this.baseRatio) next += RESTORE_STEP;
+    }
+    if (next < MIN_RATIO) next = MIN_RATIO;
+    if (next > MAX_RATIO) next = MAX_RATIO;
+    if (next !== this.currentRatio) {
+      this.currentRatio = next;
+      this.asrc.setRatio(next);
+    }
+    // TEMP debug (2026-05-20 soak v3): emit every tune. Remove once the
+    // soak signs off.
+    streamDeck.logger.info(`[NaudiodonOutput] asrc wl=${wl} wlEma=${this.writableLenEma.toFixed(0)} ratio=${this.currentRatio.toFixed(7)} base=${this.baseRatio.toFixed(6)}`);
+  }
+
+  write(pcm: Int16Array, muted = false): void {
     if (!this.ai) return;
-    // Apply the output-stage LPF in-place. PCM is interleaved stereo
-    // (LRLRLR...). Each channel runs through its own 4-biquad cascade.
-    // Filter is in Float math but the output gets clipped + integerised
-    // back to Int16 before naudiodon.write.
+    // Apply the output-stage LPF in-place BEFORE the ASRC, so the
+    // resampler sees a band-limited signal (any > 22 kHz residue would
+    // alias when ratio < 1 produces a slightly lower output rate).
     const lL = this.lpfL, lR = this.lpfR;
     const n = pcm.length;
     for (let i = 0; i < n; i += 2) {
@@ -321,13 +426,56 @@ export class NaudiodonOutput implements AudioOutput {
       pcm[i]     = l >= 32767 ? 32767 : l <= -32768 ? -32768 : (l | 0);
       pcm[i + 1] = r >= 32767 ? 32767 : r <= -32768 ? -32768 : (r | 0);
     }
-    (this.ai as { write: (b: Buffer) => void }).write(
-      Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength),
-    );
+    // Overflow drop: when the JS Writable's backlog blows past a sane
+    // ceiling, the slow ratio-control loop can't catch up by itself —
+    // it can only nudge writer rate by 50 ppm per tune. Dropping the
+    // current PCM buffer is a coarse but effective brake: ~36 ms of
+    // skipped audio (one packet at 114 kHz × 4096 frames) is well below
+    // the lip-sync threshold and prevents minutes-long queue creep
+    // that pushes audio output behind the user's dial by seconds.
+    // Equivalent to SDR++'s packer-overflow drop, just at the sink edge
+    // instead of inside a dedicated ring buffer.
+    const ai = this.ai as { writableLength?: number; write: (b: Buffer) => void };
+    const OVERFLOW_DROP = 16384 * 8;  // 8 buffers worth ≈ 290 ms backlog
+    if ((ai.writableLength ?? 0) > OVERFLOW_DROP) {
+      // Skip the write entirely. Bias the tune timer so the ratio loop
+      // sees the overflow and reacts on the next call.
+      this.writesSinceTune = 4;
+      return;
+    }
+    // ASRC: drift compensation. Ratio is tuned in updateAsrcRatio() once
+    // every TUNE_INTERVAL writes; this call just resamples at the
+    // currently-active ratio. With ratio = 1.0 the output is sample-
+    // identical to the input (libsamplerate has a fast-path for 1.0).
+    const out = this.asrc ? this.asrc.process(pcm) : pcm;
+    ai.write(Buffer.from(out.buffer, out.byteOffset, out.byteLength));
+    // Skip ratio tuning during muted buffers — the writableLength signal
+    // we sample for drift detection only reflects real writer/reader
+    // imbalance when audio is actually flowing. Mute periods (startup,
+    // preset retune, gain change) push zero PCM whose queue behaviour
+    // is dominated by the mute window's own dynamics, not by the
+    // crystal mismatch we're trying to track. Also reset the EMA
+    // counter on the FIRST muted write of a run so that we don't keep
+    // averaging in stale post-unmute samples that were collected just
+    // before muteUntil flipped.
+    if (muted) {
+      this.writesSinceTune = 0;
+      this.writableLenEma = 0;
+      return;
+    }
+    // 4 writes ≈ 150 ms tune cadence at 4096-sample packets / 114 kHz —
+    // 4× faster than the original 16-write interval so the integral
+    // control can chase ppm-scale drift before the queue creeps.
+    const TUNE_INTERVAL = 4;
+    if (++this.writesSinceTune >= TUNE_INTERVAL) {
+      this.writesSinceTune = 0;
+      this.updateAsrcRatio();
+    }
   }
 
   async stop(): Promise<void> {
     try { (this.ai as { quit?: () => void } | null)?.quit?.(); } catch {}
     this.ai = null;
+    this.asrc = null;
   }
 }

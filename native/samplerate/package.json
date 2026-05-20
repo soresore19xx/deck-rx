@@ -1,0 +1,11 @@
+{
+  "name": "deck-rx-asrc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "N-API wrapper around libsamplerate for deck-rx writer/reader clock drift compensation",
+  "main": "index.js",
+  "gypfile": true,
+  "dependencies": {
+    "node-addon-api": "^8.0.0"
+  }
+}

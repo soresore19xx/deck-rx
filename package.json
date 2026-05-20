@@ -7,9 +7,10 @@
     "postbuild": "node -e \"const fs=require('fs'),p=require('os').homedir()+'/Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin';try{if(!fs.lstatSync(p).isSymbolicLink()){console.error('ERROR: Plugins entry is not a symlink! Run: ln -s $(pwd)/com.hogehoge.deck-rx.sdPlugin \\\"'+p+'\\\"');process.exit(1)}}catch(e){console.error('ERROR: Plugin not installed as symlink:',e.message);process.exit(1)}\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "rebuild-native": "bash scripts/rebuild-naudiodon.sh"
+    "rebuild-native": "bash scripts/rebuild-native.sh"
   },
   "dependencies": {
+    "deck-rx-asrc": "file:./native/samplerate",
     "fft.js": "^4.0.4",
     "naudiodon": "^2.3.6",
     "node-html-parser": "^7.1.0"

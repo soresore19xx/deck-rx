@@ -1284,7 +1284,11 @@ class SpyService {
       // single WAV file (path printed in the log) so the user can compare
       // the deck-rx output to a SDR++ recording of the same station.
       this.tapAudio(pcm, audioRate, channels);
-      this.audioOutput.write(pcm);
+      // muted is the same flag used above to drive the ramp; relay it
+      // to the sink so its ASRC drift-control loop suspends observation
+      // while we're feeding zero PCM (writableLength readings during
+      // mute don't reflect crystal drift).
+      this.audioOutput.write(pcm, muted);
     };
     this.client.on('iqData', this.iqListener);
 

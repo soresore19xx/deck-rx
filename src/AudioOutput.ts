@@ -406,9 +406,6 @@ export class NaudiodonOutput implements AudioOutput {
       this.currentRatio = next;
       this.asrc.setRatio(next);
     }
-    // TEMP debug (2026-05-20 soak v3): emit every tune. Remove once the
-    // soak signs off.
-    streamDeck.logger.info(`[NaudiodonOutput] asrc wl=${wl} wlEma=${this.writableLenEma.toFixed(0)} ratio=${this.currentRatio.toFixed(7)} base=${this.baseRatio.toFixed(6)}`);
   }
 
   write(pcm: Int16Array, muted = false): void {

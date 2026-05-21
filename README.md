@@ -44,7 +44,66 @@ Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / 
 | Auto station-name lookup | ✅ **Japan-area only** for the JP DB — region-switchable from the Tune dial PI across all 8 regions (関東 / 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 / 沖縄): 関東 + 沖縄 cover AM / FM / CFM together, the other 6 regions cover commercial FM via the 全国 FM 一覧 source; region-tagged manual overrides supported; the EIBI SW DB covers international shortwave (day / time / spur-aware); in-PI `Update Now` for both |
 | Preset list | ✅ records come solely from the deck-rx-owned `data/presets.json` (the SDR++ `frequency_manager_config.json` mirror); the dial render-time station name is enriched from the JP DB / callsign DB for the active region but the preset *count* stays bound to the SDR++ file. PI button `Import bookmarks` re-syncs on demand (frequency-keyed dedup — re-importing collapses any pre-existing duplicate-frequency entries, preferring the JP DB CJK name); optional `Auto-sync on startup` checkbox runs the import once at every plugin launch |
 | FFT Display dial | ✅ full-width 200×100 LCD encoder action showing the live IQ spectrum centered on the VFO. SDR++-style colour palette, configurable frame rate (1–120 fps) / smoothing factor / FFT size (256–2048) / dB floor & ceiling via the PI. Dial rotate = zoom on the active axis (H = horizontal span, 26 step ladder 1×–32×; V = vertical dB range, 12 step ladder 0.4×–2.0×), long-press toggles between H and V mode, short-press resets the active axis. Pixel→bin map switches between max-hold (≥1 bin/pixel, peak preserving) and linear-interp (<1 bin/pixel, smooths the comb that high zoom would otherwise produce) |
-| Audio sink | ✅ Local output goes through `naudiodon` (PortAudio → CoreAudio HAL) — no intermediate ffmpeg process, so it doesn't suffer the audiotoolbox-sink wedge that an earlier ffmpeg-based local path exhibited every ~5 h of continuous playback. The native binding needs an ABI-matched rebuild against the Stream Deck app's bundled Node (`npm run rebuild-native`). The PI's `Output` selector switches the sink between local (`naudiodon`) and icecast publish (`ffmpeg` internally, MP3 over the icecast SOURCE protocol). |
+| Audio sink | ✅ Local output via `naudiodon` (PortAudio → CoreAudio HAL); optional icecast publish path (ffmpeg + MP3 + icecast SOURCE) auto-selected from `cfg.ffmpeg.mode`. Native bindings (`naudiodon`, `deck-rx-asrc`, `segfault-handler`) need an ABI-matched rebuild against the Stream Deck app's bundled Node — run `npm run rebuild-native` once after `npm install`. See [Audio path (long-running stability)](#audio-path-long-running-stability) for the libsamplerate ASRC + drift-compensation details. |
+
+## Audio path (long-running stability)
+
+The local-output side of deck-rx took several iterations to make rock-solid over 12 h+ sessions. The short story: two free-running crystals (the SDR host's ADC clock vs. the local CoreAudio output device's DAC clock) drift ±10 to ±100 ppm apart, and any naive fixed-rate path either lets the PortAudio queue creep into multi-second delay or starves it into click/buzz. v3 ASRC (commit `0034b51`) closed the loop.
+
+### The drift problem
+
+- **Writer**: SpyServer streams INT16 IQ paced by the receiver's crystal (Airspy HF+ Discovery ⇒ 768 ksps), demodulated to PCM at e.g. 114 kHz (FM) / 24 kHz (AM) by the deck-rx demod chain.
+- **Reader**: macOS pulls PCM from the PortAudio buffer paced by the output device's own crystal (e.g. RME DX7s at 96 kHz native).
+- Over hours these crystals walk apart. Even 10 ppm = 1 sample per 100 000 frames = ~1 s of accumulated queue drift every ~3 h at 96 kHz. Audible delay creep was already noticeable inside a single soak.
+
+### v3 architecture (current)
+
+```
+SpyServer IQ ─ demod ─ pre-ASRC LPF ─ libsamplerate ASRC ─ naudiodon (96 kHz native) ─ CoreAudio HAL
+                       (4-stage biquad,                    ratio = deviceRate/srcRate ± 1 ppm
+                        kills > 22 kHz)                    closed-loop on writableLength
+```
+
+- **Device-native rate open**: `naudiodon.AudioIO` is opened at the output device's `defaultSampleRate` (e.g. 96 kHz), not at the demod's source rate. This bypasses CoreAudio's internal resampler entirely — the resampling now happens in our ASRC with a knob we control.
+- **libsamplerate ASRC** (`native/samplerate`, `deck-rx-asrc` native addon): `SincFastest` quality, channels=2, ratio = `deviceRate / srcRate` baseline (e.g. 96000 / 114000 ≈ 0.8421). Implemented as a small N-API wrapper over libsamplerate so the resampler runs in-process with zero JS bridging cost per sample.
+- **Closed-loop ratio control** (`src/AudioOutput.ts::updateAsrcRatio`): every N tunes, sample PortAudio's `writableLength` (bytes still in the JS Writable backlog), EMA-smooth, and nudge the ratio ±5 ppm to keep the water level inside a 6000 ± 1500 byte band. A 1 ppm "restore" pull biases the ratio back toward `baseRatio` whenever the EMA is in-band, so the loop doesn't park itself off-axis.
+- **Overflow drop**: if the JS Writable backlog blows past 16384×8 bytes (~290 ms backlog) the current PCM packet is skipped. Equivalent to SDR++'s packer-overflow drop, just at the sink edge instead of inside a dedicated ring buffer. ~36 ms of skipped audio is well below the lip-sync threshold and prevents minutes-long queue creep.
+- **Pre-ASRC LPF**: a 4-stage cascaded biquad LPF runs on the L/R PCM *before* the resampler so any residual energy above 22 kHz can't alias when the ratio < 1 produces a slightly lower output rate.
+
+### Pop / click suppression at retune
+
+- **200 ms output mute** around every preset jump / VFO smooth-retune (was 100 ms — extended because the AM-Sync PLL needs the longer window to pull in cleanly).
+- **8 ms fade ramp** at every mute boundary so neither the PLL transient nor the naudiodon queue boundary amplitude step is audible.
+- **maxQueue = 4** (was 8): bounds the user-visible retune latency. The ASRC handles drift, so we don't need 8 buffers of slack on the PortAudio side.
+- **Mute relay**: the demod-side mute flag is forwarded to `AudioOutput.write(pcm, muted)` so the ratio loop knows to skip its water-level observation during the deliberately-empty period — otherwise the loop would mistake the silence for an underrun and chase it.
+
+### What we tried first (and what broke)
+
+| Attempt | Setting | Result over 12 h |
+|---|---|---|
+| v0 (fixed-rate, single rate) | naudiodon opened at srcRate, no ASRC | Multi-second delay creep, eventually audible echo |
+| v1 | `maxQueue 8→4`, fade ramp, AM mute 100→200 ms | Pops fixed at retune. But ~5 s delay still crept in over 6 h |
+| v2 (aggressive ratio control without device-native) | STEP `5e-5`/tune, narrow band, no LPF | Delay eliminated, then underrun after ~12 h (ratio parked at 0.992400 in the dead-zone, started starving) |
+| **v3 (current)** | Device-native rate + libsamplerate ASRC + 5e-6 STEP + 1e-6 restore pull | 24 h continuous AM preset cycle (594/693/810/954/1134 kHz) + FM with no pop / no buzz / no delay creep |
+
+### Operational traps surfaced during development
+
+These weren't audio-path bugs per se, but they masqueraded as one for several sessions:
+
+- **Phantom SpyServer client from a second host's Stream Deck App**: any machine with the deck-rx plugin symlink will auto-connect to the configured SpyServer the moment the Stream Deck App is foreground-launched (or stays running headlessly). That second client contends for device control. Symptom: preset rotation arrives at the dial's 7-seg display but the audio stays on the previous frequency. Fix: `ssh other-host pkill -KILL "Stream Deck"`. Any laptop / Mac mini in the household that ever had deck-rx installed is suspect.
+- **Airspy HF+ has two SMA inputs**: HF 0.5–31 MHz and VHF 60–260 MHz. A misplaced antenna will make AM (or FM) completely silent with all the right diagnostics still passing on the other band. Quickest disambiguation: `airspyhf_rx -f 0.594 -m off -r /tmp/x.iq` from the SpyServer host bypasses the entire deck-rx stack in 30 s.
+- **`writableLength` is bytes, not frames**: easy to misread when porting from PortAudio C examples that talk in frames. 16384 bytes at 16-bit stereo = 4096 frames = ~43 ms at 96 kHz. The thresholds in `updateAsrcRatio` and the OVERFLOW_DROP constant are byte-counts on purpose, matching what `naudiodon` exposes.
+
+### Reproducing the soak test
+
+```sh
+touch /tmp/deck-rx-audio-record         # enable the writer that drops 30 s of PCM
+                                        # to /tmp/deck-rx-AM-<freq>.wav per preset
+# In the Stream Deck +, cycle AM presets (594 / 693 / 810 / 954 / 1134) and let
+# the receiver run continuously overnight.
+ps -p $(cat /tmp/deck-rx.pid) -o etime,%cpu,rss   # process should still be < 200 MB after 24 h
+sox /tmp/deck-rx-AM-594000.wav -n stat 2>&1       # rough spectral sanity check
+```
 
 ## Documentation
 

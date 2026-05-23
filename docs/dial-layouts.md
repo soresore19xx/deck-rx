@@ -85,7 +85,7 @@ Pixel → bin map switches automatically between max-hold (when ≥ 1 bin/pixel,
 
 ![FFT Display dial](lcd-fft.png)
 
-Live capture above: NHK第二 (954 kHz) with H mode at 2.5× zoom (±91.2 kHz span) and V at 0.8× of the PI-configured dB range. The strong carrier peak sits exactly on the red VFO crosshair; weaker adjacent-station sidelobes spread to either side. Same dial in V mode would show the orange `[V]` badge instead.
+Live capture above: TBS Radio (954 kHz) with H mode at 2.5× zoom (±91.2 kHz span) and V at 0.8× of the PI-configured dB range. The strong carrier peak sits exactly on the red VFO crosshair; weaker adjacent-station sidelobes spread to either side. Same dial in V mode would show the orange `[V]` badge instead.
 
 ## Deck RX FFT Display (LCDX2)
 

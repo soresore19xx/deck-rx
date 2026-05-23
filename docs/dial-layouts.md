@@ -87,6 +87,40 @@ Pixel → bin map switches automatically between max-hold (when ≥ 1 bin/pixel,
 
 Live capture above: NHK第二 (954 kHz) with H mode at 2.5× zoom (±91.2 kHz span) and V at 0.8× of the PI-configured dB range. The strong carrier peak sits exactly on the red VFO crosshair; weaker adjacent-station sidelobes spread to either side. Same dial in V mode would show the orange `[V]` badge instead.
 
+## Deck RX FFT Display (LCDX2)
+
+Companion to the single-LCD FFT dial. Same rendering engine but with an LCDX1 ↔ LCDX2 mode switch that lets the user pair two adjacent dials (same row, columns ±1, both set to the same LCDX2 sub-mode) and span one continuous spectrum across both LCDs. The seam-side LCD frame is omitted on paired panels so the two LCDs read as one wide screen.
+
+Modes (PI dropdown or LCD short-tap cycle):
+- **LCDX1 (single)** — identical to the standalone FFT dial (1× iqRate / zoom across 200 px).
+- **LCDX2 Wide** — total span = `min(viewBandwidth × 2, wholeBandwidth)`, split half-and-half across the pair. Per-Hz pixel density matches LCDX1; the user sees 2× more spectrum.
+- **LCDX2 Detail** — total span = `viewBandwidth` (unchanged), split half-and-half across the pair. Per-Hz pixel density doubled.
+
+Pairing rules:
+- Both dials in the pair must carry the same LCDX2 sub-mode for the pair to form.
+- Pairing is **mutual** — if your neighbour also has another adjacent same-mode neighbour (3 in a row), nobody pairs; everyone falls back to single. Remove one to recover.
+- When unpaired, the panel renders LCDX1-style with a `[?]` mode-tag in the header so the user knows the pair didn't form.
+
+Controls beyond the base FFT dial:
+- **Short LCD tap** — cycle LCDX1 → LCDX2 Wide → LCDX2 Detail → LCDX1 (changes propagate to the paired sibling).
+- **Long LCD tap** — cycle FFT size forward (256 → 512 → 1024 → 2048 → 4096 → 8192 → 16384 → wrap). IQ samples are accumulated across SpyServer chunks so 8 k / 16 k sizes still drive one FFT per render.
+- All other rotate / push / long-press semantics are identical to the base FFT dial.
+
+Settings auto-sync between paired panels (dB floor & ceiling, fps, smoothing, fftSize, lcdMode, plus the dial-side zoom / vZoom / axis). Edit either side and the other follows; the loop is broken by a no-op diff check on the echo.
+
+Header layout:
+- `single` — center freq (left) + `[H]`/`[V]` axis badge + span / zoom (right).
+- `left` — center freq + mode tag (`W` for Wide, `D` for Detail) only.
+- `right` — `[H]`/`[V]` axis badge + span / zoom only.
+- Bottom-right of every panel: `N<size>` shows the current FFT size.
+
+VFO crosshair is the red 1-px line; in `single` it sits at the panel centre, in `left` at the right edge, in `right` at the left edge — together the two halves form a continuous mark at the pair's centre frequency.
+
+![FFT Display LCDX2 — left half of pair](lcd-fft-lcdx2-left.png)
+![FFT Display LCDX2 — right half of pair](lcd-fft-lcdx2-right.png)
+
+Captures above: LCDX2 Wide pair tuned to 810.0 kHz (AM band), zoom 2.5×. The left panel carries the centre freq + `W` mode tag; the right panel carries the `[H]` axis badge + total span `±182.4 kHz` + `2.5x` zoom multiplier + the `N2048` FFT-size indicator. The VFO crosshair (faint red) at each panel's seam edge joins into one continuous mark across the boundary; the outer rounded frame is suppressed on the seam side so the two LCDs read as one wide panel.
+
 ---
 
 See [architecture.md](architecture.md) for layout details, focus highlight colours, and signal-path notes.

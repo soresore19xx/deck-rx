@@ -140,6 +140,19 @@
         "layout": "layouts/dial-fft.json",
         "TriggerDescription": { "Rotate": "Zoom (active axis)", "Push": "Reset zoom / Long-press: H↔V", "LongTouch": "" }
       }
+    },
+    {
+      "UUID": "com.hogehoge.deck-rx.dial-fft-lcdx2",
+      "Name": "Deck RX FFT Display (LCDX2)",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "FFT spectrum with LCDX1/LCDX2 mode switching — tap to cycle LCDX1 → Wide → Detail",
+      "PropertyInspectorPath": "ui/dial-fft-lcdx2/inspector.html",
+      "Controllers": ["Encoder"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "FFT2" }],
+      "Encoder": {
+        "layout": "layouts/dial-fft-lcdx2.json",
+        "TriggerDescription": { "Rotate": "Zoom (active axis)", "Push": "Reset zoom / Long-press: H↔V", "Touch": "Tap: cycle LCDX1/Wide/Detail | Hold: cycle FFT size" }
+      }
     }
   ],
   "OS": [{ "Platform": "mac", "MinimumVersion": "10.15" }],

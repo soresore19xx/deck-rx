@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: -apple-system, sans-serif; font-size: 13px; color: #ccc; background: transparent; margin: 0; padding: 8px; }
+    .row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
+    label { min-width: 110px; color: #bbb; }
+    input[type="number"], select {
+      background: #2a2a2a; color: #fff; border: 1px solid #555; border-radius: 4px;
+      padding: 4px 6px; font-size: 13px; width: 100px;
+    }
+    .hint { color: #888; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="row"><label>LCD mode</label>
+    <select id="lcdMode">
+      <option value="single" selected>LCDX1 (single)</option>
+      <option value="wide">LCDX2 Wide (span × 2)</option>
+      <option value="detail">LCDX2 Detail (density × 2)</option>
+    </select>
+    <span class="hint">LCDX2 = pair two of these dials adjacent on the same row (tap LCD to cycle modes; paired-panel PI settings auto-sync)</span>
+  </div>
+  <div class="row"><label>FFT frame rate</label>
+    <input type="number" id="frameRate" min="1" max="120" step="1" value="16" />
+    <span class="hint">fps (1-120)</span>
+  </div>
+  <div class="row"><label>FFT smoothing</label>
+    <input type="number" id="smoothing" min="1" max="64" step="1" value="16" />
+    <span class="hint">1 = none, larger = smoother</span>
+  </div>
+  <div class="row"><label>FFT size</label>
+    <select id="fftSize">
+      <option value="256">256</option>
+      <option value="512" selected>512</option>
+      <option value="1024">1024</option>
+      <option value="2048">2048</option>
+      <option value="4096">4096</option>
+      <option value="8192">8192</option>
+      <option value="16384">16384</option>
+    </select>
+    <span class="hint">bins — larger = finer freq resolution, slower response</span>
+  </div>
+  <div class="row"><label>dB floor</label>
+    <input type="number" id="dbFloor" min="-160" max="-20" step="1" value="-110" />
+    <span class="hint">bottom of scale</span>
+  </div>
+  <div class="row"><label>dB ceiling</label>
+    <input type="number" id="dbCeil" min="-60" max="0" step="1" value="-20" />
+    <span class="hint">top of scale</span>
+  </div>
+
+  <script>
+    let ws = null;
+    let actionInfo = null;
+    let uuid = null;
+    let registerEvent = null;
+
+    function connect(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+      uuid = inUUID;
+      registerEvent = inRegisterEvent;
+      actionInfo = JSON.parse(inActionInfo);
+      ws = new WebSocket('ws://127.0.0.1:' + inPort);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ event: registerEvent, uuid }));
+        ws.send(JSON.stringify({ event: 'getSettings', context: uuid }));
+        hydrate(actionInfo.payload.settings || {});
+      };
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+        if (msg.event === 'didReceiveSettings') hydrate(msg.payload.settings || {});
+      };
+    }
+    function hydrate(s) {
+      if (s.lcdMode)    document.getElementById('lcdMode').value    = s.lcdMode;
+      if (s.frameRate)  document.getElementById('frameRate').value  = s.frameRate;
+      if (s.smoothing)  document.getElementById('smoothing').value  = s.smoothing;
+      if (s.fftSize)    document.getElementById('fftSize').value    = String(s.fftSize);
+      if (s.dbFloor != null) document.getElementById('dbFloor').value = s.dbFloor;
+      if (s.dbCeil  != null) document.getElementById('dbCeil').value  = s.dbCeil;
+    }
+
+    function save() {
+      if (!ws) return;
+      const settings = {
+        lcdMode:   document.getElementById('lcdMode').value || 'single',
+        frameRate: clamp(parseInt(document.getElementById('frameRate').value, 10), 1, 120, 16),
+        smoothing: clamp(parseInt(document.getElementById('smoothing').value, 10), 1, 64, 16),
+        fftSize:   parseInt(document.getElementById('fftSize').value, 10) || 512,
+        dbFloor:   clamp(parseInt(document.getElementById('dbFloor').value, 10), -160, -20, -110),
+        dbCeil:    clamp(parseInt(document.getElementById('dbCeil').value, 10),  -60,  0,  -20),
+      };
+      ws.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: settings }));
+    }
+    function clamp(v, lo, hi, dflt) {
+      if (!Number.isFinite(v)) return dflt;
+      return Math.max(lo, Math.min(hi, v));
+    }
+
+    ['lcdMode','frameRate','smoothing','fftSize','dbFloor','dbCeil'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', save);
+    });
+
+    window.connectElgatoStreamDeckSocket = connect;
+  </script>
+</body>
+</html>

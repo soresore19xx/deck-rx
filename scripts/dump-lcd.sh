@@ -52,6 +52,10 @@ declare -A LABEL=(
   [options-auto]="options-auto"
   [options-2col]="options-2col"
   [ssb-options]="options-ssb"
+  [fft]="fft"
+  [fft-lcdx2-single]="fft-lcdx2-single"
+  [fft-lcdx2-left]="fft-lcdx2-left"
+  [fft-lcdx2-right]="fft-lcdx2-right"
 )
 TAGS=("${!LABEL[@]}")
 # Default behaviour: capture whatever the active Stream Deck page renders

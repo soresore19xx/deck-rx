@@ -153,6 +153,24 @@
         "layout": "layouts/dial-fft-lcdx2.json",
         "TriggerDescription": { "Rotate": "Zoom (active axis)", "Push": "Reset zoom / Long-press: H↔V", "Touch": "Tap: cycle LCDX1/Wide/Detail | Hold: cycle FFT size" }
       }
+    },
+    {
+      "UUID": "com.hogehoge.deck-rx.key-fft-lcdx2-ctrl",
+      "Name": "Deck RX FFT (LCDX2) Button",
+      "Icon": "imgs/actions/options/action",
+      "Tooltip": "Companion button for the LCDX2 FFT dial — drive mode/fftSize/zoom/axis from a key when the LCDs are full of spectrum",
+      "PropertyInspectorPath": "ui/key-fft-lcdx2-ctrl/inspector.html",
+      "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/actions/options/action", "Title": "FFT Ctrl" }]
+    },
+    {
+      "UUID": "com.hogehoge.deck-rx.key-volume",
+      "Name": "Deck RX Volume Button",
+      "Icon": "imgs/actions/volume/action",
+      "Tooltip": "Volume up / down / mute toggle as a button — companion to the Volume dial for keypad-only devices or full-LCD layouts",
+      "PropertyInspectorPath": "ui/key-volume/inspector.html",
+      "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/actions/volume/action", "Title": "Vol" }]
     }
   ],
   "OS": [{ "Platform": "mac", "MinimumVersion": "10.15" }],

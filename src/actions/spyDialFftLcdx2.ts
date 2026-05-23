@@ -4,9 +4,39 @@ import {
   DialRotateEvent, DialDownEvent, DialUpEvent, TouchTapEvent,
 } from '@elgato/streamdeck';
 import streamDeck from '@elgato/streamdeck';
+import { EventEmitter } from 'events';
 import { spyService } from '../spyService.js';
 import { dumpAndB64 } from '../dialDisplay.js';
 import { FftPipeline } from '../fft.js';
+
+// Snapshot of the per-pair display state — emitted on the controller bus
+// whenever any LCDX2 dial state mutates, so companion Key actions can
+// refresh their titles without polling.
+export type FftLcdx2BusState = {
+  lcdMode: 'single' | 'wide' | 'detail';
+  fftSize: number;
+  axisMode: 'h' | 'v';
+  zoomIndex: number;
+  vZoomIndex: number;
+};
+
+class FftLcdx2Bus extends EventEmitter {
+  lastState: FftLcdx2BusState | null = null;
+  publish(s: FftLcdx2BusState): void { this.lastState = s; this.emit('change', s); }
+}
+
+// Module-level singleton bus shared between the dial action and any Key
+// actions that want to drive it or display its state.
+export const fftLcdx2Bus = new FftLcdx2Bus();
+
+// Captured reference to the live dial-action instance so Key actions can
+// invoke its public command methods. There is at most one instance per
+// plugin process (SingletonAction contract).
+let activeDialInstance: SpyDialFftLcdx2 | null = null;
+
+export function getFftLcdx2Controller(): SpyDialFftLcdx2 | null {
+  return activeDialInstance;
+}
 
 // Companion to SpyDialFft (LCDX1). LCDX2 pairs two adjacent placements on
 // the same row, splitting one continuous spectrum view across both LCDs.
@@ -112,6 +142,106 @@ type CtxState = {
 export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
   private states = new Map<string, CtxState>();
 
+  constructor() {
+    super();
+    activeDialInstance = this;
+  }
+
+  // Snapshot the first instance's state for the controller bus. Paired
+  // panels are auto-synced, so any instance's values are representative.
+  private publishState(): void {
+    const first = this.states.values().next().value as CtxState | undefined;
+    if (!first) return;
+    fftLcdx2Bus.publish({
+      lcdMode: first.lcdMode,
+      fftSize: first.fftSize,
+      axisMode: first.axisMode,
+      zoomIndex: first.zoomIndex,
+      vZoomIndex: first.vZoomIndex,
+    });
+  }
+
+  // ─── Public command methods, called by companion Key actions ─────────
+  // All operate across ALL placed instances; per-pair sibling sync inside
+  // applyToSibling keeps each pair's two halves consistent.
+
+  cycleAllLcdMode(): void {
+    const states = Array.from(this.states.values());
+    if (states.length === 0) return;
+    const cur = states[0].lcdMode;
+    const next: LcdMode = cur === 'single' ? 'wide' : cur === 'wide' ? 'detail' : 'single';
+    for (const st of states) {
+      st.lcdMode = next;
+      st.act.setSettings(buildSettings(st)).catch(() => {});
+      this.render(st);
+    }
+    this.renderAllOthers(states[0]);   // pair (re)formation refresh
+    this.publishState();
+  }
+
+  cycleAllFftSize(): void {
+    const states = Array.from(this.states.values());
+    if (states.length === 0) return;
+    const idx = FFT_SIZES.indexOf(states[0].fftSize);
+    const next = FFT_SIZES[(idx + 1) % FFT_SIZES.length] ?? 512;
+    for (const st of states) {
+      if (st.fftSize === next) continue;
+      st.fftSize = next;
+      st.fft = new FftPipeline(next);
+      st.latestBins = null;
+      st.accumBuf = Buffer.alloc(0);
+      st.act.setSettings(buildSettings(st)).catch(() => {});
+      this.render(st);
+    }
+    this.publishState();
+  }
+
+  resetAllZoom(axis: AxisMode): void {
+    for (const st of this.states.values()) {
+      if (axis === 'v') {
+        if (st.vZoomIndex === V_ZOOM_DEFAULT_INDEX) continue;
+        st.vZoomIndex = V_ZOOM_DEFAULT_INDEX;
+      } else {
+        if (st.zoomIndex === 0) continue;
+        st.zoomIndex = 0;
+      }
+      st.act.setSettings(buildSettings(st)).catch(() => {});
+      this.render(st);
+    }
+    this.publishState();
+  }
+
+  toggleAllAxis(): void {
+    const states = Array.from(this.states.values());
+    if (states.length === 0) return;
+    const next: AxisMode = states[0].axisMode === 'h' ? 'v' : 'h';
+    for (const st of states) {
+      st.axisMode = next;
+      st.act.setSettings(buildSettings(st)).catch(() => {});
+      this.render(st);
+    }
+    this.publishState();
+  }
+
+  zoomAll(direction: 1 | -1): void {
+    for (const st of this.states.values()) {
+      if (st.axisMode === 'v') {
+        // Higher vZoom index = wider window = zoomed OUT, so +direction
+        // means "zoom in" via index DECREMENT (matches dial rotate feel).
+        const next = Math.max(0, Math.min(V_ZOOM_FACTORS.length - 1, st.vZoomIndex - direction));
+        if (next === st.vZoomIndex) continue;
+        st.vZoomIndex = next;
+      } else {
+        const next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, st.zoomIndex + direction));
+        if (next === st.zoomIndex) continue;
+        st.zoomIndex = next;
+      }
+      st.act.setSettings(buildSettings(st)).catch(() => {});
+      this.render(st);
+    }
+    this.publishState();
+  }
+
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     const act = ev.action as unknown as ActionLike;
     const coords = (ev.action as unknown as { coordinates?: { column: number; row: number } }).coordinates
@@ -171,6 +301,7 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     // Pair formation may have changed — re-render sibling immediately so the
     // VFO crosshair / header layout switches over without a frame delay.
     this.renderAllOthers(st);
+    this.publishState();
   }
 
   override onWillDisappear(ev: WillDisappearEvent<Settings>): void {
@@ -208,6 +339,7 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
       if (currSnapshot[key] !== prevSnapshot[key]) (diff as Record<string, unknown>)[key] = currSnapshot[key];
     }
     if (Object.keys(diff).length > 0) this.applyToSibling(sibBefore, diff);
+    this.publishState();
   }
 
   override async onTouchTap(ev: TouchTapEvent<Settings>): Promise<void> {
@@ -228,6 +360,7 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
       await ev.action.setSettings({ ...ev.payload.settings, ...patch });
       this.applyToSibling(sibBefore, patch);
       this.render(st);
+      this.publishState();
       return;
     }
     // Short tap — cycle LCDX1 (single) → LCDX2 Wide → LCDX2 Detail → LCDX1 …
@@ -244,6 +377,7 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     // Pair may have formed (single→wide on both) or broken (→single) — refresh
     // everyone so the VFO crosshair / header layout switch over immediately.
     this.renderAllOthers(st);
+    this.publishState();
   }
 
   private applySettings(st: CtxState, s: Settings): void {
@@ -290,6 +424,7 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     await ev.action.setSettings({ ...ev.payload.settings, ...changed });
     this.syncToSibling(st, changed);
     this.render(st);
+    this.publishState();
   }
 
   override onDialDown(ev: DialDownEvent<Settings>): void {
@@ -305,6 +440,7 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
       ev.action.setSettings({ ...ev.payload.settings, ...patch }).catch(() => {});
       this.syncToSibling(st, patch);
       this.render(st);
+      this.publishState();
     }, LONG_PRESS_MS);
   }
 
@@ -332,6 +468,7 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     await ev.action.setSettings({ ...ev.payload.settings, ...patch });
     this.syncToSibling(st, patch);
     this.render(st);
+    this.publishState();
   }
 
   private startRenderTimer(st: CtxState): void {

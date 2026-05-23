@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: -apple-system, sans-serif; font-size: 13px; color: #ccc; background: transparent; margin: 0; padding: 8px; }
+    .row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
+    label { min-width: 110px; color: #bbb; }
+    select {
+      background: #2a2a2a; color: #fff; border: 1px solid #555; border-radius: 4px;
+      padding: 4px 6px; font-size: 13px; width: 160px;
+    }
+    .hint { color: #888; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="row"><label>Operation</label>
+    <select id="op">
+      <option value="cycle-mode" selected>Cycle LCD mode (LCDX1/Wide/Detail)</option>
+      <option value="cycle-fftSize">Cycle FFT size</option>
+      <option value="zoom-in">Zoom in (active axis)</option>
+      <option value="zoom-out">Zoom out (active axis)</option>
+      <option value="reset-h-zoom">Reset H zoom</option>
+      <option value="reset-v-zoom">Reset V zoom</option>
+      <option value="toggle-axis">Toggle H/V axis</option>
+    </select>
+  </div>
+  <div class="hint">
+    Press the button to perform the chosen operation on every placed
+    LCDX2 FFT dial. Button title shows the current state where applicable.
+  </div>
+
+  <script>
+    let ws = null;
+    let uuid = null;
+    let registerEvent = null;
+    let actionInfo = null;
+
+    function connect(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+      uuid = inUUID;
+      registerEvent = inRegisterEvent;
+      actionInfo = JSON.parse(inActionInfo);
+      ws = new WebSocket('ws://127.0.0.1:' + inPort);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ event: registerEvent, uuid }));
+        ws.send(JSON.stringify({ event: 'getSettings', context: uuid }));
+        hydrate(actionInfo.payload.settings || {});
+      };
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+        if (msg.event === 'didReceiveSettings') hydrate(msg.payload.settings || {});
+      };
+    }
+
+    function hydrate(s) {
+      if (s.op) document.getElementById('op').value = s.op;
+    }
+
+    function save() {
+      if (!ws) return;
+      const settings = { op: document.getElementById('op').value || 'cycle-mode' };
+      ws.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: settings }));
+    }
+
+    document.getElementById('op').addEventListener('change', save);
+    window.connectElgatoStreamDeckSocket = connect;
+  </script>
+</body>
+</html>

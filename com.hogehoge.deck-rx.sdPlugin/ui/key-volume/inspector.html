@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: -apple-system, sans-serif; font-size: 13px; color: #ccc; background: transparent; margin: 0; padding: 8px; }
+    .row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
+    label { min-width: 110px; color: #bbb; }
+    input[type="number"], select {
+      background: #2a2a2a; color: #fff; border: 1px solid #555; border-radius: 4px;
+      padding: 4px 6px; font-size: 13px; width: 160px;
+    }
+    .hint { color: #888; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="row"><label>Operation</label>
+    <select id="op">
+      <option value="vol-up" selected>Volume up</option>
+      <option value="vol-down">Volume down</option>
+      <option value="mute-toggle">Mute toggle</option>
+    </select>
+  </div>
+  <div class="hint">
+    Hold Up/Down for auto-repeat (~12 steps/sec). Step size follows a
+    C-curve: large at low volume, fine at high — same feel as a hardware
+    volume knob. Mute toggles once per press.
+  </div>
+
+  <script>
+    let ws = null;
+    let uuid = null;
+    let registerEvent = null;
+    let actionInfo = null;
+
+    function connect(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+      uuid = inUUID;
+      registerEvent = inRegisterEvent;
+      actionInfo = JSON.parse(inActionInfo);
+      ws = new WebSocket('ws://127.0.0.1:' + inPort);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ event: registerEvent, uuid }));
+        ws.send(JSON.stringify({ event: 'getSettings', context: uuid }));
+        hydrate(actionInfo.payload.settings || {});
+      };
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+        if (msg.event === 'didReceiveSettings') hydrate(msg.payload.settings || {});
+      };
+    }
+
+    function hydrate(s) {
+      if (s.op) document.getElementById('op').value = s.op;
+    }
+
+    function save() {
+      if (!ws) return;
+      const settings = { op: document.getElementById('op').value || 'vol-up' };
+      ws.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: settings }));
+    }
+
+    document.getElementById('op').addEventListener('change', save);
+    window.connectElgatoStreamDeckSocket = connect;
+  </script>
+</body>
+</html>

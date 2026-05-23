@@ -15,6 +15,8 @@ import { SpyDialOptions2Col } from './actions/spyDialOptions2Col.js';
 import { SpyDialSsbOptions } from './actions/spyDialSsbOptions.js';
 import { SpyDialFft } from './actions/spyDialFft.js';
 import { SpyDialFftLcdx2 } from './actions/spyDialFftLcdx2.js';
+import { KeyFftLcdx2Ctrl } from './actions/keyFftLcdx2.js';
+import { KeyVolume } from './actions/keyVolume.js';
 
 // PID_FILE defaults to /tmp/deck-rx.pid for the production plugin instance.
 // Overridable via DECK_RX_PID_FILE so the integration-test harness can spawn
@@ -79,6 +81,8 @@ streamDeck.actions.registerAction(new SpyDialOptions2Col());
 streamDeck.actions.registerAction(new SpyDialSsbOptions());
 streamDeck.actions.registerAction(new SpyDialFft());
 streamDeck.actions.registerAction(new SpyDialFftLcdx2());
+streamDeck.actions.registerAction(new KeyFftLcdx2Ctrl());
+streamDeck.actions.registerAction(new KeyVolume());
 streamDeck.connect();
 
 // One-shot SDR++ auto-sync at startup — opt-in via PI checkbox. Waits for

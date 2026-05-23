@@ -1,6 +1,6 @@
-# Dial layouts
+# Dial & button layouts
 
-Each registered Stream Deck action — encoder dials and the one keypad button — and what it shows.
+Each registered Stream Deck action — encoder dials, the existing keypad button, and the new companion key actions — and what it shows.
 
 ![Deck RX — all four LCD panels](lcd-combined.png)
 
@@ -120,6 +120,44 @@ VFO crosshair is the red 1-px line; in `single` it sits at the panel centre, in 
 ![FFT Display LCDX2 — right half of pair](lcd-fft-lcdx2-right.png)
 
 Captures above: LCDX2 Wide pair tuned to 810.0 kHz (AM band), zoom 2.5×. The left panel carries the centre freq + `W` mode tag; the right panel carries the `[H]` axis badge + total span `±182.4 kHz` + `2.5x` zoom multiplier + the `N2048` FFT-size indicator. The VFO crosshair (faint red) at each panel's seam edge joins into one continuous mark across the boundary; the outer rounded frame is suppressed on the seam side so the two LCDs read as one wide panel.
+
+## Deck RX FFT (LCDX2) Control Button
+
+Companion **key action** for the LCDX2 FFT dial. LCDX2 mode hands both LCDs over to the spectrum, so on-LCD operation hints (axis badge, span text, mode tag) get crowded into a single shared header — and dial-side gestures (rotate, push, touch) are the only way to drive mode / size / zoom. This button takes the most-used operations back out to a free keypad slot so a user can A/B-compare modes or jump fftSize from across the deck.
+
+![FFT (LCDX2) Control Button — sample titles per operation](btn-fft-lcdx2-ctrl.png)
+
+The PI carries a single dropdown that picks **what this button does**; place the action multiple times to wire several buttons each on a different op.
+
+| PI Operation | Title format (live) | Effect when pressed |
+|---|---|---|
+| Cycle LCD mode | `Mode` / `LCDX1` \| `Wide` \| `Detail` | Cycle every placed LCDX2 dial through single → Wide → Detail → single. Pair (dis)formation propagates automatically. |
+| Cycle FFT size | `FFT` / `N256` … `N16384` | Cycle every dial through 256 / 512 / 1024 / 2048 / 4096 / 8192 / 16384, then wrap. Same accumulator path as the dial-side long-touch cycle. |
+| Zoom in | `Zoom` / `+` | Advance the active axis (H or V) by one step on every dial. |
+| Zoom out | `Zoom` / `−` | Recede the active axis by one step. |
+| Reset H zoom | `Reset` / `H zoom` | H zoom → 1× on every dial. |
+| Reset V zoom | `Reset` / `V zoom` | V zoom → 1.0× of the PI-configured dB range on every dial. |
+| Toggle H/V axis | `Axis` / `H` \| `V` | Flip active axis on every dial. |
+
+Title state updates live via an in-plugin `EventEmitter` (`fftLcdx2Bus`) that the dial publishes to after every state mutation — so the title always reflects the dial's actual current value with no polling. When no LCDX2 dial is placed, the action is a no-op; titles show `—` placeholders.
+
+## Deck RX Volume Button
+
+Companion **key action** for the existing Volume dial. Useful on dial-less devices (Stream Deck XL) or when the dial space on the + is fully consumed by FFT / LCDX2 panels.
+
+![Volume Button — sample titles per operation and state](btn-volume.png)
+
+| PI Operation | Title format (live) | Effect when pressed |
+|---|---|---|
+| Volume up | `Vol +` / `75%` (or `75% (M)` while muted) | Increase volume; auto-repeats while held (~12 steps/sec). |
+| Volume down | `Vol −` / `75%` (or `75% (M)`) | Decrease volume; auto-repeats while held. |
+| Mute toggle | `Mute` / `OFF` ↔ `ON` | Toggle mute once per press. No repeat. |
+
+**Hold-to-repeat** is a recursive `setTimeout` loop guarded by an `isPressed` flag — first step on key-down fires immediately, repeats at ~80 ms intervals while held, stops on the next iteration when key-up arrives. Auto-terminates when volume reaches 0 % or 150 % so it does not keep firing no-ops at the rail.
+
+**Step size follows a C-curve** (low volume → large jumps, high volume → fine adjustments). At 0–10 % each press bumps ~8 percentage points so you can ramp out of silence in a couple of taps; at 90 %+ the step shrinks toward 1 % for fine control. Constants: `MIN_STEP=1%`, `MAX_STEP=8%`, `GAMMA=1.5`, ratio = `(1 − v)^γ`. Pattern + constants ported from the standalone `stream-deck-volume` plugin.
+
+The title reflects live state via `spyService.subscribeVolume`, so external volume changes (dial, other clients, OS) update the button title within one event tick. A `(M)` suffix on Vol +/− titles indicates muted state without needing a separate Mute button on the same page.
 
 ---
 

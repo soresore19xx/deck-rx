@@ -273,6 +273,20 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     };
     this.states.set(act.id, st);
     this.applySettings(st, ev.payload.settings);
+    // Pair reconciliation: a sibling already in `states` is authoritative
+    // for shared fields (dbFloor/dbCeil/zoom/axis/lcdMode/fftSize/etc.).
+    // PI edits or dial gestures made on the live panel while we were
+    // hidden (different SD page, etc.) cause applyToSibling to skip us —
+    // our persisted settings then lag the sibling's by however long we
+    // stayed off-screen. Adopt the sibling's snapshot now and re-persist
+    // so the very first frame renders with the correct shared values and
+    // disk stays in sync going forward.
+    const liveSibling = this.findSibling(st);
+    if (liveSibling) {
+      const sibSnap = buildSettings(liveSibling);
+      this.applySettings(st, sibSnap);
+      st.act.setSettings(sibSnap).catch(() => {});
+    }
     st.iqListener = (iq, iqRate, freq) => {
       if (!st.fft) return;
       // Accumulate so FFT sizes that exceed a single SpyServer chunk still

@@ -122,6 +122,10 @@ export class SpyDialOptions2Col extends SingletonAction<Settings> {
   private currentMode = 1;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
+    // Idempotent re-entry — see teardown(): without it a re-fired willAppear
+    // (willDisappear never arrived) keeps pushing onto this.listeners, leaving
+    // the prior subscriptions live (and double-firing renders) until disappear.
+    this.teardown();
     this.act = ev.action as unknown as typeof this.act;
     this.borderSide = ev.payload.settings.borderSide ?? 'none';
     const reg = (subFn: (cb: () => void) => void, unsub: (cb: () => void) => void) => {
@@ -155,6 +159,13 @@ export class SpyDialOptions2Col extends SingletonAction<Settings> {
     this.render();
   }
   override onWillDisappear(_: WillDisappearEvent<Settings>): void {
+    this.teardown();
+  }
+
+  // Idempotent teardown — also called at the top of onWillAppear so a
+  // re-fired willAppear (willDisappear never arrived) can't accumulate
+  // orphaned subscriptions in this.listeners / spyService's Sets.
+  private teardown(): void {
     for (const off of this.listeners) off();
     this.listeners = [];
     dialDispose(this.rowState);

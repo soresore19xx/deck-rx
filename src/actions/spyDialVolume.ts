@@ -47,6 +47,11 @@ export class SpyDialVolume extends SingletonAction<Settings> {
   private clockTimer: ReturnType<typeof setInterval> | null = null;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
+    // Idempotent: a re-fired willAppear (SD page/profile race where the
+    // matching willDisappear never arrived) would otherwise mint a second
+    // set of closures + clockTimer and orphan the first in spyService's
+    // reference-keyed listener Sets. teardown() first makes re-entry safe.
+    this.teardown();
     this.act = ev.action as unknown as typeof this.act;
     this.borderSide = ev.payload.settings.borderSide ?? 'none';
     this.step = ev.payload.settings.step ?? 2;
@@ -87,6 +92,10 @@ export class SpyDialVolume extends SingletonAction<Settings> {
   }
 
   override onWillDisappear(_ev: WillDisappearEvent<Settings>): void {
+    this.teardown();
+  }
+
+  private teardown(): void {
     if (this.volListener)     { spyService.unsubscribeVolume(this.volListener);    this.volListener     = null; }
     if (this.deviceListener)  { spyService.unsubscribeDevice(this.deviceListener); this.deviceListener  = null; }
     if (this.connectListener) { spyService.offConnect(this.connectListener);       this.connectListener = null; }

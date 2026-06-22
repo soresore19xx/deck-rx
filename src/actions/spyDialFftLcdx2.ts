@@ -244,6 +244,12 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     const act = ev.action as unknown as ActionLike;
+    // Re-entry guard: a re-fired willAppear for an id already in `states`
+    // (the matching willDisappear never arrived — SD page/profile race) would
+    // replace the Map entry below and orphan the prior iqListener +
+    // renderTimer. Dispose the stale state first so re-entry is leak-free.
+    const stale = this.states.get(act.id);
+    if (stale) this.disposeState(stale);
     const coords = (ev.action as unknown as { coordinates?: { column: number; row: number } }).coordinates
       ?? (ev.payload as unknown as { coordinates?: { column: number; row: number } }).coordinates;
     const st: CtxState = {
@@ -322,12 +328,18 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     const id = (ev.action as unknown as ActionLike).id;
     const st = this.states.get(id);
     if (!st) return;
+    this.disposeState(st);
+    this.states.delete(id);
+    this.renderAllOthers(st);
+  }
+
+  // Unsubscribe + clear one context's listeners/timers. Shared by
+  // onWillDisappear and the re-entry guard at the top of onWillAppear.
+  private disposeState(st: CtxState): void {
     if (st.iqListener) spyService.unsubscribeIqStream(st.iqListener);
     if (st.connStateListener) spyService.unsubscribeConnectionState(st.connStateListener);
     if (st.renderTimer) clearInterval(st.renderTimer);
     if (st.longPressTimer) clearTimeout(st.longPressTimer);
-    this.states.delete(id);
-    this.renderAllOthers(st);
   }
 
   override onDidReceiveSettings(ev: DidReceiveSettingsEvent<Settings>): void {

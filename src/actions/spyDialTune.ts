@@ -128,6 +128,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private suppressDemodJump = false;
 
   override async onWillAppear(ev: WillAppearEvent<DialTuneSettings>): Promise<void> {
+    // Idempotent re-entry: a re-fired willAppear with no intervening
+    // willDisappear (SD page/profile race) would orphan the previous
+    // listeners + footerTimer in spyService's listener Sets. Tear down first.
+    this.teardown();
     this.dialMode   = spyService.getTuneMode();
     this.stepHz     = spyService.getTuneStepHz();
     this.slotIndex  = ev.payload.settings.slotIndex ?? 0;
@@ -301,6 +305,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   }
 
   override onWillDisappear(_ev: WillDisappearEvent<DialTuneSettings>): void {
+    this.teardown();
+  }
+
+  private teardown(): void {
     if (this.syncListener) { spyService.unsubscribe(this.syncListener); this.syncListener = null; }
     if (this.connectListener) { spyService.offConnect(this.connectListener); this.connectListener = null; }
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }

@@ -179,8 +179,19 @@ export class FfmpegOutput implements AudioOutput {
   }
 
   write(pcm: Int16Array): void {
-    if (!this.proc?.stdin?.writable) return;
-    this.proc.stdin.write(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+    const stdin = this.proc?.stdin;
+    if (!stdin?.writable) return;
+    // Backpressure guard, mirroring NaudiodonOutput's OVERFLOW_DROP. When the
+    // icecast sink stalls (network blip, server unreachable, ffmpeg wedged)
+    // ffmpeg stops draining pipe:0, the OS pipe fills, and Node buffers the
+    // overflow in the Writable's internal queue — unbounded RSS growth for as
+    // long as the stall lasts. Past a sane ceiling we DROP the current PCM
+    // buffer (tens of ms) instead of queueing it: the stream is already broken
+    // at that point and ffmpeg auto-respawns on the eventual exit. Without the
+    // cap a multi-minute icecast outage grows the heap without bound.
+    const OVERFLOW_DROP = 1 << 20;  // 1 MiB queued ≈ several seconds of s16le
+    if (stdin.writableLength > OVERFLOW_DROP) return;
+    stdin.write(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
   }
 
   stop(): Promise<void> {

@@ -88,6 +88,10 @@ export class SpyDialFft extends SingletonAction<Settings> {
   private renderTimer: ReturnType<typeof setInterval> | null = null;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
+    // Idempotent re-entry — see teardown(): a re-fired willAppear without a
+    // matching willDisappear would orphan the prior iqListener + renderTimer.
+    // (applySettings re-creates this.fft since teardown nulls it.)
+    this.teardown();
     this.act = ev.action as unknown as typeof this.act;
     this.applySettings(ev.payload.settings);
     this.connected = spyService.isConnected();
@@ -115,6 +119,10 @@ export class SpyDialFft extends SingletonAction<Settings> {
   }
 
   override onWillDisappear(_ev: WillDisappearEvent<Settings>): void {
+    this.teardown();
+  }
+
+  private teardown(): void {
     if (this.iqListener) {
       spyService.unsubscribeIqStream(this.iqListener);
       this.iqListener = null;

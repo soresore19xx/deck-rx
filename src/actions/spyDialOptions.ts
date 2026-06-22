@@ -81,6 +81,9 @@ export class SpyDialOptions extends SingletonAction<Settings> {
   private isFmMode = true;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
+    // Idempotent re-entry — see teardown(): a re-fired willAppear without a
+    // matching willDisappear would orphan the prior listeners + longPressTimer.
+    this.teardown();
     this.act = ev.action as unknown as typeof this.act;
     this.borderSide = ev.payload.settings.borderSide ?? 'none';
     this.optionsListener = () => this.render();
@@ -112,6 +115,13 @@ export class SpyDialOptions extends SingletonAction<Settings> {
   }
 
   override onWillDisappear(_ev: WillDisappearEvent<Settings>): void {
+    this.teardown();
+  }
+
+  // Idempotent teardown — also called at the top of onWillAppear so a
+  // re-fired willAppear (willDisappear never arrived) can't orphan the
+  // previous listeners + timer in spyService's reference-keyed Sets.
+  private teardown(): void {
     if (this.optionsListener) { spyService.unsubscribeOptions(this.optionsListener); this.optionsListener = null; }
     if (this.gainListener)    { spyService.unsubscribeFmGain(this.gainListener);     this.gainListener    = null; }
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }

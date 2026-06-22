@@ -7,6 +7,7 @@ import {
   computeDigitalGain,
 } from './SpyClient.js';
 import { Demodulator } from './demodulator.js';
+import { OutputLeveler, MODE_MAKEUP, softLimit, DEFAULT_LEVELER_CFG } from './audioLeveling.js';
 import { Ifnr } from './ifnr.js';
 import { IqNr, DemodMode } from './iqnr.js';
 import { AudioOutput, FfmpegOutput, NaudiodonOutput, OutputErrorTag } from './AudioOutput.js';
@@ -119,6 +120,19 @@ interface Config {
   am?: Partial<AMOptions>;
   ssb?: Partial<SSBOptions>;
   volume?: number;
+  // Master loudness trim multiplied on top of the per-band makeup (default
+  // 1.0, clamped 0.1..4). Rides the whole output up/down without re-tuning
+  // individual bands. Independent of RF/demod gain.
+  audioGain?: number;
+  // Per-mode STATIC makeup override, keyed on demod mode index
+  // (0=NFM 1=WFM 2=AM 3=DSB 4=USB 5=CW 6=LSB 7=RAW). Merged over the built-in
+  // MODE_MAKEUP defaults, so you can fine-tune one band's level by ear without
+  // a rebuild, e.g. {"1": 8} to bring WFM down. See audioLeveling.ts.
+  audioMakeup?: Record<number, number>;
+  // Opt-in for the adaptive output AGC (default false). false → static per-band
+  // makeup only (no dynamic level motion — the default). true → the AGC also
+  // tracks within-band signal-strength changes (audible level-riding).
+  audioLeveling?: boolean;
   muted?: boolean;
   tuneMode?: 'preset' | 'vfo';
   tuneStepHz?: number;
@@ -249,7 +263,25 @@ class SpyService {
   private ssbOptions: SSBOptions = { ...DEFAULT_SSB_OPTIONS };
   private host = '';
   private port = 0;
-  private volume = 1.0;   // 0..1.5 (1.0 = unity)
+  private volume = 1.0;   // 0..1.0 (1.0 = full leveled output; trims down from there)
+  // Output-stage loudness leveling (see audioLeveling.ts). Layered: per-mode
+  // makeup → output AGC → soft limiter, applied to the final PCM before
+  // audioOutput.write() so it covers BOTH the naudiodon and icecast paths.
+  // Brings every demod mode to a common target loudness (radio audio sits
+  // well below 0 dBFS at unity, so deck-rx was much quieter than other apps),
+  // independent of RF/demod gain.
+  private leveler = new OutputLeveler();
+  // Per-band STATIC makeup gains (cfg.audioMakeup overrides per mode). This is
+  // the default leveller — fixed per-band gain, no dynamic motion.
+  private modeMakeup: Record<number, number> = { ...MODE_MAKEUP };
+  // Master trim multiplied on top of the makeup, both static and AGC modes
+  // (cfg.audioGain, default 1.0). Whole output rides up/down without re-tuning
+  // individual bands.
+  private audioGain = 1.0;
+  // Opt-in for the adaptive output AGC layer (cfg.audioLeveling, default
+  // FALSE). Off → static makeup × audioGain × volume + limiter (no dynamic
+  // level motion). On → the AGC additionally tracks signal-strength changes.
+  private audioLeveling = false;
   private muted = false;
   private _currentFreq = 0;
 
@@ -460,7 +492,23 @@ class SpyService {
         this.ssbOptions.bfoPitchHz  = Math.max(400, Math.min(900,  this.ssbOptions.bfoPitchHz));
         for (const fn of this.ssbOptionsListeners) fn(this.ssbOptions);
       }
-      if (typeof cfg.volume === 'number') this.volume = Math.max(0, Math.min(1.5, cfg.volume));
+      if (typeof cfg.volume === 'number') this.volume = Math.max(0, Math.min(1.0, cfg.volume));
+      if (typeof cfg.audioGain === 'number') this.audioGain = Math.max(0.1, Math.min(4, cfg.audioGain));
+      if (typeof cfg.audioLeveling === 'boolean') this.audioLeveling = cfg.audioLeveling;
+      // Merge per-mode makeup overrides over the built-in defaults.
+      this.modeMakeup = { ...MODE_MAKEUP };
+      if (cfg.audioMakeup && typeof cfg.audioMakeup === 'object') {
+        for (const [k, v] of Object.entries(cfg.audioMakeup)) {
+          const n = Number(v);
+          if (Number.isFinite(n) && n >= 0) this.modeMakeup[Number(k)] = n;
+        }
+      }
+      // audioGain is applied as a master trim in the leveling stage (both
+      // modes), so the AGC target itself stays fixed — no double-counting.
+      this.leveler.configure({
+        enabled: this.audioLeveling,
+        targetRms: DEFAULT_LEVELER_CFG.targetRms,
+      });
       if (typeof cfg.muted  === 'boolean') this.muted  = cfg.muted;
       for (const fn of this.volumeListeners) fn(this.volume, this.muted);
       // Restore last-used freq + mode so the radio is already on the right
@@ -878,7 +926,7 @@ class SpyService {
     // chain (e.g. setVolume(101 / 100) → 1.0099999999999998) would
     // round-trip back to 101 % once but to 100 % the next call,
     // showing the user '99 / 101' jitter around the unity mark.
-    const clamped = Math.max(0, Math.min(1.5, v));
+    const clamped = Math.max(0, Math.min(1.0, v));
     this.volume = Math.round(clamped * 100) / 100;
     for (const fn of this.volumeListeners) fn(this.volume, this.muted);
     this.schedulePersistVolume();
@@ -1204,7 +1252,12 @@ class SpyService {
         const pilotP = this.demod.getPilotPower();
         const ifd = this.demod.getAmDiag();
         const nrG = this.fmOptions.ifnr ? `nrG=${this.iqnr.getAvgGain().toFixed(3)}` : '';
-        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)} ifPre=${ifd.pre.toFixed(0)} ifPost=${ifd.post.toFixed(0)} ${nrG}`);
+        // pcmRms is the raw (pre-leveling) demod level. mkup is the static
+        // per-band gain; lvlG is the optional AGC gain (1 when AGC off). The
+        // output level ≈ pcmRms × mkup × lvlG × audioGain — read mkup to judge
+        // whether a band needs its cfg.audioMakeup tweaked.
+        const mkup = this.modeMakeup[this.currentDemodMode] ?? 1;
+        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)} ifPre=${ifd.pre.toFixed(0)} ifPost=${ifd.post.toFixed(0)} mkup=${mkup.toFixed(2)} lvlG=${this.leveler.gain.toFixed(3)} ${nrG}`);
         lastDiag = _now;
       }
       // AM spectrum probe (only meaningful for AM mode). Emits two lines:
@@ -1227,6 +1280,30 @@ class SpyService {
         lastSpec = _now;
       }
       const muted = Date.now() < this.muteUntil || this.muted;
+      // ── Output loudness leveling (see audioLeveling.ts) ────────────────
+      // STATIC per-band makeup × master audioGain is the default leveller —
+      // a fixed gain per band, NO dynamic motion (no pumping). The adaptive
+      // AGC is opt-in (audioLeveling) and, when off, leveler.gain stays 1 so
+      // the level gain below is just the static `sg`. The soft limiter (applied
+      // per sample) is an instantaneous peak ceiling, not a slow AGC. User
+      // `volume` (0..1.0) attenuates on top.
+      const makeup = this.modeMakeup[this.currentDemodMode] ?? 1;
+      const sg = makeup * this.audioGain;     // static per-band level gain
+      const frames = channels > 0 ? pcm.length / channels : pcm.length;
+      const dt = audioRate > 0 ? frames / audioRate : 0;
+      const gainBefore = this.leveler.gain;   // 1 when the AGC is disabled
+      // When the AGC is on: snap straight to target on the first unmuted buffer
+      // (mute-lift / startup-mute end) so audio returns at full level at once;
+      // normal buffers advance one step and ramp across the buffer (anti-zipper)
+      // and are FROZEN while muted. All no-ops (gain stays 1) when AGC is off.
+      const justUnmuted = !muted && this.lastBufferMuted;
+      if (justUnmuted) this.leveler.snap(pcm, makeup);
+      else if (!muted) this.leveler.observe(pcm, makeup, dt);
+      const gainAfter = this.leveler.gain;
+      const lgPrev = sg * (justUnmuted ? gainAfter : gainBefore);
+      const lgNext = sg * gainAfter;
+      const lgStep = pcm.length > 0 ? (lgNext - lgPrev) / pcm.length : 0;
+      const vol = this.volume;
       // 8 ms ramp at the audioRate (channels-interleaved). Long enough to
       // hide the amplitude step at the mute boundary; short enough that
       // the listener doesn't notice a fade. naudiodon's ~145 ms cushion
@@ -1239,42 +1316,29 @@ class SpyService {
       if (muted) {
         if (!this.lastBufferMuted) {
           // Fade-out at mute entry: ramp the head of this buffer from
-          // 1 → 0 (applying volume), then zero the rest. The previous
-          // buffer played at full volume so the head continues from
-          // there smoothly.
-          const v = this.volume;
+          // 1 → 0 (applying level gain × volume), then zero the rest. The
+          // previous buffer played at full level so the head continues
+          // from there smoothly.
           for (let i = 0; i < fadeLen; i++) {
-            const g = (1 - i / fadeLen) * v;
-            const s = pcm[i] * g;
-            pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
+            const g = (1 - i / fadeLen) * vol * (lgPrev + lgStep * i);
+            pcm[i] = softLimit(pcm[i] * g);
           }
           pcm.fill(0, fadeLen);
         } else {
           pcm.fill(0);
         }
+      } else if (this.lastBufferMuted) {
+        // Fade-in at mute lift: ramp the head from 0 → 1, full level after.
+        for (let i = 0; i < fadeLen; i++) {
+          const g = (i / fadeLen) * vol * (lgPrev + lgStep * i);
+          pcm[i] = softLimit(pcm[i] * g);
+        }
+        for (let i = fadeLen; i < pcm.length; i++) {
+          pcm[i] = softLimit(pcm[i] * vol * (lgPrev + lgStep * i));
+        }
       } else {
-        if (this.lastBufferMuted) {
-          // Fade-in at mute lift: ramp the head from 0 → 1 (applying
-          // volume), then apply volume to the rest as usual.
-          const v = this.volume;
-          for (let i = 0; i < fadeLen; i++) {
-            const g = (i / fadeLen) * v;
-            const s = pcm[i] * g;
-            pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
-          }
-          if (this.volume !== 1) {
-            const v2 = this.volume;
-            for (let i = fadeLen; i < pcm.length; i++) {
-              const s = pcm[i] * v2;
-              pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
-            }
-          }
-        } else if (this.volume !== 1) {
-          const v = this.volume;
-          for (let i = 0; i < pcm.length; i++) {
-            const s = pcm[i] * v;
-            pcm[i] = s >= 32767 ? 32767 : s <= -32768 ? -32768 : (s | 0);
-          }
+        for (let i = 0; i < pcm.length; i++) {
+          pcm[i] = softLimit(pcm[i] * vol * (lgPrev + lgStep * i));
         }
       }
       this.lastBufferMuted = muted;
@@ -1347,6 +1411,9 @@ class SpyService {
       fm:            cfg.fm,
       am:            cfg.am,
       volume:        cfg.volume,
+      audioGain:     cfg.audioGain,
+      audioMakeup:   cfg.audioMakeup,
+      audioLeveling: cfg.audioLeveling,
       muted:         cfg.muted,
       tuneMode:      cfg.tuneMode === 'preset' || cfg.tuneMode === 'vfo' ? cfg.tuneMode : undefined,
       tuneStepHz:    typeof cfg.tuneStepHz === 'number' && cfg.tuneStepHz > 0 ? cfg.tuneStepHz : undefined,

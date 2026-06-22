@@ -117,7 +117,7 @@ export class SpyDialVolume extends SingletonAction<Settings> {
     // aligns to the grid; subsequent rotations stay on the grid.
     const cur = Math.round(spyService.getVolume() * 100);
     const snapped = Math.round(cur / accel) * accel;
-    const next = Math.max(0, Math.min(150, snapped + ticks * accel));
+    const next = Math.max(0, Math.min(100, snapped + ticks * accel));
     spyService.setVolume(next / 100);
   }
 
@@ -161,9 +161,8 @@ export class SpyDialVolume extends SingletonAction<Settings> {
       {
         label: 'Vol',
         value: m ? 'Muted' : `${pct}%`,
-        // Pass the unclamped percentage (up to 150) so the bar can grow into
-        // the >100 % overdrive zone — the panel's bar renderer scales fill to
-        // BAR_MAX_PCT and switches colour past 100.
+        // Volume is a 0–100 % attenuator on the leveled output; the bar
+        // renderer scales fill to BAR_MAX_PCT (100) — full bar = full level.
         bar: m ? 0 : pct,
         barMuted: m,
       },

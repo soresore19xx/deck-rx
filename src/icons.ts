@@ -181,18 +181,15 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
       // x=196.
       const barX = 22, barW = 140, barH = 5;
       const barY = SVG_H - barH - 9;  // bottom edge at SVG_H - 9 = 91 (matches Dial RSSI)
-      // Bar covers the full 0-150 % volume range. 100 % lands at 2/3 of the
-      // bar, 150 % fills it. A faint tick at the 100 % mark gives the user a
-      // visual reference for "unity" vs the overdrive zone above it.
-      const BAR_MAX_PCT = 150;
+      // Bar covers the full 0-100 % volume range (100 % = full leveled output;
+      // the output AGC sets the base loudness, Vol just attenuates from there).
+      const BAR_MAX_PCT = 100;
       const clamped = Math.max(0, Math.min(BAR_MAX_PCT, barPct));
       const filled = clamped * barW / BAR_MAX_PCT;
-      const fillColor = barMuted ? '#666666' : (barPct > 100 ? '#ff7733' : '#55aaff');
-      const unityX = barX + (100 / BAR_MAX_PCT) * barW;
+      const fillColor = barMuted ? '#666666' : '#55aaff';
       barSvg =
         `<rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" fill="#333333" rx="1"/>` +
-        (filled > 0 ? `<rect x="${barX}" y="${barY}" width="${filled.toFixed(1)}" height="${barH}" fill="${fillColor}" rx="1"/>` : '') +
-        `<line x1="${unityX.toFixed(1)}" y1="${(barY - 1).toFixed(1)}" x2="${unityX.toFixed(1)}" y2="${(barY + barH + 1).toFixed(1)}" stroke="#888888" stroke-width="0.6"/>`;
+        (filled > 0 ? `<rect x="${barX}" y="${barY}" width="${filled.toFixed(1)}" height="${barH}" fill="${fillColor}" rx="1"/>`  : '');
     }
     // Use the panel-wide columns (decided once above based on whether the
     // panel contains any bar row). All rows in a panel align consistently.

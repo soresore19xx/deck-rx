@@ -26,12 +26,12 @@ type KeyActLike = {
   setTitle: (t: string) => Promise<void>;
 };
 
-const VOL_MAX = 1.5;                  // matches spyService clamp (0–150%)
+const VOL_MAX = 1.0;                  // matches spyService clamp (0–100%)
 const VOL_MIN = 0;
 const REPEAT_INTERVAL_MS = 80;        // ~12 steps/sec while held
 
 // C-curve step (ratio in PERCENT POINTS, then divided by 100 for the
-// 0..1.5 spyService scale). At low volume the step is large (MAX_STEP),
+// 0..1.0 spyService scale). At low volume the step is large (MAX_STEP),
 // at high volume it's small (MIN_STEP) — gives a hardware-knob feel
 // where you ramp up fast from zero, then fine-tune at the top. Constants
 // match the stream-deck-volume project.
@@ -40,7 +40,7 @@ const STEP_MAX_PCT = 8;
 const STEP_GAMMA = 1.5;
 
 function calcStepPct(volPct: number): number {
-  const v = Math.max(0, Math.min(150, volPct)) / 150;        // normalise 0..1
+  const v = Math.max(0, Math.min(100, volPct)) / 100;        // normalise 0..1
   const ratio = Math.pow(1 - v, STEP_GAMMA);                  // clog: low→1, high→0
   return Math.max(STEP_MIN_PCT, Math.round(STEP_MIN_PCT + (STEP_MAX_PCT - STEP_MIN_PCT) * ratio));
 }

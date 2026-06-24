@@ -78,7 +78,7 @@ SpyServer IQ ─ demod ─ pre-ASRC LPF ─ libsamplerate ASRC ─ naudiodon (96
 
 - **200 ms output mute** around every preset jump / VFO smooth-retune (was 100 ms — extended because the AM-Sync PLL needs the longer window to pull in cleanly).
 - **8 ms fade ramp** at every mute boundary so neither the PLL transient nor the naudiodon queue boundary amplitude step is audible.
-- **maxQueue = 4** (was 8): bounds the user-visible retune latency. The ASRC handles drift, so we don't need 8 buffers of slack on the PortAudio side.
+- **maxQueue = 8**: 8 PortAudio buffers of cushion at the device rate. An earlier build tried 4 to shave the user-visible retune latency (leaning on the ASRC for drift), but 8 is kept — the extra device-side slack lets a brief CoreAudio reader stall ride through before the JS-side reader-stall absorb (above) has to engage. The ASRC keeps the backlog centred either way.
 - **Mute relay**: the demod-side mute flag is forwarded to `AudioOutput.write(pcm, muted)` so the ratio loop knows to skip its water-level observation during the deliberately-empty period — otherwise the loop would mistake the silence for an underrun and chase it.
 
 ### What we tried first (and what broke)

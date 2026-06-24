@@ -31,7 +31,7 @@
 export const MODE_MAKEUP: Record<number, number> = {
   0: 5,    // NFM
   1: 10,   // WFM
-  2: 3,    // AM
+  2: 1.5,  // AM (was 3 — ×3 over-drove AM envelope peaks into the soft limiter for broadband distortion; 1.5 ≈ +3.5 dB stays under the knee)
   3: 5,    // DSB (→ FM)
   4: 3,    // USB
   5: 0.6,  // CW (demod CW-AGC already at ~12000)

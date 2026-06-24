@@ -266,6 +266,27 @@ export class NaudiodonOutput implements AudioOutput {
   // adjustments add a small ±ppm drift correction on top.
   private baseRatio = 1.0;
   private deviceSampleRate = 0;
+  // Reader-stall resync state. True while we are draining an overgrown
+  // backlog (after a CoreAudio reader stall) down to RESYNC_LOW in one
+  // coherent step before resuming clean output. See write().
+  private resyncDraining = false;
+
+  // ── TEMP debug instrumentation (flag-gated; ASRC / device-sync diagnosis) ──
+  // touch /tmp/deck-rx-asrc-diag      → log ratio/queue/drops every ~3 s
+  // touch /tmp/deck-rx-postasrc-record→ capture the POST-ASRC PCM (exact bytes
+  //   sent to the device, at device rate) to /tmp/deck-rx-postasrc-<ts>.wav
+  // Both are no-ops unless the flag file exists. Remove after diagnosis.
+  private outChannels = 2;
+  private dropCount = 0;
+  private wlMin = Number.POSITIVE_INFINITY;
+  private wlMax = 0;
+  private dbgLastFlagCheck = 0;
+  private dbgDiagOn = false;
+  private dbgLastDiag = 0;
+  private postTapFlagCheck = 0;
+  private postTapFd: number | null = null;
+  private postTapBytes = 0;
+  private postTapPath = '';
 
   constructor(private cfg: NaudiodonConfig = {}) {}
 
@@ -328,6 +349,9 @@ export class NaudiodonOutput implements AudioOutput {
     const deviceRate = dev?.defaultSampleRate || sampleRate;
     this.deviceSampleRate = deviceRate;
     this.baseRatio = deviceRate / sampleRate;
+    this.outChannels = channels;                 // for the post-ASRC tap header
+    this.dropCount = 0; this.wlMin = Number.POSITIVE_INFINITY; this.wlMax = 0;
+    this.resyncDraining = false;
     // LPF runs at INPUT rate (114 kHz), before downsampling. Cutoff
     // 22 kHz is well below the device-rate Nyquist (48 kHz at 96 kHz
     // device) so no aliasing on the downsample.
@@ -444,11 +468,38 @@ export class NaudiodonOutput implements AudioOutput {
     // Equivalent to SDR++'s packer-overflow drop, just at the sink edge
     // instead of inside a dedicated ring buffer.
     const ai = this.ai as { writableLength?: number; write: (b: Buffer) => void };
-    const OVERFLOW_DROP = 16384 * 8;  // 8 buffers worth ≈ 290 ms backlog
-    if ((ai.writableLength ?? 0) > OVERFLOW_DROP) {
-      // Skip the write entirely. Bias the tune timer so the ratio loop
-      // sees the overflow and reacts on the next call.
-      this.writesSinceTune = 4;
+    const wl = ai.writableLength ?? 0;
+    if (wl < this.wlMin) this.wlMin = wl;
+    if (wl > this.wlMax) this.wlMax = wl;
+    this.maybeAsrcDiag(wl);                       // TEMP: flag-gated sink diag
+    // Reader-stall handling. A CoreAudio overload (a sibling realtime client
+    // on the same device blowing its IO deadline — "HALS_OverloadMessage:
+    // Overload possibly due to client timeout") stalls the device reader for
+    // a few hundred ms. Our writer keeps producing, so the JS Writable
+    // backlog (writableLength) spikes. Two-stage response:
+    //   1. ABSORB up to RESYNC_HIGH (~680 ms): long enough to ride out the
+    //      measured ~250-630 ms stalls with NO drop at all — the queue
+    //      refills and the slow ASRC loop trims it back.
+    //   2. CLEAN RESYNC past RESYNC_HIGH (stacked stalls / a very long one):
+    //      do ONE coherent resync instead of scattering per-buffer drops over
+    //      tens of seconds — keep skipping writes until the backlog drains to
+    //      RESYNC_LOW, then reset the resampler + control loop and resume.
+    //      A single short gap (~one click) instead of the old 80 s,
+    //      hundreds-of-drops, ratio-railed-to-floor mess.
+    const RESYNC_HIGH = 16384 * 16;  // ~680 ms backlog at 96 kHz·2ch·16bit
+    const RESYNC_LOW  = 16384;       // ~43 ms — post-flush resync target
+    if (this.resyncDraining) {
+      if (wl > RESYNC_LOW) { this.dropCount++; return; }   // still draining
+      // Drained: resync resampler + control loop, then fall through to write.
+      this.asrc?.reset();
+      this.currentRatio = this.baseRatio;
+      this.asrc?.setRatio(this.baseRatio);
+      this.writableLenEma = 0;
+      this.writesSinceTune = 0;
+      this.resyncDraining = false;
+    } else if (wl > RESYNC_HIGH) {
+      this.resyncDraining = true;                 // enter single clean resync
+      this.dropCount++;
       return;
     }
     // ASRC: drift compensation. Ratio is tuned in updateAsrcRatio() once
@@ -456,6 +507,7 @@ export class NaudiodonOutput implements AudioOutput {
     // currently-active ratio. With ratio = 1.0 the output is sample-
     // identical to the input (libsamplerate has a fast-path for 1.0).
     const out = this.asrc ? this.asrc.process(pcm) : pcm;
+    this.tapPostAsrc(out);                        // TEMP: flag-gated post-ASRC tap
     ai.write(Buffer.from(out.buffer, out.byteOffset, out.byteLength));
     // Skip ratio tuning during muted buffers — the writableLength signal
     // we sample for drift detection only reflects real writer/reader
@@ -481,7 +533,82 @@ export class NaudiodonOutput implements AudioOutput {
     }
   }
 
+  // TEMP: flag-gated ASRC/queue diagnostic. Touch /tmp/deck-rx-asrc-diag to
+  // enable. Logs the live ASRC ratio (+ its ppm drift from baseRatio), the
+  // writableLength queue backlog (current + min/max since the last line), the
+  // EMA, and the cumulative OVERFLOW_DROP count every ~3 s. A starving queue
+  // (wlMin → 0 = underrun) or a railed ratio / climbing drops is the signature
+  // of the long-run sync drift we're hunting.
+  private maybeAsrcDiag(wl: number): void {
+    const now = Date.now();
+    if (now - this.dbgLastFlagCheck > 1000) {
+      this.dbgLastFlagCheck = now;
+      try { this.dbgDiagOn = (require('fs') as typeof import('fs')).existsSync('/tmp/deck-rx-asrc-diag'); }
+      catch { this.dbgDiagOn = false; }
+    }
+    if (!this.dbgDiagOn || now - this.dbgLastDiag < 3000) return;
+    this.dbgLastDiag = now;
+    const ppm = this.baseRatio > 0 ? ((this.currentRatio / this.baseRatio) - 1) * 1e6 : 0;
+    const wlMin = this.wlMin === Number.POSITIVE_INFINITY ? 0 : this.wlMin;
+    streamDeck.logger.info(`[NaudiodonOutput] asrc-diag ratio=${this.currentRatio.toFixed(7)} base=${this.baseRatio.toFixed(7)} drift=${ppm.toFixed(1)}ppm wl=${wl} wlMin=${wlMin} wlMax=${this.wlMax} ema=${this.writableLenEma.toFixed(0)} drops=${this.dropCount} devRate=${this.deviceSampleRate}`);
+    this.wlMin = Number.POSITIVE_INFINITY; this.wlMax = 0;
+  }
+
+  // TEMP: flag-gated POST-ASRC tap — the exact PCM handed to PortAudio (device
+  // rate, after resampling). Touch /tmp/deck-rx-postasrc-record to start, rm to
+  // stop. Mirrors spyService.tapAudio (which captures PRE-ASRC) so the two WAVs
+  // can be compared to localise a sync artefact to the resampler / device clock.
+  private tapPostAsrc(out: Int16Array): void {
+    const now = Date.now();
+    if (now - this.postTapFlagCheck > 500) {
+      this.postTapFlagCheck = now;
+      const fs = require('fs') as typeof import('fs');
+      const want = fs.existsSync('/tmp/deck-rx-postasrc-record');
+      if (want && this.postTapFd === null) {
+        const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
+        const path = `/tmp/deck-rx-postasrc-${ts}.wav`;
+        const rate = this.deviceSampleRate || 48000, ch = this.outChannels;
+        try {
+          const fd = fs.openSync(path, 'w');
+          const h = Buffer.alloc(44);
+          h.write('RIFF', 0); h.writeUInt32LE(36, 4); h.write('WAVE', 8);
+          h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20);
+          h.writeUInt16LE(ch, 22); h.writeUInt32LE(rate, 24);
+          h.writeUInt32LE(rate * ch * 2, 28); h.writeUInt16LE(ch * 2, 32); h.writeUInt16LE(16, 34);
+          h.write('data', 36); h.writeUInt32LE(0, 40);
+          fs.writeSync(fd, h);
+          this.postTapFd = fd; this.postTapBytes = 0; this.postTapPath = path;
+          streamDeck.logger.info(`[NaudiodonOutput] post-ASRC tap → ${path} (${rate} Hz × ${ch} ch)`);
+        } catch (e) { streamDeck.logger.warn(`[NaudiodonOutput] post-tap open failed: ${e}`); }
+      } else if (!want && this.postTapFd !== null) {
+        this.closePostTap();
+      }
+    }
+    if (this.postTapFd !== null) {
+      try {
+        const buf = Buffer.from(out.buffer, out.byteOffset, out.byteLength);
+        (require('fs') as typeof import('fs')).writeSync(this.postTapFd, buf);
+        this.postTapBytes += buf.length;
+      } catch { /* drop silently */ }
+    }
+  }
+
+  private closePostTap(): void {
+    if (this.postTapFd === null) return;
+    try {
+      const fs = require('fs') as typeof import('fs');
+      const riff = Buffer.alloc(4); riff.writeUInt32LE(36 + this.postTapBytes, 0);
+      fs.writeSync(this.postTapFd, riff, 0, 4, 4);
+      const ds = Buffer.alloc(4); ds.writeUInt32LE(this.postTapBytes, 0);
+      fs.writeSync(this.postTapFd, ds, 0, 4, 40);
+      fs.closeSync(this.postTapFd);
+      streamDeck.logger.info(`[NaudiodonOutput] post-ASRC tap closed: ${this.postTapPath} (${this.postTapBytes} bytes)`);
+    } catch { /* fd may already be gone */ }
+    this.postTapFd = null; this.postTapBytes = 0; this.postTapPath = '';
+  }
+
   async stop(): Promise<void> {
+    this.closePostTap();                          // TEMP: finalise post-ASRC WAV
     try { (this.ai as { quit?: () => void } | null)?.quit?.(); } catch {}
     this.ai = null;
     this.asrc = null;

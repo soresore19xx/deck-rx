@@ -77,7 +77,7 @@ export interface OptionsPanelRow {
   valueColor?: string;
 }
 
-export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editMode = false, borderSide: 'left' | 'right' | 'center' | 'none' = 'none', title = '', titleStyled = true): string {
+export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editMode = false, borderSide: 'left' | 'right' | 'center' | 'none' = 'none', title = '', titleStyled = true, title2 = ''): string {
   // Fixed compact metrics: rowH 14 / font 11/12. Used for ALL panel-style
   // dials so AM Options, FM Options and Volume+Status share identical
   // typography regardless of how many rows each happens to render.
@@ -89,19 +89,23 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // (Volume) keep the previous taller rowH because their layout is anchored
   // by the bar at y=91 and only has a few upper rows.
   const lastRowHasBar = typeof rows[rows.length - 1]?.bar === 'number';
-  const rowH = lastRowHasBar ? 14 : 12;
+  let rowH = lastRowHasBar ? 14 : 12;
   const labelFs = lastRowHasBar ? 11 : 10;
   const valueFs = lastRowHasBar ? 12 : 11;
-  const bgPad = rowH - 3;
   const textH = valueFs;
   const lastBarY = SVG_H - 9;  // = 91, used only when lastRowHasBar
   // upperArea ends a few px above the bar so there's breathing room.
   const upperAreaH = lastBarY - textH - 8;
-  // Optional title bar at the top — works on both non-bar (Options) and
-  // bar (Volume) panels. Volume uses it to host the live HH:MM clock that
-  // moved over from the Tune dial.
+  // Optional title band at the top — works on both non-bar (Options) and
+  // bar (Volume) panels. Volume uses it to host the live clock: a second
+  // line (title2) doubles the band so both the date line and the times
+  // line render large.
   const titleVisible = title.length > 0;
-  const TITLE_H = titleVisible ? 12 : 0;
+  const title2Visible = titleVisible && title2.length > 0;
+  // 24 (not 22): the first line's fs-12 digits need ~3 px of top clearance
+  // or they visually collide with the 1 px rounded frame stroke at y=0.5
+  // (2026-08-02 user report: date line overflowed the top frame).
+  const TITLE_H = title2Visible ? 24 : titleVisible ? 12 : 0;
   let startY: number;
   if (lastRowHasBar) {
     const upperRows = rows.length - 1;
@@ -114,6 +118,13 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
         ? TITLE_H + 4
         : Math.max(2, Math.floor((upperAreaH - upperSpan) / 2));
       startY = topMargin + textH;
+      // Two-line title band + extra rows (icecast adds Pub) can push the last
+      // upper row into the bar (bottom edge lastBarY=91, bar top 86). Compress
+      // the row pitch just enough that the last upper baseline clears it.
+      const maxLastY = lastBarY - 11;
+      if (upperRows > 1 && startY + (upperRows - 1) * rowH > maxLastY) {
+        rowH = Math.max(9, Math.floor((maxLastY - startY) / (upperRows - 1)));
+      }
     } else {
       startY = lastBarY;
     }
@@ -126,6 +137,7 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
     // the +4 gap to keep 7 rows + title fitting inside the 100 px frame.
     startY = titleVisible ? TITLE_H + rowH : rowH + 4;
   }
+  const bgPad = rowH - 3;
   // Panel-wide column positions: panels containing an inline bar (Volume) keep
   // the original wide layout (label flush left, value flush right of the bar)
   // so all rows align with the bar's natural columns. Pure label/value panels
@@ -214,11 +226,51 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
   // by the 6 dial-name banners requested by the user. titleStyled=false is
   // used by the Volume dial to host its live HH:MM clock — the clock isn't
   // a dial title, so it stays plain so as not to mislead.
-  const headerSvg = titleVisible
+  // Auto-shrink long titles so they fit the 200 px width (monospace advance
+  // ≈ 0.6 em). Short banner titles keep labelFs.
+  const fitFs = (s: string, max: number) =>
+    Math.min(max, Math.floor(192 / (0.6 * Math.max(1, s.length))));
+  const titleFs = fitFs(title, labelFs);
+  // Two-line clock band: date small on top, times as large as fits below
+  // (26-char "hh:mm:ss JST /hh:mm:ss UTC" lands at fs 12 — 1.5× the old
+  // single-line clock).
+  // Clock-band text is placed one glyph per fixed-width cell. Font-based
+  // fixes don't hold on the device: the SD app's SVG rasterizer resolved
+  // neither the generic "monospace" family nor explicit Menlo/Monaco — the
+  // digits render in a proportional face, so a single centred <text>
+  // breathes as the seconds tick (2026-08-02 user report, twice). Fixed
+  // per-glyph x coordinates keep every character stationary regardless of
+  // which font the rasterizer substitutes. Both lines fs 12 (digit lines
+  // have no descenders, so the 11 px baseline pitch does not collide).
+  const fixedPitchLine = (s: string, y: number, fs: number): string => {
+    // Per-class cell widths (em). The substituted device font is
+    // proportional, so uniform 0.6 em cells read as loose digit spacing
+    // (user report). Positions stay tick-stable because the clock strings
+    // put the same character class at every index each second.
+    const w = (ch: string): number =>
+      ch === ' ' ? 0.3
+      : ch === ':' ? 0.35
+      : (ch === '/' || ch === '-') ? 0.4
+      : /[0-9]/.test(ch) ? 0.56
+      : 0.68;
+    const cells = [...s].map(ch => w(ch) * fs);
+    const total = cells.reduce((a, b) => a + b, 0);
+    let x = 100 - total / 2;
+    return [...s].map((ch, i) => {
+      const cx = x + cells[i] / 2;
+      x += cells[i];
+      return ch === ' ' ? '' :
+        `<text x="${cx.toFixed(1)}" y="${y}" fill="#ffffff" font-size="${fs}" font-family="Menlo, Monaco, monospace" text-anchor="middle">${ch}</text>`;
+    }).join('');
+  };
+  const headerSvg = title2Visible
+    ? fixedPitchLine(title, 12, fitFs(title, 12)) +
+      fixedPitchLine(title2, TITLE_H - 1, fitFs(title2, 12))
+    : titleVisible
     ? (titleStyled
         ? `<rect x="0" y="0" width="200" height="${TITLE_H}" fill="#0a1a4a"/>` +
-          `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>`
-        : `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${labelFs}" font-family="monospace" text-anchor="middle">${title}</text>`)
+          `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${titleFs}" font-family="monospace" font-weight="bold" text-anchor="middle">${title}</text>`
+        : `<text x="100" y="${TITLE_H - 2}" fill="#ffffff" font-size="${titleFs}" font-family="monospace" text-anchor="middle">${title}</text>`)
     : '';
   return `<svg width="200" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
 <rect width="200" height="${SVG_H}" fill="#000000"/>

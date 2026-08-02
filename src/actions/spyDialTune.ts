@@ -72,10 +72,13 @@ const MODE_DEFAULT_FREQ: Record<number, number> = {
 // exercise the band-policy decisions without importing the Stream Deck SDK
 // or the spyService singleton.
 
-export function currentTimeHHMM(): string {
+// Volume-dial clock. Split into date + times lines so the panel can render
+// the date small and the JST/UTC times large (a single 38-char line only
+// fits the 200 px LCD at fs 8 — user: too small). One Date sample so the
+// two lines can never disagree across a midnight boundary.
+export function currentClock(): { date: string; times: string } {
   const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
+  const p2 = (n: number) => String(n).padStart(2, '0');
   const tzRaw = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
     .formatToParts(d).find(p => p.type === 'timeZoneName')?.value ?? '';
   // ICU on Node often returns GMT-offset rather than a 3-letter abbrev.
@@ -85,7 +88,10 @@ export function currentTimeHHMM(): string {
     'GMT-4': 'EDT', 'GMT-7': 'PDT', 'GMT-8': 'PST',
   };
   const tz = tzMap[tzRaw] ?? tzRaw;
-  return tz ? `${hh}:${mm} ${tz}` : `${hh}:${mm}`;
+  const date  = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  const local = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  const utc   = `${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}`;
+  return { date, times: `${local}${tz ? ' ' + tz : ''} /${utc} UTC` };
 }
 
 @action({ UUID: 'com.hogehoge.deck-rx.dial-tune' })

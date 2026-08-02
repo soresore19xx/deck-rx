@@ -5,7 +5,7 @@ import type { OutputErrorTag } from '../AudioOutput.js';
 import { DeviceInfo, DEVICE_AIRSPY_ONE, DEVICE_AIRSPY_HF, DEVICE_RTLSDR } from '../SpyClient.js';
 import { svgB64, dumpAndB64 } from '../dialDisplay.js';
 import { knobSvg, optionsPanelSvg, OptionsPanelRow, dimSvg } from '../icons.js';
-import { currentTimeHHMM } from './spyDialTune.js';
+import { currentClock } from './spyDialTune.js';
 
 type Settings = {
   borderSide?: 'left' | 'right' | 'center' | 'none';
@@ -177,11 +177,11 @@ export class SpyDialVolume extends SingletonAction<Settings> {
       },
     ];
     const dim = !this.enabled || !this.connected;
-    // Title bar shows the live HH:MM (TZ) clock that the Tune dial used to
-    // carry. Updates every second via clockTimer.
-    const title = currentTimeHHMM();
+    // Title band shows the live two-line clock: date over
+    // "hh:mm:ss JST /hh:mm:ss UTC". Updates every second via clockTimer.
+    const clk = currentClock();
     this.act.setFeedback({
-      'vol-display': dumpAndB64('volume', dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide, title, false), dim)),
+      'vol-display': dumpAndB64('volume', dimSvg(optionsPanelSvg(rows, -1, false, this.borderSide, clk.date, false, clk.times), dim)),
     }).catch(() => {});
   }
 }

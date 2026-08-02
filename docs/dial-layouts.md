@@ -16,11 +16,11 @@ One-shot preset-tune button. Configure a preset slot (1-N) in the PI; pressing t
 
 ## Deck RX Dial (Tune)
 
-VFO / preset scrolling, 7-seg frequency, FM stereo lock badge, ATS-Mini-style N (SNR) / S (RSSI) bars, `HH:MM TZ` clock; long-press (≥ 2 s) for master ON/OFF. Header carries the JP DB-resolved station name + 識別信号 callsign + 送信地 (e.g. `NHK第1 JOAK (東京)`). See the Tune dial in the top composite (`lcd-combined.png`) — a synthetic single-dial render isn't shown here because the harness has no SpyServer connect, so the body never tunes a freq.
+VFO / preset scrolling, 7-seg frequency, FM stereo lock badge, ATS-Mini-style N (SNR) / S (RSSI) bars; long-press (≥ 2 s) for master ON/OFF. (The clock lives on the Volume + Status dial below.) Header carries the JP DB-resolved station name + 識別信号 callsign + 送信地 (e.g. `NHK第1 JOAK (東京)`). See the Tune dial in the top composite (`lcd-combined.png`) — a synthetic single-dial render isn't shown here because the harness has no SpyServer connect, so the body never tunes a freq.
 
 ## Deck RX Volume + Status
 
-0–150 % volume / mute, conn state, host, device, audio output, icecast publish health. Title bar carries the `HH:MM TZ` clock so the Tune dial's freq area is left to the 7-seg.
+0–100 % volume / mute, conn state, host, device, audio output, icecast publish health. The title band carries a live two-line clock — `YYYY-MM-DD` over `hh:mm:ss JST /hh:mm:ss UTC` — so the Tune dial's freq area is left to the 7-seg. Clock glyphs sit in fixed per-character cells (the SD app substitutes a proportional font for SVG text, so a naturally-centred line would shift on every seconds tick).
 
 ![Volume + Status dial](lcd-volume.png)
 

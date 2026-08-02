@@ -12,6 +12,7 @@
 //   ws://127.0.0.1:<port>, then sends `{ event, uuid }` to register.
 import { spawn, type ChildProcess } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
+import net from 'net';
 import { tmpdir } from 'os';
 import { resolve } from 'path';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -65,6 +66,15 @@ export interface MockHarness {
   sendToPlugin(uuid: string, context: string, payload: Record<string, unknown>): void;
   /** Helper: short delay so the plugin's async handlers settle before the next event. */
   settle(ms?: number): Promise<void>;
+
+  /** Path of the sandboxed config.json the plugin reads AND persists to —
+   *  tests can re-read it to assert on debounced persistFields writes
+   *  (lastFrequency / demodMode / ...). */
+  configPath: string;
+  /** SET_SETTING commands received by the mock SpyServer (empty and never
+   *  populated unless startPlugin was given `spyServer`). Live array —
+   *  read it after a settle. setting 101 = IQ_FREQUENCY. */
+  spySettings: Array<{ setting: number; value: number }>;
 }
 
 export interface StartPluginOptions {
@@ -82,6 +92,14 @@ export interface StartPluginOptions {
   /** Optional override for DECK_RX_SDR_CONFIG_PATH (SDR++ source file the
    *  Import button reads from). */
   sdrConfigPath?: string;
+  /** Start a mock SpyServer and point the plugin's config host/port at it.
+   *  The mock completes the handshake (DEVICE_INFO — default Airspy HF+,
+   *  deviceType 2, so the 31–60 MHz hardware-gap logic is exercised), feeds
+   *  the client's 5 s rx watchdog with periodic CLIENT_SYNC frames, and
+   *  records every SET_SETTING command into harness.spySettings. Needed by
+   *  any test that asserts on connect-time behaviour (connectListeners only
+   *  fire after a successful handshake). */
+  spyServer?: boolean | { deviceType?: number };
 }
 
 const DEFAULT_CONFIG = {
@@ -116,10 +134,73 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
   await new Promise<void>(res => wss.once('listening', () => res()));
   const port = (wss.address() as { port: number }).port;
 
+  // Optional mock SpyServer — SpyServer protocol is trivial for our needs:
+  // the client sends 8-byte-header commands (HELLO / SET_SETTING); the
+  // server only has to answer with one DEVICE_INFO message (20-byte header
+  // + 48-byte body) for spyService's waitForDeviceInfo → handshake →
+  // connectListeners to run. Periodic CLIENT_SYNC frames keep the client's
+  // 5 s no-rx watchdog from declaring the link dead mid-test.
+  const spySettings: Array<{ setting: number; value: number }> = [];
+  let spyServer: net.Server | null = null;
+  let spyPort = 0;
+  if (opts.spyServer) {
+    const devOpts = typeof opts.spyServer === 'object' ? opts.spyServer : {};
+    const deviceType = devOpts.deviceType ?? 2; // Airspy HF+
+    spyServer = net.createServer((sock) => {
+      sock.on('error', () => {});
+      let buf = Buffer.alloc(0);
+      sock.on('data', (c: Buffer) => {
+        buf = Buffer.concat([buf, c]);
+        while (buf.length >= 8) {
+          const cmd = buf.readUInt32LE(0);
+          const len = buf.readUInt32LE(4);
+          if (buf.length < 8 + len) break;
+          const body = buf.subarray(8, 8 + len);
+          buf = buf.subarray(8 + len);
+          if (cmd === 2 && len >= 8) {  // CMD_SET_SETTING
+            spySettings.push({ setting: body.readUInt32LE(0), value: body.readUInt32LE(4) });
+          }
+        }
+      });
+      // Message header: ProtocolID | MessageType | StreamType | Sequence | BodySize
+      const devBody = Buffer.alloc(48);
+      devBody.writeUInt32LE(deviceType,   0);   // deviceType
+      devBody.writeUInt32LE(0,            4);   // deviceSerial
+      devBody.writeUInt32LE(912_000,      8);   // maxSampleRate
+      devBody.writeUInt32LE(768_000,     12);   // maxBandwidth
+      devBody.writeUInt32LE(8,           16);   // decimationStages
+      devBody.writeUInt32LE(0,           20);   // gainStages
+      devBody.writeUInt32LE(8,           24);   // maxGainIndex
+      devBody.writeUInt32LE(500_000,     28);   // minFrequency
+      devBody.writeUInt32LE(260_000_000, 32);   // maxFrequency
+      devBody.writeUInt32LE(16,          36);   // resolution
+      devBody.writeUInt32LE(1,           40);   // minIQDecimation
+      devBody.writeUInt32LE(0,           44);   // forcedIQFormat
+      const devHdr = Buffer.alloc(20);
+      devHdr.writeUInt32LE(0,  4);              // MSG_DEVICE_INFO
+      devHdr.writeUInt32LE(48, 16);
+      sock.write(Buffer.concat([devHdr, devBody]));
+      const syncTimer = setInterval(() => {
+        if (sock.destroyed) return;
+        const syncBody = Buffer.alloc(36);
+        syncBody.writeUInt32LE(1, 0);           // canControl
+        const syncHdr = Buffer.alloc(20);
+        syncHdr.writeUInt32LE(1,  4);           // MSG_CLIENT_SYNC
+        syncHdr.writeUInt32LE(36, 16);
+        sock.write(Buffer.concat([syncHdr, syncBody]));
+      }, 1000);
+      sock.on('close', () => clearInterval(syncTimer));
+    });
+    await new Promise<void>(res => spyServer!.listen(0, '127.0.0.1', () => res()));
+    spyPort = (spyServer.address() as net.AddressInfo).port;
+  }
+
   // Sandbox dir for PID + config so we don't collide with the production instance
   const sandboxDir = mkdtempSync(resolve(tmpdir(), 'deck-rx-test-'));
   const configPath = resolve(sandboxDir, 'config.json');
-  writeFileSync(configPath, JSON.stringify({ ...DEFAULT_CONFIG, ...(opts.config ?? {}) }, null, 2));
+  const cfgOverrides: Record<string, unknown> = { ...(opts.config ?? {}) };
+  if (spyServer) { cfgOverrides.host = '127.0.0.1'; cfgOverrides.port = spyPort; }
+  writeFileSync(configPath, JSON.stringify({ ...DEFAULT_CONFIG, ...cfgOverrides }, null, 2));
 
   // Plugin spawn
   const env: Record<string, string | undefined> = {
@@ -201,6 +282,8 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
     client,
     plugin,
     pluginUUID,
+    configPath,
+    spySettings,
     send: (event) => client.send(JSON.stringify(event)),
     awaitMessage: <T,>(pred, timeoutMs = 3000) => {
       // First check inbox for already-arrived match
@@ -233,6 +316,9 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
       });
       wss.close();
       await new Promise<void>(res => wss.once('close', () => res()));
+      if (spyServer) {
+        await new Promise<void>(res => spyServer!.close(() => res()));
+      }
     },
 
     // Convenience helpers for tests. Encoder coordinates default to (0,0) —
@@ -254,8 +340,11 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
       // image (knob graphic) is universal; some dials skip setFeedback on the
       // very first onWillAppear under certain modes, so we key on setImage
       // which every dial sends as part of the knob render.
+      // 10 s upper bound: only reached on genuine failure, but generous
+      // enough that a fully parallel vitest run (many plugin processes
+      // spawning at once) doesn't trip it on a slow first render.
       await new Promise<void>((res, rej) => {
-        const timer = setTimeout(() => rej(new Error(`willAppearDial: no setImage for ${context} within 4 s`)), 4000);
+        const timer = setTimeout(() => rej(new Error(`willAppearDial: no setImage for ${context} within 10 s`)), 10_000);
         const pred = (m: unknown) => {
           const msg = m as { event?: string; context?: string };
           return msg?.event === 'setImage' && msg?.context === context;

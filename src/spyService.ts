@@ -513,7 +513,10 @@ class SpyService {
       for (const fn of this.volumeListeners) fn(this.volume, this.muted);
       // Restore last-used freq + mode so the radio is already on the right
       // station when audio starts (without depending on any dial firing first).
-      if (typeof cfg.lastFrequency === 'number' && cfg.lastFrequency > 0) {
+      // Only when nothing is live yet (fresh process / first connect): on a
+      // mid-session reconnect the in-memory freq is fresher than the disk
+      // value (the persist trails the last retune by its 500 ms debounce).
+      if (this._currentFreq === 0 && typeof cfg.lastFrequency === 'number' && cfg.lastFrequency > 0) {
         this._currentFreq = cfg.lastFrequency;
       }
       if (typeof cfg.demodMode === 'number') {
@@ -523,7 +526,17 @@ class SpyService {
         // stays at its default (1) until something triggers setDemodMode,
         // and the Opts column shows the wrong shape on first paint after a
         // restart.
-        for (const fn of this.demodModeListeners) fn(this.currentDemodMode);
+        // configRestoreFire marks this fire as hydration, NOT a user band
+        // change: the Tune dial's demodListener must skip its preset
+        // auto-jump here, or it lands on the first matching-mode preset and
+        // overwrites the lastFrequency restored just above (the "freq resets
+        // to a fixed preset on every SD restart / reconnect" bug).
+        this.configRestoreFire = true;
+        try {
+          for (const fn of this.demodModeListeners) fn(this.currentDemodMode);
+        } finally {
+          this.configRestoreFire = false;
+        }
       }
       if (cfg.tuneMode === 'preset' || cfg.tuneMode === 'vfo') {
         this.tuneMode = cfg.tuneMode;
@@ -985,6 +998,12 @@ class SpyService {
   }
 
   getDemodMode(): number { return this.currentDemodMode; }
+  // True only while connect()'s config-restore block is firing
+  // demodModeListeners. Lets the Tune dial distinguish hydration from a
+  // real (user-driven) mode change and skip its preset auto-jump — the
+  // fire loop is synchronous, so a plain flag is race-free.
+  private configRestoreFire = false;
+  isConfigRestoreFire(): boolean { return this.configRestoreFire; }
   subscribeDemodMode(fn: DemodModeListener): void {
     this.demodModeListeners.add(fn);
     fn(this.currentDemodMode);

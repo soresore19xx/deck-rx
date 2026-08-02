@@ -61,7 +61,8 @@ describe('Tune dial preset cycle', () => {
       },
     });
     // Fixture sorted by freq ascending: 0=693 kHz AM, 1=9910 kHz AM,
-    // 2=90.5 MHz WFM (TBS). Start on slot 2 (FM).
+    // 2=90.5 MHz WFM (TBS). Start on slot 2 (FM) — matches lastFrequency
+    // above, so the connect-time restore keeps this slot.
     await harness.willAppearDial(TUNE_UUID, CTX, { mode: 'preset', stepHz: 9000, slotIndex: 2, borderSide: 'none' });
     await harness.settle(800);
 
@@ -128,7 +129,13 @@ describe('Tune dial preset cycle', () => {
         tuneMode: 'preset',
       },
     });
-    await harness.willAppearDial(TUNE_UUID, CTX, { mode: 'preset', stepHz: 9000, slotIndex: 1, borderSide: 'none' });
+    // Start on slot 0 so the two rotations below stay inside the 3-entry
+    // fixture (baseline 0 → 1, asserted 1 → 2 = the AM 9.91 MHz → FM
+    // 90.5 MHz boundary this test is about). The original slotIndex: 1
+    // start only worked while the demod-restore fire still auto-jumped the
+    // slot back to 0 — that jump was the "freq resets on every restart"
+    // bug, fixed 2026-08-02; the dial now keeps the persisted slot.
+    await harness.willAppearDial(TUNE_UUID, CTX, { mode: 'preset', stepHz: 9000, slotIndex: 0, borderSide: 'none' });
     await harness.settle(800);
 
     // Take a baseline rotation first so the captured slotIndex value is

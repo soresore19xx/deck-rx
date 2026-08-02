@@ -167,31 +167,61 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
 
     this.connectListener = () => {
       if (this.dialMode === 'preset' && this.presets.length > 0) {
-        const p = this.presets[this.slotIndex];
         const dev = spyService.getDeviceInfo();
-        const receivable = !p?.freq || !dev || isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency);
-        if (p?.freq && receivable) {
-          // Suppress the demodListener's auto-jump while the connect-time
-          // seed runs — otherwise it would re-pick the first matching-mode
-          // preset and stomp the user's persisted slotIndex.
-          this.suppressDemodJump = true;
-          if (spyService.currentFreq === 0) {
-            // First run, no persisted state — seed freq + mode.
+        const live = spyService.currentFreq;
+        const liveOk = live > 0 && (!dev || isFreqReceivable(live, dev.deviceType, dev.minFrequency, dev.maxFrequency));
+        if (liveOk) {
+          // A last-tuned freq survived into this connect (config-restored
+          // after a plugin restart, or simply live across a reconnect). It
+          // wins over the persisted preset slot — never re-seed on top of
+          // it. When it corresponds to a preset, reconcile slotIndex onto
+          // that preset so the display + next rotate start from the station
+          // actually playing (the persisted slot can lag: the demodListener
+          // auto-jump deliberately doesn't setSettings).
+          const idx = this.presets.findIndex(pp => pp.freq === live);
+          if (idx >= 0) {
+            this.slotIndex = idx;
+            // Make sure the demod matches the reconciled preset, covering
+            // configs where demodMode lagged the freq change. Suppressed so
+            // the demodListener doesn't re-pick the first matching-mode
+            // preset and stomp the restored freq.
+            this.suppressDemodJump = true;
+            spyService.setDemodMode(this.presets[idx].mode);
+            this.suppressDemodJump = false;
+            // Persist the reconciled slot — full object, because the SDK's
+            // setSettings is a full replace (a partial would null mode /
+            // stepHz / borderSide and bounce stale values back through
+            // onDidReceiveSettings).
+            (this.lastAction as { setSettings?: (s: DialTuneSettings) => Promise<void> } | null)
+              ?.setSettings?.({ mode: this.dialMode, stepHz: this.stepHz, slotIndex: this.slotIndex, borderSide: this.borderSide })
+              ?.catch(() => {});
+          }
+          // live freq not in the preset list (e.g. VFO roam persisted while
+          // the dial sits in preset mode): leave state alone — the radio
+          // resumes on the live freq and the display keeps the stored slot.
+        } else {
+          // No live freq (true first run) — or the persisted freq isn't
+          // receivable on the connected device (e.g. a 45 MHz entry with an
+          // Airspy HF+ plugged in, 31–60 MHz hardware gap): seed freq + mode
+          // from the persisted preset slot as before.
+          const p = this.presets[this.slotIndex];
+          const receivable = !p?.freq || !dev || isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency);
+          if (p?.freq && receivable) {
+            // Suppress the demodListener's auto-jump while the connect-time
+            // seed runs — otherwise it would re-pick the first matching-mode
+            // preset and stomp the user's persisted slotIndex.
+            this.suppressDemodJump = true;
             spyService.setDemodMode(p.mode);
             spyService.setFrequency(p.freq);
-          } else if (spyService.currentFreq === p.freq) {
-            // The restored freq is OUR preset — make sure mode matches it,
-            // covering older configs where demodMode lagged the freq change.
-            spyService.setDemodMode(p.mode);
+            this.suppressDemodJump = false;
           }
-          this.suppressDemodJump = false;
+          // If the persisted preset is unreceivable on the connected device
+          // (e.g. user persisted a 50 MHz NFM slot then plugged in an Airspy
+          // HF+ which has a 31–60 MHz hardware gap) we silently skip the
+          // seed; the user can rotate to a covered preset manually. The dial
+          // is left in dim state, mirroring "no signal" rather than pretending
+          // the freq is tuned.
         }
-        // If the persisted preset is unreceivable on the connected device
-        // (e.g. user persisted a 50 MHz NFM slot then plugged in an Airspy
-        // HF+ which has a 31–60 MHz hardware gap) we silently skip the
-        // seed; the user can rotate to a covered preset manually. The dial
-        // is left in dim state, mirroring "no signal" rather than pretending
-        // the freq is tuned.
       } else if (this.dialMode === 'vfo' && this.currentFreq > 0 && spyService.currentFreq === 0) {
         // Snap the persisted VFO freq into a covered band before seeding —
         // same reasoning as above, applied to free-form VFO state.
@@ -243,7 +273,14 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // dial-rotate handler wraps its autoDemodForFreq-driven setDemodMode
       // with suppressDemodJump so this listener doesn't yank the freq the
       // user is actively dialing through.
-      if (!this.suppressDemodJump) {
+      //
+      // isConfigRestoreFire(): connect()'s config-restore block re-fires the
+      // persisted demod mode as pure hydration. Jumping on that fire would
+      // land on the first matching-mode preset and overwrite the restored
+      // lastFrequency — the "freq resets to a fixed preset on every SD
+      // restart / reconnect" bug (root-caused 2026-08-02). Hydration must
+      // never move the freq; only user-driven mode changes may.
+      if (!this.suppressDemodJump && !spyService.isConfigRestoreFire()) {
         // Pick the first preset that BOTH matches the new demod mode AND
         // is receivable on the connected hardware. Without the receivability
         // filter, PUSH-ing NFM on an Airspy HF+ would happily land us on a

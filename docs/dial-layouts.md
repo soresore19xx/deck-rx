@@ -6,9 +6,9 @@ Each registered Stream Deck action — encoder dials, the existing keypad button
 
 ## Offline / disconnected state
 
-When the SpyServer connection drops (cable pull, server reboot, master OFF), every dial dims and signals `LINK` / `OFFLINE`. The Tune dial swaps its 7-seg digits for dashes and prefixes the header with `LINK` (last station name kept so the user can see what they were on); Status panel switches `Conn` to red `OFFLINE`; meters drop to zero / `-`. State cache (Host, Dev, AOut, last freq + mode) is preserved so the reconnect is seamless — the plugin auto-reconnects, all values snap back.
+When the SpyServer connection drops (cable pull, server reboot), every dial dims and signals `OFFLINE`: the Tune dial swaps its 7-seg digits for dashes and prefixes the header with `LINK` (last station name kept so the user can see what they were on). Master OFF (2 s long-press) renders the same `OFFLINE` panels but prefixes the Tune header with `OFF` and keeps the last freq on the 7-seg. In both cases the Status panel drops the red `ONLINE` tally to plain `OFFLINE` and the meters fall to zero / `-`. State cache (Host, Dev, AOut, last freq + mode) is preserved so the reconnect is seamless — the plugin auto-reconnects (or master ON), all values snap back.
 
-![Deck RX — offline state composite](lcd-combined-offline.png)
+![Deck RX — offline composite (master OFF)](lcd-combined-offline.png)
 
 ## Deck RX Tune (keypad button)
 

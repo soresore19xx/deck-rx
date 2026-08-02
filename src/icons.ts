@@ -247,20 +247,26 @@ export function optionsPanelSvg(rows: OptionsPanelRow[], selectedRow = -1, editM
     // proportional, so uniform 0.6 em cells read as loose digit spacing
     // (user report). Positions stay tick-stable because the clock strings
     // put the same character class at every index each second.
-    const w = (ch: string): number =>
-      ch === ' ' ? 0.3
-      : ch === ':' ? 0.35
-      : (ch === '/' || ch === '-') ? 0.4
-      : /[0-9]/.test(ch) ? 0.56
-      : 0.68;
-    const cells = [...s].map(ch => w(ch) * fs);
+    // Letter runs (JST / UTC) are constant between ticks, so each run is
+    // emitted as ONE <text> with natural kerning — per-glyph cells made
+    // the inter-letter gaps too wide (user report) — centred in a tight
+    // 0.58 em/letter span; any natural-width spill lands in the adjacent
+    // 0.3 em space cells, never over a digit.
+    const w = (tok: string): number =>
+      tok === ' ' ? 0.3
+      : tok === ':' ? 0.35
+      : (tok === '/' || tok === '-') ? 0.4
+      : /^[0-9]$/.test(tok) ? 0.56
+      : 0.58 * tok.length;
+    const tokens = s.match(/[A-Za-z]+|./g) ?? [];
+    const cells = tokens.map(t => w(t) * fs);
     const total = cells.reduce((a, b) => a + b, 0);
     let x = 100 - total / 2;
-    return [...s].map((ch, i) => {
+    return tokens.map((tok, i) => {
       const cx = x + cells[i] / 2;
       x += cells[i];
-      return ch === ' ' ? '' :
-        `<text x="${cx.toFixed(1)}" y="${y}" fill="#ffffff" font-size="${fs}" font-family="Menlo, Monaco, monospace" text-anchor="middle">${ch}</text>`;
+      return tok === ' ' ? '' :
+        `<text x="${cx.toFixed(1)}" y="${y}" fill="#ffffff" font-size="${fs}" font-family="Menlo, Monaco, monospace" text-anchor="middle">${tok}</text>`;
     }).join('');
   };
   const headerSvg = title2Visible

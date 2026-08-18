@@ -1,26 +1,46 @@
 // === Claude origin ===
 // Created/placed by Anthropic Claude Code at: 2026-08-18-195032
-// Companion window app for deck-rx. Its only structural job is to exist as a
+// Companion window app for deck-rx. Its structural job is to exist as a
 // focusable macOS app so a Stream Deck profile can be bound to it; it also
-// mirrors the plugin's persisted state so the window is not empty.
+// shows the receiver's live state (frequency, mode, S/N meters, link).
 // ====================
 
 import AppKit
 
-// MARK: - State sources
+// MARK: - Paths
 //
-// The plugin owns no IPC endpoint yet, so state is read from two artefacts it
-// already maintains:
-//   * config.json  - persisted last frequency / demod mode / volume / host
-//   * /tmp/deck-rx.pid - live plugin process id (written by src/index.ts)
-// If a richer feed is added later it should land in statusPath; the fields
-// found there win over config.json without any change here.
+// The plugin resolves the same two paths with the same rule, so both ends
+// agree without configuration: a RAM-backed volume when present (no SSD wear
+// at all), /tmp otherwise.
 
+func resolveBaseDir() -> String {
+    var isDir: ObjCBool = false
+    if FileManager.default.fileExists(atPath: "/Volumes/RAMDisk", isDirectory: &isDir), isDir.boolValue {
+        return "/Volumes/RAMDisk"
+    }
+    return "/tmp"
+}
+
+let baseDir = resolveBaseDir()
+let statusPath = baseDir + "/deck-rx-status.json"
+let alivePath = baseDir + "/deck-rx-app.alive"
 let configPath = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin/config.json")
     .path
-let statusPath = "/tmp/deck-rx-status.json"
 let pidPath = "/tmp/deck-rx.pid"
+
+// The plugin writes the status feed only while this flag stays fresh, so a
+// closed companion app costs the plugin nothing.
+func touchAliveFlag() {
+    let fm = FileManager.default
+    if fm.fileExists(atPath: alivePath) {
+        try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: alivePath)
+    } else {
+        fm.createFile(atPath: alivePath, contents: Data())
+    }
+}
+
+// MARK: - State
 
 struct Snapshot {
     var freqHz: Double?
@@ -29,7 +49,13 @@ struct Snapshot {
     var muted: Bool?
     var host: String?
     var port: Int?
-    var source: String = "-"
+    var connected: Bool?
+    var enabled: Bool?
+    var rssiDbfs: Double?
+    var snrDb: Double?
+    var live = false            // status feed is present and fresh
+    var writes: Double = 0
+    var bytesWritten: Double = 0
     var pluginPid: pid_t?
 }
 
@@ -50,8 +76,9 @@ func snapshot() -> Snapshot {
     var s = Snapshot()
     s.pluginPid = livePid()
 
+    // config.json is the always-available baseline: the plugin persists
+    // frequency/mode within 500 ms and volume within 300 ms of a change.
     if let cfg = readJSON(configPath) {
-        s.source = "config.json"
         s.freqHz = cfg["lastFrequency"] as? Double
         s.mode = cfg["demodMode"] as? Int
         s.volume = cfg["volume"] as? Double
@@ -59,18 +86,28 @@ func snapshot() -> Snapshot {
         s.host = cfg["host"] as? String
         s.port = cfg["port"] as? Int
     }
-    // Optional live feed; overrides whatever config.json had.
-    if let st = readJSON(statusPath) {
-        s.source = "status.json"
-        if let v = st["freqHz"] as? Double { s.freqHz = v }
-        if let v = st["mode"] as? Int { s.mode = v }
-        if let v = st["volume"] as? Double { s.volume = v }
-        if let v = st["muted"] as? Bool { s.muted = v }
+
+    // The live feed wins where it overlaps, and is the only source for the
+    // meters and the link state.
+    if let st = readJSON(statusPath), let ts = st["ts"] as? Double {
+        // Older than 3 s means the plugin stopped feeding (exited, or it
+        // decided nobody was reading); fall back to config.json values.
+        if Date().timeIntervalSince1970 * 1000 - ts < 3000 {
+            s.live = true
+            if let v = st["freqHz"] as? Double { s.freqHz = v }
+            if let v = st["mode"] as? Int { s.mode = v }
+            if let v = st["volume"] as? Double { s.volume = v }
+            if let v = st["muted"] as? Bool { s.muted = v }
+            s.connected = st["connected"] as? Bool
+            s.enabled = st["enabled"] as? Bool
+            s.rssiDbfs = st["rssiDbfs"] as? Double
+            s.snrDb = st["snrDb"] as? Double
+            s.writes = st["writes"] as? Double ?? 0
+            s.bytesWritten = st["bytesWritten"] as? Double ?? 0
+        }
     }
     return s
 }
-
-// MARK: - Formatting
 
 // Mode numbering follows spyService.ts: 0=NFM 1=WFM 2=AM 4=USB 5=CW 6=LSB.
 func modeName(_ m: Int?) -> String {
@@ -88,39 +125,79 @@ func modeName(_ m: Int?) -> String {
 func formatFreq(_ hz: Double?) -> String {
     guard let hz = hz, hz > 0 else { return "--- ---" }
     if hz < 30_000_000 {
-        let khz = hz / 1000
-        let text = String(format: "%.3f", khz)
-        // Trim trailing zeros so 954.000 reads as 954.
-        var trimmed = text
-        while trimmed.hasSuffix("0") { trimmed.removeLast() }
-        if trimmed.hasSuffix(".") { trimmed.removeLast() }
-        return trimmed + " kHz"
+        var text = String(format: "%.3f", hz / 1000)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text + " kHz"
     }
     return String(format: "%.3f MHz", hz / 1_000_000)
 }
 
-// MARK: - UI
+// MARK: - Views
+
+final class BarView: NSView {
+    var value: CGFloat = 0 { didSet { needsDisplay = true } }
+    var tint: NSColor = NSColor(red: 0.35, green: 0.85, blue: 0.45, alpha: 1)
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 168, height: 8) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let r = bounds
+        let radius = r.height / 2
+        NSColor(white: 0.16, alpha: 1).setFill()
+        NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius).fill()
+        guard value > 0 else { return }
+        let w = max(r.height, r.width * min(1, value))
+        tint.setFill()
+        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: w, height: r.height),
+                     xRadius: radius, yRadius: radius).fill()
+    }
+}
+
+func makeLabel(_ size: CGFloat, _ weight: NSFont.Weight, _ color: NSColor) -> NSTextField {
+    let f = NSTextField(labelWithString: "")
+    f.font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+    f.textColor = color
+    return f
+}
 
 final class StatusView: NSView {
-    private let freqLabel = StatusView.label(size: 34, weight: .medium, color: .white)
-    private let modeLabel = StatusView.label(size: 14, weight: .regular, color: NSColor(white: 0.72, alpha: 1))
-    private let pluginLabel = StatusView.label(size: 12, weight: .regular, color: NSColor(white: 0.72, alpha: 1))
-    private let serverLabel = StatusView.label(size: 12, weight: .regular, color: NSColor(white: 0.72, alpha: 1))
-    private let sourceLabel = StatusView.label(size: 10, weight: .regular, color: NSColor(white: 0.42, alpha: 1))
+    private let dim = NSColor(white: 0.72, alpha: 1)
+    private let faint = NSColor(white: 0.42, alpha: 1)
 
-    static func label(size: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSTextField {
-        let f = NSTextField(labelWithString: "")
-        f.font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
-        f.textColor = color
-        return f
-    }
+    private let freqLabel = makeLabel(34, .medium, .white)
+    private let modeLabel = makeLabel(14, .regular, NSColor(white: 0.72, alpha: 1))
+    private let sBar = BarView()
+    private let nBar = BarView()
+    private let sNum = makeLabel(12, .regular, NSColor(white: 0.72, alpha: 1))
+    private let nNum = makeLabel(12, .regular, NSColor(white: 0.72, alpha: 1))
+    private let linkLabel = makeLabel(12, .regular, NSColor(white: 0.72, alpha: 1))
+    private let pluginLabel = makeLabel(12, .regular, NSColor(white: 0.72, alpha: 1))
+    private let feedLabel = makeLabel(10, .regular, NSColor(white: 0.42, alpha: 1))
+
+    // Write-rate accounting, derived from the feed's own counters.
+    private var prevWrites: Double?
+    private var prevBytes: Double = 0
+    private var prevAt = Date()
+    private var wps: Double = 0
+    private var bps: Double = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
+        nBar.tint = NSColor(red: 0.40, green: 0.70, blue: 0.95, alpha: 1)
 
-        let stack = NSStackView(views: [freqLabel, modeLabel, spacer(8), pluginLabel, serverLabel, spacer(4), sourceLabel])
+        let stack = NSStackView(views: [
+            freqLabel, modeLabel,
+            spacer(10),
+            meterRow("S", sBar, sNum),
+            meterRow("N", nBar, nNum),
+            spacer(10),
+            linkLabel, pluginLabel,
+            spacer(4),
+            feedLabel,
+        ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 4
@@ -142,6 +219,19 @@ final class StatusView: NSView {
         return v
     }
 
+    private func meterRow(_ name: String, _ bar: BarView, _ num: NSTextField) -> NSStackView {
+        let tag = makeLabel(12, .regular, faint)
+        tag.stringValue = name
+        tag.widthAnchor.constraint(equalToConstant: 14).isActive = true
+        num.alignment = .right
+        num.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        let row = NSStackView(views: [tag, bar, num])
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.alignment = .centerY
+        return row
+    }
+
     func refresh() {
         let s = snapshot()
         freqLabel.stringValue = formatFreq(s.freqHz)
@@ -151,30 +241,84 @@ final class StatusView: NSView {
         if s.muted == true { parts.append("MUTED") }
         modeLabel.stringValue = parts.joined(separator: "  ·  ")
 
+        // Meter scaling mirrors spyDialTune.ts so the window and the LCD agree:
+        // RSSI -100..-10 dBFS and SNR 0..60 dB map onto the full bar.
+        if let rssi = s.rssiDbfs {
+            sBar.value = CGFloat(max(0, min(100, (rssi + 100) * 100 / 90)) / 100)
+            sNum.stringValue = rssi > -119 ? "\(Int(rssi.rounded())) dBFS" : "-"
+        } else {
+            sBar.value = 0
+            sNum.stringValue = "-"
+        }
+        if let snr = s.snrDb {
+            nBar.value = CGFloat(max(0, min(100, snr * 100 / 60)) / 100)
+            nNum.stringValue = snr > 0.5 ? "\(Int(snr.rounded())) dB" : "-"
+        } else {
+            nBar.value = 0
+            nNum.stringValue = "-"
+        }
+
+        let addr = s.host.map { "\($0):\(s.port ?? 0)" } ?? "(config unreadable)"
+        if !s.live {
+            linkLabel.stringValue = "LINK     no feed  ·  \(addr)"
+            linkLabel.textColor = faint
+        } else if s.connected == true && s.enabled == true {
+            linkLabel.stringValue = "LINK     connected  ·  \(addr)"
+            linkLabel.textColor = NSColor(red: 0.35, green: 0.85, blue: 0.45, alpha: 1)
+        } else if s.enabled == false {
+            linkLabel.stringValue = "LINK     master off  ·  \(addr)"
+            linkLabel.textColor = NSColor(red: 0.95, green: 0.75, blue: 0.35, alpha: 1)
+        } else {
+            linkLabel.stringValue = "LINK     disconnected  ·  \(addr)"
+            linkLabel.textColor = NSColor(red: 0.95, green: 0.45, blue: 0.40, alpha: 1)
+        }
+
         if let pid = s.pluginPid {
             pluginLabel.stringValue = "PLUGIN   running (pid \(pid))"
-            pluginLabel.textColor = NSColor(red: 0.35, green: 0.85, blue: 0.45, alpha: 1)
+            pluginLabel.textColor = dim
         } else {
             pluginLabel.stringValue = "PLUGIN   not running"
             pluginLabel.textColor = NSColor(red: 0.95, green: 0.45, blue: 0.40, alpha: 1)
         }
 
-        if let h = s.host {
-            serverLabel.stringValue = "SERVER   \(h):\(s.port ?? 0)"
-        } else {
-            serverLabel.stringValue = "SERVER   (config unreadable)"
+        updateFeedLine(s)
+    }
+
+    private func updateFeedLine(_ s: Snapshot) {
+        guard s.live else {
+            feedLabel.stringValue = "feed: none — showing config.json (writes: 0)"
+            return
         }
-        sourceLabel.stringValue = "source: \(s.source)"
+        let now = Date()
+        let dt = now.timeIntervalSince(prevAt)
+        if let pw = prevWrites, dt >= 1.0 {
+            // Exponential smoothing keeps the readout from twitching.
+            wps = 0.5 * wps + 0.5 * ((s.writes - pw) / dt)
+            bps = 0.5 * bps + 0.5 * ((s.bytesWritten - prevBytes) / dt)
+            prevWrites = s.writes
+            prevBytes = s.bytesWritten
+            prevAt = now
+        } else if prevWrites == nil {
+            prevWrites = s.writes
+            prevBytes = s.bytesWritten
+            prevAt = now
+        }
+        let volume = baseDir == "/Volumes/RAMDisk" ? "RAMDisk (no SSD wear)" : baseDir
+        feedLabel.stringValue = String(format: "feed: %@  ·  %.1f w/s  ·  %.0f B/s  ·  %.0f writes total",
+                                       volume, wps, bps, s.writes)
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var view: StatusView!
-    private var timer: Timer?
+    private var refreshTimer: Timer?
+    private var aliveTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        view = StatusView(frame: NSRect(x: 0, y: 0, width: 400, height: 230))
+        touchAliveFlag()
+
+        view = StatusView(frame: NSRect(x: 0, y: 0, width: 420, height: 310))
         window = NSWindow(contentRect: view.frame,
                           styleMask: [.titled, .closable, .miniaturizable],
                           backing: .buffered,
@@ -192,8 +336,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         view.refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        // 4 Hz: fast enough for the meters to look live, slow enough to stay
+        // invisible in CPU terms.
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             self?.view.refresh()
+        }
+        aliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+            touchAliveFlag()
         }
     }
 
@@ -204,6 +353,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { window.makeKeyAndOrderFront(nil) }
         return true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Drop the flag so the plugin stops writing immediately rather than
+        // waiting for it to go stale.
+        try? FileManager.default.removeItem(atPath: alivePath)
     }
 }
 

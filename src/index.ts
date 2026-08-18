@@ -1,6 +1,7 @@
 import fs from 'fs';
 import streamDeck from '@elgato/streamdeck';
 import { spyService } from './spyService.js';
+import { startStatusFeed } from './statusFeed.js';
 import { importFromSdrpp } from './presets.js';
 import { clearPresetsCache } from './actions/spyTune.js';
 import { SpyTune } from './actions/spyTune.js';
@@ -84,6 +85,11 @@ streamDeck.actions.registerAction(new SpyDialFftLcdx2());
 streamDeck.actions.registerAction(new KeyFftLcdx2Ctrl());
 streamDeck.actions.registerAction(new KeyVolume());
 streamDeck.connect();
+
+// Live status feed for the companion app. Writes only while the app is
+// running (it refreshes an alive-flag), so this costs nothing when nobody
+// is looking. See src/statusFeed.ts.
+startStatusFeed();
 
 // One-shot SDR++ auto-sync at startup — opt-in via PI checkbox. Waits for
 // spyService.ready so we know the autoSyncSdrpp flag has been hydrated

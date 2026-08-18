@@ -11,12 +11,15 @@ The window is not a placeholder rectangle: it mirrors the state the plugin
 already persists, so it is useful on its own.
 
 ```
-93.000 MHz
-WFM  ·  VOL 70  ·  MUTED
+594 kHz
+AM  ·  VOL 70  ·  MUTED
 
-PLUGIN   running (pid 1758)
-SERVER   192.168.0.142:8888
-source: config.json
+S  ==============-----   -18 dBFS
+N  =-------------------    3 dB
+
+LINK     connected  ·  192.168.0.142:8888
+PLUGIN   running (pid 57988)
+feed: RAMDisk (no SSD wear) · 3.8 w/s · 1088 B/s · 353 writes total
 ```
 
 ## Build / install
@@ -33,21 +36,48 @@ The script is idempotent — re-run it after any source change.
 
 ## Where the displayed state comes from
 
-The plugin exposes no IPC endpoint, so the app reads artefacts the plugin
-already maintains, once per second:
+Two sources, in layers:
 
 | Field | Source |
 | --- | --- |
-| frequency / mode / volume / muted / server | `com.hogehoge.deck-rx.sdPlugin/config.json` (via the Stream Deck plugin symlink) |
+| frequency / mode / volume / muted / server | `config.json` (baseline; the plugin persists frequency+mode within 500 ms and volume within 300 ms of a change) |
+| S / N meters, link state, master on/off | `deck-rx-status.json` — the live feed written by `src/statusFeed.ts` |
 | plugin running / stopped | `/tmp/deck-rx.pid` + `kill(pid, 0)` |
 
-`config.json` is written when the plugin persists state, so the values track the
-radio with a short lag rather than instantly.
+The feed wins where the two overlap. A feed older than 3 s is ignored, so the
+window degrades to the `config.json` baseline instead of showing frozen meters.
+Meter scaling mirrors `spyDialTune.ts` (RSSI -100..-10 dBFS, SNR 0..60 dB) so
+the window and the Stream Deck LCD always agree.
 
-If a live feed is added later, write `/tmp/deck-rx-status.json` with any of
-`freqHz`, `mode`, `volume`, `muted`; those fields win over `config.json` and the
-app needs no change. Mode numbering follows `spyService.ts`
-(0=NFM, 1=WFM, 2=AM, 4=USB, 5=CW, 6=LSB).
+### The feed writes nothing when nobody is looking
+
+The app refreshes `deck-rx-app.alive` every 5 s and deletes it on quit. The
+plugin writes the status file only while that flag is fresher than 15 s — so a
+closed companion app costs the plugin one `stat()` per tick and nothing else.
+Identical payloads are skipped as well, with a 2 s heartbeat so a reader can
+still tell an idle feed from a dead one.
+
+Both sides resolve the directory with the same rule: `/Volumes/RAMDisk` when it
+is mounted (RAM-backed, so the feed causes no SSD wear at all), `/tmp`
+otherwise. Overridable on the plugin side via `DECK_RX_STATUS_PATH`,
+`DECK_RX_STATUS_ALIVE` and `DECK_RX_STATUS_INTERVAL_MS` (default 250 ms).
+
+### Measured cost
+
+With the app open and the receiver connected (AM, meters moving):
+
+| | |
+| --- | --- |
+| payload | 320 B |
+| write rate | 3.9 writes/s (the 250 ms tick) |
+| byte rate | 1.1 KB/s = 3.9 MB/h = 92 MB/day |
+| on RAMDisk | no SSD wear; RAM footprint stays at one 320 B file |
+| on /tmp (fallback) | ~4 KB of SSD allocation per write under APFS copy-on-write, i.e. roughly 1.4 GB/day — the reason RAMDisk is preferred |
+| plugin CPU | no measurable change (1.29 s vs 1.39 s of CPU time per 10 s with the feed off; the difference is inside the DSP's own noise) |
+| with the app closed | 0 writes |
+
+The window shows this accounting live in its bottom line, computed from the
+`writes` / `bytesWritten` counters the feed carries in its own payload.
 
 ## Binding a Stream Deck profile to it
 

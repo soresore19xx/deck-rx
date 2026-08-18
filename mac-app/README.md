@@ -51,8 +51,11 @@ Meter scaling mirrors `spyDialTune.ts` (RSSI -100..-10 dBFS, SNR 0..60 dB) so
 the window and the Stream Deck LCD always agree. The station name comes from
 `src/stationLabel.ts`, the same lookup the LCD header uses (JP scraped tables
 first, EIBI below 30 MHz), cached per frequency+region with a 30 s TTL because
-EIBI matches on day and time of day. Frequencies neither database knows hide
-the row rather than showing a blank line.
+EIBI matches on day and time of day. Frequencies neither database knows keep
+the row and show a dash — collapsing it shifted every line below and made the
+window jump while tuning. A station tagged with another region is a miss by
+design (`lookupJpStation` filters by the active region), so e.g. 1179 kHz
+MBSラジオ shows a dash while the region is 関東.
 
 ### The feed writes nothing when nobody is looking
 

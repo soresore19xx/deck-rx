@@ -22,7 +22,9 @@ func resolveBaseDir() -> String {
 }
 
 let baseDir = resolveBaseDir()
-let statusPath = baseDir + "/deck-rx-status.json"
+// DECK_RX_STATUS_PATH mirrors the plugin's own override, so a synthetic feed
+// can be pointed at a throwaway instance without disturbing the live one.
+let statusPath = ProcessInfo.processInfo.environment["DECK_RX_STATUS_PATH"] ?? (baseDir + "/deck-rx-status.json")
 let alivePath = baseDir + "/deck-rx-app.alive"
 let configPath = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin/config.json")
@@ -255,12 +257,14 @@ final class StatusView: NSView {
 
     func refresh() {
         let s = snapshot()
-        // The LCD prints the station above the frequency; match that, and hide
-        // the row entirely on frequencies neither database knows so the window
-        // does not carry a permanent blank line.
+        // The LCD prints the station above the frequency; match that. On a
+        // frequency neither database knows, keep the row and show a dash:
+        // hiding it collapsed the line and shifted everything below, so the
+        // whole window jumped every time the user tuned past an unlisted
+        // frequency.
         let name = s.station ?? ""
-        stationLabel.stringValue = name
-        stationLabel.isHidden = name.isEmpty
+        stationLabel.stringValue = name.isEmpty ? "-" : name
+        stationLabel.textColor = name.isEmpty ? faint : NSColor(white: 0.88, alpha: 1)
         freqLabel.stringValue = formatFreq(s.freqHz)
 
         var parts = [modeName(s.mode)]

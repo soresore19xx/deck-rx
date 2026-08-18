@@ -164,6 +164,17 @@ func makeLabel(_ size: CGFloat, _ weight: NSFont.Weight, _ color: NSColor) -> NS
 }
 
 final class StatusView: NSView {
+    static let inset: CGFloat = 22
+    private var stack: NSStackView!
+
+    /// Size that fits the content with an equal `inset` on all four sides.
+    var contentFittingSize: NSSize {
+        layoutSubtreeIfNeeded()
+        let f = stack.fittingSize
+        return NSSize(width: min(560, max(360, f.width + Self.inset * 2)),
+                      height: f.height + Self.inset * 2)
+    }
+
     private let dim = NSColor(white: 0.72, alpha: 1)
     private let faint = NSColor(white: 0.42, alpha: 1)
 
@@ -206,11 +217,18 @@ final class StatusView: NSView {
         stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
+        // Pin all four sides instead of centring: with a 34 pt headline and a
+        // 10 pt footnote in the same column, the text block's optical centre
+        // sits below its geometric one, so centring leaves a visibly bigger
+        // gap at the top. Equal insets on every side make the window's own
+        // fitting height the source of truth (see StatusView.fittingHeight).
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -22),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: Self.inset),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.inset),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Self.inset),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.inset),
         ])
+        self.stack = stack
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -328,6 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         touchAliveFlag()
 
         view = StatusView(frame: NSRect(x: 0, y: 0, width: 420, height: 336))
+        view.layoutSubtreeIfNeeded()
         window = NSWindow(contentRect: view.frame,
                           styleMask: [.titled, .closable, .miniaturizable],
                           backing: .buffered,
@@ -342,7 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameAutosaveName("deckRxMain")
         // Restore only the position: a saved frame from an older layout would
         // otherwise clip the window, which cannot be resized back by hand.
-        window.setContentSize(view.frame.size)
+        window.setContentSize(view.contentFittingSize)
         if !hasSavedFrame { window.center() }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -351,7 +370,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 4 Hz: fast enough for the meters to look live, slow enough to stay
         // invisible in CPU terms.
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            self?.view.refresh()
+            guard let self else { return }
+            self.view.refresh()
+            // A longer station name than the one present at launch would be
+            // truncated in a window that cannot be resized by hand, so grow to
+            // fit. Never shrink: that would make the width twitch with every
+            // station change.
+            let want = self.view.contentFittingSize
+            if want.width > self.window.contentLayoutRect.width + 0.5 {
+                self.window.setContentSize(want)
+            }
         }
         aliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
             touchAliveFlag()

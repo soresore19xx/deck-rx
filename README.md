@@ -17,7 +17,7 @@ Per-dial layouts and screenshots (Tune / Volume / Combo / FM / AM / SSB / Band S
 | Runtime tooling (MacPorts) | `sudo port install portaudio` — `portaudio` (arm64) backs the `naudiodon` local-audio sink. naudiodon doubles as the PI's output-device dropdown source (its `getDevices()` / `getHostAPIs()` query CoreAudio's HAL directly, so no separate `switchaudio-osx` install is needed). Add `sudo port install ffmpeg` only if you plan to use the icecast publish path (ffmpeg hosts the MP3 encoder + icecast SOURCE client). The Stream Deck app ships its own bundled Node for running installed plugins; run `npm run rebuild-native` once after `npm install` to rebuild the naudiodon native binding against that bundled Node ABI. |
 | Remote SDR | Any SpyServer-compatible receiver. Tested with **Airspy HF+ Discovery** (HF 0.5–31 MHz + VHF 60–260 MHz, 31–60 MHz hardware gap) running SpyServer on a Linux ARM/aarch64 (NanoPi etc.); see [docs/server-setup.md](docs/server-setup.md) for the server side. Airspy R2 / Mini and RTL-SDR also expected to work but are less exercised. |
 
-Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / `sox` for the dump + analysis scripts) is documented in [docs/build-install.md](docs/build-install.md).
+Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / `sox` for the dump + analysis scripts) is documented in [docs/build-install.md](docs/build-install.md). The optional companion app additionally needs `swiftc` (Xcode Command Line Tools); `rsvg-convert` renders its icon when present.
 
 ## Features
 
@@ -49,6 +49,7 @@ Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / 
 | Volume Button | ✅ companion key action for the Volume dial — Vol Up / Vol Down / Mute toggle as buttons, useful on dial-less devices (Stream Deck XL) or when dial space is taken by FFT / LCDX2. **Hold-to-repeat**: recursive `setTimeout` loop guarded by an `isPressed` flag fires the first step immediately, then continues at ~12 steps/sec until released; auto-stops on min / max. **C-curve step** (low volume = big step, high = fine, GAMMA=1.5) ports the feel of a hardware volume knob — same pattern used in the standalone `stream-deck-volume` plugin. Mute toggles once per press (no repeat). Title shows live volume `%` and an `(M)` tag while muted. |
 | Audio sink | ✅ Local output via `naudiodon` (PortAudio → CoreAudio HAL); optional icecast publish path (ffmpeg + MP3 + icecast SOURCE) auto-selected from `cfg.ffmpeg.mode`. Native bindings (`naudiodon`, `deck-rx-asrc`, `segfault-handler`) need an ABI-matched rebuild against the Stream Deck app's bundled Node — run `npm run rebuild-native` once after `npm install`. See [Audio path (long-running stability)](#audio-path-long-running-stability) for the libsamplerate ASRC + drift-compensation details. |
 | Output loudness leveling | ✅ Single output stage (`src/audioLeveling.ts`) applied to the final PCM before the sink, so it covers **both** the naudiodon and icecast paths. **(1)** Static per-band makeup gains (`MODE_MAKEUP`, overridable per host via `cfg.audioMakeup`, e.g. `{"1": 8}` to bring WFM down) lift each demod mode to a common loudness — WFM/NFM/SSB are raw fixed-gain, AM/CW are demod-AGC'd to different setpoints, so without this the bands jump in level and deck-rx is much quieter than other apps. This is the **default** leveller: fixed per-band gain, **no dynamic motion / no pumping**. **(2)** An adaptive output AGC is **opt-in** (`cfg.audioLeveling: true`, default off) for also tracking within-band signal-strength changes — off by default because its dynamic level-riding is audible. **(3)** A soft-knee tanh limiter is an instantaneous peak ceiling so the static gain can run hot near full-scale without hard-clip distortion (peak-only, no breathing). `cfg.audioGain` (default `1.0`, clamped `0.1..4`) is a master trim on top of the makeup; the Volume dial (0–100%) attenuates further. Independent of RF / demod gain. Unit-tested in `test/audioLeveling.test.ts`. |
+| Companion app / profile auto-switch | ✅ `mac-app/` builds `/Applications/deck-rx.app`, a focusable app a Stream Deck profile can be bound to, so the deck switches to the deck-rx profile when the app comes to the front instead of being selected by hand. The same window doubles as a status readout — station name, frequency, mode, volume, S (RSSI) / N (SNR) meters, link state — fed by `src/statusFeed.ts`, which publishes only while the app is open and prefers a RAM-backed volume over disk. See [mac-app/README.md](mac-app/README.md). |
 
 ## Audio path (long-running stability)
 
@@ -110,6 +111,8 @@ sox /tmp/deck-rx-AM-594000.wav -n stat 2>&1       # rough spectral sanity check
 ```
 
 ## Companion app (Stream Deck profile auto-switch)
+
+![deck-rx companion app](docs/companion-app.png)
 
 Stream Deck switches to a profile automatically when the application it is bound
 to comes to the front — but a plugin is not an application, so a deck-rx profile

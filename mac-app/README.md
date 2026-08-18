@@ -7,21 +7,11 @@ frontmost (the profile's "application" setting, stored as `AppIdentifier` in the
 profile manifest). Without a real `.app` bundle there is nothing for the plugin's
 profile to attach to, and the profile has to be selected by hand.
 
-The window is not a placeholder rectangle: it mirrors the state the plugin
-already persists, so it is useful on its own.
+The window is not a placeholder rectangle: it shows what the receiver is doing
+right now — station, frequency, mode, signal and link — so it earns its space
+on its own.
 
-```
-NHK第1 JOAK
-594 kHz
-AM  ·  VOL 70  ·  MUTED
-
-S  ==============-----   -18 dBFS
-N  =-------------------    3 dB
-
-LINK     connected  ·  192.168.0.142:8888
-PLUGIN   running (pid 57988)
-feed: RAMDisk (no SSD wear) · 3.8 w/s · 1088 B/s · 353 writes total
-```
+![deck-rx companion app](../docs/companion-app.png)
 
 ## Build / install
 

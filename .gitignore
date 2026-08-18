@@ -45,3 +45,8 @@ docs/dev-notes.md
 /crash.log
 native/samplerate/build/
 
+
+# Companion app build artefacts (mac-app/build-app.sh regenerates them)
+mac-app/deck-rx
+mac-app/deck-rx.icns
+mac-app/deck-rx.iconset/

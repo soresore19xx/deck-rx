@@ -109,6 +109,21 @@ ps -p $(cat /tmp/deck-rx.pid) -o etime,%cpu,rss   # process should still be < 20
 sox /tmp/deck-rx-AM-594000.wav -n stat 2>&1       # rough spectral sanity check
 ```
 
+## Companion app (Stream Deck profile auto-switch)
+
+Stream Deck switches to a profile automatically when the application it is bound
+to comes to the front — but a plugin is not an application, so a deck-rx profile
+has nothing to bind to and must be picked by hand. `mac-app/` builds a small
+companion app that fills that role, and doubles as a status window (frequency,
+mode, volume, plugin running/stopped) fed by `config.json` and `/tmp/deck-rx.pid`.
+
+```sh
+mac-app/build-app.sh          # -> /Applications/deck-rx.app
+```
+
+Then set that profile's application to `/Applications/deck-rx.app` in the Stream
+Deck app. Details: [mac-app/README.md](mac-app/README.md).
+
 ## Documentation
 
 - [Repository layout](docs/repository-layout.md)
@@ -118,6 +133,7 @@ sox /tmp/deck-rx-AM-594000.wav -n stat 2>&1       # rough spectral sanity check
 - [Architecture notes](docs/architecture.md) — dial details, signal-path implementation, internal mechanisms
 - [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules, NHK channel inference + transmitter-site + callsign annotation
 - [Data sources & attribution](docs/data-sources.md) — Japan-only sources (総務省 MIC / 関東総通局 / 沖縄総通局) plus the international EIBI shortwave DB; license terms + refresh scripts
+- [Companion app](mac-app/README.md) — `/Applications/deck-rx.app`, the focus target a Stream Deck profile binds to
 - [Debug helpers](docs/debug-helpers.md) — LCD dump / lint / compare-baseline scripts
 
 ## Credits / References

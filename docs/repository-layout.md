@@ -16,6 +16,9 @@
 │   └── actions/                    # Stream Deck action classes
 ├── scripts/                        # Tooling helpers
 │   └── dump-lcd.sh                 # capture all 4 LCD panels as PNGs in ~/ICON/
+├── mac-app/                        # Companion .app (Stream Deck profile focus target)
+│   ├── Sources/main.swift          # AppKit status window
+│   └── build-app.sh                # swiftc + bundle -> /Applications/deck-rx.app
 └── com.hogehoge.deck-rx.sdPlugin/
     ├── manifest.json
     ├── layouts/                    # Encoder LCD layouts

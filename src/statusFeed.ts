@@ -2,6 +2,7 @@ import fs from 'fs';
 import { dirname, join } from 'path';
 import streamDeck from '@elgato/streamdeck';
 import { spyService } from './spyService.js';
+import { autoStationLabel } from './stationLabel.js';
 
 /**
  * Live status feed for the companion app (mac-app/, /Applications/deck-rx.app).
@@ -42,6 +43,26 @@ const ALIVE_MAX_AGE_MS = 15_000;
 const HEARTBEAT_MS = 2_000;
 
 let timer: ReturnType<typeof setInterval> | null = null;
+// Station lookup walks the JP table and (below 30 MHz) the EIBI schedule, so
+// it is not something to run at the tick rate. Cache per frequency+region,
+// with a TTL because EIBI matches on day and time of day: a schedule boundary
+// must eventually change the name even while parked on one frequency.
+let stationKey = '';
+let stationAt = 0;
+let stationName: string | null = null;
+const STATION_TTL_MS = 30_000;
+
+function station(freqHz: number): string | null {
+  const region = spyService.getJpActiveRegion();
+  const key = `${freqHz}/${region}`;
+  const now = Date.now();
+  if (key !== stationKey || now - stationAt > STATION_TTL_MS) {
+    stationName = autoStationLabel(freqHz, region);
+    stationKey = key;
+    stationAt = now;
+  }
+  return stationName;
+}
 let writes = 0;
 let bytesWritten = 0;
 let lastCore = '';
@@ -72,6 +93,7 @@ function tick(): void {
     muted: spyService.isMuted(),
     rssiDbfs: live ? Math.round(spyService.getRssiDbfs() * 10) / 10 : null,
     snrDb: live ? Math.round(spyService.getSnrDb() * 10) / 10 : null,
+    station: station(spyService.currentFreq),
     host: addr.host,
     port: addr.port,
   };
@@ -110,6 +132,14 @@ function tick(): void {
 /** Start the feed. Safe to call once at startup; repeat calls are ignored. */
 export function startStatusFeed(): void {
   if (timer) return;
+  // Test-harness instances run sandboxed via DECK_RX_CONFIG_PATH. They must not
+  // publish to the shared path — with the companion app open the gate is wide
+  // open, and a spawned test plugin would overwrite the real receiver's status.
+  // An explicit DECK_RX_STATUS_PATH opts a sandbox back in.
+  if (process.env.DECK_RX_CONFIG_PATH && !process.env.DECK_RX_STATUS_PATH) {
+    streamDeck.logger.info('[statusFeed] sandboxed instance — feed disabled');
+    return;
+  }
   timer = setInterval(tick, INTERVAL_MS);
   // Never hold the event loop open on our account.
   timer.unref?.();

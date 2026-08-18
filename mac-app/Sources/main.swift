@@ -43,6 +43,7 @@ func touchAliveFlag() {
 // MARK: - State
 
 struct Snapshot {
+    var station: String?
     var freqHz: Double?
     var mode: Int?
     var volume: Double?
@@ -98,6 +99,7 @@ func snapshot() -> Snapshot {
             if let v = st["mode"] as? Int { s.mode = v }
             if let v = st["volume"] as? Double { s.volume = v }
             if let v = st["muted"] as? Bool { s.muted = v }
+            s.station = st["station"] as? String
             s.connected = st["connected"] as? Bool
             s.enabled = st["enabled"] as? Bool
             s.rssiDbfs = st["rssiDbfs"] as? Double
@@ -165,6 +167,7 @@ final class StatusView: NSView {
     private let dim = NSColor(white: 0.72, alpha: 1)
     private let faint = NSColor(white: 0.42, alpha: 1)
 
+    private let stationLabel = makeLabel(15, .regular, NSColor(white: 0.88, alpha: 1))
     private let freqLabel = makeLabel(34, .medium, .white)
     private let modeLabel = makeLabel(14, .regular, NSColor(white: 0.72, alpha: 1))
     private let sBar = BarView()
@@ -189,7 +192,7 @@ final class StatusView: NSView {
         nBar.tint = NSColor(red: 0.40, green: 0.70, blue: 0.95, alpha: 1)
 
         let stack = NSStackView(views: [
-            freqLabel, modeLabel,
+            stationLabel, freqLabel, modeLabel,
             spacer(10),
             meterRow("S", sBar, sNum),
             meterRow("N", nBar, nNum),
@@ -234,6 +237,12 @@ final class StatusView: NSView {
 
     func refresh() {
         let s = snapshot()
+        // The LCD prints the station above the frequency; match that, and hide
+        // the row entirely on frequencies neither database knows so the window
+        // does not carry a permanent blank line.
+        let name = s.station ?? ""
+        stationLabel.stringValue = name
+        stationLabel.isHidden = name.isEmpty
         freqLabel.stringValue = formatFreq(s.freqHz)
 
         var parts = [modeName(s.mode)]
@@ -318,7 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         touchAliveFlag()
 
-        view = StatusView(frame: NSRect(x: 0, y: 0, width: 420, height: 310))
+        view = StatusView(frame: NSRect(x: 0, y: 0, width: 420, height: 336))
         window = NSWindow(contentRect: view.frame,
                           styleMask: [.titled, .closable, .miniaturizable],
                           backing: .buffered,
@@ -331,6 +340,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // frame either way, so "was it ever saved?" can no longer be answered.
         let hasSavedFrame = UserDefaults.standard.string(forKey: "NSWindow Frame deckRxMain") != nil
         window.setFrameAutosaveName("deckRxMain")
+        // Restore only the position: a saved frame from an older layout would
+        // otherwise clip the window, which cannot be resized back by hand.
+        window.setContentSize(view.frame.size)
         if !hasSavedFrame { window.center() }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

@@ -9,26 +9,9 @@ import { dumpTuneLcd } from '../dialDisplay.js';
 import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
 import { loadPresets, clearPresetsCache, Preset } from './spyTune.js';
 import { importFromSdrpp } from '../presets.js';
-import { lookupEibi } from '../eibi.js';
-import { lookupJpStation, lookupCallsign, formatJpStationLabel, isJpRegion, type JpRegion } from '../japanStations.js';
+import { lookupCallsign, isJpRegion, type JpRegion } from '../japanStations.js';
+import { autoStationLabel } from '../stationLabel.js';
 import { bandsForDevice, snapToCoveredFreq, isFreqReceivable } from '../deviceBands.js';
-
-// Station-name auto-lookup priority:
-//   1. jp-stations.json — auto-scraped 総務省 region tables (filtered by the
-//      user's active region) + region-independent manualStations. Wins for FM
-//      (EIBI has no entries above 30 MHz) and for MW (covers domestic
-//      Japanese stations EIBI doesn't list, e.g. NHK R1 594 kHz).
-//   2. EIBI — international SW + some MW DX entries with day/time-aware match.
-//   3. (caller falls back to the user's preset name when both return null.)
-function autoStationLabel(freqHz: number, activeRegion: JpRegion): string | null {
-  const jp = lookupJpStation(freqHz, activeRegion);
-  if (jp) return formatJpStationLabel(jp);
-  if (freqHz >= 16_000 && freqHz <= 30_000_000) {
-    const e = lookupEibi(freqHz);
-    if (e) return e.name;
-  }
-  return null;
-}
 
 type DialTuneSettings = {
   mode?: 'preset' | 'vfo';

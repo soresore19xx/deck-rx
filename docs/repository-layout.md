@@ -14,6 +14,7 @@
 │   ├── dialDisplay.ts              # 7-segment, header, footer, volume bar SVGs
 │   ├── icons.ts                    # Knob, options panel SVGs
 │   ├── statusFeed.ts               # Live status feed for the companion app
+│   ├── stationLabel.ts             # Station-name lookup (JP DB -> EIBI), shared
 │   └── actions/                    # Stream Deck action classes
 ├── scripts/                        # Tooling helpers
 │   └── dump-lcd.sh                 # capture all 4 LCD panels as PNGs in ~/ICON/

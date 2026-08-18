@@ -115,7 +115,7 @@ Stream Deck switches to a profile automatically when the application it is bound
 to comes to the front — but a plugin is not an application, so a deck-rx profile
 has nothing to bind to and must be picked by hand. `mac-app/` builds a small
 companion app that fills that role, and doubles as a status window (frequency,
-mode, volume, S/N meters, link state) fed by `config.json`, `/tmp/deck-rx.pid`
+mode, volume, S/N meters, link state, station name) fed by `config.json`, `/tmp/deck-rx.pid`
 and the live status feed in `src/statusFeed.ts`. The feed writes only while the
 app is open, to `/Volumes/RAMDisk` when that RAM-backed volume is mounted and
 `/tmp` otherwise — measured at 320 B per write, 3.9 writes/s, with no

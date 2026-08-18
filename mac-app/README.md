@@ -11,6 +11,7 @@ The window is not a placeholder rectangle: it mirrors the state the plugin
 already persists, so it is useful on its own.
 
 ```
+NHK第1 JOAK
 594 kHz
 AM  ·  VOL 70  ·  MUTED
 
@@ -41,13 +42,17 @@ Two sources, in layers:
 | Field | Source |
 | --- | --- |
 | frequency / mode / volume / muted / server | `config.json` (baseline; the plugin persists frequency+mode within 500 ms and volume within 300 ms of a change) |
-| S / N meters, link state, master on/off | `deck-rx-status.json` — the live feed written by `src/statusFeed.ts` |
+| S / N meters, link state, master on/off, station name | `deck-rx-status.json` — the live feed written by `src/statusFeed.ts` |
 | plugin running / stopped | `/tmp/deck-rx.pid` + `kill(pid, 0)` |
 
 The feed wins where the two overlap. A feed older than 3 s is ignored, so the
 window degrades to the `config.json` baseline instead of showing frozen meters.
 Meter scaling mirrors `spyDialTune.ts` (RSSI -100..-10 dBFS, SNR 0..60 dB) so
-the window and the Stream Deck LCD always agree.
+the window and the Stream Deck LCD always agree. The station name comes from
+`src/stationLabel.ts`, the same lookup the LCD header uses (JP scraped tables
+first, EIBI below 30 MHz), cached per frequency+region with a 30 s TTL because
+EIBI matches on day and time of day. Frequencies neither database knows hide
+the row rather than showing a blank line.
 
 ### The feed writes nothing when nobody is looking
 
@@ -57,7 +62,9 @@ closed companion app costs the plugin one `stat()` per tick and nothing else.
 Identical payloads are skipped as well, with a 2 s heartbeat so a reader can
 still tell an idle feed from a dead one.
 
-Both sides resolve the directory with the same rule: `/Volumes/RAMDisk` when it
+Plugin instances spawned by the test harness (they carry `DECK_RX_CONFIG_PATH`)
+disable the feed, so a test run cannot overwrite the real receiver's status
+while the app is open. Both sides resolve the directory with the same rule: `/Volumes/RAMDisk` when it
 is mounted (RAM-backed, so the feed causes no SSD wear at all), `/tmp`
 otherwise. Overridable on the plugin side via `DECK_RX_STATUS_PATH`,
 `DECK_RX_STATUS_ALIVE` and `DECK_RX_STATUS_INTERVAL_MS` (default 250 ms).

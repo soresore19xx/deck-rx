@@ -38,6 +38,10 @@ async function get(port: number, path: string): Promise<{ status: number; body: 
   const r = await fetch(`http://127.0.0.1:${port}${path}`);
   return { status: r.status, body: await r.text() };
 }
+async function getJson(port: number, path: string): Promise<Record<string, number>> {
+  const r = await fetch(`http://127.0.0.1:${port}${path}`);
+  return await r.json() as Record<string, number>;
+}
 async function health(port: number): Promise<Health> {
   const r = await fetch(`http://127.0.0.1:${port}/health`);
   return await r.json() as Health;
@@ -57,11 +61,13 @@ async function boot(
   port: number,
   config: Record<string, unknown> = {},
   dial: Record<string, unknown> = {},
+  spectrumSocket?: string,
 ): Promise<MockHarness> {
   const h = await startPlugin({
     presetsPath: PRESETS,
     spyServer: true,
     controlPort: port,
+    spectrumSocket,
     config: {
       enabled: true, audioEnabled: false, tuneMode: 'preset', demodMode: 2,
       lastFrequency: 594_000, tuneStepHz: 9_000, volume: 0.5, muted: false,
@@ -284,6 +290,34 @@ describe('controlServer — preset stepping (press-and-turn)', () => {
     expect((await get(port, '/preset?d=3')).status).toBe(400);
     expect((await get(port, '/preset?d=abc')).status).toBe(400);
     expect((await health(port)).freq).toBe(693_000);
+  }, 25_000);
+});
+
+describe('controlServer — spectrum display settings', () => {
+  it('reports current settings, applies changes, and clamps what it cannot do', async () => {
+    const port = await freePort();
+    const sock = `/tmp/deck-rx-spec-${process.pid}-${Math.random().toString(36).slice(2, 7)}.sock`;
+    harness = await boot(port, {}, {}, sock);
+    await harness.settle(1500);
+
+    const base = await getJson(port, '/spectrum');
+    expect(base.fftSize).toBe(1024);       // seeded default
+    expect(base.fps).toBe(30);
+
+    const applied = await getJson(port, '/spectrum?fft=2048&fps=15&avg=0.6');
+    expect(applied).toEqual({ fftSize: 2048, fps: 15, smoothing: 0.6 });
+    // The change sticks: a bare read reports the new values.
+    expect(await getJson(port, '/spectrum')).toEqual({ fftSize: 2048, fps: 15, smoothing: 0.6 });
+
+    // Out-of-range asks come back clamped rather than rejected, so a front-end
+    // can offer a slider without policing the pipeline's limits itself.
+    const clamped = await getJson(port, '/spectrum?fft=99999&fps=500&avg=9');
+    expect(clamped.fftSize).toBe(4096);
+    expect(clamped.fps).toBe(60);
+    expect(clamped.smoothing).toBe(0.95);
+    // Non-power-of-two sizes snap to the nearest one the FFT can build.
+    expect((await getJson(port, '/spectrum?fft=700')).fftSize).toBe(512);
+    expect((await get(port, '/spectrum?fps=abc')).status).toBe(400);
   }, 25_000);
 });
 

@@ -104,6 +104,10 @@ export interface StartPluginOptions {
    *  instances keep it disabled unless a test asks for one, so a test plugin
    *  never answers the external knob in the production instance's place. */
   controlPort?: number;
+  /** Socket path for the plugin's spectrum feed. Sandboxed instances keep it
+   *  disabled unless a test asks for one, so a test plugin never serves frames
+   *  on the path the native front-end is watching. */
+  spectrumSocket?: string;
 }
 
 const DEFAULT_CONFIG = {
@@ -227,6 +231,7 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
   if (opts.presetsPath)   env.DECK_RX_PRESETS_PATH    = opts.presetsPath;
   if (opts.sdrConfigPath) env.DECK_RX_SDR_CONFIG_PATH = opts.sdrConfigPath;
   if (opts.controlPort)   env.DECK_RX_CONTROL_PORT   = String(opts.controlPort);
+  if (opts.spectrumSocket) env.DECK_RX_SPECTRUM_SOCKET = opts.spectrumSocket;
   const plugin = spawn('node', [
     PLUGIN_ENTRY,
     '-port',          String(port),

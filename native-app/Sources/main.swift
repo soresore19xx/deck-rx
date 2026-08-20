@@ -80,19 +80,19 @@ final class PresetList: NSView {
             let row = NSView()
             row.translatesAutoresizingMaskIntoConstraints = false
             let (num, unit) = formatFreq(p.freq)
-            let f = label(num, mono(12), P.text)
-            let u = label(unit, mono(9), P.faint)
-            let n = label(p.name, .systemFont(ofSize: 11), P.dim)
-            let m = label(modeName(p.mode), mono(9), P.faint)
+            let f = label(num, mono(15), P.text)
+            let u = label(unit, mono(11), P.faint)
+            let n = label(p.name, .systemFont(ofSize: 14), P.dim)
+            let m = label(modeName(p.mode), mono(11), P.faint)
             n.lineBreakMode = .byTruncatingTail
             for v in [f, u, n, m] { v.translatesAutoresizingMaskIntoConstraints = false; row.addSubview(v) }
             NSLayoutConstraint.activate([
-                row.heightAnchor.constraint(equalToConstant: 22),
+                row.heightAnchor.constraint(equalToConstant: 28),
                 f.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
-                f.widthAnchor.constraint(equalToConstant: 62),
+                f.widthAnchor.constraint(equalToConstant: 74),
                 f.centerYAnchor.constraint(equalTo: row.centerYAnchor),
                 u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 4),
-                u.widthAnchor.constraint(equalToConstant: 26),
+                u.widthAnchor.constraint(equalToConstant: 30),
                 u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
                 n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: 6),
                 n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -6),
@@ -137,21 +137,31 @@ final class MainView: NSView {
     let spectrum = SpectrumView(frame: .zero)
     let presetList = PresetList(frame: .zero)
 
-    private let clockJST = label("—", mono(11), P.text)
-    private let clockUTC = label("—", mono(11), P.dim)
+    private let clockJST = label("—", mono(13), P.text)
+    private let clockUTC = label("—", mono(13), P.dim)
     private let linkDot = panelView(P.faint)
-    private let linkLabel = label("—", mono(11), P.dim)
+    private let linkLabel = label("—", mono(13), P.dim)
 
-    private let stationLabel = label("—", .systemFont(ofSize: 13), P.text)
-    private let freqLabel = label("—", mono(46, .bold), .white)
-    private let unitLabel = label("", mono(14), P.faint)
-    private let modeChip = label("—", mono(11), P.text)
+    private let stationLabel = label("—", .systemFont(ofSize: 17), P.text)
+    private let freqLabel = label("—", mono(68, .bold), .white)
+    private let unitLabel = label("", mono(26, .medium), P.text)
+    private let modeChip = label("—", mono(16, .medium), P.text)
 
-    private let sBar = MeterBar(); private let sNum = label("—", mono(11), P.text)
-    private let nBar = MeterBar(); private let nNum = label("—", mono(11), P.text)
+    private let sBar = MeterBar(); private let sNum = label("—", mono(14), P.text)
+    private let nBar = MeterBar(); private let nNum = label("—", mono(14), P.text)
 
-    private let volLabel = label("—", mono(11), P.dim)
-    private let muteLabel = label("", mono(11), P.warn)
+    private let volLabel = label("—", mono(13), P.dim)
+
+    // Spectrum display controls. FFT size / framerate / averaging live on the
+    // receiver (the deck's FFT dial shares that pipeline), so those three are
+    // pushed to /spectrum; peak hold and the dB window are this app's own view
+    // of the same data and stay local.
+    private let fftPop = NSPopUpButton()
+    private let fpsPop = NSPopUpButton()
+    private let avgLabel = label("0.40", mono(13), P.text)
+    private let holdButton = NSButton()
+    private let dbLabel = label("−100 / −20 dB", mono(13), P.dim)
+    private let muteLabel = label("", mono(13, .medium), P.warn)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -167,11 +177,11 @@ final class MainView: NSView {
         // top bar
         let top = panelView()
         let topRow = NSStackView(views: [
-            label("deck", .systemFont(ofSize: 13, weight: .bold), P.text),
+            label("deck", .systemFont(ofSize: 15, weight: .bold), P.text),
             linkDot, linkLabel,
             NSView(),
-            label("JST", mono(9), P.faint), clockJST,
-            label("UTC", mono(9), P.faint), clockUTC,
+            label("JST", mono(11), P.faint), clockJST,
+            label("UTC", mono(11), P.faint), clockUTC,
         ])
         topRow.orientation = .horizontal
         topRow.spacing = 8
@@ -211,7 +221,53 @@ final class MainView: NSView {
         bottomRow.orientation = .horizontal; bottomRow.spacing = 6; bottomRow.alignment = .centerY
         embed(bottomRow, in: bottom, inset: 12)
 
-        for v in [top, header, bottom, presetList, spectrum] {
+        // display toolbar, between the header and the spectrum
+        let bar = panelView(P.sunken)
+        fftPop.addItems(withTitles: ["256", "512", "1024", "2048", "4096"])
+        fftPop.font = mono(12)
+        fftPop.target = ButtonBox.shared
+        fftPop.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(fftPop)] = { [weak self] in
+            guard let self, let t = self.fftPop.titleOfSelectedItem, let v = Int(t) else { return }
+            Receiver.spectrum(fft: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
+        }
+        fpsPop.addItems(withTitles: ["5", "10", "15", "20", "30", "60"])
+        fpsPop.font = mono(12)
+        fpsPop.target = ButtonBox.shared
+        fpsPop.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(fpsPop)] = { [weak self] in
+            guard let self, let t = self.fpsPop.titleOfSelectedItem, let v = Int(t) else { return }
+            Receiver.spectrum(fps: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
+        }
+        holdButton.title = "HOLD"
+        holdButton.setButtonType(.pushOnPushOff)
+        holdButton.bezelStyle = .rounded
+        holdButton.font = mono(13)
+        holdButton.target = ButtonBox.shared
+        holdButton.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(holdButton)] = { [weak self] in
+            guard let self else { return }
+            self.spectrum.holdEnabled = self.holdButton.state == .on
+        }
+        let barRow = NSStackView(views: [
+            label("FFT", mono(12), P.faint), fftPop,
+            label("RATE", mono(12), P.faint), fpsPop, label("fps", mono(12), P.faint),
+            label("AVG", mono(12), P.faint),
+            button("−") { [weak self] in self?.nudgeAvg(-0.1) }, avgLabel,
+            button("+") { [weak self] in self?.nudgeAvg(0.1) },
+            holdButton,
+            NSView(),
+            label("RANGE", mono(12), P.faint),
+            button("FLOOR −") { [weak self] in self?.nudgeDb(floor: -5) },
+            button("FLOOR +") { [weak self] in self?.nudgeDb(floor: 5) },
+            dbLabel,
+        ])
+        barRow.orientation = .horizontal
+        barRow.spacing = 6
+        barRow.alignment = .centerY
+        embed(barRow, in: bar, inset: 12)
+
+        for v in [top, header, bottom, presetList, spectrum, bar] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -219,19 +275,24 @@ final class MainView: NSView {
             top.topAnchor.constraint(equalTo: topAnchor),
             top.leadingAnchor.constraint(equalTo: leadingAnchor),
             top.trailingAnchor.constraint(equalTo: trailingAnchor),
-            top.heightAnchor.constraint(equalToConstant: 34),
+            top.heightAnchor.constraint(equalToConstant: 38),
 
             presetList.topAnchor.constraint(equalTo: top.bottomAnchor),
             presetList.leadingAnchor.constraint(equalTo: leadingAnchor),
-            presetList.widthAnchor.constraint(equalToConstant: 236),
+            presetList.widthAnchor.constraint(equalToConstant: 286),
             presetList.bottomAnchor.constraint(equalTo: bottom.topAnchor),
 
             header.topAnchor.constraint(equalTo: top.bottomAnchor),
             header.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
             header.trailingAnchor.constraint(equalTo: trailingAnchor),
-            header.heightAnchor.constraint(equalToConstant: 92),
+            header.heightAnchor.constraint(equalToConstant: 118),
 
-            spectrum.topAnchor.constraint(equalTo: header.bottomAnchor),
+            bar.topAnchor.constraint(equalTo: header.bottomAnchor),
+            bar.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
+            bar.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: 38),
+
+            spectrum.topAnchor.constraint(equalTo: bar.bottomAnchor),
             spectrum.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
             spectrum.trailingAnchor.constraint(equalTo: trailingAnchor),
             spectrum.bottomAnchor.constraint(equalTo: bottom.topAnchor),
@@ -239,17 +300,40 @@ final class MainView: NSView {
             bottom.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottom.trailingAnchor.constraint(equalTo: trailingAnchor),
             bottom.bottomAnchor.constraint(equalTo: bottomAnchor),
-            bottom.heightAnchor.constraint(equalToConstant: 46),
+            bottom.heightAnchor.constraint(equalToConstant: 50),
         ])
 
         presetList.onPick = { p in Receiver.tune(hz: Int(p.freq)) }
     }
 
+    private var avg: Double = 0.4
+
+    /// Render the controls from what the receiver reports, not from what we
+    /// asked for: the endpoint clamps, and the deck's FFT dial can change these
+    /// too.
+    func adoptSpectrum(_ size: Int, _ rate: Int, _ smoothing: Double) {
+        fftPop.selectItem(withTitle: String(size))
+        fpsPop.selectItem(withTitle: String(rate))
+        avg = smoothing
+        avgLabel.stringValue = String(format: "%.2f", smoothing)
+    }
+
+    private func nudgeAvg(_ d: Double) {
+        let next = max(0, min(0.95, avg + d))
+        Receiver.spectrum(avg: next) { [weak self] s, r, a in self?.adoptSpectrum(s, r, a) }
+    }
+
+    private func nudgeDb(floor d: Float) {
+        spectrum.dbFloor = max(-140, min(spectrum.dbCeil - 10, spectrum.dbFloor + d))
+        dbLabel.stringValue = String(format: "%.0f / %.0f dB", spectrum.dbFloor, spectrum.dbCeil)
+        spectrum.needsDisplay = true
+    }
+
     private func meterRow(_ name: String, _ bar: MeterBar, _ num: NSTextField) -> NSStackView {
         bar.translatesAutoresizingMaskIntoConstraints = false
-        bar.heightAnchor.constraint(equalToConstant: 6).isActive = true
-        bar.widthAnchor.constraint(equalToConstant: 170).isActive = true
-        let row = NSStackView(views: [label(name, mono(10), P.faint), bar, num])
+        bar.heightAnchor.constraint(equalToConstant: 8).isActive = true
+        bar.widthAnchor.constraint(equalToConstant: 210).isActive = true
+        let row = NSStackView(views: [label(name, mono(12), P.faint), bar, num])
         row.orientation = .horizontal; row.spacing = 8; row.alignment = .centerY
         return row
     }
@@ -257,7 +341,7 @@ final class MainView: NSView {
     private func button(_ title: String, _ action: @escaping () -> Void) -> NSButton {
         let b = NSButton(title: title, target: ButtonBox.shared, action: #selector(ButtonBox.fire(_:)))
         b.bezelStyle = .rounded
-        b.font = mono(11)
+        b.font = mono(13)
         ButtonBox.shared.actions[ObjectIdentifier(b)] = action
         return b
     }
@@ -356,6 +440,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         feed = SpectrumFeed { [weak self] frame in self?.view.spectrum.accept(frame) }
         feed?.start()
+        // Seed the display controls from the receiver's live settings.
+        Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
 
         view.refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in

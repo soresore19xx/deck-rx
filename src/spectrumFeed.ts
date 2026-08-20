@@ -35,11 +35,49 @@ import { FftPipeline } from './fft.js';
 import { log } from './log.js';
 
 const SOCKET_PATH = process.env.DECK_RX_SPECTRUM_SOCKET ?? '/tmp/deck-rx-spectrum.sock';
-const FFT_SIZE = clampPow2(Number(process.env.DECK_RX_SPECTRUM_FFT ?? 1024));
-const FPS = Math.max(1, Math.min(60, Number(process.env.DECK_RX_SPECTRUM_FPS ?? 30)));
-// Matches the FFT dial's default: enough averaging to calm the noise floor
-// without smearing a signal that moves.
-const SMOOTHING = 0.4;
+
+// Live settings. The env vars seed them; a front-end changes them at runtime
+// through the control server's /spectrum endpoint, the way SDR++ exposes FFT
+// size / framerate / smoothing in its display panel.
+const settings = {
+  fftSize: clampPow2(Number(process.env.DECK_RX_SPECTRUM_FFT ?? 1024)),
+  fps: clampFps(Number(process.env.DECK_RX_SPECTRUM_FPS ?? 30)),
+  // Matches the FFT dial's default: enough averaging to calm the noise floor
+  // without smearing a signal that moves.
+  smoothing: 0.4,
+};
+
+export interface SpectrumSettings { fftSize: number; fps: number; smoothing: number; }
+
+/** Current settings, for a front-end to render its controls from. */
+export function spectrumSettings(): SpectrumSettings { return { ...settings }; }
+
+/**
+ * Apply new settings, clamped to what the pipeline can actually do. Returns the
+ * values in force afterwards, so a caller never has to guess how its request
+ * was adjusted. A size change rebuilds the FFT (and drops the smoothing
+ * history, which belonged to the old bin count); an fps change re-arms the
+ * timer. Both are no-ops while nobody is connected — the pipeline is not
+ * running then, and it reads these on the way up.
+ */
+export function setSpectrumSettings(next: Partial<SpectrumSettings>): SpectrumSettings {
+  const sizeChanged = next.fftSize !== undefined && clampPow2(next.fftSize) !== settings.fftSize;
+  const fpsChanged = next.fps !== undefined && clampFps(next.fps) !== settings.fps;
+  if (next.fftSize !== undefined) settings.fftSize = clampPow2(next.fftSize);
+  if (next.fps !== undefined) settings.fps = clampFps(next.fps);
+  if (next.smoothing !== undefined) {
+    settings.smoothing = Math.max(0, Math.min(0.95, next.smoothing));
+  }
+  if (sizeChanged && fft) fft = new FftPipeline(settings.fftSize);
+  if (fpsChanged && timer) armTimer();
+  log.info(`[spectrumFeed] settings fft=${settings.fftSize} fps=${settings.fps} smoothing=${settings.smoothing}`);
+  return spectrumSettings();
+}
+
+function clampFps(n: number): number {
+  if (!Number.isFinite(n)) return 30;
+  return Math.max(1, Math.min(60, Math.round(n)));
+}
 
 export const HEADER_BYTES = 24;
 const MAGIC = 0x53585244; // 'DRXS' little-endian
@@ -78,16 +116,8 @@ let timer: ReturnType<typeof setInterval> | null = null;
 let latest: { bins: Float32Array; iqRate: number; freq: number } | null = null;
 let seq = 0;
 
-function startPipeline(): void {
-  if (iqListener) return;
-  fft = new FftPipeline(FFT_SIZE);
-  // The IQ callback only keeps the newest result; the timer decides how often
-  // a frame actually goes out. IQ arrives far faster than any display needs.
-  iqListener = (iq, iqRate, freq) => {
-    const bins = fft?.process(iq, SMOOTHING);
-    if (bins) latest = { bins, iqRate, freq };
-  };
-  spyService.subscribeIqStream(iqListener);
+function armTimer(): void {
+  if (timer) clearInterval(timer);
   timer = setInterval(() => {
     if (!latest || clients.size === 0) return;
     const frame = encodeSpectrumFrame(latest.bins, latest.iqRate, latest.freq, seq++);
@@ -97,9 +127,22 @@ function startPipeline(): void {
       if (c.writableLength > frame.length * 4) continue;
       c.write(frame);
     }
-  }, Math.round(1000 / FPS));
+  }, Math.round(1000 / settings.fps));
   timer.unref?.();
-  log.info(`[spectrumFeed] pipeline up — fft=${FFT_SIZE} fps=${FPS}`);
+}
+
+function startPipeline(): void {
+  if (iqListener) return;
+  fft = new FftPipeline(settings.fftSize);
+  // The IQ callback only keeps the newest result; the timer decides how often
+  // a frame actually goes out. IQ arrives far faster than any display needs.
+  iqListener = (iq, iqRate, freq) => {
+    const bins = fft?.process(iq, settings.smoothing);
+    if (bins) latest = { bins, iqRate, freq };
+  };
+  spyService.subscribeIqStream(iqListener);
+  armTimer();
+  log.info(`[spectrumFeed] pipeline up — fft=${settings.fftSize} fps=${settings.fps}`);
 }
 
 function stopPipeline(): void {

@@ -153,6 +153,7 @@ never answer the knob in the running receiver's place.
 | `GET /mute?toggle=1` | Flip mute |
 | `GET /power?toggle=1` | Master ON/OFF — same as the Tune dial's long press |
 | `GET /preset?d=<±1>` | Step the preset list one slot, skipping presets the connected device can't receive. `409` when there is nothing to land on (empty list / none receivable), so a dead control path isn't silently reported as success |
+| `GET /spectrum[?fft=&fps=&avg=]` | Read or change the spectrum feed's FFT size, framerate and averaging. Always answers with the values in force, clamped, so a caller never has to guess how its request was adjusted |
 
 `/step` is reserved for the knob's second press-and-turn slot and is not routed
 yet. Every applied request also triggers a dial re-render, so the
@@ -208,9 +209,11 @@ Unix socket instead, as binary frames, with the FFT computed on the plugin side
 
 Little-endian throughout. A reader syncs on the magic and derives the frame
 length from `binCount`, so a mid-stream connect recovers on the next frame.
-Defaults: 1024 bins at 30 fps, overridable via `DECK_RX_SPECTRUM_FFT` /
-`DECK_RX_SPECTRUM_FPS`. `mac-app/Sources/SpectrumFeed.swift` is the reference
-reader.
+Defaults: 1024 bins at 30 fps, seeded from `DECK_RX_SPECTRUM_FFT` /
+`DECK_RX_SPECTRUM_FPS` and changeable at runtime through `/spectrum` (FFT size
+256–4096, framerate 1–60, averaging 0–0.95). A size change rebuilds the FFT and
+drops the smoothing history, which belonged to the old bin count.
+`native-app/Sources/SpectrumFeed.swift` is the reference reader.
 
 Two things to know before building on it. The IQ stream is started by
 `startAudio()`, so **no audio pipeline means no spectrum** — a receiver muted at
@@ -234,6 +237,13 @@ the app. The preset table comes from the plugin's own `data/presets.json`
 (read-only — the plugin owns that file), and the row the receiver is currently
 on is highlighted by frequency, so a retune from a dial or the knob shows up
 here too.
+
+A display toolbar sits above the spectrum, in the spirit of SDR++'s display
+panel: FFT size, framerate and averaging (pushed to the receiver through
+`/spectrum`, since the FFT runs there and the deck's own FFT dial shares that
+pipeline), plus peak hold and the dB window (this app's own view of the same
+data, so they stay local). The controls render from what the receiver reports
+rather than from what was asked for.
 
 Not there yet, and visible as `—` rather than invented: bandwidth, tune step,
 per-mode options, RF gain, IQ rate and the demod-mode selector. Those need

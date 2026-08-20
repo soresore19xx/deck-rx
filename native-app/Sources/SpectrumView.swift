@@ -12,6 +12,13 @@ final class SpectrumView: NSView {
     /// Fraction of the height given to the spectrum; the rest is waterfall.
     private let spectrumFraction: CGFloat = 0.45
 
+    /// Peak hold, the way SDR++'s "FFT Hold" works: keep the highest value each
+    /// bin has reached and decay it slowly, so a brief signal stays visible
+    /// long enough to read.
+    var holdEnabled = false { didSet { hold = []; needsDisplay = true } }
+    private var hold: [Float] = []
+    private let holdDecayDbPerFrame: Float = 0.35
+
     private var bins: [Float] = []
     private var iqRate: UInt32 = 0
     private var centerFreq: UInt32 = 0
@@ -35,6 +42,10 @@ final class SpectrumView: NSView {
 
     func accept(_ frame: SpectrumFeed.Frame) {
         bins = frame.bins
+        if holdEnabled {
+            if hold.count != bins.count { hold = bins }
+            for i in 0..<bins.count { hold[i] = max(bins[i], hold[i] - holdDecayDbPerFrame) }
+        }
         iqRate = frame.iqRate
         centerFreq = frame.centerFreq
         lastFrameAt = Date()
@@ -179,6 +190,19 @@ final class SpectrumView: NSView {
         ctx.setStrokeColor(NSColor(red: 0.66, green: 0.85, blue: 1.0, alpha: 1).cgColor)
         ctx.setLineWidth(1.3)
         ctx.strokePath()
+
+        if holdEnabled, hold.count == n {
+            let hp = CGMutablePath()
+            for x in 0..<Int(w) {
+                let v = hold[min(n - 1, x * n / max(1, Int(w)))]
+                let p = CGPoint(x: CGFloat(x), y: specH - norm(v) * specH)
+                if x == 0 { hp.move(to: p) } else { hp.addLine(to: p) }
+            }
+            ctx.addPath(hp)
+            ctx.setStrokeColor(NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.75).cgColor)
+            ctx.setLineWidth(1)
+            ctx.strokePath()
+        }
 
         // tuned-frequency marker
         ctx.setStrokeColor(NSColor(red: 0.35, green: 0.85, blue: 0.45, alpha: 1).cgColor)

@@ -120,6 +120,28 @@ enum Receiver {
     static func toggleMute()       { call("/mute?toggle=1") }
     static func togglePower()      { call("/power?toggle=1") }
     static func preset(step: Int)  { call("/preset?d=\(step > 0 ? 1 : -1)") }
+
+    /// Spectrum display settings live on the receiver, not in this app: the
+    /// FFT runs there, and the deck's own FFT dial shares the pipeline. The
+    /// endpoint reports the values actually in force, clamped, so the UI can
+    /// render from the answer rather than assume its request was taken.
+    static func spectrum(fft: Int? = nil, fps: Int? = nil, avg: Double? = nil,
+                         then: ((Int, Int, Double) -> Void)? = nil) {
+        var parts: [String] = []
+        if let fft { parts.append("fft=\(fft)") }
+        if let fps { parts.append("fps=\(fps)") }
+        if let avg { parts.append(String(format: "avg=%.2f", avg)) }
+        let query = parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
+        guard let url = URL(string: "http://127.0.0.1:\(controlPort)/spectrum\(query)") else { return }
+        var req = URLRequest(url: url); req.timeoutInterval = 2
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let size = j["fftSize"] as? Int, let rate = j["fps"] as? Int,
+                  let sm = j["smoothing"] as? Double else { return }
+            DispatchQueue.main.async { then?(size, rate, sm) }
+        }.resume()
+    }
 }
 
 let MODE_NAMES = ["NFM", "WFM", "AM", "DSB", "USB", "CW", "LSB", "RAW"]

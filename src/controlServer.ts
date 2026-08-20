@@ -3,6 +3,7 @@ import { log } from './log.js';
 import { spyService } from './spyService.js';
 import { nextFreqForTicks, nextPresetSlot } from './tuneMath.js';
 import { loadPresets } from './presetList.js';
+import { spectrumSettings, setSpectrumSettings } from './spectrumFeed.js';
 
 /**
  * Local control endpoint, so an external knob can drive the receiver the way
@@ -176,6 +177,24 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         return;
       }
       ok();
+      return;
+    }
+    case '/spectrum': {
+      // Display settings for the spectrum feed. With no parameters it reports
+      // what is in force, so a front-end can render its controls from the
+      // receiver rather than from its own assumptions.
+      const wanted: { fftSize?: number; fps?: number; smoothing?: number } = {};
+      const fft = num(q.get('fft'));
+      const fps = num(q.get('fps'));
+      const avg = num(q.get('avg'));
+      if (q.has('fft')) { if (fft === null) { bad(); return; } wanted.fftSize = fft; }
+      if (q.has('fps')) { if (fps === null) { bad(); return; } wanted.fps = fps; }
+      if (q.has('avg')) { if (avg === null) { bad(); return; } wanted.smoothing = avg; }
+      // Reports the clamped result either way, so the caller never has to guess
+      // how its request was adjusted.
+      const now = Object.keys(wanted).length > 0 ? setSpectrumSettings(wanted) : spectrumSettings();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(now));
       return;
     }
     // /step is reserved for the knob's second press-and-turn slot, which

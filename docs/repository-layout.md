@@ -26,9 +26,13 @@
 │   └── dump-lcd.sh                 # capture all 4 LCD panels as PNGs in ~/ICON/
 ├── mac-app/                        # Companion .app (Stream Deck profile focus target)
 │   ├── Sources/main.swift          # AppKit status window
+│   └── build-app.sh                # swiftc + bundle -> /Applications/deck-rx.app
+├── native-app/                     # Native receiver front-end (design D)
+│   ├── Sources/main.swift          # Window: presets / spectrum / transport
+│   ├── Sources/Receiver.swift      # Status feed reads + control endpoint writes
 │   ├── Sources/SpectrumFeed.swift  # Reads the plugin's spectrum socket
 │   ├── Sources/SpectrumView.swift  # Spectrum + waterfall drawing
-│   └── build-app.sh                # swiftc + bundle -> /Applications/deck-rx.app
+│   └── build-app.sh                # swiftc + bundle -> /Applications/Deck RX.app
 └── com.hogehoge.deck-rx.sdPlugin/
     ├── manifest.json
     ├── layouts/                    # Encoder LCD layouts

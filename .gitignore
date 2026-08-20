@@ -50,3 +50,6 @@ native/samplerate/build/
 mac-app/deck-rx
 mac-app/deck-rx.icns
 mac-app/deck-rx.iconset/
+
+# Native receiver app build artefacts (native-app/build-app.sh regenerates them)
+native-app/deck-rx-receiver

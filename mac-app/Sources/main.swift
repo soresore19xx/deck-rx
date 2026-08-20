@@ -343,9 +343,6 @@ final class StatusView: NSView {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var view: StatusView!
-    private var spectrum: SpectrumView!
-    private var container: NSView!
-    private var feed: SpectrumFeed?
     private var refreshTimer: Timer?
     private var aliveTimer: Timer?
 
@@ -354,43 +351,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         view = StatusView(frame: NSRect(x: 0, y: 0, width: 420, height: 336))
         view.layoutSubtreeIfNeeded()
-
-        // Status block on top, spectrum + waterfall below. The spectrum reads
-        // the plugin's live FFT feed directly (src/spectrumFeed.ts) — the
-        // status JSON is far too slow a channel for it.
-        // The status block alone fits in ~420 pt, but a spectrum needs width to
-        // be worth reading, so the window starts wider than the text requires.
-        let fitted = view.contentFittingSize
-        let statusSize = NSSize(width: max(fitted.width, 560), height: fitted.height)
-        spectrum = SpectrumView(frame: NSRect(x: 0, y: 0, width: statusSize.width, height: 260))
-        container = NSView(frame: NSRect(x: 0, y: 0, width: statusSize.width,
-                                         height: statusSize.height + 260))
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.black.cgColor
-        view.translatesAutoresizingMaskIntoConstraints = false
-        spectrum.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(view)
-        container.addSubview(spectrum)
-        NSLayoutConstraint.activate([
-            view.topAnchor.constraint(equalTo: container.topAnchor),
-            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            view.heightAnchor.constraint(equalToConstant: statusSize.height),
-            spectrum.topAnchor.constraint(equalTo: view.bottomAnchor),
-            spectrum.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            spectrum.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            spectrum.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-
-        feed = SpectrumFeed { [weak self] frame in self?.spectrum.accept(frame) }
-        feed?.start()
-
-        window = NSWindow(contentRect: container.frame,
+        window = NSWindow(contentRect: view.frame,
                           styleMask: [.titled, .closable, .miniaturizable],
                           backing: .buffered,
                           defer: false)
         window.title = "deck-rx"
-        window.contentView = container
+        window.contentView = view
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         // Ask before naming the autosave: once the name is set the window has a
@@ -399,7 +365,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameAutosaveName("deckRxMain")
         // Restore only the position: a saved frame from an older layout would
         // otherwise clip the window, which cannot be resized back by hand.
-        window.setContentSize(NSSize(width: statusSize.width, height: statusSize.height + 260))
+        window.setContentSize(view.contentFittingSize)
         if !hasSavedFrame { window.center() }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -416,11 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // station change.
             let want = self.view.contentFittingSize
             if want.width > self.window.contentLayoutRect.width + 0.5 {
-                // Width only. Taking `want.height` here would drop the window
-                // back to the status block's own height and squeeze the
-                // spectrum out of existence on the first long station name.
-                self.window.setContentSize(NSSize(width: want.width,
-                                                  height: self.window.contentLayoutRect.height))
+                self.window.setContentSize(want)
             }
         }
         aliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in

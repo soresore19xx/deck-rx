@@ -100,6 +100,10 @@ export interface StartPluginOptions {
    *  any test that asserts on connect-time behaviour (connectListeners only
    *  fire after a successful handshake). */
   spyServer?: boolean | { deviceType?: number };
+  /** Port for the plugin's control endpoint (src/controlServer.ts). Sandboxed
+   *  instances keep it disabled unless a test asks for one, so a test plugin
+   *  never answers the external knob in the production instance's place. */
+  controlPort?: number;
 }
 
 const DEFAULT_CONFIG = {
@@ -146,6 +150,8 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
   if (opts.spyServer) {
     const devOpts = typeof opts.spyServer === 'object' ? opts.spyServer : {};
     const deviceType = devOpts.deviceType ?? 2; // Airspy HF+
+    // Last freq the plugin asked for, echoed back in CLIENT_SYNC frames.
+    let tunedFreq = 0;
     spyServer = net.createServer((sock) => {
       sock.on('error', () => {});
       let buf = Buffer.alloc(0);
@@ -158,7 +164,12 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
           const body = buf.subarray(8, 8 + len);
           buf = buf.subarray(8 + len);
           if (cmd === 2 && len >= 8) {  // CMD_SET_SETTING
-            spySettings.push({ setting: body.readUInt32LE(0), value: body.readUInt32LE(4) });
+            const setting = body.readUInt32LE(0), value = body.readUInt32LE(4);
+            spySettings.push({ setting, value });
+            // A real SpyServer echoes the tuned freq back in every CLIENT_SYNC.
+            // Reporting 0 forever (the original mock) made the Tune dial's vfo
+            // syncListener zero its own freq once a second.
+            if (setting === 101) tunedFreq = value;
           }
         }
       });
@@ -184,6 +195,10 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
         if (sock.destroyed) return;
         const syncBody = Buffer.alloc(36);
         syncBody.writeUInt32LE(1, 0);           // canControl
+        syncBody.writeUInt32LE(tunedFreq,  8);  // deviceCenterFreq
+        syncBody.writeUInt32LE(tunedFreq, 12);  // iqCenterFreq
+        syncBody.writeUInt32LE(500_000,   20);  // minIQCenterFreq
+        syncBody.writeUInt32LE(260_000_000, 24); // maxIQCenterFreq
         const syncHdr = Buffer.alloc(20);
         syncHdr.writeUInt32LE(1,  4);           // MSG_CLIENT_SYNC
         syncHdr.writeUInt32LE(36, 16);
@@ -211,6 +226,7 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
   };
   if (opts.presetsPath)   env.DECK_RX_PRESETS_PATH    = opts.presetsPath;
   if (opts.sdrConfigPath) env.DECK_RX_SDR_CONFIG_PATH = opts.sdrConfigPath;
+  if (opts.controlPort)   env.DECK_RX_CONTROL_PORT   = String(opts.controlPort);
   const plugin = spawn('node', [
     PLUGIN_ENTRY,
     '-port',          String(port),

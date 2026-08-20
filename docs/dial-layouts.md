@@ -28,6 +28,15 @@ VFO / preset scrolling, 7-seg frequency, FM stereo lock badge, ATS-Mini-style N 
 
 Unified Band selector (WFM / NFM / AM / USB / LSB / CW) on the left column + mode-dependent Options on the right column. PUSH on a Band row immediately switches the demod mode (no edit-mode roundtrip); the Opts column auto-shapes to AM (BW / CAGC / Sync / Atk / Dec / Gain), FM (Deemph / IFNR / HPF / LPF / Ste / Gain), or SSB (BW / BFO / Gain) depending on the active demod. Mode/Step (preset ⇄ vfo + step cycle) lives at the bottom of the Band column.
 
+In preset mode the dial normally draws the selected preset — freq, mode label
+and the station's name. When something retunes the receiver off that preset —
+an external knob through the control endpoint, or an SSB/CW Band PUSH with no
+matching preset — the dial draws the frequency the radio is actually on, with
+the live demod as the mode label and no station name, since attributing the
+preset's broadcaster to a frequency it isn't on would be a lie. A retune that
+lands exactly on another preset (same freq AND same demod mode) adopts that
+slot instead, so the name comes back and the next rotate cycles from there.
+
 The Tune dial follows the Band PUSH automatically: it jumps to the first matching-mode preset that's actually receivable on the connected SDR; for SSB / CW where presets typically don't exist, it falls back to a band-representative default (USB → 14.200 MHz, LSB → 7.100 MHz, CW → 7.025 MHz, NFM → 145.000 MHz), so a Band PUSH always moves the dial to a sensible freq even in VFO mode. Returning to AM/WFM finds a matching preset and restores attribution.
 
 ![Combo Options dial](lcd-options-combo.png)

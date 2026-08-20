@@ -12,6 +12,7 @@ import { importFromSdrpp } from '../presets.js';
 import { lookupCallsign, isJpRegion, type JpRegion } from '../japanStations.js';
 import { autoStationLabel } from '../stationLabel.js';
 import { bandsForDevice, snapToCoveredFreq, isFreqReceivable } from '../deviceBands.js';
+import { nextFreqForTicks, nextPresetSlot } from '../tuneMath.js';
 
 type DialTuneSettings = {
   mode?: 'preset' | 'vfo';
@@ -92,6 +93,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private borderSide: 'left'|'right'|'center'|'none' = 'none';
   private syncListener: ((s: SyncInfo) => void) | null = null;
   private connectListener: (() => void) | null = null;
+  private forceRenderListener: (() => void) | null = null;
   private enabledListener: ((on: boolean) => void) | null = null;
   private connStateListener: ((c: boolean) => void) | null = null;
   private enabled = true;
@@ -153,6 +155,40 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       }
     };
     spyService.subscribe(this.syncListener);
+
+    // A retune this dial did not originate — the control server driving the
+    // receiver from an external knob — leaves this.currentFreq stale, so the
+    // LCD would keep showing the previous station. Adopt the service's freq
+    // whenever a force render comes through. Exception: while our own rotate
+    // is still debouncing, this.currentFreq is the NEWER of the two (the dial
+    // advances it per tick and only pushes to the service after 200 ms), so
+    // adopting there would drag the display backwards mid-flick.
+    this.forceRenderListener = () => {
+      if (!this.tuneTimer && spyService.currentFreq > 0) {
+        this.currentFreq = spyService.currentFreq;
+        // An external retune can land exactly on a preset. Adopt that slot so
+        // the LCD shows the station's name and the next rotate cycles from
+        // there — the same reconciliation connectListener does for a restored
+        // freq. The mode must match too: moving the slot onto a WFM preset
+        // while the receiver is still demodulating AM would label the display
+        // with a mode we aren't actually in. When it doesn't match, the slot
+        // stays put and updateDisplay's off-preset path renders the live freq
+        // with the live mode and no preset-name attribution.
+        if (this.dialMode === 'preset' && this.presets.length > 0) {
+          const liveMode = spyService.getDemodMode();
+          const idx = this.presets.findIndex(pp => pp.freq === this.currentFreq && pp.mode === liveMode);
+          if (idx >= 0 && idx !== this.slotIndex) {
+            this.slotIndex = idx;
+            this.fallbackActive = false;
+            (this.lastAction as { setSettings?: (st: DialTuneSettings) => Promise<void> } | null)
+              ?.setSettings?.({ mode: this.dialMode, stepHz: this.stepHz, slotIndex: this.slotIndex, borderSide: this.borderSide })
+              ?.catch(() => {});
+          }
+        }
+      }
+      this.updateDisplay(this.lastAction).catch(() => {});
+    };
+    spyService.subscribeForceRender(this.forceRenderListener);
 
     this.connectListener = () => {
       if (this.dialMode === 'preset' && this.presets.length > 0) {
@@ -337,6 +373,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private teardown(): void {
     if (this.syncListener) { spyService.unsubscribe(this.syncListener); this.syncListener = null; }
     if (this.connectListener) { spyService.offConnect(this.connectListener); this.connectListener = null; }
+    if (this.forceRenderListener) { spyService.unsubscribeForceRender(this.forceRenderListener); this.forceRenderListener = null; }
     if (this.enabledListener) { spyService.unsubscribeEnabled(this.enabledListener); this.enabledListener = null; }
     if (this.connStateListener) { spyService.unsubscribeConnectionState(this.connStateListener); this.connStateListener = null; }
     if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
@@ -383,26 +420,10 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // 50 MHz NFM presets exist on disk but aren't tunable). When *no*
       // covered preset exists in the list at all, bail without changing
       // state — there's nothing meaningful to land on.
-      const dev = spyService.getDeviceInfo();
-      const isCovered = (idx: number): boolean => {
-        const p = this.presets[idx];
-        return !!p && (!dev || isFreqReceivable(p.freq, dev.deviceType, dev.minFrequency, dev.maxFrequency));
-      };
-      const len = this.presets.length;
-      const dir = ev.payload.ticks >= 0 ? 1 : -1;
-      const steps = Math.max(1, Math.abs(ev.payload.ticks));
-      let next = this.slotIndex;
-      let landed = false;
-      for (let s = 0; s < steps; s++) {
-        let attempts = len;
-        do {
-          next = ((next + dir) % len + len) % len;
-          attempts--;
-        } while (!isCovered(next) && attempts > 0);
-        if (!isCovered(next)) { landed = false; break; }
-        landed = true;
-      }
-      if (!landed) return;
+      // The walk itself lives in tuneMath so the control server's /preset
+      // endpoint steps the list exactly like this dial does.
+      const next = nextPresetSlot(this.presets, this.slotIndex, ev.payload.ticks, spyService.getDeviceInfo());
+      if (next === null) return;
       this.slotIndex = next;
       await ev.action.setSettings({ ...ev.payload.settings, slotIndex: this.slotIndex });
       const p = this.presets[this.slotIndex];
@@ -421,16 +442,11 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     } else {
       const base = this.currentFreq > 0 ? this.currentFreq : spyService.currentFreq;
       if (base <= 0) return;
-      const raw = Math.max(0, base + ev.payload.ticks * this.stepHz);
-      // Snap to a covered band of the connected SDR so the user can't park
-      // on a hardware-gap freq (Airspy HF+ has a 31–60 MHz dead zone) or
-      // tune past the device's published edges. Direction = sign of ticks
-      // so dialing UP through a gap jumps to the next band's lo, dialing
-      // DOWN jumps to the previous band's hi.
-      const dev = spyService.getDeviceInfo();
-      const bands = dev ? bandsForDevice(dev.deviceType, dev.minFrequency, dev.maxFrequency) : [];
-      const dir = ev.payload.ticks > 0 ? 1 : -1;
-      const next = snapToCoveredFreq(raw, bands, dir);
+      // Step + snap to a covered band of the connected SDR so the user can't
+      // park on a hardware-gap freq (Airspy HF+ has a 31–60 MHz dead zone) or
+      // tune past the device's published edges. The math lives in tuneMath so
+      // the external-knob control path steps exactly like this dial does.
+      const next = nextFreqForTicks(base, ev.payload.ticks, this.stepHz, spyService.getDeviceInfo());
       this.currentFreq = next;
       await this.updateDisplay(ev.action);
       if (this.tuneTimer) clearTimeout(this.tuneTimer);
@@ -721,31 +737,40 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // freq (typically nothing for amateur SSB) — preset.name is
       // intentionally NOT used here since "TBS Radio" on 14.200 MHz USB
       // would mis-attribute.
-      const freq = this.fallbackActive ? this.currentFreq : (p?.freq ?? 0);
+      // Second way to end up off-preset: something outside this dial retuned
+      // the receiver — the control server driving it from an external knob.
+      // The radio is no longer on presets[slotIndex], so drawing that preset
+      // would show a station that isn't on air. Render the live freq under
+      // the same rules as the SSB/CW fallback above, for the same reason.
+      // (An external retune that lands exactly ON a preset is reconciled onto
+      // that slot by the force-render listener, so it never reaches here.)
+      const offPreset = !!p && this.currentFreq > 0 && this.currentFreq !== p.freq;
+      const useLive = this.fallbackActive || offPreset;
+      const freq = useLive ? this.currentFreq : (p?.freq ?? 0);
       let { num, unit } = freqParts(freq);
       const liveDemod = spyService.getDemodMode();
-      const modeStr = this.fallbackActive
+      const modeStr = useLive
         ? (MODES[liveDemod] ?? '')
         : (p ? (MODES[p.mode] ?? '') : '');
-      const auto = (this.fallbackActive || p) ? autoStationLabel(freq, spyService.getJpActiveRegion()) : null;
+      const auto = (useLive || p) ? autoStationLabel(freq, spyService.getJpActiveRegion()) : null;
       // Preset-name fallback: when JP DB lookup misses (typically because the
       // preset's freq belongs to a station tagged for a region OTHER than the
       // one currently active — e.g. user on 関東 tuned 1179 kHz MBSラジオ
       // which is region: kinki), still try to attach the 識別信号 from the
       // 総務省 callsign DB. callsign lookup is region-independent (one freq
       // → one callsign, by license).
-      const callsignSuffix = !auto && p && !this.fallbackActive ? lookupCallsign(freq, spyService.getJpActiveRegion()) : undefined;
+      const callsignSuffix = !auto && p && !useLive ? lookupCallsign(freq, spyService.getJpActiveRegion()) : undefined;
       // Header now carries the broadcaster name only — Mode and STEREO have
       // moved into the freq display (Mode = left of digits, STEREO = top-
       // right corner where the clock used to live; the clock relocated to
       // the Volume + Status panel's title bar).
-      const baseHeader = this.fallbackActive
-        ? (auto ?? '')                                                              // SSB/CW fallback: no preset name attribution
+      const baseHeader = useLive
+        ? (auto ?? '')                                                              // off-preset: no preset name attribution
         : (p ? (auto ?? (callsignSuffix ? `${p.name} ${callsignSuffix}` : p.name)) : 'No presets');
       const header = !this.enabled ? (baseHeader ? `OFF  ${baseHeader}` : 'OFF')
                    : offline        ? (baseHeader ? `LINK  ${baseHeader}` : 'LINK')
                    : baseHeader;
-      const isFM = !this.fallbackActive && p?.mode === 1;
+      const isFM = !useLive && p?.mode === 1;
       // SSB / CW want sub-kHz precision in the display since net freqs
       // are quoted to 100 Hz / 10 Hz; the 5-digit 7-seg only goes to
       // 1 kHz, so the trailing 3 digits (full Hz part of the kHz tail)
@@ -753,7 +778,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       // rounded) so "7000.500" stays as main "7000" + sub ".500"
       // instead of becoming "7001" + ".500" which read as 7001.500
       // even though the actual freq is 7000500 Hz.
-      const liveMode = this.fallbackActive ? liveDemod : (p?.mode ?? 1);
+      const liveMode = useLive ? liveDemod : (p?.mode ?? 1);
       const isSsbCw = liveMode === 4 || liveMode === 5 || liveMode === 6;
       let subDigits = '';
       if (isSsbCw) {

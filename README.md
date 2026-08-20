@@ -50,6 +50,7 @@ Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / 
 | Audio sink | ✅ Local output via `naudiodon` (PortAudio → CoreAudio HAL); optional icecast publish path (ffmpeg + MP3 + icecast SOURCE) auto-selected from `cfg.ffmpeg.mode`. Native bindings (`naudiodon`, `deck-rx-asrc`, `segfault-handler`) need an ABI-matched rebuild against the Stream Deck app's bundled Node — run `npm run rebuild-native` once after `npm install`. See [Audio path (long-running stability)](#audio-path-long-running-stability) for the libsamplerate ASRC + drift-compensation details. |
 | Output loudness leveling | ✅ Single output stage (`src/audioLeveling.ts`) applied to the final PCM before the sink, so it covers **both** the naudiodon and icecast paths. **(1)** Static per-band makeup gains (`MODE_MAKEUP`, overridable per host via `cfg.audioMakeup`, e.g. `{"1": 8}` to bring WFM down) lift each demod mode to a common loudness — WFM/NFM/SSB are raw fixed-gain, AM/CW are demod-AGC'd to different setpoints, so without this the bands jump in level and deck-rx is much quieter than other apps. This is the **default** leveller: fixed per-band gain, **no dynamic motion / no pumping**. **(2)** An adaptive output AGC is **opt-in** (`cfg.audioLeveling: true`, default off) for also tracking within-band signal-strength changes — off by default because its dynamic level-riding is audible. **(3)** A soft-knee tanh limiter is an instantaneous peak ceiling so the static gain can run hot near full-scale without hard-clip distortion (peak-only, no breathing). `cfg.audioGain` (default `1.0`, clamped `0.1..4`) is a master trim on top of the makeup; the Volume dial (0–100%) attenuates further. Independent of RF / demod gain. Unit-tested in `test/audioLeveling.test.ts`. |
 | Companion app / profile auto-switch | ✅ `mac-app/` builds `/Applications/deck-rx.app`, a focusable app a Stream Deck profile can be bound to, so the deck switches to the deck-rx profile when the app comes to the front instead of being selected by hand. The same window doubles as a status readout — station name, frequency, mode, volume, S (RSSI) / N (SNR) meters, link state — fed by `src/statusFeed.ts`, which publishes only while the app is open and prefers a RAM-backed volume over disk. See [mac-app/README.md](mac-app/README.md). |
+| External knob control | ✅ loopback HTTP endpoint on `127.0.0.1:8771` (`src/controlServer.ts`) so a hardware knob can tune, ride volume, mute, power and step presets on the receiver alongside the Stream Deck+ dials. Frequency stepping goes through the same `nextFreqForTicks()` the Tune dial uses and preset stepping through the same `nextPresetSlot()`, so the knob honours the active tune step, the device's receivable bands and the dial's preset-skipping rules. Driven today by `knobctl` (BRIMFORD two-tier knob). See [External knob control](#external-knob-control-http). |
 
 ## Audio path (long-running stability)
 
@@ -130,6 +131,37 @@ mac-app/build-app.sh          # -> /Applications/deck-rx.app
 
 Then set that profile's application to `/Applications/deck-rx.app` in the Stream
 Deck app. Details: [mac-app/README.md](mac-app/README.md).
+
+## External knob control (HTTP)
+
+The plugin listens on `127.0.0.1:8771` so an external hardware knob can drive the
+receiver without a Stream Deck+ dial. It is bound to loopback with no auth —
+the same trust level as any other local-only helper endpoint on this machine.
+Sandboxed test instances (`DECK_RX_CONFIG_PATH`) keep it disabled unless
+`DECK_RX_CONTROL_PORT` opts them in on a port of their own, so a test plugin can
+never answer the knob in the running receiver's place.
+
+| Endpoint | Effect |
+|---|---|
+| `GET /health` | `{"ok":true,"freq":<hz>,"volume":<0-1>,"muted":<bool>,"enabled":<bool>}` |
+| `GET /tune?ticks=<±n>` | Relative tune, `n` × the receiver's current tune step, snapped to a receivable band |
+| `GET /tune?hz=<n>` | Absolute tune (also band-snapped) |
+| `GET /volume?d=<±n>` | Relative volume, 2 % per tick, clamped to 0–100 % |
+| `GET /mute?toggle=1` | Flip mute |
+| `GET /power?toggle=1` | Master ON/OFF — same as the Tune dial's long press |
+| `GET /preset?d=<±1>` | Step the preset list one slot, skipping presets the connected device can't receive. `409` when there is nothing to land on (empty list / none receivable), so a dead control path isn't silently reported as success |
+
+`/step` is reserved for the knob's second press-and-turn slot and is not routed
+yet. Every applied request also triggers a dial re-render, so the
+Stream Deck+ LCD follows a knob-driven retune instead of showing a stale
+frequency — in preset mode too, where the dial switches to drawing the live
+frequency once the knob walks the receiver off the selected preset, and adopts
+another preset's slot when a retune lands exactly on it.
+
+The current client is `knobctl`, the daemon for the BRIMFORD two-tier knob
+(upper ring = frequency, lower ring = volume, short press = mute, long press =
+switch which application the knob drives). The daemon lives outside this repo;
+deck-rx only publishes the endpoint.
 
 ## Documentation
 

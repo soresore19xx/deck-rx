@@ -381,11 +381,18 @@ class SpyService {
       try {
         if (!fs!.existsSync(FLAG)) return;
         try { fs!.unlinkSync(FLAG); } catch { /* race or perms — fine */ }
-        for (const fn of this.forceRenderListeners) {
-          try { fn(); } catch { /* listener errors don't break others */ }
-        }
+        this.notifyForceRender();
       } catch { /* swallow */ }
     }, 250);
+  }
+
+  /** Ask every subscribed dial to re-render from live service state. Used by
+   *  the /tmp/deck-rx-lcd-force flag above and by the control server, whose
+   *  retunes would otherwise leave action-cached values stale on the LCD. */
+  notifyForceRender(): void {
+    for (const fn of this.forceRenderListeners) {
+      try { fn(); } catch { /* listener errors don't break others */ }
+    }
   }
 
   subscribeForceRender(fn: () => void): void { this.forceRenderListeners.add(fn); }

@@ -14,6 +14,8 @@
 │   ├── dialDisplay.ts              # 7-segment, header, footer, volume bar SVGs
 │   ├── icons.ts                    # Knob, options panel SVGs
 │   ├── statusFeed.ts               # Live status feed for the companion app
+│   ├── controlServer.ts            # Loopback HTTP endpoint for an external knob
+│   ├── tuneMath.ts                 # VFO step math shared by the dial + control server
 │   ├── stationLabel.ts             # Station-name lookup (JP DB -> EIBI), shared
 │   └── actions/                    # Stream Deck action classes
 ├── scripts/                        # Tooling helpers

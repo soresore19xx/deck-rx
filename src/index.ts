@@ -2,6 +2,7 @@ import fs from 'fs';
 import streamDeck from '@elgato/streamdeck';
 import { spyService } from './spyService.js';
 import { startStatusFeed } from './statusFeed.js';
+import { startControlServer } from './controlServer.js';
 import { importFromSdrpp } from './presets.js';
 import { clearPresetsCache } from './actions/spyTune.js';
 import { SpyTune } from './actions/spyTune.js';
@@ -90,6 +91,11 @@ streamDeck.connect();
 // running (it refreshes an alive-flag), so this costs nothing when nobody
 // is looking. See src/statusFeed.ts.
 startStatusFeed();
+
+// Local control endpoint (127.0.0.1:8771) so an external knob can tune,
+// change volume and mute the receiver. Bound to loopback, no auth; skipped
+// in sandboxed harness instances. See src/controlServer.ts.
+startControlServer();
 
 // One-shot SDR++ auto-sync at startup — opt-in via PI checkbox. Waits for
 // spyService.ready so we know the autoSyncSdrpp flag has been hydrated

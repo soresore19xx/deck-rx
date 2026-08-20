@@ -16,14 +16,13 @@ final class FreqView: NSView {
 
     private var freqHz: Double = 0
     private var text = "—"
-    private var unit = ""
     /// Hz weight of each character in `text`; 0 for the decimal point.
     private var weights: [Double] = []
     private var hoverIndex: Int?
     private var hoverUp = true
 
-    private let digitFont = NSFont.monospacedSystemFont(ofSize: 68, weight: .bold)
-    private let unitFont = NSFont.monospacedSystemFont(ofSize: 26, weight: .medium)
+    private let digitFont = NSFont.monospacedSystemFont(ofSize: 60, weight: .bold)
+    private let unitFont = NSFont.monospacedSystemFont(ofSize: 22, weight: .medium)
 
     override var isFlipped: Bool { true }
 
@@ -39,28 +38,28 @@ final class FreqView: NSView {
     func set(freqHz: Double) {
         guard freqHz != self.freqHz else { return }
         self.freqHz = freqHz
-        let (num, u) = formatFreq(freqHz)
-        text = num
-        unit = u
-        weights = Self.weights(for: num, unitScale: u == "MHz" ? 1_000_000 : 1_000)
+        (text, weights) = Self.render(freqHz)
         invalidateIntrinsicContentSize()
         needsDisplay = true
     }
 
-    /// Hz value of one step of each character position.
-    static func weights(for text: String, unitScale: Double) -> [Double] {
-        let chars = Array(text)
-        let dot = chars.firstIndex(of: ".")
-        let intCount = dot ?? chars.count
-        var out = [Double](repeating: 0, count: chars.count)
-        for (i, c) in chars.enumerated() where c.isNumber {
-            if i < intCount {
-                out[i] = unitScale * pow(10, Double(intCount - 1 - i))
-            } else {
-                out[i] = unitScale * pow(10, -Double(i - intCount))
-            }
+    /// Full Hz, grouped in threes: 000.954.000. Every decade from 100 MHz down
+    /// to 1 Hz is on screen and therefore clickable, which a unit-switching
+    /// readout cannot offer — in MHz form the smallest digit was 10 kHz, so
+    /// nothing finer could be tuned by hand, and the set of digits moved under
+    /// the cursor whenever the display crossed a unit boundary. Leading zeros
+    /// are drawn dim, so "954 kHz" still reads at a glance.
+    static func render(_ hz: Double) -> (String, [Double]) {
+        let v = max(0, min(999_999_999, Int(hz.rounded())))
+        let digits = String(format: "%09d", v)
+        var text = ""
+        var weights: [Double] = []
+        for (i, c) in digits.enumerated() {
+            if i == 3 || i == 6 { text.append("."); weights.append(0) }
+            text.append(c)
+            weights.append(pow(10, Double(8 - i)))
         }
-        return out
+        return (text, weights)
     }
 
     // MARK: geometry
@@ -69,7 +68,7 @@ final class FreqView: NSView {
 
     override var intrinsicContentSize: NSSize {
         let w = digitWidth * CGFloat(text.count) + 12
-            + (unit as NSString).size(withAttributes: [.font: unitFont]).width + 10
+            + ("Hz" as NSString).size(withAttributes: [.font: unitFont]).width + 10
         return NSSize(width: w, height: digitFont.pointSize * 1.25)
     }
 
@@ -110,27 +109,34 @@ final class FreqView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let attrs: [NSAttributedString.Key: Any] = [.font: digitFont, .foregroundColor: NSColor.white]
+        let bright = NSColor.white
+        let dim = NSColor(white: 0.30, alpha: 1)
+        // Everything before the first non-zero digit is padding, not value.
+        let firstSignificant = text.firstIndex { $0 != "0" && $0 != "." }
         var x: CGFloat = 0
         let baselineY = (bounds.height - digitFont.pointSize * 1.1) / 2
 
         for (i, c) in text.enumerated() {
-            let s = String(c) as NSString
-            // A hovered digit shows which half you are over, so the click's
-            // direction is never a guess.
+            let idx = text.index(text.startIndex, offsetBy: i)
+            let lead = firstSignificant.map { idx < $0 } ?? true
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: digitFont,
+                .foregroundColor: c == "." ? dim : (lead ? dim : bright),
+            ]
             if hoverIndex == i {
                 let half = CGRect(x: x, y: hoverUp ? 0 : bounds.height / 2,
                                   width: digitWidth, height: bounds.height / 2)
-                ctx.setFillColor(NSColor(red: 0.349, green: 0.851, blue: 0.451, alpha: 0.16).cgColor)
+                ctx.setFillColor(NSColor(red: 0.349, green: 0.851, blue: 0.451, alpha: 0.18).cgColor)
                 ctx.fill(half)
             }
+            let s = String(c) as NSString
             s.draw(at: CGPoint(x: x + (digitWidth - s.size(withAttributes: attrs).width) / 2, y: baselineY),
                    withAttributes: attrs)
             x += digitWidth
         }
-        x += 12
-        (unit as NSString).draw(at: CGPoint(x: x, y: baselineY + digitFont.pointSize * 0.52),
+        x += 10
+        ("Hz" as NSString).draw(at: CGPoint(x: x, y: baselineY + digitFont.pointSize * 0.55),
                                 withAttributes: [.font: unitFont,
-                                                 .foregroundColor: NSColor(red: 0.863, green: 0.871, blue: 0.886, alpha: 1)])
+                                                 .foregroundColor: NSColor(white: 0.55, alpha: 1)])
     }
 }

@@ -197,6 +197,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       res.end(JSON.stringify(now));
       return;
     }
+    case '/mode': {
+      // Demod mode. Without this a front-end can move the receiver to an FM
+      // frequency but not out of AM, which is silence rather than a station —
+      // the preset lists carry a mode per entry for exactly this reason.
+      const m = num(q.get('m'));
+      if (m !== null) {
+        if (!Number.isInteger(m) || m < 0 || m > 7) { bad(); return; }
+        spyService.setDemodMode(m);
+        // The Tune dial caches its own view of the receiver; the same force
+        // render that keeps /tune honest applies here.
+        spyService.notifyForceRender();
+      } else if (q.has('m')) { bad(); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ mode: spyService.getDemodMode() }));
+      return;
+    }
     case '/step': {
       // The VFO step. Without this a front-end can only tune in whatever step
       // the deck last selected — which is how you end up unable to land on a

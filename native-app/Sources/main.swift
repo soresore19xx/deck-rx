@@ -47,7 +47,7 @@ private final class FlippedStack: NSStackView {
 final class PresetList: NSView {
     private let stack = FlippedStack()
     private let scroll = NSScrollView()
-    private var rows: [(NSView, Receiver.Preset)] = []
+    private var rows: [(row: NSView, bar: NSView, freq: NSTextField, name: NSTextField, preset: Receiver.Preset)] = []
     private var presets: [Receiver.Preset] = []
     var onPick: ((Receiver.Preset) -> Void)?
 
@@ -80,22 +80,32 @@ final class PresetList: NSView {
 
     func reload() {
         presets = Receiver.presets()
-        for (v, _) in rows { stack.removeArrangedSubview(v); v.removeFromSuperview() }
+        for r in rows { stack.removeArrangedSubview(r.row); r.row.removeFromSuperview() }
         rows.removeAll()
         for p in presets {
             let row = NSView()
             row.translatesAutoresizingMaskIntoConstraints = false
             let (num, unit) = formatFreq(p.freq)
-            let f = label(num, mono(15), P.text)
-            let u = label(unit, mono(11), P.faint)
-            let n = label(p.name, .systemFont(ofSize: 14), P.dim)
-            let m = label(modeName(p.mode), mono(11), P.faint)
+            let f = label(num, mono(18), P.text)
+            let u = label(unit, mono(12), P.faint)
+            let n = label(p.name, .systemFont(ofSize: 16), P.dim)
+            let m = label(modeName(p.mode), mono(12), P.faint)
             n.lineBreakMode = .byTruncatingTail
+            // Selection marker: a solid accent bar down the leading edge. A
+            // background tint alone was nearly invisible against the panel.
+            let bar = NSView()
+            bar.wantsLayer = true
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            row.addSubview(bar)
             for v in [f, u, n, m] { v.translatesAutoresizingMaskIntoConstraints = false; row.addSubview(v) }
             NSLayoutConstraint.activate([
-                row.heightAnchor.constraint(equalToConstant: 28),
-                f.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
-                f.widthAnchor.constraint(equalToConstant: 74),
+                row.heightAnchor.constraint(equalToConstant: 34),
+                bar.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+                bar.topAnchor.constraint(equalTo: row.topAnchor),
+                bar.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+                bar.widthAnchor.constraint(equalToConstant: 4),
+                f.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 12),
+                f.widthAnchor.constraint(equalToConstant: 84),
                 f.centerYAnchor.constraint(equalTo: row.centerYAnchor),
                 u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 4),
                 u.widthAnchor.constraint(equalToConstant: 30),
@@ -114,25 +124,44 @@ final class PresetList: NSView {
                 row.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
                 row.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
             ])
-            rows.append((row, p))
+            rows.append((row, bar, f, n, p))
         }
     }
 
     /// Highlight whichever row the receiver is actually on. Frequency is the
     /// identity here: the plugin may have been retuned by a dial or a knob.
+    private var lastMarked: Double = -1
+
     func markCurrent(freqHz: Double) {
-        for (row, p) in rows {
-            let on = abs(p.freq - freqHz) < 1
-            row.layer?.backgroundColor = on
-                ? NSColor(red: 0.110, green: 0.165, blue: 0.125, alpha: 1).cgColor
+        // Bring the tuned row into view when it changes. The marker is useless
+        // if the row is scrolled off — which it usually is, since the store
+        // runs from medium wave to FM and the window shows a dozen entries.
+        if freqHz != lastMarked {
+            lastMarked = freqHz
+            if let r = rows.first(where: { abs($0.preset.freq - freqHz) < 1 }) {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.scroll.contentView.scrollToVisible(r.row.frame.insetBy(dx: 0, dy: -60))
+                }
+            }
+        }
+        for r in rows {
+            let on = abs(r.preset.freq - freqHz) < 1
+            r.row.layer?.backgroundColor = on
+                ? NSColor(red: 0.129, green: 0.239, blue: 0.161, alpha: 1).cgColor
                 : NSColor.clear.cgColor
+            r.bar.layer?.backgroundColor = on ? P.accent.cgColor : NSColor.clear.cgColor
+            // Lift the text too: on a dark panel a background change alone is
+            // easy to miss, and this row answers "what am I listening to?".
+            r.freq.textColor = on ? .white : P.text
+            r.name.textColor = on ? .white : P.dim
         }
     }
 
     override func mouseDown(with event: NSEvent) {
         let inStack = stack.convert(event.locationInWindow, from: nil)
-        for (row, preset) in rows where row.frame.contains(inStack) {
-            onPick?(preset); return
+        for r in rows where r.row.frame.contains(inStack) {
+            onPick?(r.preset); return
         }
     }
 }
@@ -237,7 +266,13 @@ final class MainView: NSView {
         let down    = button("− TUNE") { [weak self] in self?.tuneStep(-1) }
         let up      = button("TUNE +") { [weak self] in self?.tuneStep(1) }
         let power   = button("POWER") { Receiver.togglePower() }
-        let bottomRow = NSStackView(views: [prev, next, down, up, NSView(),
+        let modeButtons = ["WFM", "NFM", "AM", "USB", "LSB", "CW"].map { name -> NSButton in
+            let m = MODE_NAMES.firstIndex(of: name) ?? 1
+            return button(name) { Receiver.mode(m) }
+        }
+        let modeRow = NSStackView(views: modeButtons)
+        modeRow.orientation = .horizontal; modeRow.spacing = 2
+        let bottomRow = NSStackView(views: [prev, next, down, up, modeRow, NSView(),
                                             volLabel, muteLabel, volDown, volUp, mute, power])
         bottomRow.orientation = .horizontal; bottomRow.spacing = 6; bottomRow.alignment = .centerY
         embed(bottomRow, in: bottom, inset: 12)
@@ -363,7 +398,7 @@ final class MainView: NSView {
 
             presetList.topAnchor.constraint(equalTo: top.bottomAnchor),
             presetList.leadingAnchor.constraint(equalTo: leadingAnchor),
-            presetList.widthAnchor.constraint(equalToConstant: 286),
+            presetList.widthAnchor.constraint(equalToConstant: 320),
             presetList.bottomAnchor.constraint(equalTo: bottom.topAnchor),
 
             header.topAnchor.constraint(equalTo: top.bottomAnchor),
@@ -394,7 +429,13 @@ final class MainView: NSView {
             bottom.heightAnchor.constraint(equalToConstant: 50),
         ])
 
-        presetList.onPick = { p in Receiver.tune(hz: Int(p.freq)) }
+        // Mode first, then frequency — the order the dial's preset cycle uses.
+        // Sending the frequency alone put the receiver on an FM channel while
+        // still demodulating AM, which is silence.
+        presetList.onPick = { p in
+            Receiver.mode(p.mode)
+            Receiver.tune(hz: Int(p.freq))
+        }
         // Label presets on the trace, the way SDR++ labels bookmarks. Only the
         // ones inside the visible span end up drawn.
         spectrum.markers = Receiver.presets().map { (freq: $0.freq, name: $0.name) }

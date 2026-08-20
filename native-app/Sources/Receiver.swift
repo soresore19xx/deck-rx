@@ -124,6 +124,8 @@ enum Receiver {
     static func toggleMute()       { call("/mute?toggle=1") }
     static func togglePower()      { call("/power?toggle=1") }
     static func preset(step: Int)  { call("/preset?d=\(step > 0 ? 1 : -1)") }
+    /// Demod mode by index (see MODE_NAMES). A preset's mode travels with it.
+    static func mode(_ m: Int)     { call("/mode?m=\(m)") }
 
     /// The VFO step. Japanese medium wave is spaced 9 kHz, so a receiver left
     /// on a 10 kHz step cannot land on 954 kHz at all — the app has to be able

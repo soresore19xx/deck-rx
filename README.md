@@ -153,6 +153,7 @@ never answer the knob in the running receiver's place.
 | `GET /mute?toggle=1` | Flip mute |
 | `GET /power?toggle=1` | Master ON/OFF — same as the Tune dial's long press |
 | `GET /preset?d=<±1>` | Step the preset list one slot, skipping presets the connected device can't receive. `409` when there is nothing to land on (empty list / none receivable), so a dead control path isn't silently reported as success |
+| `GET /mode[?m=<0-7>]` | Read or set the demod mode. A preset carries a mode with it, so a front-end that can only set a frequency lands on an FM channel while still demodulating AM — silence, not a station |
 | `GET /step[?hz=&d=±1]` | Read, set or cycle the VFO step. Answers with the step in force plus the ladder it cycles, so a front-end builds its menu from the receiver rather than hard-coding one |
 | `GET /spectrum[?fft=&fps=&avg=]` | Read or change the spectrum feed's FFT size, framerate and averaging. Always answers with the values in force, clamped, so a caller never has to guess how its request was adjusted |
 
@@ -259,8 +260,11 @@ signal from a strong one at a glance.
 decade up, below it to step down, or scroll over it — the way most SDR
 front-ends work, and the fastest way to move a known distance: 954 kHz to
 1134 kHz is two nudges of the 100 kHz digit rather than twenty presses of a tune
-button. The decade of each digit is derived from the displayed text, so it stays
-correct across the kHz/MHz switch without a second source of truth.
+button. It shows the full frequency in Hz, grouped in threes with the leading
+zeros dimmed, so every decade from 100 MHz down to 1 Hz is on screen and
+therefore reachable. A unit-switching readout cannot offer that: in MHz form the
+smallest digit was 10 kHz, and the set of digits moved under the cursor whenever
+the display crossed a unit boundary.
 
 Zoom and the dB window sit as vertical sliders down the right edge (ZOOM / MAX /
 MIN), since those are the three you ride while watching a waterfall. Zoom is

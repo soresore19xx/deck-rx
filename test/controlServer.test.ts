@@ -292,6 +292,29 @@ describe('controlServer — preset stepping (press-and-turn)', () => {
   }, 25_000);
 });
 
+describe('controlServer — demod mode', () => {
+  it('reports and sets the mode, so a front-end can follow a preset out of AM', async () => {
+    const port = await freePort();
+    harness = await boot(port, { demodMode: 2, lastFrequency: 693_000 });
+    await harness.settle(1500);
+
+    expect((await getJson(port, '/mode')).mode).toBe(2);           // AM
+    expect((await getJson(port, '/mode?m=1')).mode).toBe(1);       // WFM
+    expect((await getJson(port, '/mode')).mode).toBe(1);
+
+    // Tuning to an FM preset is mode + frequency; frequency alone lands the
+    // receiver on the right MHz in the wrong demod, which is silence.
+    await get(port, '/tune?hz=90500000');
+    await harness.settle(300);
+    const h = await health(port);
+    expect(h.freq).toBe(90_500_000);
+    expect((await getJson(port, '/mode')).mode).toBe(1);
+
+    expect((await get(port, '/mode?m=99')).status).toBe(400);
+    expect((await get(port, '/mode?m=abc')).status).toBe(400);
+  }, 25_000);
+});
+
 describe('controlServer — VFO step', () => {
   it('reports the step and its ladder, sets one directly, and cycles', async () => {
     const port = await freePort();

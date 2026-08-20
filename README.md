@@ -153,10 +153,11 @@ never answer the knob in the running receiver's place.
 | `GET /mute?toggle=1` | Flip mute |
 | `GET /power?toggle=1` | Master ON/OFF — same as the Tune dial's long press |
 | `GET /preset?d=<±1>` | Step the preset list one slot, skipping presets the connected device can't receive. `409` when there is nothing to land on (empty list / none receivable), so a dead control path isn't silently reported as success |
+| `GET /step[?hz=&d=±1]` | Read, set or cycle the VFO step. Answers with the step in force plus the ladder it cycles, so a front-end builds its menu from the receiver rather than hard-coding one |
 | `GET /spectrum[?fft=&fps=&avg=]` | Read or change the spectrum feed's FFT size, framerate and averaging. Always answers with the values in force, clamped, so a caller never has to guess how its request was adjusted |
 
-`/step` is reserved for the knob's second press-and-turn slot and is not routed
-yet. Every applied request also triggers a dial re-render, so the
+`/preset` and `/step` cover the knob's press-and-turn slots; `/step` is also what
+lets a front-end fix a step too coarse for the band in use. Every applied request also triggers a dial re-render, so the
 Stream Deck+ LCD follows a knob-driven retune instead of showing a stale
 frequency — in preset mode too, where the dial switches to drawing the live
 frequency once the knob walks the receiver off the selected preset, and adopts
@@ -254,7 +255,16 @@ blue → cyan → green → yellow → red ramp — a single-hue ramp looks tidi
 the rest of the UI but costs the thing a waterfall is for, telling a moderate
 signal from a strong one at a glance.
 
-A display toolbar sits above it, in the spirit of SDR++'s display panel: FFT
+The toolbar above it carries STEP and ZOOM alongside the display settings. ZOOM
+narrows the view to a centred slice of the receiver's span — done in the app,
+since every frame already carries all the bins and asking for a narrower FFT
+would cost resolution instead. STEP goes to the receiver, and the TUNE buttons
+snap onto the step's grid on the first press when the receiver is off it:
+Japanese medium wave sits on multiples of 9 kHz, so a receiver parked on
+960 kHz by a coarser step otherwise walks 969, 978 … and never lands on a
+station.
+
+The rest of the toolbar follows SDR++'s display panel: FFT
 size, framerate and averaging (pushed to the receiver through
 `/spectrum`, since the FFT runs there and the deck's own FFT dial shares that
 pipeline), plus peak hold and the dB window (this app's own view of the same

@@ -163,6 +163,9 @@ final class MainView: NSView {
     private let avgLabel = label("0.40", mono(13), P.text)
     private let holdButton = NSButton()
     private let dbLabel = label("−100 / −20 dB", mono(13), P.dim)
+    private let stepPop = NSPopUpButton()
+    private let zoomPop = NSPopUpButton()
+    private var stepValues: [Int] = []
     private let muteLabel = label("", mono(13, .medium), P.warn)
 
     override init(frame: NSRect) {
@@ -220,8 +223,8 @@ final class MainView: NSView {
         let mute    = button("MUTE")  { Receiver.toggleMute() }
         let prev    = button("◀ PRESET") { Receiver.preset(step: -1) }
         let next    = button("PRESET ▶") { Receiver.preset(step: 1) }
-        let down    = button("− TUNE") { Receiver.tune(ticks: -1) }
-        let up      = button("TUNE +") { Receiver.tune(ticks: 1) }
+        let down    = button("− TUNE") { [weak self] in self?.tuneStep(-1) }
+        let up      = button("TUNE +") { [weak self] in self?.tuneStep(1) }
         let power   = button("POWER") { Receiver.togglePower() }
         let bottomRow = NSStackView(views: [prev, next, down, up, NSView(),
                                             volLabel, muteLabel, volDown, volUp, mute, power])
@@ -256,7 +259,33 @@ final class MainView: NSView {
             guard let self else { return }
             self.spectrum.holdEnabled = self.holdButton.state == .on
         }
+        // The VFO step lives on the receiver (the deck's dial reads the same
+        // value), so the menu is built from what /step reports rather than from
+        // a list hard-coded here that would drift.
+        stepPop.font = mono(12)
+        stepPop.target = ButtonBox.shared
+        stepPop.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(stepPop)] = { [weak self] in
+            guard let self, self.stepPop.indexOfSelectedItem >= 0,
+                  self.stepPop.indexOfSelectedItem < self.stepValues.count else { return }
+            let hz = self.stepValues[self.stepPop.indexOfSelectedItem]
+            Receiver.step(hz: hz) { step, values in self.adoptStep(step, values) }
+        }
+
+        // Zoom is a display concern: every frame carries all the bins, so the
+        // app narrows the view instead of asking for a smaller FFT.
+        zoomPop.addItems(withTitles: ["1×", "2×", "4×", "8×", "16×", "32×"])
+        zoomPop.font = mono(12)
+        zoomPop.target = ButtonBox.shared
+        zoomPop.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(zoomPop)] = { [weak self] in
+            guard let self else { return }
+            self.spectrum.zoom = pow(2, Double(self.zoomPop.indexOfSelectedItem))
+        }
+
         let barRow = NSStackView(views: [
+            label("STEP", mono(12), P.faint), stepPop,
+            label("ZOOM", mono(12), P.faint), zoomPop,
             label("FFT", mono(12), P.faint), fftPop,
             label("RATE", mono(12), P.faint), fpsPop, label("fps", mono(12), P.faint),
             label("AVG", mono(12), P.faint),
@@ -317,6 +346,37 @@ final class MainView: NSView {
     }
 
     private var avg: Double = 0.4
+    private var currentStepHz = 0
+    private var currentFreqHz: Double = 0
+
+    /// Step the VFO, snapping onto the step's grid first when the receiver is
+    /// off it. Japanese medium wave sits on multiples of 9 kHz, so a receiver
+    /// parked on 960 kHz (left there by a coarser step) walks 969, 978, … and
+    /// never lands on a station. A real radio snaps to the channel grid on the
+    /// first press; this does the same, in the direction of travel.
+    private func tuneStep(_ dir: Int) {
+        let step = Double(currentStepHz)
+        guard step > 0, currentFreqHz > 0 else { Receiver.tune(ticks: dir); return }
+        let offGrid = currentFreqHz.truncatingRemainder(dividingBy: step) != 0
+        if offGrid {
+            let snapped = dir > 0 ? (currentFreqHz / step).rounded(.up) * step
+                                  : (currentFreqHz / step).rounded(.down) * step
+            Receiver.tune(hz: Int(snapped))
+        } else {
+            Receiver.tune(ticks: dir)
+        }
+    }
+
+    /// Render the step menu from the receiver's ladder and select what is in
+    /// force — including a value set from the deck while this app was open.
+    func adoptStep(_ stepHz: Int, _ values: [Int]) {
+        if !values.isEmpty, values != stepValues {
+            stepValues = values
+            stepPop.removeAllItems()
+            stepPop.addItems(withTitles: values.map { formatStep(Double($0)) })
+        }
+        if let i = stepValues.firstIndex(of: stepHz) { stepPop.selectItem(at: i) }
+    }
 
     /// Render the controls from what the receiver reports, not from what we
     /// asked for: the endpoint clamps, and the deck's FFT dial can change these
@@ -401,11 +461,16 @@ final class MainView: NSView {
         sNum.stringValue = live ? String(format: "%.0f dBFS", s.rssiDbfs) : "—"
         nNum.stringValue = live ? String(format: "%.0f dB", s.snrDb) : "—"
 
+        currentFreqHz = s.freqHz
         spectrum.bandwidthHz = s.bandwidthHz
         bwLabel.stringValue = s.bandwidthHz > 0
             ? (s.bandwidthHz >= 1000 ? String(format: "%.0f kHz", s.bandwidthHz / 1000)
                                      : String(format: "%.0f Hz", s.bandwidthHz))
             : "—"
+        if s.tuneStepHz > 0, Int(s.tuneStepHz) != currentStepHz {
+            currentStepHz = Int(s.tuneStepHz)
+            adoptStep(currentStepHz, stepValues)
+        }
         stepLabel.stringValue = s.tuneStepHz > 0
             ? (s.tuneStepHz >= 1000 ? String(format: "%.0f kHz", s.tuneStepHz / 1000)
                                     : String(format: "%.0f Hz", s.tuneStepHz))
@@ -462,6 +527,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         feed?.start()
         // Seed the display controls from the receiver's live settings.
         Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
+        Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
 
         view.refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in

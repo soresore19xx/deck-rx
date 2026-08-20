@@ -125,6 +125,24 @@ enum Receiver {
     static func togglePower()      { call("/power?toggle=1") }
     static func preset(step: Int)  { call("/preset?d=\(step > 0 ? 1 : -1)") }
 
+    /// The VFO step. Japanese medium wave is spaced 9 kHz, so a receiver left
+    /// on a 10 kHz step cannot land on 954 kHz at all — the app has to be able
+    /// to change this, not just inherit whatever the deck last selected.
+    static func step(hz: Int? = nil, cycle: Int? = nil,
+                     then: ((Int, [Int]) -> Void)? = nil) {
+        var query = ""
+        if let hz { query = "?hz=\(hz)" } else if let cycle { query = "?d=\(cycle > 0 ? 1 : -1)" }
+        guard let url = URL(string: "http://127.0.0.1:\(controlPort)/step\(query)") else { return }
+        var req = URLRequest(url: url); req.timeoutInterval = 2
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let step = j["stepHz"] as? Int else { return }
+            let values = j["values"] as? [Int] ?? []
+            DispatchQueue.main.async { then?(step, values) }
+        }.resume()
+    }
+
     /// Spectrum display settings live on the receiver, not in this app: the
     /// FFT runs there, and the deck's own FFT dial shares the pipeline. The
     /// endpoint reports the values actually in force, clamped, so the UI can
@@ -157,6 +175,13 @@ func modeName(_ m: Int) -> String { m >= 0 && m < MODE_NAMES.count ? MODE_NAMES[
 /// MHz above 30 MHz, whole kHz on shortwave and medium wave, one decimal below
 /// 1 MHz. Inventing a different rule here is how "1.242 MHz" ends up facing a
 /// user who thinks in "1242 kHz".
+/// Short human form for a step or bandwidth: 10 Hz, 9 kHz, 1 MHz.
+func formatStep(_ hz: Double) -> String {
+    if hz >= 1_000_000 { return String(format: "%g MHz", hz / 1_000_000) }
+    if hz >= 1_000 { return String(format: "%g kHz", hz / 1_000) }
+    return String(format: "%g Hz", hz)
+}
+
 func formatFreq(_ hz: Double) -> (String, String) {
     if hz <= 0 { return ("—", "") }
     if hz >= 30_000_000 { return (String(format: "%.2f", hz / 1_000_000), "MHz") }

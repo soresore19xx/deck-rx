@@ -134,7 +134,6 @@ describe('controlServer — knob endpoints', () => {
     expect((await get(port, '/volume')).status).toBe(400);
     expect((await get(port, '/mute')).status).toBe(400);        // toggle=1 required
     expect((await get(port, '/power?toggle=0')).status).toBe(400);
-    expect((await get(port, '/step?d=1')).status).toBe(404);    // reserved, not routed yet
     expect((await get(port, '/nope')).status).toBe(404);
     const h = await health(port);
     expect(h.freq).toBe(594_000);
@@ -290,6 +289,31 @@ describe('controlServer — preset stepping (press-and-turn)', () => {
     expect((await get(port, '/preset?d=3')).status).toBe(400);
     expect((await get(port, '/preset?d=abc')).status).toBe(400);
     expect((await health(port)).freq).toBe(693_000);
+  }, 25_000);
+});
+
+describe('controlServer — VFO step', () => {
+  it('reports the step and its ladder, sets one directly, and cycles', async () => {
+    const port = await freePort();
+    harness = await boot(port, { tuneStepHz: 10_000, demodMode: 2 });
+    await harness.settle(1500);
+
+    const base = await getJson(port, '/step') as unknown as { stepHz: number; values: number[] };
+    expect(base.stepHz).toBe(10_000);
+    // The ladder comes from the receiver so a front-end never hard-codes it.
+    expect(base.values).toContain(9_000);
+
+    // 9 kHz is the Japanese medium-wave channel spacing — the case that made
+    // this endpoint necessary, since a 10 kHz step cannot land on 954 kHz.
+    const set = await getJson(port, '/step?hz=9000') as unknown as { stepHz: number };
+    expect(set.stepHz).toBe(9_000);
+    await get(port, '/tune?ticks=1');
+    expect((await health(port)).freq).toBe(603_000);   // 594 + 9 kHz
+
+    // Cycling walks the ladder in both directions.
+    expect((await getJson(port, '/step?d=1') as unknown as { stepHz: number }).stepHz).toBe(10_000);
+    expect((await getJson(port, '/step?d=-1') as unknown as { stepHz: number }).stepHz).toBe(9_000);
+    expect((await get(port, '/step?hz=0')).status).toBe(400);
   }, 25_000);
 });
 

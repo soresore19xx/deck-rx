@@ -26,6 +26,22 @@ final class SpectrumView: NSView {
     /// SDR++ labels bookmarks.
     var markers: [(freq: Double, name: String)] = []
 
+    /// Display zoom. 1 shows the receiver's whole IQ span; higher values show a
+    /// centred slice of it. Zooming is done here rather than on the receiver
+    /// because every frame already carries all the bins — asking for a narrower
+    /// FFT would cost resolution, which is the opposite of what zooming is for.
+    var zoom: Double = 1 { didSet { hold = []; needsDisplay = true } }
+
+    /// The bin window currently on screen, and the frequencies it spans.
+    private func visible(_ count: Int) -> (start: Int, end: Int, lo: Double, span: Double) {
+        let z = max(1, min(64, zoom))
+        let width = max(16, Int(Double(count) / z))
+        let start = max(0, (count - width) / 2)
+        let end = min(count, start + width)
+        let span = Double(iqRate) * Double(end - start) / Double(max(1, count))
+        return (start, end, Double(centerFreq) - span / 2, span)
+    }
+
     /// Left gutter for the dB scale, and the strip under the trace that carries
     /// the frequency scale. Both the trace and the waterfall start after the
     /// gutter so the two line up column for column.
@@ -95,8 +111,10 @@ final class SpectrumView: NSView {
                 memmove(base.advanced(by: rowBytes), base, rowBytes * (fallHeight - 1))
             }
         }
+        let win = visible(bins.count)
+        let winCount = max(1, win.end - win.start)
         for x in 0..<fallWidth {
-            let b = bins[min(bins.count - 1, x * bins.count / fallWidth)]
+            let b = bins[min(bins.count - 1, win.start + x * winCount / fallWidth)]
             let (r, g, bl) = color(for: norm(b))
             let o = x * 4
             fallPixels[o] = r; fallPixels[o + 1] = g; fallPixels[o + 2] = bl; fallPixels[o + 3] = 255
@@ -181,8 +199,10 @@ final class SpectrumView: NSView {
         }
 
         let n = bins.count
-        let span = Double(iqRate)
-        let lo = Double(centerFreq) - span / 2
+        let win = visible(n)
+        let winCount = max(1, win.end - win.start)
+        let span = win.span
+        let lo = win.lo
         func x(forHz hz: Double) -> CGFloat {
             guard span > 0 else { return plotX }
             return plotX + CGFloat((hz - lo) / span) * plotW
@@ -247,7 +267,7 @@ final class SpectrumView: NSView {
         // trace + fill
         let path = CGMutablePath()
         for px in 0..<Int(plotW) {
-            let b = bins[min(n - 1, px * n / max(1, Int(plotW)))]
+            let b = bins[min(n - 1, win.start + px * winCount / max(1, Int(plotW)))]
             let p = CGPoint(x: plotX + CGFloat(px), y: specH - norm(b) * specH)
             if px == 0 { path.move(to: p) } else { path.addLine(to: p) }
         }
@@ -272,7 +292,7 @@ final class SpectrumView: NSView {
         if holdEnabled, hold.count == n {
             let hp = CGMutablePath()
             for px in 0..<Int(plotW) {
-                let v = hold[min(n - 1, px * n / max(1, Int(plotW)))]
+                let v = hold[min(n - 1, win.start + px * winCount / max(1, Int(plotW)))]
                 let p = CGPoint(x: plotX + CGFloat(px), y: specH - norm(v) * specH)
                 if px == 0 { hp.move(to: p) } else { hp.addLine(to: p) }
             }

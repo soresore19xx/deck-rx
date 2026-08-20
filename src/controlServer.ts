@@ -1,6 +1,6 @@
 import http from 'http';
 import { log } from './log.js';
-import { spyService } from './spyService.js';
+import { spyService, TUNE_STEP_VALUES } from './spyService.js';
 import { nextFreqForTicks, nextPresetSlot } from './tuneMath.js';
 import { loadPresets } from './presetList.js';
 import { spectrumSettings, setSpectrumSettings } from './spectrumFeed.js';
@@ -197,8 +197,29 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       res.end(JSON.stringify(now));
       return;
     }
-    // /step is reserved for the knob's second press-and-turn slot, which
-    // knobctl still silences. Left unrouted until that lands.
+    case '/step': {
+      // The VFO step. Without this a front-end can only tune in whatever step
+      // the deck last selected — which is how you end up unable to land on a
+      // 9 kHz-spaced medium-wave channel from a 10 kHz step.
+      const hz = num(q.get('hz'));
+      const d = num(q.get('d'));
+      if (hz !== null) {
+        if (!(hz > 0)) { bad(); return; }
+        spyService.setTuneStepHz(hz);
+      } else if (d !== null) {
+        // Cycle the same ladder the dial cycler uses, wrapping at both ends.
+        const list = TUNE_STEP_VALUES;
+        const cur = list.indexOf(spyService.getTuneStepHz());
+        const dir = d > 0 ? 1 : -1;
+        const next = (((cur < 0 ? 0 : cur) + dir) + list.length) % list.length;
+        spyService.setTuneStepHz(list[next]);
+      } else if (q.has('hz') || q.has('d')) { bad(); return; }
+      // Report the step in force plus the ladder, so a front-end can build its
+      // menu from the receiver instead of hard-coding a list that will drift.
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ stepHz: spyService.getTuneStepHz(), values: TUNE_STEP_VALUES }));
+      return;
+    }
     default:
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('not found');

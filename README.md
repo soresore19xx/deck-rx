@@ -51,6 +51,8 @@ Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / 
 | Output loudness leveling | ✅ Single output stage (`src/audioLeveling.ts`) applied to the final PCM before the sink, so it covers **both** the naudiodon and icecast paths. **(1)** Static per-band makeup gains (`MODE_MAKEUP`, overridable per host via `cfg.audioMakeup`, e.g. `{"1": 8}` to bring WFM down) lift each demod mode to a common loudness — WFM/NFM/SSB are raw fixed-gain, AM/CW are demod-AGC'd to different setpoints, so without this the bands jump in level and deck-rx is much quieter than other apps. This is the **default** leveller: fixed per-band gain, **no dynamic motion / no pumping**. **(2)** An adaptive output AGC is **opt-in** (`cfg.audioLeveling: true`, default off) for also tracking within-band signal-strength changes — off by default because its dynamic level-riding is audible. **(3)** A soft-knee tanh limiter is an instantaneous peak ceiling so the static gain can run hot near full-scale without hard-clip distortion (peak-only, no breathing). `cfg.audioGain` (default `1.0`, clamped `0.1..4`) is a master trim on top of the makeup; the Volume dial (0–100%) attenuates further. Independent of RF / demod gain. Unit-tested in `test/audioLeveling.test.ts`. |
 | Companion app / profile auto-switch | ✅ `mac-app/` builds `/Applications/deck-rx.app`, a focusable app a Stream Deck profile can be bound to, so the deck switches to the deck-rx profile when the app comes to the front instead of being selected by hand. The same window doubles as a status readout — station name, frequency, mode, volume, S (RSSI) / N (SNR) meters, link state — fed by `src/statusFeed.ts`, which publishes only while the app is open and prefers a RAM-backed volume over disk. See [mac-app/README.md](mac-app/README.md). |
 | External knob control | ✅ loopback HTTP endpoint on `127.0.0.1:8771` (`src/controlServer.ts`) so a hardware knob can tune, ride volume, mute, power and step presets on the receiver alongside the Stream Deck+ dials. Frequency stepping goes through the same `nextFreqForTicks()` the Tune dial uses and preset stepping through the same `nextPresetSlot()`, so the knob honours the active tune step, the device's receivable bands and the dial's preset-skipping rules. Driven today by `knobctl` (BRIMFORD two-tier knob). See [External knob control](#external-knob-control-http). |
+| Headless receiver | ✅ `bin/headless.js` runs the whole signal path — SpyServer client, demodulator, audio chain, control endpoint, status feed — with no Stream Deck involved. The core logs through `src/log.ts` instead of the SDK, so the plugin and the headless process share every module. Run it with the Node the native modules were built against. |
+| Spectrum feed | ✅ binary FFT frames over a Unix socket (`/tmp/deck-rx-spectrum.sock`, `src/spectrumFeed.ts`) for a native front-end. Computes nothing while nobody is connected, and drops frames for a reader that falls behind rather than queueing them. See [Spectrum feed](#spectrum-feed-native-front-end). |
 
 ## Audio path (long-running stability)
 
@@ -162,6 +164,59 @@ The current client is `knobctl`, the daemon for the BRIMFORD two-tier knob
 (upper ring = frequency, lower ring = volume, short press = mute, long press =
 switch which application the knob drives). The daemon lives outside this repo;
 deck-rx only publishes the endpoint.
+
+## Headless receiver
+
+The plugin is one front-end over the core, not the core itself. `bin/headless.js`
+starts the same modules from a plain Node process:
+
+```sh
+"$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS/20.20.0/node" \
+  com.hogehoge.deck-rx.sdPlugin/bin/headless.js
+```
+
+Use that Node (or whichever one `npm run rebuild-native` targeted) — `naudiodon`
+and `deck-rx-asrc` are ABI-bound to it. The headless bundle sits next to the
+plugin bundle so `config.json`, the preset store and the station DBs resolve to
+the same files.
+
+Only ONE of {plugin, headless} should own the receiver at a time: they would
+otherwise both open the audio device and both try to answer on the control port.
+The second one to start logs the clash and runs without a control endpoint.
+`DECK_RX_HEADLESS_PID_FILE`, `DECK_RX_CONTROL_PORT`, `DECK_RX_STATUS_PATH` and
+`DECK_RX_SPECTRUM_SOCKET` move it out of the way when both must run.
+
+## Spectrum feed (native front-end)
+
+The status feed publishes ~320 B of JSON four times a second — right for a
+station name and two meters, hopeless for a waterfall. Spectrum data goes over a
+Unix socket instead, as binary frames, with the FFT computed on the plugin side
+(raw IQ would cost orders of magnitude more).
+
+| offset | size | field |
+|---|---|---|
+| 0 | 4 | magic `DRXS` |
+| 4 | 1 | version (1) |
+| 5 | 1 | flags (0) |
+| 6 | 2 | reserved |
+| 8 | 4 | binCount |
+| 12 | 4 | iqRate, Hz — the span the frame covers |
+| 16 | 4 | centerFreq, Hz — at `bins[binCount/2]` |
+| 20 | 4 | seq — wraps at 2^32; a gap means a dropped frame |
+| 24 | 4·n | bins, float32 dBFS, low frequency first |
+
+Little-endian throughout. A reader syncs on the magic and derives the frame
+length from `binCount`, so a mid-stream connect recovers on the next frame.
+Defaults: 1024 bins at 30 fps, overridable via `DECK_RX_SPECTRUM_FFT` /
+`DECK_RX_SPECTRUM_FPS`. `mac-app/Sources/SpectrumFeed.swift` is the reference
+reader.
+
+Two things to know before building on it. The IQ stream is started by
+`startAudio()`, so **no audio pipeline means no spectrum** — a receiver muted at
+volume 0 still feeds it, but one with `audioEnabled: false` does not. And macOS
+caps a Unix socket path at 104 bytes, reporting a longer one as `EADDRINUSE`;
+the feed checks the length and says so rather than letting you hunt for a
+process that does not exist.
 
 ## Documentation
 

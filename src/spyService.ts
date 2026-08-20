@@ -1,4 +1,4 @@
-import streamDeck from '@elgato/streamdeck';
+import { log } from './log.js';
 import {
   SpyClient, DeviceInfo, SyncInfo, IQPacket,
   SETTING_IQ_FORMAT, SETTING_IQ_FREQUENCY, SETTING_IQ_DECIMATION,
@@ -411,7 +411,7 @@ class SpyService {
   private hookClient(): void {
     this.client.on('deviceInfo', (info: DeviceInfo) => {
       this.deviceInfo = info;
-      streamDeck.logger.info(`[spyService] deviceInfo type=${info.deviceType} maxRate=${info.maxSampleRate} stages=${info.decimationStages} minDec=${info.minIQDecimation} maxGain=${info.maxGainIndex} forcedFmt=${info.forcedIQFormat}`);
+      log.info(`[spyService] deviceInfo type=${info.deviceType} maxRate=${info.maxSampleRate} stages=${info.decimationStages} minDec=${info.minIQDecimation} maxGain=${info.maxGainIndex} forcedFmt=${info.forcedIQFormat}`);
       this.maxGain = info.maxGainIndex;
       // First-time hydration: if no persisted gain, default to max. Then clamp.
       if (this.amGain === undefined) this.amGain = info.maxGainIndex;
@@ -430,16 +430,16 @@ class SpyService {
       // After our setFrequency, the server-side initial sync still echoes
       // an older value, racing our config-restored _currentFreq.
       this.lastSync = s;
-      streamDeck.logger.info(`[spyService] sync canControl=${s.canControl} gain=${s.gain} iqFreq=${s.iqCenterFreq} min=${s.minIQCenterFreq} max=${s.maxIQCenterFreq}`);
+      log.info(`[spyService] sync canControl=${s.canControl} gain=${s.gain} iqFreq=${s.iqCenterFreq} min=${s.minIQCenterFreq} max=${s.maxIQCenterFreq}`);
       for (const fn of this.syncListeners) fn(s);
     });
     this.client.on('error', (e: unknown) => {
-      streamDeck.logger.error(`[spyService] error: ${e}`);
+      log.error(`[spyService] error: ${e}`);
       this.stopAudio().catch(() => {});
       this.scheduleReconnect();
     });
     this.client.on('disconnect', () => {
-      streamDeck.logger.warn('[spyService] disconnected');
+      log.warn('[spyService] disconnected');
       this.stopAudio().catch(() => {});
       this.scheduleReconnect();
     });
@@ -468,7 +468,7 @@ class SpyService {
       if (typeof cfg.enabled === 'boolean') this.enabled = cfg.enabled;
       for (const fn of this.enabledListeners) fn(this.enabled);
       if (!this.enabled) {
-        streamDeck.logger.info('[spyService] connect: disabled, staying offline');
+        log.info('[spyService] connect: disabled, staying offline');
         return;
       }
       // First connect: hydrate fmOptions from persisted config
@@ -581,20 +581,20 @@ class SpyService {
       }
       this.host = cfg.host;
       this.port = cfg.port;
-      streamDeck.logger.info(`[spyService] connecting ${cfg.host}:${cfg.port}`);
+      log.info(`[spyService] connecting ${cfg.host}:${cfg.port}`);
       await this.client.connect(cfg.host, cfg.port);
-      streamDeck.logger.info('[spyService] tcp connected, awaiting deviceInfo');
+      log.info('[spyService] tcp connected, awaiting deviceInfo');
       await this.waitForDeviceInfo(3000);
       this.setConnectedState(true);
-      streamDeck.logger.info('[spyService] handshake complete');
+      log.info('[spyService] handshake complete');
       for (const fn of this.connectListeners) fn();
       if (cfg.audioEnabled) {
         await this.startAudio(cfg).catch((e) =>
-          streamDeck.logger.error(`[spyService] startAudio failed: ${e}`)
+          log.error(`[spyService] startAudio failed: ${e}`)
         );
       }
     } catch (e) {
-      streamDeck.logger.error(`[spyService] connect failed: ${e}`);
+      log.error(`[spyService] connect failed: ${e}`);
       this.scheduleReconnect();
     } finally {
       this.connecting = false;
@@ -627,7 +627,7 @@ class SpyService {
     const next = !!b;
     if (next === this.enabled) return;
     this.enabled = next;
-    streamDeck.logger.info(`[spyService] setEnabled ${next}`);
+    log.info(`[spyService] setEnabled ${next}`);
     for (const fn of this.enabledListeners) fn(this.enabled);
     // Await the persist BEFORE reconnect: connect() re-hydrates cfg.enabled
     // from disk, so a not-yet-flushed write would silently revert us to OFF.
@@ -702,7 +702,7 @@ class SpyService {
         this.demod.reset();
         this.client.setSetting(SETTING_GAIN, finalGain);
         this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
-        streamDeck.logger.info(`[spyService] set${sc === 'am' ? 'Am' : 'Fm'}Gain ${finalGain} digitalGain=${digitalGain}`);
+        log.info(`[spyService] set${sc === 'am' ? 'Am' : 'Fm'}Gain ${finalGain} digitalGain=${digitalGain}`);
       }, 80);
     }
     await this.persistField(scope === 'am' ? 'amGain' : 'fmGain', clamped).catch(() => {});
@@ -747,7 +747,7 @@ class SpyService {
     this.freqDebounceTimer = setTimeout(() => {
       this.freqDebounceTimer = null;
       this.client.setFrequency(this.pendingFreq);
-      streamDeck.logger.info(`[spyService] sentFreq ${this.pendingFreq}`);
+      log.info(`[spyService] sentFreq ${this.pendingFreq}`);
     }, 50);
     // Persist (debounced 500 ms) so next startup restores the same freq + mode
     if (this.persistFreqTimer) clearTimeout(this.persistFreqTimer);
@@ -818,11 +818,11 @@ class SpyService {
     // 100 kHz cutoff; 150 kHz → 75 kHz; etc.
     if (this.currentIQRate > 0) {
       this.demod.setWfmIfBandwidth(this.currentIQRate, fm.bandwidth / 2);
-      streamDeck.logger.info(`[spyService] setWfmIfBandwidth iqRate=${this.currentIQRate} bw=${fm.bandwidth} cutoff=${fm.bandwidth / 2}`);
+      log.info(`[spyService] setWfmIfBandwidth iqRate=${this.currentIQRate} bw=${fm.bandwidth} cutoff=${fm.bandwidth / 2}`);
     } else {
-      streamDeck.logger.warn(`[spyService] applyFMOptions: currentIQRate=0, skipping setWfmIfBandwidth`);
+      log.warn(`[spyService] applyFMOptions: currentIQRate=0, skipping setWfmIfBandwidth`);
     }
-    streamDeck.logger.info(`[spyService] applyFMOptions ${JSON.stringify(fm)}`);
+    log.info(`[spyService] applyFMOptions ${JSON.stringify(fm)}`);
   }
 
   subscribeOptions(fn: OptionsListener): void   {
@@ -879,7 +879,7 @@ class SpyService {
       const fs = this.currentAudioRate;
       this.demod.setCwAgc(true, 30 / fs, 2 / fs);
     }
-    streamDeck.logger.info(`[spyService] applySsbOptions ${JSON.stringify(this.ssbOptions)}`);
+    log.info(`[spyService] applySsbOptions ${JSON.stringify(this.ssbOptions)}`);
   }
 
   private applyAMOptions(): void {
@@ -895,7 +895,7 @@ class SpyService {
     const decayAlpha  = am.agcDecay  / fs;
     this.demod.setAmAgc(am.carrierAgc, attackAlpha, decayAlpha);
     this.demod.setAmSync(am.sync, fs);
-    streamDeck.logger.info(`[spyService] applyAMOptions ${JSON.stringify(am)}`);
+    log.info(`[spyService] applyAMOptions ${JSON.stringify(am)}`);
   }
 
   subscribeDevice(fn: DeviceListener): void   {
@@ -1045,7 +1045,7 @@ class SpyService {
     // the active mode lands on 4 / 5 / 6. applySsbOptions is a no-op for
     // other modes.
     this.applySsbOptions();
-    streamDeck.logger.info(`[spyService] setDemodMode ${mode}`);
+    log.info(`[spyService] setDemodMode ${mode}`);
     this.persistField('demodMode', mode).catch(() => {});
     for (const fn of this.demodModeListeners) fn(mode);
     // If we crossed the AM ↔ non-AM boundary, the gain to send changes too.
@@ -1062,7 +1062,7 @@ class SpyService {
       );
       this.client.setSetting(SETTING_GAIN, newGain);
       this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
-      streamDeck.logger.info(`[spyService] mode→gain ${isAm ? 'AM' : 'FM'} ${newGain} digitalGain=${digitalGain}`);
+      log.info(`[spyService] mode→gain ${isAm ? 'AM' : 'FM'} ${newGain} digitalGain=${digitalGain}`);
     }
   }
 
@@ -1076,7 +1076,7 @@ class SpyService {
     if (!cfg) cfg = await this.loadConfig();
     if (!cfg.audioEnabled) return;
     if (!this.deviceInfo) {
-      streamDeck.logger.warn('[spyService] startAudio: no deviceInfo yet');
+      log.warn('[spyService] startAudio: no deviceInfo yet');
       return;
     }
 
@@ -1118,7 +1118,7 @@ class SpyService {
     this.applyAMOptions();
     this.applySsbOptions();
 
-    streamDeck.logger.info(`[spyService] startAudio decStage=${decStage} iqRate=${iqRate} audioRate=${audioRate} gain=${gain}`);
+    log.info(`[spyService] startAudio decStage=${decStage} iqRate=${iqRate} audioRate=${audioRate} gain=${gain}`);
 
     // Build audio output. The engine is picked from the output mode, not a
     // separate setting: local → naudiodon, icecast → ffmpeg (the only path
@@ -1133,8 +1133,8 @@ class SpyService {
         if (this.audioOutputBroken === broken) return;
         this.audioOutputBroken = broken;
         this.audioOutputErrorTag = broken ? (info?.tag ?? 'Other') : null;
-        if (broken) streamDeck.logger.warn(`[spyService] audio output broken (${info?.tag}): ${info?.raw ?? '(no detail)'}`);
-        else streamDeck.logger.info('[spyService] audio output recovered');
+        if (broken) log.warn(`[spyService] audio output broken (${info?.tag}): ${info?.raw ?? '(no detail)'}`);
+        else log.info('[spyService] audio output recovered');
         for (const fn of this.audioOutputBrokenListeners) fn(broken, this.audioOutputErrorTag);
       });
       this.audioOutput = ffOut;
@@ -1170,7 +1170,7 @@ class SpyService {
       54000, 72000, 96000, 108000,
     ];
     this.iqListener = (p: IQPacket) => {
-      if (iqCount < 3) { streamDeck.logger.info(`[spyService] iqData fmt=${p.format} len=${p.body.length} gainDb=${p.gainDb}`); iqCount++; }
+      if (iqCount < 3) { log.info(`[spyService] iqData fmt=${p.format} len=${p.body.length} gainDb=${p.gainDb}`); iqCount++; }
       // RSSI + SNR from IQ samples (INT16 LE: 4 bytes per I,Q pair).
       // Powers normalised to int16 full-scale to keep within JS double precision.
       //
@@ -1216,7 +1216,7 @@ class SpyService {
       if (this.iqStreamListeners.size > 0 && p.format === 'int16') {
         for (const fn of this.iqStreamListeners) {
           try { fn(p.body, this.currentIQRate, this._currentFreq); }
-          catch (e) { streamDeck.logger.warn(`[spyService] iqStream listener threw: ${e}`); }
+          catch (e) { log.warn(`[spyService] iqStream listener threw: ${e}`); }
         }
       }
       if (!this.audioOutput) return;
@@ -1283,7 +1283,7 @@ class SpyService {
         // output level ≈ pcmRms × mkup × lvlG × audioGain — read mkup to judge
         // whether a band needs its cfg.audioMakeup tweaked.
         const mkup = this.modeMakeup[this.currentDemodMode] ?? 1;
-        streamDeck.logger.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)} ifPre=${ifd.pre.toFixed(0)} ifPost=${ifd.post.toFixed(0)} mkup=${mkup.toFixed(2)} lvlG=${this.leveler.gain.toFixed(3)} ${nrG}`);
+        log.info(`[spyService] diag mode=${this.currentDemodMode} pcmRms=${pcmRms.toFixed(0)} iqRms=${iqRms.toFixed(0)} pilotP=${pilotP.toFixed(4)} ifPre=${ifd.pre.toFixed(0)} ifPost=${ifd.post.toFixed(0)} mkup=${mkup.toFixed(2)} lvlG=${this.leveler.gain.toFixed(3)} ${nrG}`);
         lastDiag = _now;
       }
       // AM spectrum probe (only meaningful for AM mode). Emits two lines:
@@ -1300,9 +1300,9 @@ class SpyService {
           return `${k}=${vals[i].toFixed(0).padStart(4)}`;
         }).join(' ');
         const tuned = this._currentFreq;
-        streamDeck.logger.info(`[spyService] spec/raw  freq=${tuned} ${fmt(raw)}`);
-        streamDeck.logger.info(`[spyService] spec/filt freq=${tuned} ${fmt(filt)}`);
-        streamDeck.logger.info(`[spyService] spec/prod freq=${tuned} ${fmt(prod)}`);
+        log.info(`[spyService] spec/raw  freq=${tuned} ${fmt(raw)}`);
+        log.info(`[spyService] spec/filt freq=${tuned} ${fmt(filt)}`);
+        log.info(`[spyService] spec/prod freq=${tuned} ${fmt(prod)}`);
         lastSpec = _now;
       }
       const muted = Date.now() < this.muteUntil || this.muted;
@@ -1395,7 +1395,7 @@ class SpyService {
     this.client.setSetting(SETTING_STREAMING_ENABLED, 1);
 
     this.audioRunning = true;
-    streamDeck.logger.info(`[spyService] audio started mode=${this.currentDemodMode} iqRate=${iqRate} audioRate=${audioRate} freq=${freqHz} digitalGain=${digitalGain}`);
+    log.info(`[spyService] audio started mode=${this.currentDemodMode} iqRate=${iqRate} audioRate=${audioRate} freq=${freqHz} digitalGain=${digitalGain}`);
     for (const fn of this.audioStateListeners) fn(true, this.currentAudioDeviceName);
   }
 
@@ -1487,9 +1487,9 @@ class SpyService {
           this.audioTapBytes = 0;
           this.audioTapRate = rate;
           this.audioTapChannels = channels;
-          streamDeck.logger.info(`[spyService] audio tap → ${path} (${rate} Hz × ${channels} ch)`);
+          log.info(`[spyService] audio tap → ${path} (${rate} Hz × ${channels} ch)`);
         } catch (e) {
-          streamDeck.logger.warn(`[spyService] audio tap open failed: ${e}`);
+          log.warn(`[spyService] audio tap open failed: ${e}`);
         }
       } else if (!wanted && this.audioTapFd !== null) {
         try {
@@ -1503,7 +1503,7 @@ class SpyService {
           dataSize.writeUInt32LE(dataBytes, 0);
           fs.writeSync(fd, dataSize, 0, 4, 40);
           fs.closeSync(fd);
-          streamDeck.logger.info(`[spyService] audio tap closed: ${this.audioTapPath} (${dataBytes} bytes)`);
+          log.info(`[spyService] audio tap closed: ${this.audioTapPath} (${dataBytes} bytes)`);
         } catch { /* fd may already be gone */ }
         this.audioTapFd = null;
         this.audioTapPath = '';
@@ -1582,7 +1582,7 @@ class SpyService {
     this.setConnectedState(false);
     this.connecting = false;
     this.deviceInfo = null;
-    streamDeck.logger.info(`[spyService] updateServerConfig ${JSON.stringify(updates)}`);
+    log.info(`[spyService] updateServerConfig ${JSON.stringify(updates)}`);
     if (wasActive && this.enabled) {
       this.client = new SpyClient();
       this.hookClient();
@@ -1640,11 +1640,11 @@ class SpyService {
       await rename(tmp, path);
       clearEibiCache();
       const st = await stat(path);
-      streamDeck.logger.info(`[spyService] EIBI updated: ${parsed.length} entries (${buf.length} bytes)`);
+      log.info(`[spyService] EIBI updated: ${parsed.length} entries (${buf.length} bytes)`);
       return { ok: true, count: parsed.length, when: st.mtime.toISOString() };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      streamDeck.logger.error(`[spyService] updateEibi failed: ${msg}`);
+      log.error(`[spyService] updateEibi failed: ${msg}`);
       return { ok: false, error: msg };
     }
   }
@@ -1689,7 +1689,7 @@ class SpyService {
     if (this.jpActiveRegion === region) return;
     this.jpActiveRegion = region;
     await this.persistField('jpRegion', region).catch((e) =>
-      streamDeck.logger.error(`[spyService] persist jpRegion failed: ${e}`));
+      log.error(`[spyService] persist jpRegion failed: ${e}`));
     for (const fn of this.jpRegionListeners) fn(region);
   }
 
@@ -1747,11 +1747,11 @@ class SpyService {
       await rename(tmp, path);
       clearJpStationsCache();
       const st = await stat(path);
-      streamDeck.logger.info(`[spyService] JP stations updated: region=${region}, ${scraped.length} new entries (total ${merged.length})`);
+      log.info(`[spyService] JP stations updated: region=${region}, ${scraped.length} new entries (total ${merged.length})`);
       return { ok: true, count: scraped.length, when: st.mtime.toISOString(), region };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      streamDeck.logger.error(`[spyService] updateJpStations failed: ${msg}`);
+      log.error(`[spyService] updateJpStations failed: ${msg}`);
       return { ok: false, error: msg, region };
     }
   }
@@ -1767,7 +1767,7 @@ class SpyService {
       await this.stopAudio();
       if (merged.audioEnabled && this.connected) {
         await this.startAudio(merged).catch((e) =>
-          streamDeck.logger.error(`[spyService] restartAudio failed: ${e}`)
+          log.error(`[spyService] restartAudio failed: ${e}`)
         );
       }
     }

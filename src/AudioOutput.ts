@@ -1,5 +1,5 @@
 import { spawn, ChildProcess } from 'child_process';
-import streamDeck from '@elgato/streamdeck';
+import { log } from './log.js';
 import { Biquad } from './dspFilters.js';
 import { SampleRateConverter, AsrcQuality } from './asrc.js';
 
@@ -118,17 +118,17 @@ export class FfmpegOutput implements AudioOutput {
       '-f', 'mp3',
       url,
     ];
-    streamDeck.logger.info(`[FfmpegOutput] spawn ${FFMPEG} ${args.join(' ')}`);
+    log.info(`[FfmpegOutput] spawn ${FFMPEG} ${args.join(' ')}`);
     this.proc = spawn(FFMPEG, args, { stdio: ['pipe', 'ignore', 'pipe'] });
     this.spawnAt = Date.now();
     let lastStderr = '';
     this.proc.stderr?.on('data', (d: Buffer) => {
       const msg = d.toString().trim();
       lastStderr = msg;
-      streamDeck.logger.warn(`[ffmpeg] ${msg}`);
+      log.warn(`[ffmpeg] ${msg}`);
     });
     this.proc.on('error', (e: Error) => {
-      streamDeck.logger.error(`[FfmpegOutput] spawn error: ${e.message}`);
+      log.error(`[FfmpegOutput] spawn error: ${e.message}`);
       this.proc = null;
     });
     // Heartbeat: if the spawn survives 5 s, treat the output as healthy and
@@ -145,7 +145,7 @@ export class FfmpegOutput implements AudioOutput {
     }, 5000);
     this.proc.on('exit', (code: number | null, signal: string | null) => {
       clearTimeout(stableTimer);
-      streamDeck.logger.warn(`[FfmpegOutput] exit code=${code} signal=${signal}`);
+      log.warn(`[FfmpegOutput] exit code=${code} signal=${signal}`);
       const lifetimeMs = Date.now() - this.spawnAt;
       this.proc = null;
       if (this.intentionalStop) return;
@@ -163,9 +163,9 @@ export class FfmpegOutput implements AudioOutput {
       this.respawnTimer = setTimeout(() => {
         this.respawnTimer = null;
         if (!this.intentionalStop && !this.proc) {
-          streamDeck.logger.info('[FfmpegOutput] auto-respawning');
+          log.info('[FfmpegOutput] auto-respawning');
           this.spawnFfmpeg(this.lastSampleRate, this.lastChannels).catch((e) =>
-            streamDeck.logger.error(`[FfmpegOutput] respawn failed: ${e}`),
+            log.error(`[FfmpegOutput] respawn failed: ${e}`),
           );
         }
       }, 500);
@@ -316,7 +316,7 @@ export class NaudiodonOutput implements AudioOutput {
       d.maxOutputChannels > 0 && d.name.trim() === wanted,
     );
     if (!match) {
-      streamDeck.logger.warn(`[NaudiodonOutput] device "${wanted}" not found, falling back to default`);
+      log.warn(`[NaudiodonOutput] device "${wanted}" not found, falling back to default`);
       return -1;
     }
     return match.id;
@@ -367,7 +367,7 @@ export class NaudiodonOutput implements AudioOutput {
     this.writesSinceTune = 0;
     this.writableLenEma = 0;
     this.currentRatio = this.baseRatio;
-    streamDeck.logger.info(`[NaudiodonOutput] start inputRate=${sampleRate} deviceRate=${deviceRate} channels=${channels} deviceId=${effectiveId} (cfg deviceName=${this.cfg.deviceName ?? '-'}) baseRatio=${this.baseRatio.toFixed(6)} asrc=${this.asrc.active ? 'on' : 'passthrough'}`);
+    log.info(`[NaudiodonOutput] start inputRate=${sampleRate} deviceRate=${deviceRate} channels=${channels} deviceId=${effectiveId} (cfg deviceName=${this.cfg.deviceName ?? '-'}) baseRatio=${this.baseRatio.toFixed(6)} asrc=${this.asrc.active ? 'on' : 'passthrough'}`);
     this.ai = new naudiodon.AudioIO({
       outOptions: {
         channelCount: channels,
@@ -550,7 +550,7 @@ export class NaudiodonOutput implements AudioOutput {
     this.dbgLastDiag = now;
     const ppm = this.baseRatio > 0 ? ((this.currentRatio / this.baseRatio) - 1) * 1e6 : 0;
     const wlMin = this.wlMin === Number.POSITIVE_INFINITY ? 0 : this.wlMin;
-    streamDeck.logger.info(`[NaudiodonOutput] asrc-diag ratio=${this.currentRatio.toFixed(7)} base=${this.baseRatio.toFixed(7)} drift=${ppm.toFixed(1)}ppm wl=${wl} wlMin=${wlMin} wlMax=${this.wlMax} ema=${this.writableLenEma.toFixed(0)} drops=${this.dropCount} devRate=${this.deviceSampleRate}`);
+    log.info(`[NaudiodonOutput] asrc-diag ratio=${this.currentRatio.toFixed(7)} base=${this.baseRatio.toFixed(7)} drift=${ppm.toFixed(1)}ppm wl=${wl} wlMin=${wlMin} wlMax=${this.wlMax} ema=${this.writableLenEma.toFixed(0)} drops=${this.dropCount} devRate=${this.deviceSampleRate}`);
     this.wlMin = Number.POSITIVE_INFINITY; this.wlMax = 0;
   }
 
@@ -578,8 +578,8 @@ export class NaudiodonOutput implements AudioOutput {
           h.write('data', 36); h.writeUInt32LE(0, 40);
           fs.writeSync(fd, h);
           this.postTapFd = fd; this.postTapBytes = 0; this.postTapPath = path;
-          streamDeck.logger.info(`[NaudiodonOutput] post-ASRC tap → ${path} (${rate} Hz × ${ch} ch)`);
-        } catch (e) { streamDeck.logger.warn(`[NaudiodonOutput] post-tap open failed: ${e}`); }
+          log.info(`[NaudiodonOutput] post-ASRC tap → ${path} (${rate} Hz × ${ch} ch)`);
+        } catch (e) { log.warn(`[NaudiodonOutput] post-tap open failed: ${e}`); }
       } else if (!want && this.postTapFd !== null) {
         this.closePostTap();
       }
@@ -602,7 +602,7 @@ export class NaudiodonOutput implements AudioOutput {
       const ds = Buffer.alloc(4); ds.writeUInt32LE(this.postTapBytes, 0);
       fs.writeSync(this.postTapFd, ds, 0, 4, 40);
       fs.closeSync(this.postTapFd);
-      streamDeck.logger.info(`[NaudiodonOutput] post-ASRC tap closed: ${this.postTapPath} (${this.postTapBytes} bytes)`);
+      log.info(`[NaudiodonOutput] post-ASRC tap closed: ${this.postTapPath} (${this.postTapBytes} bytes)`);
     } catch { /* fd may already be gone */ }
     this.postTapFd = null; this.postTapBytes = 0; this.postTapPath = '';
   }

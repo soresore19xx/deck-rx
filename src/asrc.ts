@@ -7,7 +7,7 @@
 // `Mute-boundary fade ramp` / `naudiodon maxQueue sizing` sections of
 // docs/architecture.md for the bigger drift-compensation story.
 
-import streamDeck from '@elgato/streamdeck';
+import { log } from './log.js';
 
 export enum AsrcQuality {
   SincBest = 0,
@@ -42,7 +42,7 @@ function loadNative(): NativeASRCModule | null {
     nativeMod = require('deck-rx-asrc') as NativeASRCModule;
     return nativeMod;
   } catch (e) {
-    streamDeck.logger.warn(`[asrc] native module load failed: ${e instanceof Error ? e.message : e}`);
+    log.warn(`[asrc] native module load failed: ${e instanceof Error ? e.message : e}`);
     return null;
   }
 }

@@ -10,7 +10,7 @@
 // shows up empty and `currentAudioOutput` falls back to '' until the user
 // runs `npm run rebuild-native`.
 
-import streamDeck from '@elgato/streamdeck';
+import { log } from './log.js';
 
 export interface AudioDevice { name: string; }
 
@@ -37,7 +37,7 @@ function loadNaudiodon(): NaudiodonModule | null {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require('naudiodon') as NaudiodonModule;
   } catch (e) {
-    streamDeck.logger.warn(`[audioDevices] naudiodon require failed: ${e instanceof Error ? e.message : e}`);
+    log.warn(`[audioDevices] naudiodon require failed: ${e instanceof Error ? e.message : e}`);
     return null;
   }
 }

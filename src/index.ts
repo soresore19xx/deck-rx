@@ -3,6 +3,8 @@ import streamDeck from '@elgato/streamdeck';
 import { spyService } from './spyService.js';
 import { startStatusFeed } from './statusFeed.js';
 import { startControlServer } from './controlServer.js';
+import { startSpectrumFeed } from './spectrumFeed.js';
+import { setLogger } from './log.js';
 import { importFromSdrpp } from './presets.js';
 import { clearPresetsCache } from './actions/spyTune.js';
 import { SpyTune } from './actions/spyTune.js';
@@ -19,6 +21,11 @@ import { SpyDialFft } from './actions/spyDialFft.js';
 import { SpyDialFftLcdx2 } from './actions/spyDialFftLcdx2.js';
 import { KeyFftLcdx2Ctrl } from './actions/keyFftLcdx2.js';
 import { KeyVolume } from './actions/keyVolume.js';
+
+// Core modules log through src/log.ts so they don't depend on the SDK (the
+// headless entry reuses them). Bind that seam to the Stream Deck logger before
+// anything else runs, so plugin logs keep landing in the app's log files.
+setLogger(streamDeck.logger);
 
 // PID_FILE defaults to /tmp/deck-rx.pid for the production plugin instance.
 // Overridable via DECK_RX_PID_FILE so the integration-test harness can spawn
@@ -96,6 +103,10 @@ startStatusFeed();
 // change volume and mute the receiver. Bound to loopback, no auth; skipped
 // in sandboxed harness instances. See src/controlServer.ts.
 startControlServer();
+
+// Spectrum frames for a native front-end, over a Unix socket. Computes
+// nothing while no one is connected. See src/spectrumFeed.ts.
+startSpectrumFeed();
 
 // One-shot SDR++ auto-sync at startup — opt-in via PI checkbox. Waits for
 // spyService.ready so we know the autoSyncSdrpp flag has been hydrated

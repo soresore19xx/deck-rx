@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { dirname, join } from 'path';
-import streamDeck from '@elgato/streamdeck';
+import { log } from './log.js';
 import { spyService } from './spyService.js';
 import { autoStationLabel } from './stationLabel.js';
 
@@ -125,7 +125,7 @@ function tick(): void {
     lastWriteAt = now;
   } catch (e) {
     // A broken feed must never take the radio down with it.
-    streamDeck.logger.warn(`[statusFeed] write failed: ${e instanceof Error ? e.message : String(e)}`);
+    log.warn(`[statusFeed] write failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -137,13 +137,13 @@ export function startStatusFeed(): void {
   // open, and a spawned test plugin would overwrite the real receiver's status.
   // An explicit DECK_RX_STATUS_PATH opts a sandbox back in.
   if (process.env.DECK_RX_CONFIG_PATH && !process.env.DECK_RX_STATUS_PATH) {
-    streamDeck.logger.info('[statusFeed] sandboxed instance — feed disabled');
+    log.info('[statusFeed] sandboxed instance — feed disabled');
     return;
   }
   timer = setInterval(tick, INTERVAL_MS);
   // Never hold the event loop open on our account.
   timer.unref?.();
-  streamDeck.logger.info(`[statusFeed] path=${STATUS_PATH} gate=${ALIVE_PATH} interval=${INTERVAL_MS}ms`);
+  log.info(`[statusFeed] path=${STATUS_PATH} gate=${ALIVE_PATH} interval=${INTERVAL_MS}ms`);
   process.on('exit', () => {
     try { fs.unlinkSync(STATUS_PATH); } catch { /* already gone */ }
   });

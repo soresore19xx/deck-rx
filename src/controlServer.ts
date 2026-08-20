@@ -1,8 +1,8 @@
 import http from 'http';
-import streamDeck from '@elgato/streamdeck';
+import { log } from './log.js';
 import { spyService } from './spyService.js';
 import { nextFreqForTicks, nextPresetSlot } from './tuneMath.js';
-import { loadPresets } from './actions/spyTune.js';
+import { loadPresets } from './presetList.js';
 
 /**
  * Local control endpoint, so an external knob can drive the receiver the way
@@ -153,7 +153,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       // Same meaning as the Tune dial's long press: tear the SpyServer
       // connection down or bring it back up.
       spyService.toggleEnabled().catch((e) => {
-        streamDeck.logger.warn(`[controlServer] power toggle failed: ${e instanceof Error ? e.message : String(e)}`);
+        log.warn(`[controlServer] power toggle failed: ${e instanceof Error ? e.message : String(e)}`);
       });
       ok();
       return;
@@ -170,7 +170,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         const why = step === 'no-presets'
           ? 'the preset list is empty'
           : 'no preset in the list is receivable on the connected device';
-        streamDeck.logger.warn(`[controlServer] /preset?d=${d} ignored: ${why}`);
+        log.warn(`[controlServer] /preset?d=${d} ignored: ${why}`);
         res.writeHead(409, { 'Content-Type': 'text/plain' });
         res.end(step);
         return;
@@ -194,12 +194,12 @@ export function startControlServer(): void {
   // real receiver or, worse, answer the knob in its place. An explicit
   // DECK_RX_CONTROL_PORT opts a sandbox back in on a port of its own.
   if (process.env.DECK_RX_CONFIG_PATH && !process.env.DECK_RX_CONTROL_PORT) {
-    streamDeck.logger.info('[controlServer] sandboxed instance — control endpoint disabled');
+    log.info('[controlServer] sandboxed instance — control endpoint disabled');
     return;
   }
   const srv = http.createServer((req, res) => {
     handle(req, res).catch((e) => {
-      streamDeck.logger.warn(`[controlServer] request failed: ${e instanceof Error ? e.message : String(e)}`);
+      log.warn(`[controlServer] request failed: ${e instanceof Error ? e.message : String(e)}`);
       try { res.writeHead(500); res.end(); } catch { /* already sent */ }
     });
   });
@@ -208,12 +208,12 @@ export function startControlServer(): void {
     // single-instance guard in index.ts SIGTERMs the old process first, so
     // this is a losing race we simply sit out — the radio must keep working
     // without the knob.
-    streamDeck.logger.warn(`[controlServer] disabled: ${e.code ?? e.message}`);
+    log.warn(`[controlServer] disabled: ${e.code ?? e.message}`);
     server = null;
     try { srv.close(); } catch { /* already down */ }
   });
   srv.listen(PORT, HOST, () => {
-    streamDeck.logger.info(`[controlServer] listening on ${HOST}:${PORT}`);
+    log.info(`[controlServer] listening on ${HOST}:${PORT}`);
   });
   // Never hold the event loop open on our account.
   srv.unref?.();

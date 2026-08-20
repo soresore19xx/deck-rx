@@ -38,8 +38,14 @@ func panelView(_ color: NSColor = P.panel) -> NSView {
 
 // MARK: - preset table
 
+/// A container whose origin is top-left, so a scroll view built on it opens at
+/// the first row instead of the last.
+private final class FlippedStack: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
 final class PresetList: NSView {
-    private let stack = NSStackView()
+    private let stack = FlippedStack()
     private let scroll = NSScrollView()
     private var rows: [(NSView, Receiver.Preset)] = []
     private var presets: [Receiver.Preset] = []
@@ -143,8 +149,7 @@ final class MainView: NSView {
     private let linkLabel = label("—", mono(13), P.dim)
 
     private let stationLabel = label("—", .systemFont(ofSize: 17), P.text)
-    private let freqLabel = label("—", mono(68, .bold), .white)
-    private let unitLabel = label("", mono(26, .medium), P.text)
+    private let freqView = FreqView(frame: .zero)
     private let modeChip = label("—", mono(16, .medium), P.text)
     private let bwLabel = label("—", mono(13), P.dim)
     private let stepLabel = label("—", mono(13), P.dim)
@@ -164,7 +169,10 @@ final class MainView: NSView {
     private let holdButton = NSButton()
     private let dbLabel = label("−100 / −20 dB", mono(13), P.dim)
     private let stepPop = NSPopUpButton()
-    private let zoomPop = NSPopUpButton()
+    private let zoomSlider = NSSlider()
+    private let maxSlider = NSSlider()
+    private let minSlider = NSSlider()
+    private let zoomLabel = label("1×", mono(11), P.dim)
     private var stepValues: [Int] = []
     private let muteLabel = label("", mono(13, .medium), P.warn)
 
@@ -201,8 +209,11 @@ final class MainView: NSView {
 
         // frequency header
         let header = panelView(NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1))
-        let freqRow = NSStackView(views: [freqLabel, unitLabel, modeChip])
-        freqRow.orientation = .horizontal; freqRow.alignment = .lastBaseline; freqRow.spacing = 8
+        freqView.onTune = { hz in Receiver.tune(hz: Int(hz)) }
+        freqView.translatesAutoresizingMaskIntoConstraints = false
+        freqView.heightAnchor.constraint(equalToConstant: 84).isActive = true
+        let freqRow = NSStackView(views: [freqView, modeChip])
+        freqRow.orientation = .horizontal; freqRow.alignment = .centerY; freqRow.spacing = 10
         let meters = NSStackView(views: [meterRow("S", sBar, sNum), meterRow("N", nBar, nNum)])
         meters.orientation = .vertical; meters.spacing = 6; meters.alignment = .leading
         let detail = NSStackView(views: [
@@ -272,20 +283,8 @@ final class MainView: NSView {
             Receiver.step(hz: hz) { step, values in self.adoptStep(step, values) }
         }
 
-        // Zoom is a display concern: every frame carries all the bins, so the
-        // app narrows the view instead of asking for a smaller FFT.
-        zoomPop.addItems(withTitles: ["1×", "2×", "4×", "8×", "16×", "32×"])
-        zoomPop.font = mono(12)
-        zoomPop.target = ButtonBox.shared
-        zoomPop.action = #selector(ButtonBox.fire(_:))
-        ButtonBox.shared.actions[ObjectIdentifier(zoomPop)] = { [weak self] in
-            guard let self else { return }
-            self.spectrum.zoom = pow(2, Double(self.zoomPop.indexOfSelectedItem))
-        }
-
         let barRow = NSStackView(views: [
             label("STEP", mono(12), P.faint), stepPop,
-            label("ZOOM", mono(12), P.faint), zoomPop,
             label("FFT", mono(12), P.faint), fftPop,
             label("RATE", mono(12), P.faint), fpsPop, label("fps", mono(12), P.faint),
             label("AVG", mono(12), P.faint),
@@ -293,9 +292,6 @@ final class MainView: NSView {
             button("+") { [weak self] in self?.nudgeAvg(0.1) },
             holdButton,
             NSView(),
-            label("RANGE", mono(12), P.faint),
-            button("FLOOR −") { [weak self] in self?.nudgeDb(floor: -5) },
-            button("FLOOR +") { [weak self] in self?.nudgeDb(floor: 5) },
             dbLabel,
         ])
         barRow.orientation = .horizontal
@@ -303,7 +299,58 @@ final class MainView: NSView {
         barRow.alignment = .centerY
         embed(barRow, in: bar, inset: 12)
 
-        for v in [top, header, bottom, presetList, spectrum, bar] {
+        // Zoom and the dB window as continuous vertical sliders down the right
+        // edge, the way SDR++ presents them: these are the three you ride while
+        // watching the waterfall, so they want a handle rather than a menu.
+        let rail = panelView(P.panel)
+        zoomSlider.minValue = 0; zoomSlider.maxValue = 5; zoomSlider.doubleValue = 0
+        maxSlider.minValue = -60; maxSlider.maxValue = 0; maxSlider.doubleValue = Double(spectrum.dbCeil)
+        minSlider.minValue = -140; minSlider.maxValue = -60; minSlider.doubleValue = Double(spectrum.dbFloor)
+        for sl in [zoomSlider, maxSlider, minSlider] {
+            sl.isVertical = true
+            sl.target = ButtonBox.shared
+            sl.action = #selector(ButtonBox.fire(_:))
+            sl.translatesAutoresizingMaskIntoConstraints = false
+            // A vertical NSSlider's intrinsic height is tiny; without this the
+            // three of them collapse into a stack of dots at one end of the rail.
+            sl.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+            sl.setContentHuggingPriority(.defaultLow, for: .vertical)
+        }
+        ButtonBox.shared.actions[ObjectIdentifier(zoomSlider)] = { [weak self] in
+            guard let self else { return }
+            self.spectrum.zoom = pow(2, self.zoomSlider.doubleValue)
+            self.zoomLabel.stringValue = String(format: "%.0f×", pow(2, self.zoomSlider.doubleValue))
+        }
+        ButtonBox.shared.actions[ObjectIdentifier(maxSlider)] = { [weak self] in
+            guard let self else { return }
+            // Keep at least 10 dB of window: a collapsed range paints a flat
+            // block and looks like a dead receiver.
+            self.spectrum.dbCeil = Float(max(self.maxSlider.doubleValue, Double(self.spectrum.dbFloor) + 10))
+            self.syncRange()
+        }
+        ButtonBox.shared.actions[ObjectIdentifier(minSlider)] = { [weak self] in
+            guard let self else { return }
+            self.spectrum.dbFloor = Float(min(self.minSlider.doubleValue, Double(self.spectrum.dbCeil) - 10))
+            self.syncRange()
+        }
+        let railStack = NSStackView(views: [
+            label("ZOOM", mono(10), P.faint), zoomSlider, zoomLabel,
+            label("MAX", mono(10), P.faint), maxSlider,
+            label("MIN", mono(10), P.faint), minSlider,
+        ])
+        railStack.orientation = .vertical
+        railStack.alignment = .centerX
+        railStack.spacing = 4
+        railStack.distribution = .fill
+        railStack.translatesAutoresizingMaskIntoConstraints = false
+        rail.addSubview(railStack)
+        NSLayoutConstraint.activate([
+            railStack.topAnchor.constraint(equalTo: rail.topAnchor, constant: 8),
+            railStack.bottomAnchor.constraint(equalTo: rail.bottomAnchor, constant: -8),
+            railStack.centerXAnchor.constraint(equalTo: rail.centerXAnchor),
+        ])
+
+        for v in [top, header, bottom, presetList, spectrum, bar, rail] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -311,6 +358,7 @@ final class MainView: NSView {
             top.topAnchor.constraint(equalTo: topAnchor),
             top.leadingAnchor.constraint(equalTo: leadingAnchor),
             top.trailingAnchor.constraint(equalTo: trailingAnchor),
+
             top.heightAnchor.constraint(equalToConstant: 38),
 
             presetList.topAnchor.constraint(equalTo: top.bottomAnchor),
@@ -320,17 +368,24 @@ final class MainView: NSView {
 
             header.topAnchor.constraint(equalTo: top.bottomAnchor),
             header.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
-            header.trailingAnchor.constraint(equalTo: trailingAnchor),
-            header.heightAnchor.constraint(equalToConstant: 118),
+            header.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
+            // Tall enough for the 68 pt readout plus the station line above it
+            // and the BW / STEP line below; at 118 the last line was clipped.
+            header.heightAnchor.constraint(equalToConstant: 150),
 
             bar.topAnchor.constraint(equalTo: header.bottomAnchor),
             bar.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
-            bar.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bar.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
             bar.heightAnchor.constraint(equalToConstant: 38),
 
             spectrum.topAnchor.constraint(equalTo: bar.bottomAnchor),
             spectrum.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
-            spectrum.trailingAnchor.constraint(equalTo: trailingAnchor),
+            spectrum.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
+
+            rail.topAnchor.constraint(equalTo: top.bottomAnchor),
+            rail.trailingAnchor.constraint(equalTo: trailingAnchor),
+            rail.bottomAnchor.constraint(equalTo: bottom.topAnchor),
+            rail.widthAnchor.constraint(equalToConstant: 58),
             spectrum.bottomAnchor.constraint(equalTo: bottom.topAnchor),
 
             bottom.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -393,8 +448,7 @@ final class MainView: NSView {
         Receiver.spectrum(avg: next) { [weak self] s, r, a in self?.adoptSpectrum(s, r, a) }
     }
 
-    private func nudgeDb(floor d: Float) {
-        spectrum.dbFloor = max(-140, min(spectrum.dbCeil - 10, spectrum.dbFloor + d))
+    private func syncRange() {
         dbLabel.stringValue = String(format: "%.0f / %.0f dB", spectrum.dbFloor, spectrum.dbCeil)
         spectrum.needsDisplay = true
     }
@@ -450,9 +504,7 @@ final class MainView: NSView {
             : "receiver not running"
         linkLabel.textColor = s.fresh && s.connected ? P.dim : P.warn
 
-        let (num, unit) = formatFreq(s.freqHz)
-        freqLabel.stringValue = num
-        unitLabel.stringValue = unit
+        freqView.set(freqHz: s.freqHz)
         modeChip.stringValue = modeName(s.mode)
         stationLabel.stringValue = s.station.isEmpty ? "—" : s.station
 

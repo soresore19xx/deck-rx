@@ -255,10 +255,20 @@ blue → cyan → green → yellow → red ramp — a single-hue ramp looks tidi
 the rest of the UI but costs the thing a waterfall is for, telling a moderate
 signal from a strong one at a glance.
 
-The toolbar above it carries STEP and ZOOM alongside the display settings. ZOOM
-narrows the view to a centred slice of the receiver's span — done in the app,
-since every frame already carries all the bins and asking for a narrower FFT
-would cost resolution instead. STEP goes to the receiver, and the TUNE buttons
+**The frequency readout tunes digit by digit.** Click above a digit to step that
+decade up, below it to step down, or scroll over it — the way most SDR
+front-ends work, and the fastest way to move a known distance: 954 kHz to
+1134 kHz is two nudges of the 100 kHz digit rather than twenty presses of a tune
+button. The decade of each digit is derived from the displayed text, so it stays
+correct across the kHz/MHz switch without a second source of truth.
+
+Zoom and the dB window sit as vertical sliders down the right edge (ZOOM / MAX /
+MIN), since those are the three you ride while watching a waterfall. Zoom is
+done in the app — every frame already carries all the bins, and asking for a
+narrower FFT would cost the resolution zooming is meant to reveal.
+
+The toolbar carries STEP alongside the display settings. STEP goes to the
+receiver, and the TUNE buttons
 snap onto the step's grid on the first press when the receiver is off it:
 Japanese medium wave sits on multiples of 9 kHz, so a receiver parked on
 960 kHz by a coarser step otherwise walks 969, 978 … and never lands on a

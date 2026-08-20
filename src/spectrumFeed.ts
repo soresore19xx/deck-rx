@@ -69,7 +69,9 @@ export function setSpectrumSettings(next: Partial<SpectrumSettings>): SpectrumSe
     settings.smoothing = Math.max(0, Math.min(0.95, next.smoothing));
   }
   if (sizeChanged && fft) fft = new FftPipeline(settings.fftSize);
-  if (fpsChanged && timer) armTimer();
+  // fpsChanged needs no action: the IQ listener reads settings.fps on every
+  // packet, so a new rate takes effect on the next one.
+  void fpsChanged;
   log.info(`[spectrumFeed] settings fft=${settings.fftSize} fps=${settings.fps} smoothing=${settings.smoothing}`);
   return spectrumSettings();
 }
@@ -112,42 +114,76 @@ let server: net.Server | null = null;
 const clients = new Set<net.Socket>();
 let fft: FftPipeline | null = null;
 let iqListener: ((iq: Buffer, iqRate: number, freq: number) => void) | null = null;
-let timer: ReturnType<typeof setInterval> | null = null;
 let latest: { bins: Float32Array; iqRate: number; freq: number } | null = null;
 let seq = 0;
 
-function armTimer(): void {
-  if (timer) clearInterval(timer);
-  timer = setInterval(() => {
-    if (!latest || clients.size === 0) return;
-    const frame = encodeSpectrumFrame(latest.bins, latest.iqRate, latest.freq, seq++);
+function startPipeline(): void {
+  if (iqListener) return;
+  fft = new FftPipeline(settings.fftSize);
+  // Two different rates, and conflating them is what makes a spectrum look
+  // wrong when the user turns the framerate down:
+  //
+  //   - COMPUTE: the FFT runs at up to COMPUTE_HZ, independent of the display.
+  //     Every result between two displayed frames is averaged into the one
+  //     that goes out, so a LOWER framerate yields a SMOOTHER trace (more
+  //     inputs per frame), which is what averaging is for. Emitting a single
+  //     decimated FFT instead makes a slow display noisier, not calmer.
+  //   - DISPLAY: settings.fps decides how often a frame leaves. The block
+  //     average resets with each one.
+  //
+  // settings.smoothing is then an exponential average ACROSS displayed frames,
+  // so its time constant is measured in frames the user can see rather than in
+  // IQ packets they cannot.
+  const COMPUTE_HZ = 60;
+  let sum: Float32Array | null = null;
+  let count = 0;
+  let smoothed: Float32Array | null = null;
+  let lastComputeAt = 0;
+  let lastEmitAt = 0;
+
+  iqListener = (iq, iqRate, freq) => {
+    if (clients.size === 0) return;
+    const now = Date.now();
+    if (now - lastComputeAt < 1000 / COMPUTE_HZ - 1) return;
+    lastComputeAt = now;
+    // Raw bins: the averaging below is ours, so the pipeline's own smoother
+    // stays out of the way (its time constant is tied to how often we call it).
+    const bins = fft?.process(iq, 0);
+    if (!bins) return;
+    if (!sum || sum.length !== bins.length) { sum = new Float32Array(bins.length); count = 0; }
+    for (let i = 0; i < bins.length; i++) sum[i] += bins[i];
+    count++;
+
+    if (now - lastEmitAt < 1000 / settings.fps - 1) return;
+    lastEmitAt = now;
+    const avg = new Float32Array(bins.length);
+    for (let i = 0; i < bins.length; i++) avg[i] = sum[i] / count;
+    sum.fill(0); count = 0;
+
+    const a = settings.smoothing;
+    if (!smoothed || smoothed.length !== avg.length) {
+      smoothed = avg;
+    } else if (a > 0) {
+      for (let i = 0; i < avg.length; i++) smoothed[i] = smoothed[i] * a + avg[i] * (1 - a);
+    } else {
+      smoothed = avg;
+    }
+
+    latest = { bins: smoothed, iqRate, freq };
+    const frame = encodeSpectrumFrame(smoothed, iqRate, freq, seq++);
     for (const c of clients) {
       // Drop the frame for a client that can't keep up rather than queueing:
       // a stale spectrum is worthless, and an unbounded queue is a leak.
       if (c.writableLength > frame.length * 4) continue;
       c.write(frame);
     }
-  }, Math.round(1000 / settings.fps));
-  timer.unref?.();
-}
-
-function startPipeline(): void {
-  if (iqListener) return;
-  fft = new FftPipeline(settings.fftSize);
-  // The IQ callback only keeps the newest result; the timer decides how often
-  // a frame actually goes out. IQ arrives far faster than any display needs.
-  iqListener = (iq, iqRate, freq) => {
-    const bins = fft?.process(iq, settings.smoothing);
-    if (bins) latest = { bins, iqRate, freq };
   };
   spyService.subscribeIqStream(iqListener);
-  armTimer();
-  log.info(`[spectrumFeed] pipeline up — fft=${settings.fftSize} fps=${settings.fps}`);
+  log.info(`[spectrumFeed] pipeline up — fft=${settings.fftSize} fps=${settings.fps} smoothing=${settings.smoothing}`);
 }
 
 function stopPipeline(): void {
   if (iqListener) { spyService.unsubscribeIqStream(iqListener); iqListener = null; }
-  if (timer) { clearInterval(timer); timer = null; }
   fft = null;
   latest = null;
   log.info('[spectrumFeed] pipeline down — no clients');

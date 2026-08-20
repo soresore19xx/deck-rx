@@ -48,6 +48,8 @@ enum Receiver {
         var rssiDbfs: Double = -120
         var snrDb: Double = 0
         var station = ""
+        var bandwidthHz: Double = 0
+        var tuneStepHz: Double = 0
         var host = ""
         var port = 0
         var fresh = false      // feed updated recently — otherwise nothing is live
@@ -66,6 +68,8 @@ enum Receiver {
         s.rssiDbfs  = j["rssiDbfs"] as? Double ?? -120
         s.snrDb     = j["snrDb"] as? Double ?? 0
         s.station   = j["station"] as? String ?? ""
+        s.bandwidthHz = j["bandwidthHz"] as? Double ?? 0
+        s.tuneStepHz  = j["tuneStepHz"] as? Double ?? 0
         s.host      = j["host"] as? String ?? ""
         s.port      = j["port"] as? Int ?? 0
         if let ts = j["ts"] as? Double {

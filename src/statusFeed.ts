@@ -94,6 +94,12 @@ function tick(): void {
     rssiDbfs: live ? Math.round(spyService.getRssiDbfs() * 10) / 10 : null,
     snrDb: live ? Math.round(spyService.getSnrDb() * 10) / 10 : null,
     station: station(spyService.currentFreq),
+    // Demodulated bandwidth, so a front-end can draw the passband over the
+    // spectrum instead of guessing it from the mode. SSB is one-sided; the
+    // consumer offsets it by sideband, which is why the sign is not folded in
+    // here.
+    bandwidthHz: bandwidthForMode(),
+    tuneStepHz: spyService.getTuneStepHz(),
     host: addr.host,
     port: addr.port,
   };
@@ -126,6 +132,17 @@ function tick(): void {
   } catch (e) {
     // A broken feed must never take the radio down with it.
     log.warn(`[statusFeed] write failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** The bandwidth the active demod is actually using, in Hz. */
+function bandwidthForMode(): number {
+  switch (spyService.getDemodMode()) {
+    case 1:  return spyService.getFMOptions().bandwidth;      // WFM
+    case 0:  return spyService.getFMOptions().bandwidth;      // NFM
+    case 2:  return spyService.getAMOptions().bandwidth;      // AM
+    case 4: case 6: case 5: return spyService.getSSBOptions().bandwidthHz;
+    default: return 0;
   }
 }
 

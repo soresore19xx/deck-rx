@@ -213,6 +213,14 @@ Defaults: 1024 bins at 30 fps, seeded from `DECK_RX_SPECTRUM_FFT` /
 `DECK_RX_SPECTRUM_FPS` and changeable at runtime through `/spectrum` (FFT size
 256–4096, framerate 1–60, averaging 0–0.95). A size change rebuilds the FFT and
 drops the smoothing history, which belonged to the old bin count.
+
+Two rates matter here and conflating them is what makes a spectrum look wrong
+when the framerate is turned down. The FFT runs continuously (up to 60 Hz),
+independent of the display; every result between two displayed frames is
+averaged into the one that goes out, so a **lower** framerate produces a
+**smoother** trace rather than a noisier one. `avg` is then an exponential
+average across displayed frames, so its time constant is measured in frames the
+user can see rather than in IQ packets they cannot.
 `native-app/Sources/SpectrumFeed.swift` is the reference reader.
 
 Two things to know before building on it. The IQ stream is started by
@@ -238,8 +246,16 @@ the app. The preset table comes from the plugin's own `data/presets.json`
 on is highlighted by frequency, so a retune from a dial or the knob shows up
 here too.
 
-A display toolbar sits above the spectrum, in the spirit of SDR++'s display
-panel: FFT size, framerate and averaging (pushed to the receiver through
+The spectrum carries the scales a receiver needs: dB rules and labels down the
+left, a frequency scale between trace and waterfall (both share one x mapping),
+the demodulated passband shaded over the tuned frequency, and every preset
+inside the visible span labelled on the trace. The waterfall uses the classic
+blue → cyan → green → yellow → red ramp — a single-hue ramp looks tidier beside
+the rest of the UI but costs the thing a waterfall is for, telling a moderate
+signal from a strong one at a glance.
+
+A display toolbar sits above it, in the spirit of SDR++'s display panel: FFT
+size, framerate and averaging (pushed to the receiver through
 `/spectrum`, since the FFT runs there and the deck's own FFT dial shares that
 pipeline), plus peak hold and the dB window (this app's own view of the same
 data, so they stay local). The controls render from what the receiver reports

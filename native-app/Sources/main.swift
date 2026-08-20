@@ -146,6 +146,8 @@ final class MainView: NSView {
     private let freqLabel = label("—", mono(68, .bold), .white)
     private let unitLabel = label("", mono(26, .medium), P.text)
     private let modeChip = label("—", mono(16, .medium), P.text)
+    private let bwLabel = label("—", mono(13), P.dim)
+    private let stepLabel = label("—", mono(13), P.dim)
 
     private let sBar = MeterBar(); private let sNum = label("—", mono(14), P.text)
     private let nBar = MeterBar(); private let nNum = label("—", mono(14), P.text)
@@ -200,7 +202,12 @@ final class MainView: NSView {
         freqRow.orientation = .horizontal; freqRow.alignment = .lastBaseline; freqRow.spacing = 8
         let meters = NSStackView(views: [meterRow("S", sBar, sNum), meterRow("N", nBar, nNum)])
         meters.orientation = .vertical; meters.spacing = 6; meters.alignment = .leading
-        let left = NSStackView(views: [stationLabel, freqRow])
+        let detail = NSStackView(views: [
+            label("BW", mono(11), P.faint), bwLabel,
+            label("STEP", mono(11), P.faint), stepLabel,
+        ])
+        detail.orientation = .horizontal; detail.spacing = 6; detail.alignment = .firstBaseline
+        let left = NSStackView(views: [stationLabel, freqRow, detail])
         left.orientation = .vertical; left.alignment = .leading; left.spacing = 4
         let headerRow = NSStackView(views: [left, NSView(), meters])
         headerRow.orientation = .horizontal; headerRow.alignment = .centerY; headerRow.spacing = 20
@@ -304,6 +311,9 @@ final class MainView: NSView {
         ])
 
         presetList.onPick = { p in Receiver.tune(hz: Int(p.freq)) }
+        // Label presets on the trace, the way SDR++ labels bookmarks. Only the
+        // ones inside the visible span end up drawn.
+        spectrum.markers = Receiver.presets().map { (freq: $0.freq, name: $0.name) }
     }
 
     private var avg: Double = 0.4
@@ -390,6 +400,16 @@ final class MainView: NSView {
         nBar.value = live ? max(0, min(1, s.snrDb / 60)) : 0
         sNum.stringValue = live ? String(format: "%.0f dBFS", s.rssiDbfs) : "—"
         nNum.stringValue = live ? String(format: "%.0f dB", s.snrDb) : "—"
+
+        spectrum.bandwidthHz = s.bandwidthHz
+        bwLabel.stringValue = s.bandwidthHz > 0
+            ? (s.bandwidthHz >= 1000 ? String(format: "%.0f kHz", s.bandwidthHz / 1000)
+                                     : String(format: "%.0f Hz", s.bandwidthHz))
+            : "—"
+        stepLabel.stringValue = s.tuneStepHz > 0
+            ? (s.tuneStepHz >= 1000 ? String(format: "%.0f kHz", s.tuneStepHz / 1000)
+                                    : String(format: "%.0f Hz", s.tuneStepHz))
+            : "—"
 
         volLabel.stringValue = String(format: "VOL %.0f%%", s.volume * 100)
         muteLabel.stringValue = s.muted ? "MUTED" : ""

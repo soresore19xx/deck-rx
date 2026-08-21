@@ -284,8 +284,9 @@ station.
 
 The right-hand panel carries every setting the receiver exposes, not just the
 demod's: below the mode-specific block and RF gain sits a RECEIVER section with
-tune mode, JP region, audio device, output mode, SDR++ auto-sync and a one-shot
-import. Those are the Property Inspector's settings — a window that can drive
+tune mode, JP region, audio device, output mode, SDR++ auto-sync, a one-shot
+import, and the server host and port (typed, applied on Enter — changing either
+dials the new address). Those are the Property Inspector's settings — a window that can drive
 the radio but not configure it is half a front-end.
 
 The mode-specific block swaps with the demod: FM gets

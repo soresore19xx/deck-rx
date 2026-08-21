@@ -49,6 +49,9 @@ final class OptionsPanel: NSView {
     // MARK: rows
 
     private var rows: [(name: String, value: NSTextField, kind: Kind)] = []
+    /// Editable rows keep their field so a refresh can update it — but never
+    /// while the user is typing in it.
+    private var fields: [(name: String, field: NSTextField)] = []
     private enum Kind { case bool, list([Double], String), text([String]), action }
 
     private func jpRegions() -> [String] {
@@ -89,9 +92,41 @@ final class OptionsPanel: NSView {
         return pad
     }
 
+    /// A row whose value is typed rather than cycled. Host and port are the two
+    /// settings with no sensible list to walk.
+    private func editRow(_ title: String, _ name: String, width: CGFloat) -> NSView {
+        let t = label(title, .systemFont(ofSize: 15), P.dim)
+        let f = NSTextField(string: "")
+        f.font = mono(15)
+        f.alignment = .right
+        f.isBezeled = true
+        f.drawsBackground = true
+        f.translatesAutoresizingMaskIntoConstraints = false
+        f.widthAnchor.constraint(equalToConstant: width).isActive = true
+        f.target = ButtonBox.shared
+        f.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(f)] = { [weak self] in
+            guard let self else { return }
+            let key = String(name.dropFirst(3))
+            Receiver.receiver(set: key, value: f.stringValue) { [weak self] j in
+                guard let self else { return }
+                self.rx = j
+                self.updateValues()
+            }
+        }
+        fields.append((name, f))
+        let r = NSStackView(views: [t, NSView(), f])
+        r.orientation = .horizontal
+        r.spacing = 8
+        r.translatesAutoresizingMaskIntoConstraints = false
+        r.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        return r
+    }
+
     private func rebuild() {
         for v in stack.arrangedSubviews { stack.removeArrangedSubview(v); v.removeFromSuperview() }
         rows.removeAll()
+        fields.removeAll()
         var views: [NSView] = []
         switch mode {
         case 0, 1:   // NFM / WFM
@@ -127,6 +162,12 @@ final class OptionsPanel: NSView {
         views.append(row("Output", "rx.outputMode", .text(["local", "icecast"])))
         views.append(row("SDR++ auto-sync", "rx.autoSyncSdrpp", .bool))
         views.append(row("Import SDR++ now", "rx.import", .action))
+        // The link's address. Changing either dials the new server, so these
+        // are typed and applied on Enter rather than cycled by accident.
+        // Short names: "Server host" truncates to "Serve" in this column, and a
+        // label that loses its last word says less than one that never had it.
+        views.append(editRow("Host", "rx.host", width: 150))
+        views.append(editRow("Port", "rx.port", width: 80))
         for v in views {
             stack.addArrangedSubview(v)
             v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -156,6 +197,14 @@ final class OptionsPanel: NSView {
     }
 
     private func updateValues() {
+        for f in fields {
+            // Don't overwrite what someone is typing.
+            if window?.firstResponder === f.field.currentEditor() { continue }
+            let key = String(f.name.dropFirst(3))
+            if let v = rx[key] {
+                f.field.stringValue = v is Int ? String(v as! Int) : ((v as? String) ?? "")
+            }
+        }
         for r in rows {
             let v = value(for: r.name)
             switch r.kind {

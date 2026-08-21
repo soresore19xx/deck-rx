@@ -284,6 +284,19 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
             // blank selection does.
             await spyService.updateAudioConfig({ naudiodon: { deviceName: raw } });
             break;
+          case 'host': {
+            if (raw.trim() === '') { bad(); return; }
+            // Live-applied: updateServerConfig tears the link down and dials
+            // the new address, the same path the Property Inspector uses.
+            await spyService.updateServerConfig({ host: raw.trim() });
+            break;
+          }
+          case 'port': {
+            const port = Number(raw);
+            if (!Number.isInteger(port) || port < 1 || port > 65535) { bad(); return; }
+            await spyService.updateServerConfig({ port });
+            break;
+          }
           case 'outputMode':
             if (raw !== 'local' && raw !== 'icecast') { bad(); return; }
             await spyService.updateAudioConfig({ ffmpeg: { mode: raw } });

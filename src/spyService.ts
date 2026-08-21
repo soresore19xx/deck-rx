@@ -909,6 +909,12 @@ class SpyService {
   getCurrentIQRate(): number { return this.currentIQRate; }
   /** Active audio output target ("DX7s", "default", "icecast", "naudiodon#N", or empty if not yet started). */
   getAudioDeviceName(): string { return this.currentAudioDeviceName; }
+  /** Which sink the audio is going to: the local device, or an icecast mount.
+   *  Reported so a front-end can say where the sound actually is. */
+  getAudioSink(): 'local' | 'icecast' {
+    return this.audioOutput instanceof FfmpegOutput ? 'icecast' : 'local';
+  }
+
   /** Decimation stages in force — the IQ rate is maxSampleRate >> this. */
   getDecStage(): number { return this.currentDecStage; }
   /** Dropped output buffers, when the local sink is the one running. */

@@ -207,6 +207,7 @@ final class MainView: NSView {
     private let sBar = MeterBar(); private let sNum = label("—", mono(21), P.text)
     private let nBar = MeterBar(); private let nNum = label("—", mono(21), P.text)
 
+    private let bandBar = panelView()
     private let volBar = VolumeBar()
     private let volLabel = label("—", mono(18), P.dim)
 
@@ -447,7 +448,29 @@ final class MainView: NSView {
             railStack.centerXAnchor.constraint(equalTo: rail.centerXAnchor),
         ])
 
-        for v in [top, header, bottom, presetList, spectrum, bar, rail, options] {
+        // Band shortcuts. Scrolling a store that runs from medium wave to FM to
+        // reach the next band is the motion this removes.
+        let bandGrid = NSGridView()
+        bandGrid.rowSpacing = 3
+        bandGrid.columnSpacing = 3
+        bandGrid.translatesAutoresizingMaskIntoConstraints = false
+        let pads = Receiver.bands.map { b in
+            TogglePad(b.name, font: mono(14), momentary: true) { Receiver.jump(to: b) }
+        }
+        bandGrid.addRow(with: Array(pads[0..<4]))
+        bandGrid.addRow(with: Array(pads[4...]) + [NSView()])
+        let bandTitle = label("BAND JUMP", mono(13), P.faint)
+        bandTitle.translatesAutoresizingMaskIntoConstraints = false
+        bandBar.addSubview(bandTitle)
+        bandBar.addSubview(bandGrid)
+        NSLayoutConstraint.activate([
+            bandTitle.topAnchor.constraint(equalTo: bandBar.topAnchor, constant: 6),
+            bandTitle.leadingAnchor.constraint(equalTo: bandBar.leadingAnchor, constant: 10),
+            bandGrid.topAnchor.constraint(equalTo: bandTitle.bottomAnchor, constant: 4),
+            bandGrid.leadingAnchor.constraint(equalTo: bandBar.leadingAnchor, constant: 10),
+        ])
+
+        for v in [top, header, bottom, presetList, spectrum, bar, rail, options, bandBar] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -461,7 +484,12 @@ final class MainView: NSView {
             presetList.topAnchor.constraint(equalTo: top.bottomAnchor),
             presetList.leadingAnchor.constraint(equalTo: leadingAnchor),
             presetList.widthAnchor.constraint(equalToConstant: 306),
-            presetList.bottomAnchor.constraint(equalTo: bottom.topAnchor),
+            presetList.bottomAnchor.constraint(equalTo: bandBar.topAnchor),
+
+            bandBar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bandBar.widthAnchor.constraint(equalTo: presetList.widthAnchor),
+            bandBar.bottomAnchor.constraint(equalTo: bottom.topAnchor),
+            bandBar.heightAnchor.constraint(equalToConstant: 76),
 
             header.topAnchor.constraint(equalTo: top.bottomAnchor),
             header.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
@@ -621,7 +649,13 @@ final class MainView: NSView {
         // A non-zero drop count is the audible-glitch signature, so it stops
         // being a grey footnote the moment it moves off zero.
         dropsLabel.textColor = s.audioDrops > 0 ? P.warn : P.faint
-        outLabel.stringValue = s.audioDevice.isEmpty ? "" : "OUT \(s.audioDevice)"
+        if s.audioSink == "icecast" {
+            outLabel.stringValue = "OUT ICECAST"
+            outLabel.textColor = P.accent
+        } else {
+            outLabel.stringValue = s.audioDevice.isEmpty ? "" : "OUT \(s.audioDevice)"
+            outLabel.textColor = P.faint
+        }
 
         freqView.set(freqHz: s.freqHz)
         modeChip.stringValue = modeName(s.mode)

@@ -117,6 +117,7 @@ function tick(): void {
     decStage: spyService.getDecStage(),
     audioDrops: spyService.getAudioDrops(),
     audioDevice: spyService.getAudioDeviceName(),
+    audioSink: spyService.getAudioSink(),
     host: addr.host,
     port: addr.port,
   };

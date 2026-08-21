@@ -29,8 +29,15 @@ final class OptionsPanel: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    private var rx: [String: Any] = [:]
+
     func refresh() {
         Receiver.options { [weak self] j in self?.adopt(j) }
+        Receiver.receiver { [weak self] j in
+            guard let self else { return }
+            self.rx = j
+            self.updateValues()
+        }
     }
 
     private func adopt(_ j: [String: Any]) {
@@ -42,7 +49,15 @@ final class OptionsPanel: NSView {
     // MARK: rows
 
     private var rows: [(name: String, value: NSTextField, kind: Kind)] = []
-    private enum Kind { case bool, list([Double], String), text([String]) }
+    private enum Kind { case bool, list([Double], String), text([String]), action }
+
+    private func jpRegions() -> [String] {
+        (rx["regions"] as? [String]) ?? ["kanto"]
+    }
+    /// "" is the system default, the same blank the deck's device list offers.
+    private func audioDevices() -> [String] {
+        [""] + ((rx["audioDevices"] as? [String]) ?? [])
+    }
 
     private func header(_ t: String) -> NSView {
         let l = label(t, mono(13), P.faint)
@@ -101,6 +116,17 @@ final class OptionsPanel: NSView {
         }
         views.append(header("RF"))
         views.append(row("Gain", "gain", .list([0, 1, 2, 3, 4, 5, 6, 7, 8], "")))
+
+        // Receiver-wide settings, the ones the deck keeps in its Property
+        // Inspector. Without them the window can drive the radio but not
+        // configure it, which is half a front-end.
+        views.append(header("RECEIVER"))
+        views.append(row("Tune mode", "rx.tuneMode", .text(["preset", "vfo"])))
+        views.append(row("JP region", "rx.jpRegion", .text(jpRegions())))
+        views.append(row("Audio out", "rx.audioDevice", .text(audioDevices())))
+        views.append(row("Output", "rx.outputMode", .text(["local", "icecast"])))
+        views.append(row("SDR++ auto-sync", "rx.autoSyncSdrpp", .bool))
+        views.append(row("Import SDR++ now", "rx.import", .action))
         for v in views {
             stack.addArrangedSubview(v)
             v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -109,6 +135,12 @@ final class OptionsPanel: NSView {
     }
 
     private func value(for name: String) -> Any? {
+        if name.hasPrefix("rx.") {
+            let key = String(name.dropFirst(3))
+            if key == "import" { return "run" }
+            if key == "outputMode" { return rx["audioSink"] }
+            return rx[key]
+        }
         let parts = name.split(separator: ".")
         if parts.count == 1 {
             if name == "gain" {
@@ -143,7 +175,11 @@ final class OptionsPanel: NSView {
                 }
             case .text:
                 r.value.textColor = P.text
-                r.value.stringValue = (v as? String) ?? "—"
+                let t = (v as? String) ?? "—"
+                r.value.stringValue = t.isEmpty ? "system default" : t
+            case .action:
+                r.value.textColor = P.accent
+                r.value.stringValue = "RUN"
             }
         }
     }
@@ -151,18 +187,37 @@ final class OptionsPanel: NSView {
     /// Clicking a row advances it: booleans flip, everything else steps to the
     /// next value in its list and wraps. One gesture for the whole panel.
     private func cycle(_ name: String, _ kind: Kind) {
+        // Receiver-wide settings live behind a different endpoint than the
+        // demod's; the row does not need to care which.
+        let isRx = name.hasPrefix("rx.")
+        let key = isRx ? String(name.dropFirst(3)) : name
+        func send(_ v: String) {
+            if isRx {
+                Receiver.receiver(set: key, value: v) { [weak self] j in
+                    guard let self else { return }
+                    self.rx = j
+                    // A region change re-labels every preset, and an audio
+                    // change moves the sink: re-read the rest too.
+                    self.refresh()
+                }
+            } else {
+                Receiver.options(set: key, value: v) { [weak self] j in self?.adopt(j) }
+            }
+        }
         switch kind {
         case .bool:
             let on = (value(for: name) as? Bool) ?? false
-            Receiver.options(set: name, value: on ? "0" : "1") { [weak self] j in self?.adopt(j) }
+            send(on ? "0" : "1")
         case .list(let values, _):
             let cur = (value(for: name) as? Double) ?? Double((value(for: name) as? Int) ?? 0)
             let idx = values.firstIndex(where: { $0 > cur + 0.001 }) ?? 0
-            Receiver.options(set: name, value: String(format: "%g", values[idx])) { [weak self] j in self?.adopt(j) }
+            send(String(format: "%g", values[idx]))
         case .text(let options):
             let cur = (value(for: name) as? String) ?? options[0]
             let i = ((options.firstIndex(of: cur) ?? 0) + 1) % options.count
-            Receiver.options(set: name, value: options[i]) { [weak self] j in self?.adopt(j) }
+            send(options[i])
+        case .action:
+            Receiver.receiver(action: "importSdrpp") { [weak self] _ in self?.refresh() }
         }
     }
 }

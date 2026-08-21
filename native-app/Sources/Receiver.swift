@@ -56,6 +56,7 @@ enum Receiver {
         var decStage = 0
         var audioDrops = 0
         var audioDevice = ""
+        var audioSink = "local"
         var host = ""
         var port = 0
         var fresh = false      // feed updated recently — otherwise nothing is live
@@ -82,6 +83,7 @@ enum Receiver {
         s.decStage    = j["decStage"] as? Int ?? 0
         s.audioDrops  = j["audioDrops"] as? Int ?? 0
         s.audioDevice = j["audioDevice"] as? String ?? ""
+        s.audioSink   = j["audioSink"] as? String ?? "local"
         s.host      = j["host"] as? String ?? ""
         s.port      = j["port"] as? Int ?? 0
         if let ts = j["ts"] as? Double {
@@ -93,6 +95,28 @@ enum Receiver {
     // MARK: presets
 
     struct Preset { let name: String; let freq: Double; let mode: Int }
+
+    /// Broadcast bands worth a shortcut, with the demod each one implies.
+    /// Ranges are the broadcast allocations, not the amateur ones — this is a
+    /// shortcut for "take me to where the stations are".
+    struct Band { let name: String; let lo: Double; let hi: Double; let mode: Int }
+    static let bands: [Band] = [
+        Band(name: "MW",  lo:    531_000, hi:   1_602_000, mode: 2),
+        Band(name: "49m", lo:  5_900_000, hi:   6_200_000, mode: 2),
+        Band(name: "41m", lo:  7_200_000, hi:   7_450_000, mode: 2),
+        Band(name: "31m", lo:  9_400_000, hi:   9_900_000, mode: 2),
+        Band(name: "25m", lo: 11_600_000, hi:  12_100_000, mode: 2),
+        Band(name: "19m", lo: 15_100_000, hi:  15_800_000, mode: 2),
+        Band(name: "FM",  lo: 76_000_000, hi:  95_000_000, mode: 1),
+    ]
+
+    /// Jump to a band: the first preset inside it if there is one — landing on
+    /// a station beats landing on the band edge — otherwise the low edge.
+    static func jump(to band: Band) {
+        let target = presets().first { $0.freq >= band.lo && $0.freq <= band.hi }
+        mode(target?.mode ?? band.mode)
+        tune(hz: Int(target?.freq ?? band.lo))
+    }
 
     /// The deck-rx-owned store the plugin maintains (data/presets.json), read
     /// directly. Never written from here — the plugin owns that file.
@@ -140,6 +164,29 @@ enum Receiver {
     static func preset(step: Int)  { call("/preset?d=\(step > 0 ? 1 : -1)") }
     /// Demod mode by index (see MODE_NAMES). A preset's mode travels with it.
     static func mode(_ m: Int)     { call("/mode?m=\(m)") }
+
+    /// Receiver-wide settings: tune mode, JP region, audio sink and the SDR++
+    /// import. The deck exposes these through its Property Inspector; this is
+    /// the same set, so the window is not a read-only view of the radio.
+    static func receiver(set name: String? = nil, value: String? = nil,
+                         action: String? = nil,
+                         then: @escaping ([String: Any]) -> Void) {
+        var parts: [String] = []
+        if let action { parts.append("action=\(action)") }
+        if let name, let value,
+           let n = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let v = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            parts.append("set=\(n)"); parts.append("value=\(v)")
+        }
+        let query = parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
+        guard let url = URL(string: "http://127.0.0.1:\(controlPort)/receiver\(query)") else { return }
+        var req = URLRequest(url: url); req.timeoutInterval = 8
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            DispatchQueue.main.async { then(j) }
+        }.resume()
+    }
 
     /// The demod's own settings, as the receiver reports them. Read on a timer
     /// and after every change, so a value altered from the deck shows up here

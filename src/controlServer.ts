@@ -4,6 +4,10 @@ import { spyService, TUNE_STEP_VALUES } from './spyService.js';
 import { nextFreqForTicks, nextPresetSlot } from './tuneMath.js';
 import { loadPresets } from './presetList.js';
 import { autoStationLabel } from './stationLabel.js';
+import { getAudioOutputDevices } from './audioDevices.js';
+import { importFromSdrpp } from './presets.js';
+import { clearPresetsCache } from './presetList.js';
+import { JP_REGIONS, isJpRegion } from './japanStations.js';
 import { spectrumSettings, setSpectrumSettings } from './spectrumFeed.js';
 
 /**
@@ -235,6 +239,72 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       const now = Object.keys(wanted).length > 0 ? setSpectrumSettings(wanted) : spectrumSettings();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(now));
+      return;
+    }
+    case '/receiver': {
+      // Settings that belong to the receiver as a whole rather than to the
+      // demod: how the tune dial behaves, which JP region names stations, where
+      // the audio goes, and the SDR++ bookmark import. The deck exposes these
+      // across its Property Inspector; without them here a front-end can drive
+      // the radio but not configure it.
+      const action = q.get('action');
+      if (action === 'importSdrpp') {
+        const r = await importFromSdrpp().catch((e) => {
+          log.warn(`[controlServer] importSdrpp failed: ${e instanceof Error ? e.message : String(e)}`);
+          return null;
+        });
+        if (!r) { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end('import failed'); return; }
+        clearPresetsCache();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(r));
+        return;
+      }
+      const set = q.get('set');
+      if (set !== null) {
+        const raw = q.get('value');
+        if (raw === null) { bad(); return; }
+        switch (set) {
+          case 'tuneMode':
+            if (raw !== 'preset' && raw !== 'vfo') { bad(); return; }
+            spyService.setTuneMode(raw);
+            break;
+          case 'jpRegion':
+            if (!isJpRegion(raw)) { bad(); return; }
+            await spyService.setJpActiveRegion(raw);
+            clearPresetsCache();
+            break;
+          case 'autoSyncSdrpp':
+            await spyService.setAutoSyncSdrpp(raw === '1' || raw === 'true');
+            break;
+          case 'audioEnabled':
+            await spyService.updateAudioConfig({ audioEnabled: raw === '1' || raw === 'true' });
+            break;
+          case 'audioDevice':
+            // Empty string means "system default" — the same thing the PI's
+            // blank selection does.
+            await spyService.updateAudioConfig({ naudiodon: { deviceName: raw } });
+            break;
+          case 'outputMode':
+            if (raw !== 'local' && raw !== 'icecast') { bad(); return; }
+            await spyService.updateAudioConfig({ ffmpeg: { mode: raw } });
+            break;
+          default: bad(); return;
+        }
+      }
+      const devices = await getAudioOutputDevices().catch(() => []);
+      const server = await spyService.getServerConfigPersisted().catch(() => ({ host: '', port: 0 }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        tuneMode: spyService.getTuneMode(),
+        jpRegion: spyService.getJpActiveRegion(),
+        regions: JP_REGIONS,
+        autoSyncSdrpp: spyService.isAutoSyncSdrpp(),
+        audioDevice: spyService.getAudioDeviceName(),
+        audioDevices: devices.map((d) => d.name),
+        audioSink: spyService.getAudioSink(),
+        host: server.host,
+        port: server.port,
+      }));
       return;
     }
     case '/options': {

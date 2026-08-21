@@ -154,6 +154,7 @@ never answer the knob in the running receiver's place.
 | `GET /power?toggle=1` | Master ON/OFF — same as the Tune dial's long press |
 | `GET /preset?d=<±1>` | Step the preset list one slot, skipping presets the connected device can't receive. `409` when there is nothing to land on (empty list / none receivable), so a dead control path isn't silently reported as success |
 | `GET /mode[?m=<0-7>]` | Read or set the demod mode. A preset carries a mode with it, so a front-end that can only set a frequency lands on an FM channel while still demodulating AM — silence, not a station |
+| `GET /receiver[?set=<name>&value=<v>][&action=importSdrpp]` | Receiver-wide settings: tune mode, JP region, audio device, output mode, SDR++ auto-sync, and the bookmark import as an action. Reports the region list and the machine's real audio devices, so a front-end never carries its own copy of either |
 | `GET /options[?set=<name>&value=<v>]` | Read the demod's own settings (FM / AM / SSB groups plus RF gain), or change one by name — `fm.stereo`, `am.sync`, `ssb.bandwidth`, `gain`. Always answers with everything in force |
 | `GET /stations[?from=&to=]` | Broadcaster names for the frequencies a front-end labels on its spectrum, resolved through the same JP DB lookup that names the station in the header |
 | `GET /volume?v=<0-1>` | Absolute volume — what a click on a volume bar means; `d=` stays for stepping |
@@ -281,7 +282,13 @@ Japanese medium wave sits on multiples of 9 kHz, so a receiver parked on
 960 kHz by a coarser step otherwise walks 969, 978 … and never lands on a
 station.
 
-The right-hand panel carries the demod's own settings, swapped by mode: FM gets
+The right-hand panel carries every setting the receiver exposes, not just the
+demod's: below the mode-specific block and RF gain sits a RECEIVER section with
+tune mode, JP region, audio device, output mode, SDR++ auto-sync and a one-shot
+import. Those are the Property Inspector's settings — a window that can drive
+the radio but not configure it is half a front-end.
+
+The mode-specific block swaps with the demod: FM gets
 bandwidth, de-emphasis, stereo, IFNR and the audio filters; AM gets bandwidth,
 sync detection and the carrier AGC; SSB/CW get bandwidth and BFO pitch; all of
 them get RF gain. Clicking a row advances it. Values are never cached here —

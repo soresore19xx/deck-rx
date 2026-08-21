@@ -182,8 +182,10 @@ final class SpectrumView: NSView {
         // a shape.
         // Rules are a reference, not content: dark enough that the trace and the
         // station labels sit clearly in front of them.
-        ctx.setStrokeColor(NSColor(white: 0.105, alpha: 1).cgColor)
-        ctx.setLineWidth(1)
+        ctx.setStrokeColor(NSColor(white: 0.052, alpha: 1).cgColor)
+        // 0.5 pt, not 1: on a Retina display a 1 pt rule is two physical
+        // pixels, which reads as a drawn line rather than a graticule.
+        ctx.setLineWidth(0.5)
         var db = (Double(dbCeil) / 10).rounded(.down) * 10
         while db >= Double(dbFloor) {
             let y = specH - norm(Float(db)) * specH
@@ -218,7 +220,8 @@ final class SpectrumView: NSView {
             let mag = pow(10, (log10(raw)).rounded(.down))
             let step = [1.0, 2.0, 5.0, 10.0].first { mag * $0 >= raw }.map { mag * $0 } ?? mag * 10
             var f = (lo / step).rounded(.up) * step
-            ctx.setStrokeColor(NSColor(white: 0.105, alpha: 1).cgColor)
+            ctx.setStrokeColor(NSColor(white: 0.052, alpha: 1).cgColor)
+            ctx.setLineWidth(0.5)
             while f < lo + span {
                 let px = x(forHz: f)
                 ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
@@ -227,6 +230,7 @@ final class SpectrumView: NSView {
                 f += step
             }
             ctx.strokePath()
+            ctx.setLineWidth(1)
         }
 
         // waterfall
@@ -314,23 +318,47 @@ final class SpectrumView: NSView {
         ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
         ctx.strokePath()
 
-        // preset labels for anything inside the span
+        // Station labels, stacked so they never overlap.
+        //
+        // Medium wave puts stations 9 kHz apart; at a wide span their labels
+        // are far wider than that gap, and drawn at one height they overprint
+        // each other into an unreadable smear ("RKB毎日放 HBCラジオ"). Each
+        // label takes the topmost row whose previous label has already ended,
+        // so neighbours step down instead of colliding.
         if span > 0 {
-            for m in markers where m.freq > lo && m.freq < lo + span {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .semibold),
+                .foregroundColor: NSColor.black,
+            ]
+            let rowH: CGFloat = 24
+            let maxRows = max(1, Int((specH * 0.45) / rowH))
+            var rowEnds = [CGFloat](repeating: -1_000_000, count: maxRows)
+
+            let visible = markers.filter { $0.freq > lo && $0.freq < lo + span }
+                                 .sorted { $0.freq < $1.freq }
+            for m in visible {
                 let px = x(forHz: m.freq)
-                ctx.setStrokeColor(NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.55).cgColor)
-                ctx.move(to: CGPoint(x: px, y: 26)); ctx.addLine(to: CGPoint(x: px, y: specH))
-                ctx.strokePath()
                 let text = m.name as NSString
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .semibold),
-                    .foregroundColor: NSColor.black,
-                ]
                 let size = text.size(withAttributes: attrs)
-                let box = CGRect(x: px - size.width / 2 - 5, y: 1, width: size.width + 10, height: size.height + 4)
+                let boxX = px - size.width / 2 - 5
+                let boxW = size.width + 10
+                let boxH = size.height + 4
+                // First row this label fits on. When every row is still
+                // occupied at this x the label is dropped rather than drawn
+                // over another one — a smeared name is worse than no name.
+                guard let row = (0..<maxRows).first(where: { rowEnds[$0] < boxX - 4 }) else { continue }
+                rowEnds[row] = boxX + boxW
+                let y = CGFloat(row) * rowH + 1
+
+                ctx.setStrokeColor(NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.55).cgColor)
+                ctx.setLineWidth(1)
+                ctx.move(to: CGPoint(x: px, y: y + boxH))
+                ctx.addLine(to: CGPoint(x: px, y: specH))
+                ctx.strokePath()
+
                 ctx.setFillColor(NSColor(red: 0.949, green: 0.808, blue: 0.349, alpha: 0.92).cgColor)
-                ctx.fill(box)
-                text.draw(at: CGPoint(x: box.minX + 5, y: box.minY + 2), withAttributes: attrs)
+                ctx.fill(CGRect(x: boxX, y: y, width: boxW, height: boxH))
+                text.draw(at: CGPoint(x: boxX + 5, y: y + 2), withAttributes: attrs)
             }
         }
     }

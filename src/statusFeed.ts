@@ -99,7 +99,24 @@ function tick(): void {
     // consumer offsets it by sideband, which is why the sign is not folded in
     // here.
     bandwidthHz: bandwidthForMode(),
+    // Same condition the Tune dial's LCD uses for its badge: the pilot has to
+    // be locked, the live demod has to be WFM, and the user has to have stereo
+    // switched on — pilot detection keeps running in other modes, and a badge
+    // lit over a mono output would be a lie.
+    stereo: live
+      && spyService.getStereoBadgeLock()
+      && spyService.getDemodMode() === 1
+      && spyService.getFMOptions().stereo,
     tuneStepHz: spyService.getTuneStepHz(),
+    // Front-of-house diagnostics: what the receiver is, how wide its IQ is,
+    // how hard it is decimating, whether the audio sink is losing buffers, and
+    // where the audio is going. All cheap reads of state the service already
+    // holds — a front-end should not have to parse the log for them.
+    device: deviceLabel(),
+    iqRateHz: spyService.getCurrentIQRate(),
+    decStage: spyService.getDecStage(),
+    audioDrops: spyService.getAudioDrops(),
+    audioDevice: spyService.getAudioDeviceName(),
     host: addr.host,
     port: addr.port,
   };
@@ -132,6 +149,18 @@ function tick(): void {
   } catch (e) {
     // A broken feed must never take the radio down with it.
     log.warn(`[statusFeed] write failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** Human name for the connected front-end, from the protocol's deviceType. */
+function deviceLabel(): string {
+  const info = spyService.getDeviceInfo();
+  if (!info) return '';
+  switch (info.deviceType) {
+    case 1:  return 'AIRSPY R2/MINI';
+    case 2:  return 'AIRSPY HF+';
+    case 3:  return 'RTL-SDR';
+    default: return `DEVICE ${info.deviceType}`;
   }
 }
 

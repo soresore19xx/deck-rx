@@ -45,8 +45,8 @@ final class SpectrumView: NSView {
     /// Left gutter for the dB scale, and the strip under the trace that carries
     /// the frequency scale. Both the trace and the waterfall start after the
     /// gutter so the two line up column for column.
-    private let gutter: CGFloat = 46
-    private let axisStrip: CGFloat = 16
+    private let gutter: CGFloat = 62
+    private let axisStrip: CGFloat = 24
 
     private var bins: [Float] = []
     private var iqRate: UInt32 = 0
@@ -149,8 +149,8 @@ final class SpectrumView: NSView {
                 UInt8(lo.1.2 + (hi.1.2 - lo.1.2) * k))
     }
 
-    private func axisLabel(_ text: String, at p: CGPoint, size: CGFloat = 9,
-                           color: NSColor = NSColor(white: 0.45, alpha: 1)) {
+    private func axisLabel(_ text: String, at p: CGPoint, size: CGFloat = 13,
+                           color: NSColor = NSColor(white: 0.68, alpha: 1)) {
         NSAttributedString(string: text, attributes: [
             .font: NSFont.monospacedSystemFont(ofSize: size, weight: .regular),
             .foregroundColor: color,
@@ -180,21 +180,23 @@ final class SpectrumView: NSView {
         // dB scale: label every 10 dB, rule every one of them. Reading a level
         // off the trace is the point of a spectrum; without a scale it is just
         // a shape.
-        ctx.setStrokeColor(NSColor(white: 0.12, alpha: 1).cgColor)
+        // Rules are a reference, not content: dark enough that the trace and the
+        // station labels sit clearly in front of them.
+        ctx.setStrokeColor(NSColor(white: 0.105, alpha: 1).cgColor)
         ctx.setLineWidth(1)
         var db = (Double(dbCeil) / 10).rounded(.down) * 10
         while db >= Double(dbFloor) {
             let y = specH - norm(Float(db)) * specH
             ctx.move(to: CGPoint(x: plotX, y: y)); ctx.addLine(to: CGPoint(x: w, y: y))
-            axisLabel(String(format: "%.0f", db), at: CGPoint(x: 6, y: y - 6))
+            axisLabel(String(format: "%.0f", db), at: CGPoint(x: 8, y: y - 9))
             db -= 10
         }
         ctx.strokePath()
 
         if bins.isEmpty || !isLive {
             axisLabel(bins.isEmpty ? "waiting for the receiver" : "feed stalled",
-                      at: CGPoint(x: plotX + 8, y: 8), size: 11,
-                      color: NSColor(white: 0.42, alpha: 1))
+                      at: CGPoint(x: plotX + 8, y: 8), size: 15,
+                      color: NSColor(white: 0.66, alpha: 1))
             if bins.isEmpty { return }
         }
 
@@ -216,12 +218,12 @@ final class SpectrumView: NSView {
             let mag = pow(10, (log10(raw)).rounded(.down))
             let step = [1.0, 2.0, 5.0, 10.0].first { mag * $0 >= raw }.map { mag * $0 } ?? mag * 10
             var f = (lo / step).rounded(.up) * step
-            ctx.setStrokeColor(NSColor(white: 0.12, alpha: 1).cgColor)
+            ctx.setStrokeColor(NSColor(white: 0.105, alpha: 1).cgColor)
             while f < lo + span {
                 let px = x(forHz: f)
                 ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
                 let text = axisFreq(f)
-                axisLabel(text, at: CGPoint(x: px - CGFloat(text.count) * 2.6, y: specH + 2))
+                axisLabel(text, at: CGPoint(x: px - CGFloat(text.count) * 3.9, y: specH + 4))
                 f += step
             }
             ctx.strokePath()
@@ -302,9 +304,12 @@ final class SpectrumView: NSView {
             ctx.strokePath()
         }
 
-        // tuned marker, full height so it ties trace and waterfall together
-        ctx.setStrokeColor(NSColor(red: 0.35, green: 0.85, blue: 0.45, alpha: 1).cgColor)
-        ctx.setLineWidth(1)
+        // Tuned marker, full height so it ties trace and waterfall together.
+        // Red, and the only red on the display: the preset labels and their
+        // lines are amber, so "where am I listening" never competes with
+        // "what else is here".
+        ctx.setStrokeColor(NSColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
+        ctx.setLineWidth(1.6)
         let cx = x(forHz: Double(centerFreq)).rounded()
         ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
         ctx.strokePath()
@@ -314,18 +319,18 @@ final class SpectrumView: NSView {
             for m in markers where m.freq > lo && m.freq < lo + span {
                 let px = x(forHz: m.freq)
                 ctx.setStrokeColor(NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.55).cgColor)
-                ctx.move(to: CGPoint(x: px, y: 12)); ctx.addLine(to: CGPoint(x: px, y: specH))
+                ctx.move(to: CGPoint(x: px, y: 26)); ctx.addLine(to: CGPoint(x: px, y: specH))
                 ctx.strokePath()
                 let text = m.name as NSString
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium),
+                    .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .semibold),
                     .foregroundColor: NSColor.black,
                 ]
                 let size = text.size(withAttributes: attrs)
-                let box = CGRect(x: px - size.width / 2 - 3, y: 1, width: size.width + 6, height: size.height + 2)
+                let box = CGRect(x: px - size.width / 2 - 5, y: 1, width: size.width + 10, height: size.height + 4)
                 ctx.setFillColor(NSColor(red: 0.949, green: 0.808, blue: 0.349, alpha: 0.92).cgColor)
                 ctx.fill(box)
-                text.draw(at: CGPoint(x: box.minX + 3, y: box.minY + 1), withAttributes: attrs)
+                text.draw(at: CGPoint(x: box.minX + 5, y: box.minY + 2), withAttributes: attrs)
             }
         }
     }

@@ -3,6 +3,7 @@ import { log } from './log.js';
 import { spyService, TUNE_STEP_VALUES } from './spyService.js';
 import { nextFreqForTicks, nextPresetSlot } from './tuneMath.js';
 import { loadPresets } from './presetList.js';
+import { autoStationLabel } from './stationLabel.js';
 import { spectrumSettings, setSpectrumSettings } from './spectrumFeed.js';
 
 /**
@@ -110,6 +111,36 @@ async function stepPreset(d: number): Promise<PresetStep> {
   return 'ok';
 }
 
+/** Apply one option by name. Returns false for a name or value we don't know. */
+async function applyOption(name: string, raw: string, asBool: boolean, asNum: number): Promise<boolean> {
+  const num = Number.isFinite(asNum) ? asNum : null;
+  switch (name) {
+    case 'fm.bandwidth':  if (num === null) return false; await spyService.setFMOption('bandwidth', num); return true;
+    case 'fm.deemphasis': if (raw !== '50us' && raw !== '75us' && raw !== 'off') return false;
+                          await spyService.setFMOption('deemphasis', raw as never); return true;
+    case 'fm.ifnr':       await spyService.setFMOption('ifnr', asBool); return true;
+    case 'fm.highPass':   await spyService.setFMOption('highPass', asBool); return true;
+    case 'fm.lowPass':    await spyService.setFMOption('lowPass', asBool); return true;
+    case 'fm.stereo':     await spyService.setFMOption('stereo', asBool); return true;
+    case 'am.bandwidth':  if (num === null) return false; await spyService.setAMOption('bandwidth', num); return true;
+    case 'am.carrierAgc': await spyService.setAMOption('carrierAgc', asBool); return true;
+    case 'am.sync':       await spyService.setAMOption('sync', asBool); return true;
+    case 'am.agcAttack':  if (num === null) return false; await spyService.setAMOption('agcAttack', num); return true;
+    case 'am.agcDecay':   if (num === null) return false; await spyService.setAMOption('agcDecay', num); return true;
+    case 'ssb.bandwidth': if (num === null) return false; await spyService.setSSBOption('bandwidthHz', num); return true;
+    case 'ssb.bfo':       if (num === null) return false; await spyService.setSSBOption('bfoPitchHz', num); return true;
+    // One gain control, routed to whichever the live mode uses: the receiver
+    // keeps AM and FM gain apart, and a front-end should not have to know.
+    case 'gain': {
+      if (num === null) return false;
+      const m = spyService.getDemodMode();
+      if (m === 1 || m === 0) await spyService.setFmGain(num); else await spyService.setAmGain(num);
+      return true;
+    }
+    default: return false;
+  }
+}
+
 async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
   const q = url.searchParams;
@@ -137,9 +168,16 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       return;
     }
     case '/volume': {
+      // `d` steps, `v` sets outright — a front-end with a volume bar needs to
+      // jump to where the user clicked, which no number of relative steps can
+      // express without knowing the current value first and racing it.
+      const v = num(q.get('v'));
       const d = num(q.get('d'));
-      if (d === null) { bad(); return; }
-      spyService.setVolume(spyService.getVolume() + d * VOLUME_STEP);
+      if (v !== null) {
+        spyService.setVolume(v);
+      } else if (d !== null) {
+        spyService.setVolume(spyService.getVolume() + d * VOLUME_STEP);
+      } else { bad(); return; }
       ok();
       return;
     }
@@ -183,18 +221,75 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       // Display settings for the spectrum feed. With no parameters it reports
       // what is in force, so a front-end can render its controls from the
       // receiver rather than from its own assumptions.
-      const wanted: { fftSize?: number; fps?: number; smoothing?: number } = {};
+      const wanted: { fftSize?: number; fps?: number; smoothSpeed?: number } = {};
       const fft = num(q.get('fft'));
       const fps = num(q.get('fps'));
-      const avg = num(q.get('avg'));
+      // `smooth` is SDR++'s smoothing speed, not a raw coefficient: lower is
+      // smoother, and the averaging window stays fixed in seconds as fps moves.
+      const smooth = num(q.get('smooth'));
       if (q.has('fft')) { if (fft === null) { bad(); return; } wanted.fftSize = fft; }
       if (q.has('fps')) { if (fps === null) { bad(); return; } wanted.fps = fps; }
-      if (q.has('avg')) { if (avg === null) { bad(); return; } wanted.smoothing = avg; }
+      if (q.has('smooth')) { if (smooth === null) { bad(); return; } wanted.smoothSpeed = smooth; }
       // Reports the clamped result either way, so the caller never has to guess
       // how its request was adjusted.
       const now = Object.keys(wanted).length > 0 ? setSpectrumSettings(wanted) : spectrumSettings();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(now));
+      return;
+    }
+    case '/options': {
+      // The demod's own settings — the panel the deck exposes across several
+      // dials, in one place for a front-end. With no parameters it reports
+      // everything for the live mode; `set=<name>&value=<v>` changes one.
+      //
+      // Names are flat and mode-scoped (fm.stereo, am.sync, ssb.bandwidth,
+      // gain) rather than a nested body: a knob or a checkbox changes exactly
+      // one of these, and a GET that a browser or curl can type is worth more
+      // here than a tidy document.
+      const set = q.get('set');
+      if (set !== null) {
+        const raw = q.get('value');
+        if (raw === null) { bad(); return; }
+        const asBool = raw === '1' || raw === 'true';
+        const asNum = Number(raw);
+        const ok = await applyOption(set, raw, asBool, asNum);
+        if (!ok) { bad(); return; }
+      }
+      const fm = spyService.getFMOptions();
+      const am = spyService.getAMOptions();
+      const ssb = spyService.getSSBOptions();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        mode: spyService.getDemodMode(),
+        fm: {
+          bandwidth: fm.bandwidth, deemphasis: fm.deemphasis, ifnr: fm.ifnr,
+          highPass: fm.highPass, lowPass: fm.lowPass, stereo: fm.stereo,
+        },
+        am: {
+          bandwidth: am.bandwidth, carrierAgc: am.carrierAgc,
+          agcAttack: am.agcAttack, agcDecay: am.agcDecay, sync: am.sync,
+        },
+        ssb: { bandwidthHz: ssb.bandwidthHz, bfoPitchHz: ssb.bfoPitchHz },
+        gain: { am: spyService.getAmGain(), fm: spyService.getFmGain(), max: spyService.getMaxGain() },
+      }));
+      return;
+    }
+    case '/stations': {
+      // Broadcaster names for the frequencies a front-end is about to label on
+      // its spectrum. Resolved HERE, through the same JP DB lookup that names
+      // the station above the frequency readout, so the label on the trace and
+      // the label in the header can never disagree. A preset's own name is the
+      // user's bookmark text ("MW TBS"), which is not what the station is
+      // called.
+      const from = num(q.get('from'));
+      const to = num(q.get('to'));
+      const presets = await loadPresets(spyService.getJpActiveRegion()).catch(() => []);
+      const region = spyService.getJpActiveRegion();
+      const out = presets
+        .filter(p => (from === null || p.freq >= from) && (to === null || p.freq <= to))
+        .map(p => ({ freq: p.freq, name: autoStationLabel(p.freq, region) ?? p.name }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(out));
       return;
     }
     case '/mode': {

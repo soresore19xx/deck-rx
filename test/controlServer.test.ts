@@ -350,21 +350,24 @@ describe('controlServer — spectrum display settings', () => {
     const base = await getJson(port, '/spectrum');
     expect(base.fftSize).toBe(1024);       // seeded default
     expect(base.fps).toBe(30);
+    expect(base.smoothSpeed).toBe(30);
 
-    const applied = await getJson(port, '/spectrum?fft=2048&fps=15&avg=0.6');
-    expect(applied).toEqual({ fftSize: 2048, fps: 15, smoothing: 0.6 });
+    const applied = await getJson(port, '/spectrum?fft=2048&fps=15&smooth=16');
+    expect(applied).toEqual({ fftSize: 2048, fps: 15, smoothSpeed: 16 });
     // The change sticks: a bare read reports the new values.
-    expect(await getJson(port, '/spectrum')).toEqual({ fftSize: 2048, fps: 15, smoothing: 0.6 });
+    expect(await getJson(port, '/spectrum')).toEqual({ fftSize: 2048, fps: 15, smoothSpeed: 16 });
 
     // Out-of-range asks come back clamped rather than rejected, so a front-end
     // can offer a slider without policing the pipeline's limits itself.
-    const clamped = await getJson(port, '/spectrum?fft=99999&fps=500&avg=9');
+    const clamped = await getJson(port, '/spectrum?fft=99999&fps=500&smooth=99999');
     expect(clamped.fftSize).toBe(4096);
     expect(clamped.fps).toBe(60);
-    expect(clamped.smoothing).toBe(0.95);
+    expect(clamped.smoothSpeed).toBe(1000);
+    expect((await getJson(port, '/spectrum?smooth=0')).smoothSpeed).toBe(1);
     // Non-power-of-two sizes snap to the nearest one the FFT can build.
     expect((await getJson(port, '/spectrum?fft=700')).fftSize).toBe(512);
     expect((await get(port, '/spectrum?fps=abc')).status).toBe(400);
+    expect((await get(port, '/spectrum?smooth=abc')).status).toBe(400);
   }, 25_000);
 });
 

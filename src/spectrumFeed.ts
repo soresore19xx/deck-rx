@@ -42,12 +42,16 @@ const SOCKET_PATH = process.env.DECK_RX_SPECTRUM_SOCKET ?? '/tmp/deck-rx-spectru
 const settings = {
   fftSize: clampPow2(Number(process.env.DECK_RX_SPECTRUM_FFT ?? 1024)),
   fps: clampFps(Number(process.env.DECK_RX_SPECTRUM_FPS ?? 30)),
-  // Matches the FFT dial's default: enough averaging to calm the noise floor
-  // without smearing a signal that moves.
-  smoothing: 0.4,
+  // Smoothing SPEED, in SDR++'s units (core/src/gui/menus/display.cpp): the
+  // per-frame EMA coefficient is speed / (fps * 10), so the time constant is
+  // 10 / speed SECONDS and does not move when the framerate changes. Lower =
+  // smoother. A fixed coefficient instead — what this used to be — ties the
+  // window to the frame period, which is why a "0.4" that looked reasonable at
+  // 30 fps was about a tenth of the smoothing SDR++ gives at its defaults.
+  smoothSpeed: 30,
 };
 
-export interface SpectrumSettings { fftSize: number; fps: number; smoothing: number; }
+export interface SpectrumSettings { fftSize: number; fps: number; smoothSpeed: number; }
 
 /** Current settings, for a front-end to render its controls from. */
 export function spectrumSettings(): SpectrumSettings { return { ...settings }; }
@@ -65,14 +69,16 @@ export function setSpectrumSettings(next: Partial<SpectrumSettings>): SpectrumSe
   const fpsChanged = next.fps !== undefined && clampFps(next.fps) !== settings.fps;
   if (next.fftSize !== undefined) settings.fftSize = clampPow2(next.fftSize);
   if (next.fps !== undefined) settings.fps = clampFps(next.fps);
-  if (next.smoothing !== undefined) {
-    settings.smoothing = Math.max(0, Math.min(0.95, next.smoothing));
+  if (next.smoothSpeed !== undefined) {
+    // 1 = ~10 s of averaging, 200 = essentially none. Above fps*10 the
+    // coefficient saturates at 1 (no smoothing at all), so that is the ceiling.
+    settings.smoothSpeed = Math.max(1, Math.min(1000, next.smoothSpeed));
   }
   if (sizeChanged && fft) fft = new FftPipeline(settings.fftSize);
   // fpsChanged needs no action: the IQ listener reads settings.fps on every
   // packet, so a new rate takes effect on the next one.
   void fpsChanged;
-  log.info(`[spectrumFeed] settings fft=${settings.fftSize} fps=${settings.fps} smoothing=${settings.smoothing}`);
+  log.info(`[spectrumFeed] settings fft=${settings.fftSize} fps=${settings.fps} smoothSpeed=${settings.smoothSpeed}`);
   return spectrumSettings();
 }
 
@@ -160,13 +166,15 @@ function startPipeline(): void {
     for (let i = 0; i < bins.length; i++) avg[i] = sum[i] / count;
     sum.fill(0); count = 0;
 
-    const a = settings.smoothing;
-    if (!smoothed || smoothed.length !== avg.length) {
+    // SDR++'s exact form: alpha = speed / (fps * 10), clamped to 1, applied per
+    // displayed frame. Normalising by fps is the part that matters — it keeps
+    // the averaging window fixed in seconds, so changing the framerate changes
+    // how often you see the trace, not how smooth it is.
+    const alpha = Math.min(1, settings.smoothSpeed / (settings.fps * 10));
+    if (!smoothed || smoothed.length !== avg.length || alpha >= 1) {
       smoothed = avg;
-    } else if (a > 0) {
-      for (let i = 0; i < avg.length; i++) smoothed[i] = smoothed[i] * a + avg[i] * (1 - a);
     } else {
-      smoothed = avg;
+      for (let i = 0; i < avg.length; i++) smoothed[i] = avg[i] * alpha + smoothed[i] * (1 - alpha);
     }
 
     latest = { bins: smoothed, iqRate, freq };
@@ -179,7 +187,7 @@ function startPipeline(): void {
     }
   };
   spyService.subscribeIqStream(iqListener);
-  log.info(`[spectrumFeed] pipeline up — fft=${settings.fftSize} fps=${settings.fps} smoothing=${settings.smoothing}`);
+  log.info(`[spectrumFeed] pipeline up — fft=${settings.fftSize} fps=${settings.fps} smoothSpeed=${settings.smoothSpeed}`);
 }
 
 function stopPipeline(): void {

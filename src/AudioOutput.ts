@@ -278,6 +278,9 @@ export class NaudiodonOutput implements AudioOutput {
   // Both are no-ops unless the flag file exists. Remove after diagnosis.
   private outChannels = 2;
   private dropCount = 0;
+  /** Buffers dropped because the reader stalled. A front-end shows this: a
+   *  climbing count is the audible-glitch signature, and zero is worth seeing. */
+  getDropCount(): number { return this.dropCount; }
   private wlMin = Number.POSITIVE_INFINITY;
   private wlMax = 0;
   private dbgLastFlagCheck = 0;

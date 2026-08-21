@@ -15,9 +15,14 @@ enum P {
     static let panel   = NSColor(red: 0.090, green: 0.094, blue: 0.110, alpha: 1) // #17181C
     static let sunken  = NSColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1) // #0C0D0F
     static let line    = NSColor(red: 0.149, green: 0.157, blue: 0.176, alpha: 1) // #26282D
-    static let text    = NSColor(red: 0.863, green: 0.871, blue: 0.886, alpha: 1) // #DCDEE2
-    static let dim     = NSColor(red: 0.604, green: 0.627, blue: 0.655, alpha: 1) // #9AA0A7
-    static let faint   = NSColor(red: 0.435, green: 0.459, blue: 0.486, alpha: 1) // #6F757C
+    // Contrast against the near-black panels, not just a tidy grey ramp. The
+    // previous dim/faint pair measured about 5:1 and 3.4:1 against #17181C —
+    // the second is below the readable floor for text at any size, and it was
+    // carrying units, section headers and axis labels. These are ~10:1 and
+    // ~6.3:1, so a secondary label still reads as secondary but is legible.
+    static let text    = NSColor(red: 0.941, green: 0.949, blue: 0.961, alpha: 1) // #F0F2F5
+    static let dim     = NSColor(red: 0.765, green: 0.788, blue: 0.816, alpha: 1) // #C3C9D0
+    static let faint   = NSColor(red: 0.596, green: 0.627, blue: 0.659, alpha: 1) // #98A0A8
     static let accent  = NSColor(red: 0.349, green: 0.851, blue: 0.451, alpha: 1) // #59D973
     static let blue    = NSColor(red: 0.400, green: 0.702, blue: 0.949, alpha: 1) // #66B3F2
     static let warn    = NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 1) // #F2BF59
@@ -86,10 +91,10 @@ final class PresetList: NSView {
             let row = NSView()
             row.translatesAutoresizingMaskIntoConstraints = false
             let (num, unit) = formatFreq(p.freq)
-            let f = label(num, mono(18), P.text)
-            let u = label(unit, mono(12), P.faint)
-            let n = label(p.name, .systemFont(ofSize: 16), P.dim)
-            let m = label(modeName(p.mode), mono(12), P.faint)
+            let f = label(num, mono(21, .light), P.text)
+            let u = label(unit, mono(13), P.faint)
+            let n = label(p.name, .systemFont(ofSize: 18), P.dim)
+            let m = label(modeName(p.mode), mono(13), P.faint)
             n.lineBreakMode = .byTruncatingTail
             // Selection marker: a solid accent bar down the leading edge. A
             // background tint alone was nearly invisible against the panel.
@@ -99,23 +104,23 @@ final class PresetList: NSView {
             row.addSubview(bar)
             for v in [f, u, n, m] { v.translatesAutoresizingMaskIntoConstraints = false; row.addSubview(v) }
             NSLayoutConstraint.activate([
-                row.heightAnchor.constraint(equalToConstant: 34),
+                row.heightAnchor.constraint(equalToConstant: 29),
                 bar.leadingAnchor.constraint(equalTo: row.leadingAnchor),
                 bar.topAnchor.constraint(equalTo: row.topAnchor),
                 bar.bottomAnchor.constraint(equalTo: row.bottomAnchor),
                 bar.widthAnchor.constraint(equalToConstant: 4),
-                f.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 12),
-                f.widthAnchor.constraint(equalToConstant: 84),
+                f.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
+                f.widthAnchor.constraint(equalToConstant: 78),
                 f.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-                u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 4),
-                u.widthAnchor.constraint(equalToConstant: 30),
+                u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 1),
+                u.widthAnchor.constraint(equalToConstant: 26),
                 u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
-                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: 6),
+                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: 8),
                 n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -6),
                 n.centerYAnchor.constraint(equalTo: row.centerYAnchor),
                 // -24, not -10: the vertical scroller overlays the row's
                 // trailing edge and would clip the mode column to "A" / "WF".
-                m.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -24),
+                m.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -20),
                 m.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             ])
             row.wantsLayer = true
@@ -132,6 +137,11 @@ final class PresetList: NSView {
     /// identity here: the plugin may have been retuned by a dial or a knob.
     private var lastMarked: Double = -1
 
+    /// Alternating row tint. A dense list of numbers is hard to track across
+    /// horizontally — the eye loses the line between a frequency and its
+    /// station name — and a stripe is cheaper than a rule for that.
+    private static let stripe = NSColor(white: 1, alpha: 0.085)
+
     func markCurrent(freqHz: Double) {
         // Bring the tuned row into view when it changes. The marker is useless
         // if the row is scrolled off — which it usually is, since the store
@@ -145,11 +155,11 @@ final class PresetList: NSView {
                 }
             }
         }
-        for r in rows {
+        for (i, r) in rows.enumerated() {
             let on = abs(r.preset.freq - freqHz) < 1
             r.row.layer?.backgroundColor = on
                 ? NSColor(red: 0.129, green: 0.239, blue: 0.161, alpha: 1).cgColor
-                : NSColor.clear.cgColor
+                : (i % 2 == 1 ? Self.stripe.cgColor : NSColor.clear.cgColor)
             r.bar.layer?.backgroundColor = on ? P.accent.cgColor : NSColor.clear.cgColor
             // Lift the text too: on a dark panel a background change alone is
             // easy to miss, and this row answers "what am I listening to?".
@@ -171,22 +181,34 @@ final class PresetList: NSView {
 final class MainView: NSView {
     let spectrum = SpectrumView(frame: .zero)
     let presetList = PresetList(frame: .zero)
+    let options = OptionsPanel(frame: .zero)
 
-    private let clockJST = label("—", mono(13), P.text)
-    private let clockUTC = label("—", mono(13), P.dim)
+    private let clockJST = label("—", mono(22), P.text)
+    private let clockUTC = label("—", mono(22), P.dim)
     private let linkDot = panelView(P.faint)
-    private let linkLabel = label("—", mono(13), P.dim)
+    private let linkLabel = label("—", mono(19), P.dim)
+    private let deviceLabel = label("—", mono(17), P.faint)
+    private let iqLabel = label("—", mono(17), P.faint)
+    private let dropsLabel = label("—", mono(17), P.faint)
+    private let outLabel = label("—", mono(17), P.faint)
 
-    private let stationLabel = label("—", .systemFont(ofSize: 17), P.text)
+    private let stationLabel = label("—", .systemFont(ofSize: 26), P.text)
     private let freqView = FreqView(frame: .zero)
-    private let modeChip = label("—", mono(16, .medium), P.text)
-    private let bwLabel = label("—", mono(13), P.dim)
-    private let stepLabel = label("—", mono(13), P.dim)
+    private let modeChip = label("—", mono(22, .medium), P.text)
+    /// FM stereo pilot lock, drawn as the deck's LCD draws it: a red outlined
+    /// badge, shown only while the pilot is actually locked AND the output is
+    /// really stereo. Pilot detection keeps running in other modes, so a badge
+    /// lit over a mono output would be a lie.
+    private let stereoBadge = BadgeView(text: "STEREO", font: mono(17, .black),
+                                       color: NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1))
+    private let bwLabel = label("—", mono(19), P.dim)
+    private let stepLabel = label("—", mono(19), P.dim)
 
-    private let sBar = MeterBar(); private let sNum = label("—", mono(14), P.text)
-    private let nBar = MeterBar(); private let nNum = label("—", mono(14), P.text)
+    private let sBar = MeterBar(); private let sNum = label("—", mono(21), P.text)
+    private let nBar = MeterBar(); private let nNum = label("—", mono(21), P.text)
 
-    private let volLabel = label("—", mono(13), P.dim)
+    private let volBar = VolumeBar()
+    private let volLabel = label("—", mono(18), P.dim)
 
     // Spectrum display controls. FFT size / framerate / averaging live on the
     // receiver (the deck's FFT dial shares that pipeline), so those three are
@@ -194,16 +216,21 @@ final class MainView: NSView {
     // of the same data and stay local.
     private let fftPop = NSPopUpButton()
     private let fpsPop = NSPopUpButton()
-    private let avgLabel = label("0.40", mono(13), P.text)
-    private let holdButton = NSButton()
-    private let dbLabel = label("−100 / −20 dB", mono(13), P.dim)
+    private let avgLabel = label("(0.3s)", mono(15), P.faint)
+    private let smoothField = NSTextField(string: "30")
+    private let smoothStepper = NSStepper()
+    private let dbLabel = label("−100 / −20 dB", mono(17), P.dim)
+    private var modePads: [TogglePad] = []
+    private var mutePad: TogglePad!
+    private var powerPad: TogglePad!
+    private var holdPad: TogglePad!
     private let stepPop = NSPopUpButton()
     private let zoomSlider = NSSlider()
     private let maxSlider = NSSlider()
     private let minSlider = NSSlider()
-    private let zoomLabel = label("1×", mono(11), P.dim)
+    private let zoomLabel = label("1×", mono(14), P.dim)
     private var stepValues: [Int] = []
-    private let muteLabel = label("", mono(13, .medium), P.warn)
+    private let muteLabel = label("", mono(18, .medium), P.warn)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -218,12 +245,19 @@ final class MainView: NSView {
     private func build() {
         // top bar
         let top = panelView()
+        // The bar the layout asked for: what the receiver is, how wide its IQ is,
+        // how hard it is decimating, whether the sink is losing buffers, and
+        // where the audio goes — the questions you ask when something sounds
+        // wrong, answered without opening a log.
+        func sep() -> NSView { label("|", mono(15), P.line) }
         let topRow = NSStackView(views: [
-            label("deck", .systemFont(ofSize: 15, weight: .bold), P.text),
-            linkDot, linkLabel,
+            label("deck", .systemFont(ofSize: 23, weight: .bold), P.text),
+            linkDot, linkLabel, deviceLabel,
+            sep(), iqLabel, dropsLabel,
+            sep(), outLabel,
             NSView(),
-            label("JST", mono(11), P.faint), clockJST,
-            label("UTC", mono(11), P.faint), clockUTC,
+            label("JST", mono(17), P.faint), clockJST,
+            label("UTC", mono(17), P.faint), clockUTC,
         ])
         topRow.orientation = .horizontal
         topRow.spacing = 8
@@ -240,14 +274,16 @@ final class MainView: NSView {
         let header = panelView(NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1))
         freqView.onTune = { hz in Receiver.tune(hz: Int(hz)) }
         freqView.translatesAutoresizingMaskIntoConstraints = false
-        freqView.heightAnchor.constraint(equalToConstant: 84).isActive = true
-        let freqRow = NSStackView(views: [freqView, modeChip])
+        freqView.heightAnchor.constraint(equalToConstant: 96).isActive = true
+        stereoBadge.isHidden = true
+        stereoBadge.translatesAutoresizingMaskIntoConstraints = false
+        let freqRow = NSStackView(views: [freqView, modeChip, stereoBadge])
         freqRow.orientation = .horizontal; freqRow.alignment = .centerY; freqRow.spacing = 10
         let meters = NSStackView(views: [meterRow("S", sBar, sNum), meterRow("N", nBar, nNum)])
         meters.orientation = .vertical; meters.spacing = 6; meters.alignment = .leading
         let detail = NSStackView(views: [
-            label("BW", mono(11), P.faint), bwLabel,
-            label("STEP", mono(11), P.faint), stepLabel,
+            label("BW", mono(14), P.faint), bwLabel,
+            label("STEP", mono(14), P.faint), stepLabel,
         ])
         detail.orientation = .horizontal; detail.spacing = 6; detail.alignment = .firstBaseline
         let left = NSStackView(views: [stationLabel, freqRow, detail])
@@ -258,29 +294,32 @@ final class MainView: NSView {
 
         // bottom transport
         let bottom = panelView()
-        let volDown = button("VOL −") { Receiver.volume(delta: -3) }
-        let volUp   = button("VOL +") { Receiver.volume(delta: 3) }
-        let mute    = button("MUTE")  { Receiver.toggleMute() }
-        let prev    = button("◀ PRESET") { Receiver.preset(step: -1) }
-        let next    = button("PRESET ▶") { Receiver.preset(step: 1) }
-        let down    = button("− TUNE") { [weak self] in self?.tuneStep(-1) }
-        let up      = button("TUNE +") { [weak self] in self?.tuneStep(1) }
-        let power   = button("POWER") { Receiver.togglePower() }
-        let modeButtons = ["WFM", "NFM", "AM", "USB", "LSB", "CW"].map { name -> NSButton in
+        let f = mono(16)
+        let volDown = TogglePad("VOL −", font: f, momentary: true) { Receiver.volume(delta: -3) }
+        let volUp   = TogglePad("VOL +", font: f, momentary: true) { Receiver.volume(delta: 3) }
+        let prev    = TogglePad("◀ PRESET", font: f, momentary: true) { Receiver.preset(step: -1) }
+        let next    = TogglePad("PRESET ▶", font: f, momentary: true) { Receiver.preset(step: 1) }
+        let down    = TogglePad("− TUNE", font: f, momentary: true) { [weak self] in self?.tuneStep(-1) }
+        let up      = TogglePad("TUNE +", font: f, momentary: true) { [weak self] in self?.tuneStep(1) }
+        mutePad  = TogglePad("MUTE", font: f, onColor: P.warn) { Receiver.toggleMute() }
+        powerPad = TogglePad("POWER", font: f) { Receiver.togglePower() }
+        modePads = ["WFM", "NFM", "AM", "USB", "LSB", "CW"].map { name in
             let m = MODE_NAMES.firstIndex(of: name) ?? 1
-            return button(name) { Receiver.mode(m) }
+            return TogglePad(name, font: f) { Receiver.mode(m) }
         }
-        let modeRow = NSStackView(views: modeButtons)
+        let modeRow = NSStackView(views: modePads)
         modeRow.orientation = .horizontal; modeRow.spacing = 2
+        volBar.onSet = { level in Receiver.volume(level: level) }
+        volBar.translatesAutoresizingMaskIntoConstraints = false
         let bottomRow = NSStackView(views: [prev, next, down, up, modeRow, NSView(),
-                                            volLabel, muteLabel, volDown, volUp, mute, power])
+                                            volDown, volBar, volUp, volLabel, mutePad, powerPad])
         bottomRow.orientation = .horizontal; bottomRow.spacing = 6; bottomRow.alignment = .centerY
         embed(bottomRow, in: bottom, inset: 12)
 
         // display toolbar, between the header and the spectrum
         let bar = panelView(P.sunken)
         fftPop.addItems(withTitles: ["256", "512", "1024", "2048", "4096"])
-        fftPop.font = mono(12)
+        fftPop.font = mono(16)
         fftPop.target = ButtonBox.shared
         fftPop.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(fftPop)] = { [weak self] in
@@ -288,27 +327,22 @@ final class MainView: NSView {
             Receiver.spectrum(fft: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
         }
         fpsPop.addItems(withTitles: ["5", "10", "15", "20", "30", "60"])
-        fpsPop.font = mono(12)
+        fpsPop.font = mono(16)
         fpsPop.target = ButtonBox.shared
         fpsPop.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(fpsPop)] = { [weak self] in
             guard let self, let t = self.fpsPop.titleOfSelectedItem, let v = Int(t) else { return }
             Receiver.spectrum(fps: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
         }
-        holdButton.title = "HOLD"
-        holdButton.setButtonType(.pushOnPushOff)
-        holdButton.bezelStyle = .rounded
-        holdButton.font = mono(13)
-        holdButton.target = ButtonBox.shared
-        holdButton.action = #selector(ButtonBox.fire(_:))
-        ButtonBox.shared.actions[ObjectIdentifier(holdButton)] = { [weak self] in
+        holdPad = TogglePad("HOLD", font: mono(16), onColor: P.warn) { [weak self] in
             guard let self else { return }
-            self.spectrum.holdEnabled = self.holdButton.state == .on
+            self.spectrum.holdEnabled.toggle()
+            self.holdPad.isOn = self.spectrum.holdEnabled
         }
         // The VFO step lives on the receiver (the deck's dial reads the same
         // value), so the menu is built from what /step reports rather than from
         // a list hard-coded here that would drift.
-        stepPop.font = mono(12)
+        stepPop.font = mono(16)
         stepPop.target = ButtonBox.shared
         stepPop.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(stepPop)] = { [weak self] in
@@ -318,14 +352,42 @@ final class MainView: NSView {
             Receiver.step(hz: hz) { step, values in self.adoptStep(step, values) }
         }
 
+        // Smoothing as a number you can type, with ±1 steps — the ladder of
+        // preset values was too coarse to find the point where the noise
+        // settles without smearing a signal. Same shape SDR++ uses.
+        smoothField.font = mono(16)
+        smoothField.alignment = .right
+        smoothField.isBezeled = true
+        smoothField.drawsBackground = true
+        smoothField.translatesAutoresizingMaskIntoConstraints = false
+        smoothField.widthAnchor.constraint(equalToConstant: 62).isActive = true
+        smoothField.target = ButtonBox.shared
+        smoothField.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(smoothField)] = { [weak self] in
+            guard let self, let v = Int(self.smoothField.stringValue) else { return }
+            Receiver.spectrum(smooth: v) { s, r, a in self.adoptSpectrum(s, r, a) }
+        }
+        smoothStepper.minValue = 1
+        smoothStepper.maxValue = 1000
+        smoothStepper.increment = 1
+        smoothStepper.integerValue = smoothSpeed
+        smoothStepper.valueWraps = false
+        smoothStepper.target = ButtonBox.shared
+        smoothStepper.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(smoothStepper)] = { [weak self] in
+            guard let self else { return }
+            Receiver.spectrum(smooth: self.smoothStepper.integerValue) { s, r, a in
+                self.adoptSpectrum(s, r, a)
+            }
+        }
+
         let barRow = NSStackView(views: [
-            label("STEP", mono(12), P.faint), stepPop,
-            label("FFT", mono(12), P.faint), fftPop,
-            label("RATE", mono(12), P.faint), fpsPop, label("fps", mono(12), P.faint),
-            label("AVG", mono(12), P.faint),
-            button("−") { [weak self] in self?.nudgeAvg(-0.1) }, avgLabel,
-            button("+") { [weak self] in self?.nudgeAvg(0.1) },
-            holdButton,
+            label("STEP", mono(14), P.faint), stepPop,
+            label("FFT", mono(14), P.faint), fftPop,
+            label("RATE", mono(14), P.faint), fpsPop, label("fps", mono(14), P.faint),
+            
+            label("SMOOTH", mono(14), P.faint), smoothField, smoothStepper, avgLabel,
+            holdPad,
             NSView(),
             dbLabel,
         ])
@@ -369,9 +431,9 @@ final class MainView: NSView {
             self.syncRange()
         }
         let railStack = NSStackView(views: [
-            label("ZOOM", mono(10), P.faint), zoomSlider, zoomLabel,
-            label("MAX", mono(10), P.faint), maxSlider,
-            label("MIN", mono(10), P.faint), minSlider,
+            label("ZOOM", mono(13), P.faint), zoomSlider, zoomLabel,
+            label("MAX", mono(13), P.faint), maxSlider,
+            label("MIN", mono(13), P.faint), minSlider,
         ])
         railStack.orientation = .vertical
         railStack.alignment = .centerX
@@ -385,7 +447,7 @@ final class MainView: NSView {
             railStack.centerXAnchor.constraint(equalTo: rail.centerXAnchor),
         ])
 
-        for v in [top, header, bottom, presetList, spectrum, bar, rail] {
+        for v in [top, header, bottom, presetList, spectrum, bar, rail, options] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
@@ -394,11 +456,11 @@ final class MainView: NSView {
             top.leadingAnchor.constraint(equalTo: leadingAnchor),
             top.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            top.heightAnchor.constraint(equalToConstant: 38),
+            top.heightAnchor.constraint(equalToConstant: 58),
 
             presetList.topAnchor.constraint(equalTo: top.bottomAnchor),
             presetList.leadingAnchor.constraint(equalTo: leadingAnchor),
-            presetList.widthAnchor.constraint(equalToConstant: 320),
+            presetList.widthAnchor.constraint(equalToConstant: 306),
             presetList.bottomAnchor.constraint(equalTo: bottom.topAnchor),
 
             header.topAnchor.constraint(equalTo: top.bottomAnchor),
@@ -406,27 +468,32 @@ final class MainView: NSView {
             header.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
             // Tall enough for the 68 pt readout plus the station line above it
             // and the BW / STEP line below; at 118 the last line was clipped.
-            header.heightAnchor.constraint(equalToConstant: 150),
+            header.heightAnchor.constraint(equalToConstant: 168),
 
             bar.topAnchor.constraint(equalTo: header.bottomAnchor),
             bar.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
-            bar.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
-            bar.heightAnchor.constraint(equalToConstant: 38),
+            bar.trailingAnchor.constraint(equalTo: options.leadingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: 50),
 
             spectrum.topAnchor.constraint(equalTo: bar.bottomAnchor),
             spectrum.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
-            spectrum.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
+            spectrum.trailingAnchor.constraint(equalTo: options.leadingAnchor),
+
+            options.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            options.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
+            options.bottomAnchor.constraint(equalTo: bottom.topAnchor),
+            options.widthAnchor.constraint(equalToConstant: 228),
 
             rail.topAnchor.constraint(equalTo: top.bottomAnchor),
             rail.trailingAnchor.constraint(equalTo: trailingAnchor),
             rail.bottomAnchor.constraint(equalTo: bottom.topAnchor),
-            rail.widthAnchor.constraint(equalToConstant: 58),
+            rail.widthAnchor.constraint(equalToConstant: 72),
             spectrum.bottomAnchor.constraint(equalTo: bottom.topAnchor),
 
             bottom.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottom.trailingAnchor.constraint(equalTo: trailingAnchor),
             bottom.bottomAnchor.constraint(equalTo: bottomAnchor),
-            bottom.heightAnchor.constraint(equalToConstant: 50),
+            bottom.heightAnchor.constraint(equalToConstant: 64),
         ])
 
         // Mode first, then frequency — the order the dial's preset cycle uses.
@@ -436,12 +503,13 @@ final class MainView: NSView {
             Receiver.mode(p.mode)
             Receiver.tune(hz: Int(p.freq))
         }
-        // Label presets on the trace, the way SDR++ labels bookmarks. Only the
-        // ones inside the visible span end up drawn.
-        spectrum.markers = Receiver.presets().map { (freq: $0.freq, name: $0.name) }
+        // Label stations on the trace. The names come from the receiver's own
+        // JP DB lookup rather than from the preset text, so a label on the
+        // spectrum reads the same as the station line above the frequency.
+        Receiver.stations { [weak self] list in self?.spectrum.markers = list; self?.spectrum.needsDisplay = true }
     }
 
-    private var avg: Double = 0.4
+    private var smoothSpeed = 30
     private var currentStepHz = 0
     private var currentFreqHz: Double = 0
 
@@ -477,16 +545,18 @@ final class MainView: NSView {
     /// Render the controls from what the receiver reports, not from what we
     /// asked for: the endpoint clamps, and the deck's FFT dial can change these
     /// too.
-    func adoptSpectrum(_ size: Int, _ rate: Int, _ smoothing: Double) {
+    func adoptSpectrum(_ size: Int, _ rate: Int, _ speed: Int) {
         fftPop.selectItem(withTitle: String(size))
         fpsPop.selectItem(withTitle: String(rate))
-        avg = smoothing
-        avgLabel.stringValue = String(format: "%.2f", smoothing)
-    }
-
-    private func nudgeAvg(_ d: Double) {
-        let next = max(0, min(0.95, avg + d))
-        Receiver.spectrum(avg: next) { [weak self] s, r, a in self?.adoptSpectrum(s, r, a) }
+        smoothSpeed = speed
+        // SDR++'s units: the averaging window is 10 / speed seconds, so a
+        // SMALLER number is smoother. The seconds sit next to the field so that
+        // is not a riddle. Don't fight the user mid-edit.
+        if window?.firstResponder !== smoothField.currentEditor() {
+            smoothField.stringValue = String(speed)
+        }
+        smoothStepper.integerValue = speed
+        avgLabel.stringValue = String(format: "(%.2fs)", 10.0 / Double(max(1, speed)))
     }
 
     private func syncRange() {
@@ -496,9 +566,9 @@ final class MainView: NSView {
 
     private func meterRow(_ name: String, _ bar: MeterBar, _ num: NSTextField) -> NSStackView {
         bar.translatesAutoresizingMaskIntoConstraints = false
-        bar.heightAnchor.constraint(equalToConstant: 8).isActive = true
-        bar.widthAnchor.constraint(equalToConstant: 210).isActive = true
-        let row = NSStackView(views: [label(name, mono(12), P.faint), bar, num])
+        bar.heightAnchor.constraint(equalToConstant: 11).isActive = true
+        bar.widthAnchor.constraint(equalToConstant: 250).isActive = true
+        let row = NSStackView(views: [label(name, mono(18), P.faint), bar, num])
         row.orientation = .horizontal; row.spacing = 8; row.alignment = .centerY
         return row
     }
@@ -506,7 +576,7 @@ final class MainView: NSView {
     private func button(_ title: String, _ action: @escaping () -> Void) -> NSButton {
         let b = NSButton(title: title, target: ButtonBox.shared, action: #selector(ButtonBox.fire(_:)))
         b.bezelStyle = .rounded
-        b.font = mono(13)
+        b.font = mono(16)
         ButtonBox.shared.actions[ObjectIdentifier(b)] = action
         return b
     }
@@ -544,9 +614,24 @@ final class MainView: NSView {
             ? (s.connected ? "\(s.host):\(s.port)" : "link down")
             : "receiver not running"
         linkLabel.textColor = s.fresh && s.connected ? P.dim : P.warn
+        deviceLabel.stringValue = s.device
+        iqLabel.stringValue = s.iqRateHz > 0
+            ? String(format: "IQ %.0fk  DEC %d", s.iqRateHz / 1000, s.decStage) : ""
+        dropsLabel.stringValue = s.iqRateHz > 0 ? "drops \(s.audioDrops)" : ""
+        // A non-zero drop count is the audible-glitch signature, so it stops
+        // being a grey footnote the moment it moves off zero.
+        dropsLabel.textColor = s.audioDrops > 0 ? P.warn : P.faint
+        outLabel.stringValue = s.audioDevice.isEmpty ? "" : "OUT \(s.audioDevice)"
 
         freqView.set(freqHz: s.freqHz)
         modeChip.stringValue = modeName(s.mode)
+        stereoBadge.isHidden = !s.stereo
+        for (i, pad) in modePads.enumerated() {
+            let name = ["WFM", "NFM", "AM", "USB", "LSB", "CW"][i]
+            pad.isOn = (MODE_NAMES.firstIndex(of: name) ?? -1) == s.mode
+        }
+        mutePad.isOn = s.muted
+        powerPad.isOn = s.enabled
         stationLabel.stringValue = s.station.isEmpty ? "—" : s.station
 
         sBar.value = live ? max(0, min(1, (s.rssiDbfs + 100) / 90)) : 0
@@ -569,8 +654,11 @@ final class MainView: NSView {
                                     : String(format: "%.0f Hz", s.tuneStepHz))
             : "—"
 
-        volLabel.stringValue = String(format: "VOL %.0f%%", s.volume * 100)
-        muteLabel.stringValue = s.muted ? "MUTED" : ""
+        volBar.level = s.volume
+        volBar.muted = s.muted
+        volLabel.stringValue = String(format: "%.0f%%", s.volume * 100)
+        volLabel.textColor = s.muted ? P.warn : P.dim
+        muteLabel.stringValue = ""
         presetList.markCurrent(freqHz: s.freqHz)
     }
 }
@@ -581,6 +669,150 @@ final class ButtonBox: NSObject {
     static let shared = ButtonBox()
     var actions: [ObjectIdentifier: () -> Void] = [:]
     @objc func fire(_ sender: NSButton) { actions[ObjectIdentifier(sender)]?() }
+}
+
+/// A button that shows its state in its colour.
+///
+/// AppKit's stock button gives a system-tinted "on" that is nearly invisible on
+/// a dark panel, so which demod mode is live, whether the output is muted and
+/// whether the receiver is powered were all invisible until you read the state
+/// somewhere else on screen. This draws itself: filled and dark-on-accent when
+/// on, outlined and dim when off.
+final class TogglePad: NSView {
+    private let title: String
+    private let font: NSFont
+    private let onColor: NSColor
+    private let action: () -> Void
+    /// Momentary controls (tune, volume, preset stepping) have no lasting
+    /// state — they flash on press and never latch.
+    private let momentary: Bool
+    private var pressed = false
+
+    var isOn = false { didSet { if isOn != oldValue { needsDisplay = true } } }
+
+    init(_ title: String, font: NSFont, onColor: NSColor = P.accent,
+         momentary: Bool = false, action: @escaping () -> Void) {
+        self.title = title; self.font = font; self.onColor = onColor
+        self.momentary = momentary; self.action = action
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        let w = (title as NSString).size(withAttributes: [.font: font]).width
+        return NSSize(width: ceil(w) + 22, height: 34)
+    }
+
+    override func mouseDown(with event: NSEvent) { pressed = true; needsDisplay = true }
+    override func mouseUp(with event: NSEvent) {
+        pressed = false; needsDisplay = true
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { action() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let box = bounds.insetBy(dx: 0.75, dy: 0.75)
+        let path = CGPath(roundedRect: box, cornerWidth: 5, cornerHeight: 5, transform: nil)
+        let lit = isOn && !momentary
+        ctx.addPath(path)
+        ctx.setFillColor(pressed ? onColor.withAlphaComponent(0.45).cgColor
+                                 : (lit ? onColor.cgColor : P.panel.cgColor))
+        ctx.fillPath()
+        ctx.addPath(path)
+        ctx.setStrokeColor(lit ? onColor.cgColor : P.line.cgColor)
+        ctx.setLineWidth(1.5)
+        ctx.strokePath()
+
+        let color: NSColor = lit ? NSColor(white: 0.05, alpha: 1) : P.text
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let size = (title as NSString).size(withAttributes: attrs)
+        (title as NSString).draw(at: CGPoint(x: (bounds.width - size.width) / 2,
+                                             y: (bounds.height - size.height) / 2),
+                                 withAttributes: attrs)
+    }
+}
+
+/// Text in a rounded outline, centred on both axes.
+///
+/// An NSTextField in a fixed-height box sits on its baseline, which leaves the
+/// glyphs riding high inside the border — visible immediately on a two-colour
+/// badge like this one. Drawing the string ourselves puts it where the box says.
+final class BadgeView: NSView {
+    var text: String { didSet { needsDisplay = true } }
+    var color: NSColor { didSet { needsDisplay = true } }
+    private let font: NSFont
+
+    init(text: String, font: NSFont, color: NSColor) {
+        self.text = text; self.font = font; self.color = color
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        let s = (text as NSString).size(withAttributes: [.font: font])
+        return NSSize(width: ceil(s.width) + 18, height: ceil(s.height) + 10)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let box = bounds.insetBy(dx: 0.75, dy: 0.75)
+        let path = CGPath(roundedRect: box, cornerWidth: 4, cornerHeight: 4, transform: nil)
+        ctx.addPath(path)
+        ctx.setStrokeColor(color.cgColor)
+        ctx.setLineWidth(1.5)
+        ctx.strokePath()
+
+        // Negative strokeWidth means "fill AND stroke", which thickens the
+        // glyphs beyond what the font's heaviest weight gives — monospaced
+        // system faces top out well short of a badge's worth of weight.
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+            .strokeColor: color,
+            .strokeWidth: -4.0,
+        ]
+        let size = (text as NSString).size(withAttributes: [.font: font])
+        (text as NSString).draw(at: CGPoint(x: (bounds.width - size.width) / 2,
+                                            y: (bounds.height - size.height) / 2),
+                                withAttributes: attrs)
+    }
+}
+
+/// Volume as a bar you can click and drag, not just a number and two buttons.
+final class VolumeBar: NSView {
+    var level: Double = 0 { didSet { if level != oldValue { needsDisplay = true } } }
+    var muted = false { didSet { if muted != oldValue { needsDisplay = true } } }
+    var onSet: ((Double) -> Void)?
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 190, height: 22) }
+
+    private func apply(_ event: NSEvent) {
+        let x = convert(event.locationInWindow, from: nil).x
+        onSet?(max(0, min(1, Double(x / max(1, bounds.width)))))
+    }
+    override func mouseDown(with event: NSEvent) { apply(event) }
+    override func mouseDragged(with event: NSEvent) { apply(event) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let h: CGFloat = 10
+        let y = (bounds.height - h) / 2
+        let track = CGRect(x: 0, y: y, width: bounds.width, height: h)
+        ctx.addPath(CGPath(roundedRect: track, cornerWidth: 5, cornerHeight: 5, transform: nil))
+        ctx.setFillColor(NSColor(red: 0.137, green: 0.149, blue: 0.169, alpha: 1).cgColor)
+        ctx.fillPath()
+
+        let w = bounds.width * CGFloat(max(0, min(1, level)))
+        if w > 1 {
+            let fill = CGRect(x: 0, y: y, width: w, height: h)
+            ctx.addPath(CGPath(roundedRect: fill, cornerWidth: 5, cornerHeight: 5, transform: nil))
+            // Muted output still has a level — showing it in the warning colour
+            // says "this is where it will come back to", which a greyed-out bar
+            // does not.
+            ctx.setFillColor((muted ? P.warn : P.text).cgColor)
+            ctx.fillPath()
+        }
+    }
 }
 
 final class MeterBar: NSView {
@@ -604,7 +836,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Receiver.touchAlive()
-        view = MainView(frame: NSRect(x: 0, y: 0, width: 1120, height: 700))
+        view = MainView(frame: NSRect(x: 0, y: 0, width: 1440, height: 860))
         window = NSWindow(contentRect: view.frame,
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
@@ -623,9 +855,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
 
         view.refresh()
+        var tick = 0
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            self?.view.refresh()
+            guard let self else { return }
+            self.view.refresh()
+            // The options panel polls the receiver over HTTP, so it runs at
+            // 1 Hz rather than with the 4 Hz status read — nothing in it moves
+            // on its own, it only has to notice a change made from the deck.
+            tick += 1
+            if tick % 4 == 0 { self.view.options.refresh() }
         }
+        view.options.refresh()
         // The plugin only publishes the status feed while this flag is fresh.
         aliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in Receiver.touchAlive() }
     }

@@ -50,6 +50,12 @@ enum Receiver {
         var station = ""
         var bandwidthHz: Double = 0
         var tuneStepHz: Double = 0
+        var stereo = false
+        var device = ""
+        var iqRateHz: Double = 0
+        var decStage = 0
+        var audioDrops = 0
+        var audioDevice = ""
         var host = ""
         var port = 0
         var fresh = false      // feed updated recently — otherwise nothing is live
@@ -70,6 +76,12 @@ enum Receiver {
         s.station   = j["station"] as? String ?? ""
         s.bandwidthHz = j["bandwidthHz"] as? Double ?? 0
         s.tuneStepHz  = j["tuneStepHz"] as? Double ?? 0
+        s.stereo      = j["stereo"] as? Bool ?? false
+        s.device      = j["device"] as? String ?? ""
+        s.iqRateHz    = j["iqRateHz"] as? Double ?? 0
+        s.decStage    = j["decStage"] as? Int ?? 0
+        s.audioDrops  = j["audioDrops"] as? Int ?? 0
+        s.audioDevice = j["audioDevice"] as? String ?? ""
         s.host      = j["host"] as? String ?? ""
         s.port      = j["port"] as? Int ?? 0
         if let ts = j["ts"] as? Double {
@@ -121,11 +133,51 @@ enum Receiver {
     static func tune(ticks: Int)   { call("/tune?ticks=\(ticks)") }
     static func tune(hz: Int)      { call("/tune?hz=\(hz)") }
     static func volume(delta: Int) { call("/volume?d=\(delta)") }
+    /// Absolute 0..1 — what a click on the volume bar means.
+    static func volume(level: Double) { call(String(format: "/volume?v=%.3f", max(0, min(1, level)))) }
     static func toggleMute()       { call("/mute?toggle=1") }
     static func togglePower()      { call("/power?toggle=1") }
     static func preset(step: Int)  { call("/preset?d=\(step > 0 ? 1 : -1)") }
     /// Demod mode by index (see MODE_NAMES). A preset's mode travels with it.
     static func mode(_ m: Int)     { call("/mode?m=\(m)") }
+
+    /// The demod's own settings, as the receiver reports them. Read on a timer
+    /// and after every change, so a value altered from the deck shows up here
+    /// rather than this app keeping a private idea of the receiver's state.
+    static func options(set name: String? = nil, value: String? = nil,
+                        then: @escaping ([String: Any]) -> Void) {
+        var query = ""
+        if let name, let value,
+           let n = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let v = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            query = "?set=\(n)&value=\(v)"
+        }
+        guard let url = URL(string: "http://127.0.0.1:\(controlPort)/options\(query)") else { return }
+        var req = URLRequest(url: url); req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            DispatchQueue.main.async { then(j) }
+        }.resume()
+    }
+
+    /// Broadcaster names for the spectrum's labels, resolved by the receiver
+    /// through the same JP DB lookup that names the station above the
+    /// frequency readout — a preset's own text is the user's bookmark wording
+    /// ("MW TBS"), not what the station is called.
+    static func stations(then: @escaping ([(freq: Double, name: String)]) -> Void) {
+        guard let url = URL(string: "http://127.0.0.1:\(controlPort)/stations") else { return }
+        var req = URLRequest(url: url); req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+            let out: [(freq: Double, name: String)] = arr.compactMap {
+                guard let f = $0["freq"] as? Double, let n = $0["name"] as? String else { return nil }
+                return (freq: f, name: n)
+            }
+            DispatchQueue.main.async { then(out) }
+        }.resume()
+    }
 
     /// The VFO step. Japanese medium wave is spaced 9 kHz, so a receiver left
     /// on a 10 kHz step cannot land on 954 kHz at all — the app has to be able
@@ -149,12 +201,12 @@ enum Receiver {
     /// FFT runs there, and the deck's own FFT dial shares the pipeline. The
     /// endpoint reports the values actually in force, clamped, so the UI can
     /// render from the answer rather than assume its request was taken.
-    static func spectrum(fft: Int? = nil, fps: Int? = nil, avg: Double? = nil,
-                         then: ((Int, Int, Double) -> Void)? = nil) {
+    static func spectrum(fft: Int? = nil, fps: Int? = nil, smooth: Int? = nil,
+                         then: ((Int, Int, Int) -> Void)? = nil) {
         var parts: [String] = []
         if let fft { parts.append("fft=\(fft)") }
         if let fps { parts.append("fps=\(fps)") }
-        if let avg { parts.append(String(format: "avg=%.2f", avg)) }
+        if let smooth { parts.append("smooth=\(smooth)") }
         let query = parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
         guard let url = URL(string: "http://127.0.0.1:\(controlPort)/spectrum\(query)") else { return }
         var req = URLRequest(url: url); req.timeoutInterval = 2
@@ -162,7 +214,7 @@ enum Receiver {
             guard let data,
                   let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let size = j["fftSize"] as? Int, let rate = j["fps"] as? Int,
-                  let sm = j["smoothing"] as? Double else { return }
+                  let sm = j["smoothSpeed"] as? Int else { return }
             DispatchQueue.main.async { then?(size, rate, sm) }
         }.resume()
     }

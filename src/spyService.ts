@@ -909,6 +909,13 @@ class SpyService {
   getCurrentIQRate(): number { return this.currentIQRate; }
   /** Active audio output target ("DX7s", "default", "icecast", "naudiodon#N", or empty if not yet started). */
   getAudioDeviceName(): string { return this.currentAudioDeviceName; }
+  /** Decimation stages in force — the IQ rate is maxSampleRate >> this. */
+  getDecStage(): number { return this.currentDecStage; }
+  /** Dropped output buffers, when the local sink is the one running. */
+  getAudioDrops(): number {
+    const out = this.audioOutput as { getDropCount?: () => number } | null;
+    return out?.getDropCount?.() ?? 0;
+  }
   /** Subscribe to audio start/stop events. The callback fires immediately
    *  with the current state (replay), then on every subsequent change. */
   subscribeAudioState(fn: AudioStateListener): void {

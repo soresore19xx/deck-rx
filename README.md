@@ -154,6 +154,9 @@ never answer the knob in the running receiver's place.
 | `GET /power?toggle=1` | Master ON/OFF — same as the Tune dial's long press |
 | `GET /preset?d=<±1>` | Step the preset list one slot, skipping presets the connected device can't receive. `409` when there is nothing to land on (empty list / none receivable), so a dead control path isn't silently reported as success |
 | `GET /mode[?m=<0-7>]` | Read or set the demod mode. A preset carries a mode with it, so a front-end that can only set a frequency lands on an FM channel while still demodulating AM — silence, not a station |
+| `GET /options[?set=<name>&value=<v>]` | Read the demod's own settings (FM / AM / SSB groups plus RF gain), or change one by name — `fm.stereo`, `am.sync`, `ssb.bandwidth`, `gain`. Always answers with everything in force |
+| `GET /stations[?from=&to=]` | Broadcaster names for the frequencies a front-end labels on its spectrum, resolved through the same JP DB lookup that names the station in the header |
+| `GET /volume?v=<0-1>` | Absolute volume — what a click on a volume bar means; `d=` stays for stepping |
 | `GET /step[?hz=&d=±1]` | Read, set or cycle the VFO step. Answers with the step in force plus the ladder it cycles, so a front-end builds its menu from the receiver rather than hard-coding one |
 | `GET /spectrum[?fft=&fps=&avg=]` | Read or change the spectrum feed's FFT size, framerate and averaging. Always answers with the values in force, clamped, so a caller never has to guess how its request was adjusted |
 
@@ -277,6 +280,13 @@ snap onto the step's grid on the first press when the receiver is off it:
 Japanese medium wave sits on multiples of 9 kHz, so a receiver parked on
 960 kHz by a coarser step otherwise walks 969, 978 … and never lands on a
 station.
+
+The right-hand panel carries the demod's own settings, swapped by mode: FM gets
+bandwidth, de-emphasis, stereo, IFNR and the audio filters; AM gets bandwidth,
+sync detection and the carrier AGC; SSB/CW get bandwidth and BFO pitch; all of
+them get RF gain. Clicking a row advances it. Values are never cached here —
+the panel redraws from what the receiver reports, so a change made on the deck
+shows up in the window.
 
 The rest of the toolbar follows SDR++'s display panel: FFT
 size, framerate and averaging (pushed to the receiver through

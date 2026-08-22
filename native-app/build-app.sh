@@ -2,8 +2,8 @@
 # === Claude origin ===
 # Created/placed by Anthropic Claude Code at: 2026-08-20-221500
 # Builds /Applications/Deck RX.app — the native receiver front-end (design D).
-# Separate bundle id from the companion app (com.hogehoge.deckrx) so both can
-# be installed and bound to different Stream Deck profiles.
+# This bundle is the focus target a Stream Deck profile binds to (AppIdentifier),
+# so the deck follows the window instead of being switched by hand.
 # ====================
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"

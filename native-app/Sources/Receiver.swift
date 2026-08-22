@@ -272,7 +272,7 @@ let MODE_NAMES = ["NFM", "WFM", "AM", "DSB", "USB", "CW", "LSB", "RAW"]
 func modeName(_ m: Int) -> String { m >= 0 && m < MODE_NAMES.count ? MODE_NAMES[m] : "—" }
 
 /// Same thresholds as the plugin's own readout (src/dialDisplay.ts freqParts),
-/// so a frequency reads identically on the deck, in the companion app and here:
+/// so a frequency reads identically on the deck and here:
 /// MHz above 30 MHz, whole kHz on shortwave and medium wave, one decimal below
 /// 1 MHz. Inventing a different rule here is how "1.242 MHz" ends up facing a
 /// user who thinks in "1242 kHz".

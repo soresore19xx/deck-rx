@@ -5,11 +5,11 @@ import { spyService } from './spyService.js';
 import { autoStationLabel } from './stationLabel.js';
 
 /**
- * Live status feed for the companion app (mac-app/, /Applications/deck-rx.app).
+ * Live status feed for the native app (native-app/, /Applications/Deck RX.app).
  *
  * Design constraints, in order of importance:
  *
- *  1. **Nothing is written unless somebody is reading.** The companion app
+ *  1. **Nothing is written unless somebody is reading.** The native app
  *     refreshes an "alive" flag; we only write while that flag is fresh. No
  *     app running -> zero writes, zero syscalls beyond one stat per tick.
  *  2. **Prefer RAM over disk.** /Volumes/RAMDisk is a RAM-backed volume on
@@ -180,7 +180,7 @@ function bandwidthForMode(): number {
 export function startStatusFeed(): void {
   if (timer) return;
   // Test-harness instances run sandboxed via DECK_RX_CONFIG_PATH. They must not
-  // publish to the shared path — with the companion app open the gate is wide
+  // publish to the shared path — with the native app open the gate is wide
   // open, and a spawned test plugin would overwrite the real receiver's status.
   // An explicit DECK_RX_STATUS_PATH opts a sandbox back in.
   if (process.env.DECK_RX_CONFIG_PATH && !process.env.DECK_RX_STATUS_PATH) {

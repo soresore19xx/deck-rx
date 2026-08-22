@@ -94,7 +94,7 @@ streamDeck.actions.registerAction(new KeyFftLcdx2Ctrl());
 streamDeck.actions.registerAction(new KeyVolume());
 streamDeck.connect();
 
-// Live status feed for the companion app. Writes only while the app is
+// Live status feed for the native app. Writes only while the app is
 // running (it refreshes an alive-flag), so this costs nothing when nobody
 // is looking. See src/statusFeed.ts.
 startStatusFeed();

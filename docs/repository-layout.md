@@ -13,7 +13,7 @@
 │   ├── audioDevices.ts             # SwitchAudioSource + ffmpeg device map
 │   ├── dialDisplay.ts              # 7-segment, header, footer, volume bar SVGs
 │   ├── icons.ts                    # Knob, options panel SVGs
-│   ├── statusFeed.ts               # Live status feed for the companion app
+│   ├── statusFeed.ts               # Live status feed for the native app
 │   ├── controlServer.ts            # Loopback HTTP endpoint for an external knob
 │   ├── spectrumFeed.ts             # Binary FFT frames over a Unix socket
 │   ├── headless.ts                 # Entry point: the receiver without Stream Deck
@@ -24,10 +24,7 @@
 │   └── actions/                    # Stream Deck action classes
 ├── scripts/                        # Tooling helpers
 │   └── dump-lcd.sh                 # capture all 4 LCD panels as PNGs in ~/ICON/
-├── mac-app/                        # Companion .app (Stream Deck profile focus target)
-│   ├── Sources/main.swift          # AppKit status window
-│   └── build-app.sh                # swiftc + bundle -> /Applications/deck-rx.app
-├── native-app/                     # Native receiver front-end (design D)
+├── native-app/                     # Native receiver front-end (design D, SD profile focus target)
 │   ├── Sources/main.swift          # Window: presets / spectrum / transport
 │   ├── Sources/Receiver.swift      # Status feed reads + control endpoint writes
 │   ├── Sources/SpectrumFeed.swift  # Reads the plugin's spectrum socket

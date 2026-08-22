@@ -3,9 +3,9 @@
  *
  * Same core as the plugin — SpyServer client, demodulator, audio chain,
  * control endpoint, status feed — started from a plain Node process instead of
- * from `streamDeck.connect()`. This is what a native front-end (mac-app/)
+ * from `streamDeck.connect()`. This is what a native front-end (native-app/)
  * talks to: it drives the receiver over the control endpoint and reads the
- * status feed, exactly as the companion app already does.
+ * status feed, exactly as the Stream Deck plugin does.
  *
  * Run it with the SAME Node the native modules were built against (the Stream
  * Deck app's bundled Node — see scripts/rebuild-native.sh), or naudiodon and

@@ -14,11 +14,37 @@ SVG="$HERE/../com.hogehoge.deck-rx.sdPlugin/imgs/icon-source.svg"
 ICONSET="$HERE/deck-rx-receiver.iconset"
 ICNS="$HERE/deck-rx-receiver.icns"
 
-echo "==> swiftc build (-O) ..."
-if ! ( cd "$HERE" && swiftc Sources/*.swift -o "$BIN" -framework AppKit -O ); then
-  echo "ERROR: swiftc build failed"; exit 1
+# --- binary: universal (arm64 + x86_64) ---
+# Built as two slices and lipo'd rather than left thin: an arm64-only bundle
+# launches nowhere on an Intel Mac, and the failure looks like a broken app
+# rather than a wrong architecture. Both slices target the same macOS 12.0
+# floor the Info.plist declares.
+DEPLOY_TARGET="12.0"
+SLICE_ARM="$HERE/.slice-arm64"
+SLICE_X86="$HERE/.slice-x86_64"
+rm -f "$SLICE_ARM" "$SLICE_X86"
+
+echo "==> swiftc build (-O, arm64) ..."
+if ! ( cd "$HERE" && swiftc Sources/*.swift -o "$SLICE_ARM" -framework AppKit -O \
+        -target "arm64-apple-macos$DEPLOY_TARGET" ); then
+  echo "ERROR: swiftc build failed (arm64)"; exit 1
 fi
+
+# The x86_64 slice is allowed to fail without taking the build down: a machine
+# without the cross SDK should still get a working native binary rather than
+# nothing at all. It says so, so a thin bundle is never a silent surprise.
+echo "==> swiftc build (-O, x86_64) ..."
+if ( cd "$HERE" && swiftc Sources/*.swift -o "$SLICE_X86" -framework AppKit -O \
+        -target "x86_64-apple-macos$DEPLOY_TARGET" ); then
+  lipo -create "$SLICE_ARM" "$SLICE_X86" -output "$BIN" \
+    || { echo "ERROR: lipo failed"; exit 1; }
+else
+  echo "WARN: x86_64 slice failed to build - bundle will be arm64 only"
+  cp "$SLICE_ARM" "$BIN"
+fi
+rm -f "$SLICE_ARM" "$SLICE_X86"
 [ -x "$BIN" ] || { echo "ERROR: binary missing ($BIN)"; exit 1; }
+echo "==> architectures: $(lipo -archs "$BIN")"
 
 # --- icon: rendered from the plugin's own icon-source.svg ---
 # Re-rendered only when the SVG is newer than the .icns, so a plain rebuild

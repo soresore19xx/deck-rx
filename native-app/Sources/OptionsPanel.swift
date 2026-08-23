@@ -158,6 +158,10 @@ final class OptionsPanel: NSView {
         views.append(header("RECEIVER"))
         views.append(row("Tune mode", "rx.tuneMode", .text(["preset", "vfo"])))
         views.append(row("JP region", "rx.jpRegion", .text(jpRegions())))
+        // Takes effect on the next launch: fonts and panel sizes are fixed when
+        // the window is built, so the label says so rather than looking broken.
+        views.append(row("UI scale *", "rx.uiScale",
+                         .text((rx["uiScales"] as? [String]) ?? ["normal", "compact", "tiny"])))
         views.append(row("Audio out", "rx.audioDevice", .text(audioDevices())))
         views.append(row("Output", "rx.outputMode", .text(["local", "icecast"])))
         views.append(row("SDR++ auto-sync", "rx.autoSyncSdrpp", .bool))

@@ -263,6 +263,61 @@ if let old = try? dec.decode(RadioConfig.self, from: Data(partial.utf8)) {
 } else {
     check("a partial config still decodes", false, "decode threw on missing keys")
 }
+// Every stored property must survive a round trip. The decoder is written by
+// hand so that a file missing newer keys still loads, and the cost of that is
+// a key list someone has to remember to extend — uiScale was added and not
+// added there, so the setting was written to disk, read back as the default,
+// and silently did nothing.
+//
+// No field list here either: encode a default, mutate the JSON generically,
+// and require the re-encoded result to match. A dropped key shows up as a
+// value that reverted.
+if let baseline = try? enc.encode(RadioConfig()),
+   var obj = try? JSONSerialization.jsonObject(with: baseline) as? [String: Any] {
+    for (k, v) in obj {
+        // `as? Bool` is not a type test here: JSONSerialization hands back
+        // NSNumber for everything, so a numeric 1 matched Bool and got flipped
+        // to false. CFBoolean is the only reliable way to tell them apart, and
+        // getting it wrong made the check fail on fields that were fine.
+        if CFGetTypeID(v as CFTypeRef) == CFBooleanGetTypeID() {
+            obj[k] = !((v as? Bool) ?? false)
+        } else if let n = v as? NSNumber {
+            obj[k] = n.doubleValue + 7
+        } else if let str = v as? String {
+            obj[k] = str + "-x"
+        }
+        // dictionaries stay as they are
+    }
+    if let mutated = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+       let decoded = try? dec.decode(RadioConfig.self, from: mutated),
+       let again = try? enc.encode(decoded),
+       let back = try? JSONSerialization.jsonObject(with: again) as? [String: Any] {
+        // Compared by type, not by description: JSONSerialization gives back
+        // NSNumber for both Int and Double, so 12 and 12.0 stringify
+        // differently while meaning the same thing. The first version of this
+        // check failed on 25 fields for that reason alone.
+        func same(_ a: Any?, _ b: Any?) -> Bool {
+            guard let a, let b else { return false }
+            let aBool = CFGetTypeID(a as CFTypeRef) == CFBooleanGetTypeID()
+            let bBool = CFGetTypeID(b as CFTypeRef) == CFBooleanGetTypeID()
+            if aBool != bBool { return false }
+            if aBool { return (a as? Bool) == (b as? Bool) }
+            if let x = a as? NSNumber, let y = b as? NSNumber { return x.doubleValue == y.doubleValue }
+            if let x = a as? String, let y = b as? String { return x == y }
+            if let x = a as? [String: Any], let y = b as? [String: Any] { return x.count == y.count }
+            return false
+        }
+        var lost: [String] = []
+        for (k, want) in obj where !same(back[k], want) { lost.append(k) }
+        check("every field survives a round trip", lost.isEmpty,
+              "not decoded: \(lost.sorted().joined(separator: ", "))")
+    } else {
+        check("mutated config re-encodes", false)
+    }
+} else {
+    check("a default config encodes", false)
+}
+
 // And an outright broken file must not take the app down with it.
 check("garbage does not decode", (try? dec.decode(RadioConfig.self, from: Data("not json".utf8))) == nil)
 

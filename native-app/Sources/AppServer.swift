@@ -337,6 +337,9 @@ final class AppServer {
         case "jpRegion":      c.jpRegion = raw
         case "autoSyncSdrpp": c.autoSyncSdrpp = (raw == "1" || raw == "true")
         case "audioDevice":   c.audioDevice = raw
+        case "uiScale":
+            guard UI.names.contains(raw) else { return false }
+            c.uiScale = raw
         case "host":
             let h = raw.trimmingCharacters(in: .whitespaces)
             guard !h.isEmpty else { return false }
@@ -393,6 +396,8 @@ final class AppServer {
             "host": radio.config.host,
             "port": radio.config.port,
             "canControl": radio.canControl,
+            "uiScale": radio.config.uiScale,
+            "uiScales": UI.names,
         ]
         // Null rather than a stale number when nothing is live — the same
         // choice the plugin makes, and the reason its meters blank instead of

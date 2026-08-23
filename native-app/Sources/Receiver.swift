@@ -1,5 +1,40 @@
 import Foundation
 
+/// Display scale. One knob for the whole window: an 11-inch screen is 1366 x
+/// 768 and the layout's own minimum was taller than that, so nothing short of
+/// shrinking the parts makes it fit. Fonts and fixed dimensions both go through
+/// here — scaling only the text leaves the panels their full width and gains
+/// nothing.
+enum UI {
+    static var scale: CGFloat = 1
+
+    static func from(_ name: String) -> CGFloat {
+        switch name {
+        case "compact": return 0.85
+        case "tiny":    return 0.72
+        default:        return 1
+        }
+    }
+    static let names = ["normal", "compact", "tiny"]
+}
+
+/// Scaled dimension. Rounded, because a half-pixel constraint on every panel
+/// edge is how a layout starts looking soft.
+func S(_ v: CGFloat) -> CGFloat { (v * UI.scale).rounded() }
+
+
+/// The receiver's persisted settings, owned by the app.
+///
+/// Reads the plugin's `config.json` when one is there, so the app comes up on
+/// the same server, frequency, mode, bandwidth and tune step the deck was last
+/// using instead of on invented defaults. Writes to its **own** file: the
+/// plugin owns that config, and two processes writing one JSON file is how a
+/// setting silently reverts.
+///
+/// A missing file on either side is normal, not an error — a fresh machine has
+/// no plugin at all, which is the entire point of the port.
+
+
 /// Everything this app knows about the receiver, and the only ways it changes it.
 ///
 /// Reads come from the plugin's status feed (a small JSON file refreshed 4×/s)

@@ -1,16 +1,6 @@
 import Foundation
 
-/// The receiver's persisted settings, owned by the app.
-///
-/// Reads the plugin's `config.json` when one is there, so the app comes up on
-/// the same server, frequency, mode, bandwidth and tune step the deck was last
-/// using instead of on invented defaults. Writes to its **own** file: the
-/// plugin owns that config, and two processes writing one JSON file is how a
-/// setting silently reverts.
-///
-/// A missing file on either side is normal, not an error — a fresh machine has
-/// no plugin at all, which is the entire point of the port.
-struct RadioConfig: Codable {
+struct RadioConfig: Codable, Equatable {
     var host = "127.0.0.1"
     var port = 5555
     var frequencyHz: Double = 1_134_000
@@ -48,6 +38,10 @@ struct RadioConfig: Codable {
     /// Empty means the system default output. A name that no longer exists
     /// falls back to the default rather than going silent.
     var audioDevice = ""
+    /// "normal", "compact" or "tiny". Applied at construction, so changing it
+    /// takes a relaunch — every constraint constant and font size is baked in
+    /// when the window is built.
+    var uiScale = "normal"
 
     var audioDecimate = 4
     var audioGain: Double = 1
@@ -115,6 +109,7 @@ struct RadioConfig: Codable {
         tuneMode = (try? c.decodeIfPresent(String.self, forKey: .tuneMode)) .flatMap { $0 } ?? d.tuneMode
         autoSyncSdrpp = (try? c.decodeIfPresent(Bool.self, forKey: .autoSyncSdrpp)) .flatMap { $0 } ?? d.autoSyncSdrpp
         audioDevice = (try? c.decodeIfPresent(String.self, forKey: .audioDevice)) .flatMap { $0 } ?? d.audioDevice
+        uiScale = (try? c.decodeIfPresent(String.self, forKey: .uiScale)) .flatMap { $0 } ?? d.uiScale
         audioDecimate = (try? c.decodeIfPresent(Int.self, forKey: .audioDecimate)) .flatMap { $0 } ?? d.audioDecimate
         audioGain = (try? c.decodeIfPresent(Double.self, forKey: .audioGain)) .flatMap { $0 } ?? d.audioGain
         levelingEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .levelingEnabled)) .flatMap { $0 } ?? d.levelingEnabled

@@ -29,7 +29,9 @@ enum P {
 }
 
 func mono(_ size: CGFloat, _ w: NSFont.Weight = .regular) -> NSFont {
-    NSFont.monospacedSystemFont(ofSize: size, weight: w)
+    // Floor at 9 pt: below that the monospaced faces stop being readable and a
+    // smaller number on screen is worth nothing.
+    NSFont.monospacedSystemFont(ofSize: max(9, (size * UI.scale).rounded()), weight: w)
 }
 func label(_ text: String, _ font: NSFont, _ color: NSColor) -> NSTextField {
     let f = NSTextField(labelWithString: text)
@@ -93,7 +95,7 @@ final class PresetList: NSView {
             let (num, unit) = formatFreq(p.freq)
             let f = label(num, mono(21, .light), P.text)
             let u = label(unit, mono(13), P.faint)
-            let n = label(p.name, .systemFont(ofSize: 18), P.dim)
+            let n = label(p.name, .systemFont(ofSize: max(9, S(18))), P.dim)
             let m = label(modeName(p.mode), mono(13), P.faint)
             n.lineBreakMode = .byTruncatingTail
             // Selection marker: a solid accent bar down the leading edge. A
@@ -192,7 +194,7 @@ final class MainView: NSView {
     private let dropsLabel = label("—", mono(17), P.faint)
     private let outLabel = label("—", mono(17), P.faint)
 
-    private let stationLabel = label("—", .systemFont(ofSize: 26), P.text)
+    private let stationLabel = label("—", .systemFont(ofSize: max(9, S(26))), P.text)
     private let freqView = FreqView(frame: .zero)
     private let modeChip = label("—", mono(22, .medium), P.text)
     /// FM stereo pilot lock, drawn as the deck's LCD draws it: a red outlined
@@ -283,7 +285,7 @@ final class MainView: NSView {
         // wrong, answered without opening a log.
         func sep() -> NSView { label("|", mono(15), P.line) }
         let topRow = NSStackView(views: [
-            label("deck", .systemFont(ofSize: 23, weight: .bold), P.text),
+            label("deck", .systemFont(ofSize: max(9, S(23)), weight: .bold), P.text),
             linkDot, linkLabel, deviceLabel,
             sep(), iqLabel, dropsLabel,
             sep(), outLabel,
@@ -310,7 +312,7 @@ final class MainView: NSView {
             linkDot.widthAnchor.constraint(equalToConstant: 6),
             linkDot.heightAnchor.constraint(equalToConstant: 6),
         ])
-        embed(topRow, in: top, inset: 12)
+        embed(topRow, in: top, inset: S(12))
 
         // frequency header
         let header = panelView(NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1))
@@ -359,13 +361,13 @@ final class MainView: NSView {
         // The volume bar gives way before the buttons do: a shorter bar is
         // still a usable volume control, a clipped button is not.
         volBar.setContentCompressionResistancePriority(.init(1), for: .horizontal)
-        volBar.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
+        volBar.widthAnchor.constraint(greaterThanOrEqualToConstant: S(90)).isActive = true
         // Measured at 1162 px once the toolbar was dealt with, which then set
         // the minimum on its own. The percentage readout gives before the
         // buttons do; a clipped button is not a button.
         volLabel.setContentCompressionResistancePriority(.init(2), for: .horizontal)
         volLabel.lineBreakMode = .byTruncatingTail
-        embed(bottomRow, in: bottom, inset: 12)
+        embed(bottomRow, in: bottom, inset: S(12))
 
         // display toolbar, between the header and the spectrum
         let bar = panelView(P.sunken)
@@ -424,7 +426,7 @@ final class MainView: NSView {
         smoothField.isBezeled = true
         smoothField.drawsBackground = true
         smoothField.translatesAutoresizingMaskIntoConstraints = false
-        smoothField.widthAnchor.constraint(equalToConstant: 62).isActive = true
+        smoothField.widthAnchor.constraint(equalToConstant: S(62)).isActive = true
         smoothField.target = ButtonBox.shared
         smoothField.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(smoothField)] = { [weak self] in
@@ -484,7 +486,7 @@ final class MainView: NSView {
             t.lineBreakMode = .byTruncatingTail
             t.cell?.usesSingleLineMode = true
         }
-        embed(barRow, in: bar, inset: 12)
+        embed(barRow, in: bar, inset: S(12))
 
         // Zoom and the dB window as continuous vertical sliders down the right
         // edge, the way SDR++ presents them: these are the three you ride while
@@ -505,7 +507,7 @@ final class MainView: NSView {
             sl.translatesAutoresizingMaskIntoConstraints = false
             // A vertical NSSlider's intrinsic height is tiny; without this the
             // three of them collapse into a stack of dots at one end of the rail.
-            sl.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+            sl.heightAnchor.constraint(greaterThanOrEqualToConstant: S(120)).isActive = true
             sl.setContentHuggingPriority(.defaultLow, for: .vertical)
         }
         ButtonBox.shared.actions[ObjectIdentifier(zoomSlider)] = { [weak self] in
@@ -582,29 +584,29 @@ final class MainView: NSView {
             top.leadingAnchor.constraint(equalTo: leadingAnchor),
             top.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            top.heightAnchor.constraint(equalToConstant: 58),
+            top.heightAnchor.constraint(equalToConstant: S(58)),
 
             presetList.topAnchor.constraint(equalTo: top.bottomAnchor),
             presetList.leadingAnchor.constraint(equalTo: leadingAnchor),
-            presetList.widthAnchor.constraint(equalToConstant: 306),
+            presetList.widthAnchor.constraint(equalToConstant: S(306)),
             presetList.bottomAnchor.constraint(equalTo: bandBar.topAnchor),
 
             bandBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             bandBar.widthAnchor.constraint(equalTo: presetList.widthAnchor),
             bandBar.bottomAnchor.constraint(equalTo: bottom.topAnchor),
-            bandBar.heightAnchor.constraint(equalToConstant: 76),
+            bandBar.heightAnchor.constraint(equalToConstant: S(76)),
 
             header.topAnchor.constraint(equalTo: top.bottomAnchor),
             header.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
             header.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
             // Tall enough for the 68 pt readout plus the station line above it
             // and the BW / STEP line below; at 118 the last line was clipped.
-            header.heightAnchor.constraint(equalToConstant: 168),
+            header.heightAnchor.constraint(equalToConstant: S(168)),
 
             bar.topAnchor.constraint(equalTo: header.bottomAnchor),
             bar.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
             bar.trailingAnchor.constraint(equalTo: options.leadingAnchor),
-            bar.heightAnchor.constraint(equalToConstant: 50),
+            bar.heightAnchor.constraint(equalToConstant: S(50)),
 
             spectrum.topAnchor.constraint(equalTo: bar.bottomAnchor),
             spectrum.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
@@ -613,18 +615,18 @@ final class MainView: NSView {
             options.topAnchor.constraint(equalTo: bar.bottomAnchor),
             options.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
             options.bottomAnchor.constraint(equalTo: bottom.topAnchor),
-            options.widthAnchor.constraint(equalToConstant: 228),
+            options.widthAnchor.constraint(equalToConstant: S(228)),
 
             rail.topAnchor.constraint(equalTo: top.bottomAnchor),
             rail.trailingAnchor.constraint(equalTo: trailingAnchor),
             rail.bottomAnchor.constraint(equalTo: bottom.topAnchor),
-            rail.widthAnchor.constraint(equalToConstant: 72),
+            rail.widthAnchor.constraint(equalToConstant: S(72)),
             spectrum.bottomAnchor.constraint(equalTo: bottom.topAnchor),
 
             bottom.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottom.trailingAnchor.constraint(equalTo: trailingAnchor),
             bottom.bottomAnchor.constraint(equalTo: bottomAnchor),
-            bottom.heightAnchor.constraint(equalToConstant: 64),
+            bottom.heightAnchor.constraint(equalToConstant: S(64)),
         ])
 
         // Mode first, then frequency — the order the dial's preset cycle uses.
@@ -713,14 +715,14 @@ final class MainView: NSView {
 
     private func meterRow(_ name: String, _ bar: MeterBar, _ num: NSTextField) -> NSStackView {
         bar.translatesAutoresizingMaskIntoConstraints = false
-        bar.heightAnchor.constraint(equalToConstant: 11).isActive = true
+        bar.heightAnchor.constraint(equalToConstant: S(11)).isActive = true
         // Preferred, not fixed. A meter reads fine at half this width, and the
         // pair of them plus the readout beside each was part of what stopped
         // the window narrowing at all.
-        let wide = bar.widthAnchor.constraint(equalToConstant: 250)
+        let wide = bar.widthAnchor.constraint(equalToConstant: S(250))
         wide.priority = .defaultLow
         wide.isActive = true
-        bar.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+        bar.widthAnchor.constraint(greaterThanOrEqualToConstant: S(120)).isActive = true
         let row = NSStackView(views: [label(name, mono(18), P.faint), bar, num])
         row.orientation = .horizontal; row.spacing = 8; row.alignment = .centerY
         return row
@@ -1007,6 +1009,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
 #if STANDALONE
         Receiver.seedData()
+        // Before the view is built: every constraint constant and font size is
+        // captured at construction, so a later change needs a relaunch.
+        UI.scale = UI.from(RadioConfig.load().uiScale)
 #endif
         Receiver.touchAlive()
         view = MainView(frame: NSRect(x: 0, y: 0, width: 1440, height: 860))
@@ -1019,7 +1024,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         // A floor rather than a wall: below this the spectrum is too narrow to
         // read and the preset list crowds it out. Above it the window is free.
-        window.contentMinSize = NSSize(width: 1040, height: 700)
+        window.contentMinSize = NSSize(width: S(1040), height: S(700))
         // DECK_RX_LAYOUT_DEBUG=1 prints what each panel insists on. Which row
         // sets the window's minimum is not guessable from the constraint list —
         // two attempts at narrowing it changed nothing because they targeted
@@ -1034,6 +1039,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let f = v.fittingSize
                     out += String(format: "panel %-12@ fitting %.0f x %.0f\n", name as NSString, f.width, f.height)
                 }
+                out += String(format: "UI.scale %.2f\n", UI.scale)
                 let w = self.window.frame.size
                 out += String(format: "window %.0f x %.0f  min %.0f x %.0f\n", w.width, w.height,
                               self.window.contentMinSize.width, self.window.contentMinSize.height)

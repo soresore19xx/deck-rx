@@ -14,8 +14,8 @@ type Settings = {
   frameRate?: number;  // fps, default 16
   smoothing?: number;  // SDR++-style smoothing factor, default 16 (α = 1/16 per frame)
   fftSize?: number;    // power of 2, default 512
-  dbFloor?: number;    // bottom of vertical scale (default -110)
-  dbCeil?: number;     // top of vertical scale (default -20)
+  dbFloor?: number;    // bottom of vertical scale (default -160, SDR++ parity)
+  dbCeil?: number;     // top of vertical scale (default -1, SDR++ parity)
   zoomIndex?: number;  // index into ZOOM_STEPS, default 0 (1× = full IQ rate span)
   vZoomIndex?: number; // index into V_ZOOM_FACTORS, default V_ZOOM_DEFAULT_INDEX (= 1.0× of base range)
   axisMode?: AxisMode; // which axis the dial rotation drives — toggled by long press
@@ -69,8 +69,8 @@ export class SpyDialFft extends SingletonAction<Settings> {
   private fftSize = 512;
   private frameRate = 16;
   private smoothing = 16;
-  private dbFloor = -110;
-  private dbCeil = -20;
+  private dbFloor = -160;
+  private dbCeil = -1;
   private zoomIndex = 0;
   private vZoomIndex = V_ZOOM_DEFAULT_INDEX;
   private axisMode: AxisMode = 'h';
@@ -148,8 +148,8 @@ export class SpyDialFft extends SingletonAction<Settings> {
     const fr = clampInt(s.frameRate ?? 16, 1, 120);
     const sm = clampInt(s.smoothing ?? 16, 1, 64);
     const fz = nearestPow2(clampInt(s.fftSize ?? 512, 64, 4096));
-    const floor = clampInt(s.dbFloor ?? -110, -160, -20);
-    const ceil  = clampInt(s.dbCeil  ?? -20,  -60,  0);
+    const floor = clampInt(s.dbFloor ?? -160, -160, -20);
+    const ceil  = clampInt(s.dbCeil  ?? -1,   -60,  0);
     this.frameRate = fr;
     this.smoothing = sm;
     this.dbFloor = floor;

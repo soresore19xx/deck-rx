@@ -43,11 +43,11 @@
     <span class="hint">bins — larger = finer freq resolution, slower response</span>
   </div>
   <div class="row"><label>dB floor</label>
-    <input type="number" id="dbFloor" min="-160" max="-20" step="1" value="-110" />
+    <input type="number" id="dbFloor" min="-160" max="-20" step="1" value="-160" />
     <span class="hint">bottom of scale</span>
   </div>
   <div class="row"><label>dB ceiling</label>
-    <input type="number" id="dbCeil" min="-60" max="0" step="1" value="-20" />
+    <input type="number" id="dbCeil" min="-60" max="0" step="1" value="-1" />
     <span class="hint">top of scale</span>
   </div>
 
@@ -88,8 +88,8 @@
         frameRate: clamp(parseInt(document.getElementById('frameRate').value, 10), 1, 120, 16),
         smoothing: clamp(parseInt(document.getElementById('smoothing').value, 10), 1, 64, 16),
         fftSize:   parseInt(document.getElementById('fftSize').value, 10) || 512,
-        dbFloor:   clamp(parseInt(document.getElementById('dbFloor').value, 10), -160, -20, -110),
-        dbCeil:    clamp(parseInt(document.getElementById('dbCeil').value, 10),  -60,  0,  -20),
+        dbFloor:   clamp(parseInt(document.getElementById('dbFloor').value, 10), -160, -20, -160),
+        dbCeil:    clamp(parseInt(document.getElementById('dbCeil').value, 10),  -60,  0,  -1),
       };
       ws.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: settings }));
     }

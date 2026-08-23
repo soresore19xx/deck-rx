@@ -410,8 +410,8 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     const fr = clampInt(s.frameRate ?? 16, 1, 120);
     const sm = clampInt(s.smoothing ?? 16, 1, 64);
     const fz = nearestPow2(clampInt(s.fftSize ?? 512, 64, 16384));
-    const floor = clampInt(s.dbFloor ?? -110, -160, -20);
-    const ceil  = clampInt(s.dbCeil  ?? -20,  -60,  0);
+    const floor = clampInt(s.dbFloor ?? -160, -160, -20);
+    const ceil  = clampInt(s.dbCeil  ?? -1,   -60,  0);
     st.frameRate = fr;
     st.smoothing = sm;
     st.dbFloor = floor;

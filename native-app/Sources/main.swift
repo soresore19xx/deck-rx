@@ -299,7 +299,7 @@ final class MainView: NSView {
         // window's minimum — the window could not be resized at all, measured
         // pinned at 1930 px wide. These are status readouts: truncating one is
         // a far smaller loss than a window that will not move.
-        for v in [linkLabel, deviceLabel, iqLabel, dropsLabel, outLabel] {
+        for v in [linkLabel, deviceLabel, iqLabel, dropsLabel, outLabel, stationLabel] {
             v.setContentCompressionResistancePriority(.init(1), for: .horizontal)
             v.lineBreakMode = .byTruncatingTail
             v.cell?.usesSingleLineMode = true
@@ -355,7 +355,16 @@ final class MainView: NSView {
         volBar.translatesAutoresizingMaskIntoConstraints = false
         let bottomRow = NSStackView(views: [prev, next, down, up, modeRow, NSView(),
                                             volDown, volBar, volUp, volLabel, mutePad, powerPad])
-        bottomRow.orientation = .horizontal; bottomRow.spacing = 6; bottomRow.alignment = .centerY
+        bottomRow.orientation = .horizontal; bottomRow.spacing = 4; bottomRow.alignment = .centerY
+        // The volume bar gives way before the buttons do: a shorter bar is
+        // still a usable volume control, a clipped button is not.
+        volBar.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        volBar.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
+        // Measured at 1162 px once the toolbar was dealt with, which then set
+        // the minimum on its own. The percentage readout gives before the
+        // buttons do; a clipped button is not a button.
+        volLabel.setContentCompressionResistancePriority(.init(2), for: .horizontal)
+        volLabel.lineBreakMode = .byTruncatingTail
         embed(bottomRow, in: bottom, inset: 12)
 
         // display toolbar, between the header and the spectrum
@@ -454,7 +463,7 @@ final class MainView: NSView {
         barRow.addArrangedSubview(srcLabel)
 #endif
         barRow.orientation = .horizontal
-        barRow.spacing = 6
+        barRow.spacing = 4
         barRow.alignment = .centerY
         // Same for the display toolbar: the source label carries an error
         // message that can be arbitrarily long.
@@ -464,6 +473,17 @@ final class MainView: NSView {
         srcLabel.cell?.usesSingleLineMode = true
 #endif
         dbLabel.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        // Measured: this row wanted 1106 px and, with the 606 px of fixed
+        // panels beside it, set the window's whole minimum. The captions are
+        // the give: a popup has to stay legible, the word in front of it does
+        // not. avgLabel is a derived readout and goes first.
+        avgLabel.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        for v in barRow.arrangedSubviews {
+            guard let t = v as? NSTextField, !t.isEditable else { continue }
+            t.setContentCompressionResistancePriority(.init(2), for: .horizontal)
+            t.lineBreakMode = .byTruncatingTail
+            t.cell?.usesSingleLineMode = true
+        }
         embed(barRow, in: bar, inset: 12)
 
         // Zoom and the dB window as continuous vertical sliders down the right
@@ -550,9 +570,12 @@ final class MainView: NSView {
             bandGrid.leadingAnchor.constraint(equalTo: bandBar.leadingAnchor, constant: 10),
         ])
 
-        for v in [top, header, bottom, presetList, spectrum, bar, rail, options, bandBar] {
+        for (n, v) in [("top", top), ("header", header), ("bottom", bottom),
+                       ("presetList", presetList), ("spectrum", spectrum), ("bar", bar),
+                       ("rail", rail), ("options", options), ("bandBar", bandBar)] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
+            debugPanelRefs.append((n, v))
         }
         NSLayoutConstraint.activate([
             top.topAnchor.constraint(equalTo: topAnchor),
@@ -667,6 +690,11 @@ final class MainView: NSView {
         avgLabel.stringValue = String(format: "(%.2fs)", 10.0 / Double(max(1, speed)))
     }
 
+    /// Panels in layout order, for the debug dump. Captured at layout time —
+    /// they are locals in the setup, not properties.
+    private(set) var debugPanelRefs: [(String, NSView)] = []
+    func debugPanels() -> [(String, NSView)] { debugPanelRefs }
+
     private func syncRange() {
         dbLabel.stringValue = String(format: "%.0f / %.0f dB", spectrum.dbFloor, spectrum.dbCeil)
         spectrum.needsDisplay = true
@@ -686,7 +714,13 @@ final class MainView: NSView {
     private func meterRow(_ name: String, _ bar: MeterBar, _ num: NSTextField) -> NSStackView {
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.heightAnchor.constraint(equalToConstant: 11).isActive = true
-        bar.widthAnchor.constraint(equalToConstant: 250).isActive = true
+        // Preferred, not fixed. A meter reads fine at half this width, and the
+        // pair of them plus the readout beside each was part of what stopped
+        // the window narrowing at all.
+        let wide = bar.widthAnchor.constraint(equalToConstant: 250)
+        wide.priority = .defaultLow
+        wide.isActive = true
+        bar.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         let row = NSStackView(views: [label(name, mono(18), P.faint), bar, num])
         row.orientation = .horizontal; row.spacing = 8; row.alignment = .centerY
         return row
@@ -986,6 +1020,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A floor rather than a wall: below this the spectrum is too narrow to
         // read and the preset list crowds it out. Above it the window is free.
         window.contentMinSize = NSSize(width: 1040, height: 700)
+        // DECK_RX_LAYOUT_DEBUG=1 prints what each panel insists on. Which row
+        // sets the window's minimum is not guessable from the constraint list —
+        // two attempts at narrowing it changed nothing because they targeted
+        // the wrong row.
+        if ProcessInfo.processInfo.environment["DECK_RX_LAYOUT_DEBUG"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                // stderr, not print: stdout is buffered and the dump was lost
+                // every time the process was killed to read it.
+                var out = ""
+                for (name, v) in self.view.debugPanels() {
+                    let f = v.fittingSize
+                    out += String(format: "panel %-12@ fitting %.0f x %.0f\n", name as NSString, f.width, f.height)
+                }
+                let w = self.window.frame.size
+                out += String(format: "window %.0f x %.0f  min %.0f x %.0f\n", w.width, w.height,
+                              self.window.contentMinSize.width, self.window.contentMinSize.height)
+                FileHandle.standardError.write(Data(out.utf8))
+            }
+        }
         window.setFrameAutosaveName("deckRxReceiver")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

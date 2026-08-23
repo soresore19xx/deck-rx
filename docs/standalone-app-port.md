@@ -91,4 +91,37 @@ removed until 4, and 4 is a separate decision.
 
 ## Status
 
-Phase 1 not started. Nothing in this plan has been implemented yet.
+Phases 1-3 are done. DIRECT connects the app to SpyServer itself, AUDIO
+demodulates and plays, and with both on the plugin can be stopped.
+
+Ported and verified against the TypeScript on synthetic signals:
+
+| Piece | Result |
+| --- | --- |
+| FFT (vDSP) | median difference 0.000015 dB, worst 0.089 dB at -120 dB |
+| AM | 100.7 dB agreement |
+| WFM mono / stereo | 58.8 / 63.2 dB |
+| NFM | 76.4 dB |
+| USB / LSB | 92.5 / 79.0 dB |
+| CW | 102.5 dB |
+| Station names | 1360 lookups across 4 regions, 0 mismatches |
+| Output levelling | softLimit exact, AGC within 5e-10 |
+| IF noise reduction | 91200 samples, 10 differ, all by 1 LSB |
+
+Every demod's worst-case sample difference is 3.05e-05 = 1/32768: the
+TypeScript rounds to int16 and the Swift keeps doubles, so that is
+quantisation in the reference, not error here. WFM scores lowest only
+because its output RMS is 0.015 and the same one-LSB gap is a larger
+fraction of it.
+
+`naudiodon` and `deck-rx-asrc` are absent from this path — AVAudioEngine
+owns the device and AVAudioConverter does the rate conversion.
+
+### Still on the plugin
+
+- Presets are read from `data/presets.json` directly, so they work, but
+  **the SDR++ import that maintains that file is the plugin's**.
+- Tune step, bandwidth and the per-mode option sets are fixed defaults
+  here rather than the receiver's configured values.
+- Phase 4 (deck becomes a client) is not started, so the plugin still
+  runs its own signal path when it is running at all.

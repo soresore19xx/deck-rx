@@ -237,6 +237,14 @@ final class MainView: NSView {
     lazy var srcAudioPad: TogglePad = TogglePad("AUDIO", font: mono(13), momentary: false) {
         [weak self] in self?.onAudioToggle?()
     }
+    var onNrToggle: (() -> Void)?
+    var onLevelToggle: (() -> Void)?
+    lazy var nrPad: TogglePad = TogglePad("NR", font: mono(13), momentary: false) {
+        [weak self] in self?.onNrToggle?()
+    }
+    lazy var levelPad: TogglePad = TogglePad("LVL", font: mono(13), momentary: false) {
+        [weak self] in self?.onLevelToggle?()
+    }
     lazy var srcPad: TogglePad = TogglePad("DIRECT", font: mono(13), momentary: false) {
         [weak self] in self?.onSourceToggle?()
     }
@@ -413,7 +421,7 @@ final class MainView: NSView {
             
             label("SMOOTH", mono(14), P.faint), smoothField, smoothStepper, avgLabel,
             holdPad,
-            srcPad, srcAudioPad, srcLabel,
+            srcPad, srcAudioPad, nrPad, levelPad, srcLabel,
             NSView(),
             dbLabel,
         ])
@@ -914,6 +922,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var feed: SpectrumFeed?
     private let radio = LocalRadio()
     private var direct = false
+    private var lastLabelledFreq: Double = -1
+    /// JP region for the station database. Follows the plugin's setting when
+    /// the feed is up, so the two do not disagree about which 関東 is meant.
+    private var region: StationLabel.Region = .kanto
     private var timer: Timer?
     private var aliveTimer: Timer?
 
@@ -943,6 +955,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         radio.onState = { [weak self] in self?.syncSource() }
         view.onSourceToggle = { [weak self] in self?.toggleSource() }
+        view.onNrToggle = { [weak self] in
+            guard let self, self.direct else { self?.view.nrPad.isOn = false; return }
+            self.radio.iqNrEnabled.toggle()
+            self.view.nrPad.isOn = self.radio.iqNrEnabled
+        }
+        view.onLevelToggle = { [weak self] in
+            guard let self, self.direct else { self?.view.levelPad.isOn = false; return }
+            self.radio.levelingEnabled.toggle()
+            self.view.levelPad.isOn = self.radio.levelingEnabled
+        }
         view.onFftSize = { [weak self] size in
             guard let self, self.direct else { return false }
             self.radio.fftSize = size
@@ -996,6 +1018,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             installDirectControl()
         } else {
             Receiver.direct = nil
+            radio.iqNrEnabled = false
+            radio.levelingEnabled = false
+            view.nrPad.isOn = false
+            view.levelPad.isOn = false
             radio.audioEnabled = false
             view.srcAudioPad.isOn = false
             radio.disconnect()
@@ -1022,6 +1048,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 s.muted = self.radio.muted
                 s.device = self.radio.deviceInfo.map { "SpyServer type \($0.deviceType)" } ?? s.device
                 s.audioSink = self.radio.audioEnabled ? "local" : "off"
+                // Label the frequency ourselves — the feed's station name is
+                // whatever the plugin last tuned, which is not where we are.
+                if let name = StationLabel.lookup(freqHz: s.freqHz, region: self.region) {
+                    s.station = name
+                } else if s.station.isEmpty == false, self.lastLabelledFreq != s.freqHz {
+                    s.station = ""
+                }
+                self.lastLabelledFreq = s.freqHz
                 return s
             },
             tuneHz: { [weak self] hz in self?.radio.setFrequency(UInt32(max(0, hz))) },

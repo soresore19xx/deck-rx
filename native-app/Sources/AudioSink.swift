@@ -17,7 +17,8 @@ final class AudioSink {
     private var source: AVAudioSourceNode?
     private var sourceRate: Double = 0
 
-    /// Ring buffer, mono. Sized for roughly a second at any plausible rate —
+    /// Ring buffer, frames interleaved. Sized for roughly a second at any
+    /// plausible rate —
     /// enough to ride out a scheduling hiccup, short enough that recovery from
     /// an underrun is not audible as a long delay.
     private var ring: UnsafeMutablePointer<Float>
@@ -34,8 +35,10 @@ final class AudioSink {
     var volume: Double = 0.9
     var muted = false
 
+    /// Capacity is rounded to an even number of samples so a stereo frame
+    /// never straddles the wrap.
     init(capacity: Int = 96_000) {
-        self.capacity = capacity
+        self.capacity = capacity - (capacity % 2)
         ring = UnsafeMutablePointer<Float>.allocate(capacity: capacity)
         ring.initialize(repeating: 0, count: capacity)
     }
@@ -48,19 +51,25 @@ final class AudioSink {
     /// (Re)starts the engine for a producer running at `rate` Hz.
     /// Called again with a different rate rebuilds the graph — the engine
     /// converts to whatever the output device is actually running at.
-    func start(sourceRate rate: Double) throws {
+    private var channels: AVAudioChannelCount = 1
+
+    func start(sourceRate rate: Double, channels ch: AVAudioChannelCount = 1) throws {
         guard rate > 0 else { return }
-        if sourceRate == rate, engine.isRunning { return }
+        if sourceRate == rate, channels == ch, engine.isRunning { return }
         stop()
         sourceRate = rate
+        channels = ch
 
-        guard let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1) else { return }
+        guard let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: ch) else { return }
         let node = AVAudioSourceNode(format: fmt) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            guard let self, let out = abl[0].mData?.assumingMemoryBound(to: Float.self) else {
+            guard let self else {
                 for buf in abl { memset(buf.mData, 0, Int(buf.mDataByteSize)) }
                 return noErr
             }
+            // Non-interleaved: one buffer per channel. The ring holds frames
+            // interleaved, so a frame is `chans` consecutive samples.
+            let chans = Int(self.channels)
             let n = Int(frameCount)
             // Realtime thread: no allocation, no Swift runtime calls that can
             // lock. Reading the indices without the lock is a deliberate,
@@ -70,16 +79,21 @@ final class AudioSink {
             let w = self.writeIndex
             var available = w - r
             if available < 0 { available += self.capacity }
-            let take = min(n, available)
-            for i in 0..<take {
-                out[i] = self.ring[r]
-                r += 1
-                if r == self.capacity { r = 0 }
+            let takeFrames = min(n, available / chans)
+            for c in 0..<min(chans, abl.count) {
+                guard let out = abl[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
+                var idx = r + c
+                if idx >= self.capacity { idx -= self.capacity }
+                for i in 0..<takeFrames {
+                    out[i] = self.ring[idx]
+                    idx += chans
+                    if idx >= self.capacity { idx -= self.capacity }
+                }
+                for i in takeFrames..<n { out[i] = 0 }
             }
-            if take < n {
-                for i in take..<n { out[i] = 0 }
-                self.underruns += n - take
-            }
+            if takeFrames < n { self.underruns += n - takeFrames }
+            r += takeFrames * chans
+            while r >= self.capacity { r -= self.capacity }
             self.readIndex = r
             return noErr
         }
@@ -117,8 +131,13 @@ final class AudioSink {
         // instead of a mixture of two eras.
         var used = w - readIndex
         if used < 0 { used += capacity }
-        if used >= capacity - 1 {
-            var r = w - (capacity / 2)
+        if used >= capacity - Int(channels) {
+            // Land on a frame boundary, or a stereo read would swap L and R
+            // from here on.
+            let chans = Int(channels)
+            var back = capacity / 2
+            back -= back % chans
+            var r = w - back
             if r < 0 { r += capacity }
             readIndex = r
         }

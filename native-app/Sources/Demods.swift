@@ -71,12 +71,10 @@ final class ComplexFirLpf {
     }
 }
 
-/// Everything except AM: narrow FM, wide FM (mono), SSB and CW.
+/// Everything except AM: narrow FM, wide FM (mono and stereo), SSB and CW.
 ///
-/// Ports of `processFM`, `processWFM`, `processSSB` and `processCW` from
-/// `src/demodulator.ts`, structure and constants intact. WFM stereo is not here
-/// — mono first, because it is what proves the chain end to end, and the pilot
-/// PLL is worth doing once the rest is known good.
+/// Ports of `processFM`, `processWFM`, `processWFMStereo`, `processSSB` and
+/// `processCW` from `src/demodulator.ts`, structure and constants intact.
 final class Demods {
 
     // MARK: shared
@@ -119,8 +117,29 @@ final class Demods {
     private var deempAlpha: Double = 1
     private var deempY: Double = 0
     private var lprLpf = [Biquad](repeating: Biquad(), count: 4)
+    private var lmrLpf = [Biquad](repeating: Biquad(), count: 4)
+    private var pilotBpf = Biquad()
     private var lprConfigured = false
     private(set) var wfmInBandMeanPower: Double = 0
+
+    // Stereo pilot PLL.
+    private var pllPhase: Double = 0
+    private var pllNominalDelta: Double = 0
+    private var pllAlpha: Double = 0
+    private var pllBeta: Double = 0
+    private var pllPdLpfAlpha: Double = 0
+    private var pllPdI: Double = 0
+    private var pllPdQ: Double = 0
+    private var pllFreqOffset: Double = 0
+    private var pilotPower: Double = 0
+    private var deempL: Double = 0
+    private var deempR: Double = 0
+    private var audioLpfR = Biquad()
+    private var audioHpfR = Biquad()
+    /// Whether the badge should say STEREO. Stricter than the audio path's own
+    /// threshold: the L-R mix runs regardless, but the badge should only appear
+    /// when pilot power is confidently clear of the noise floor.
+    private(set) var stereoLocked = false
 
     /// Transition band is 25 % of the cutoff: a tight skirt with a bounded tap
     /// count. The lower clamp keeps the 19 kHz pilot inside the passband; the
@@ -144,9 +163,117 @@ final class Demods {
     /// subcarrier sidebands rode straight through the gentle de-emphasis IIR.
     func setWfmAudioBand(iqRate: Double) {
         let q8: [Double] = [0.5097955791, 0.6012682811, 0.8999762110, 2.5629154802]
-        for k in 0..<4 { lprLpf[k].setLowPass(fs: iqRate, fc: 15000, q: q8[k]) }
+        for k in 0..<4 {
+            lprLpf[k].setLowPass(fs: iqRate, fc: 15000, q: q8[k])
+            lmrLpf[k].setLowPass(fs: iqRate, fc: 15000, q: q8[k])
+        }
+        pilotBpf.setBandPass(fs: iqRate, fc: 19000, q: 30)
+        // Second-order PLL, damping 1/sqrt(2), loop bandwidth 50 Hz — the
+        // middle of the 30-100 Hz the broadcast industry uses. The phase
+        // detector's low-pass sits at five times the loop bandwidth.
+        pllNominalDelta = 2 * Double.pi * 19000 / iqRate
+        let bw = 50.0, damp = 0.7071067811865476
+        let wn = 2 * Double.pi * bw
+        pllAlpha = 2 * damp * wn / iqRate
+        pllBeta = (wn * wn) / (iqRate * iqRate)
+        pllPdLpfAlpha = min(1, 2 * Double.pi * (bw * 5) / iqRate)
         lprConfigured = true
         if wfmIfRate == 0 { setWfmIfBandwidth(iqRate: iqRate, cutoffHz: 80000) }
+    }
+
+    /// The right channel needs its own filter state; sharing one biquad between
+    /// L and R mixes the two channels through the filter memory.
+    func setStereoAudioFilters(rate: Double, lowPassHz: Double, highPassHz: Double) {
+        if lowPassHz > 0, lowPassHz < rate * 0.45 { audioLpfR.setLowPass(fs: rate, fc: lowPassHz) }
+        if highPassHz > 0 { audioHpfR.setHighPass(fs: rate, fc: highPassHz) }
+    }
+
+    /// Wide FM with pilot-tone stereo. Returns interleaved L,R.
+    ///
+    /// L-R is mixed in unconditionally, as SDR++ does. Gating it to zero below
+    /// a pilot threshold gave clean mono on an empty channel, but a scope
+    /// comparison on noise showed what it cost: correlation pinned at +1.00,
+    /// the image collapsed to a line, where SDR++ showed a proper uncorrelated
+    /// cloud. On a real broadcast the gate was fully open anyway.
+    func processWFMStereo(int16IQ iq: Data, decimate: Int, gain: Double = 2000) -> [Float] {
+        guard lprConfigured else {
+            let mono = processWFM(int16IQ: iq, decimate: decimate, gain: gain)
+            var out = [Float](repeating: 0, count: mono.count * 2)
+            for i in 0..<mono.count { out[i * 2] = mono[i]; out[i * 2 + 1] = mono[i] }
+            return out
+        }
+        let inSamples = iq.count / 4
+        guard inSamples > 0, decimate > 0 else { return [] }
+        let outSamples = inSamples / decimate
+        guard outSamples > 0 else { return [] }
+        var out = [Float](repeating: 0, count: outSamples * 2)
+        var oi = 0
+        var inBandSum: Double = 0
+        let a = deempAlpha
+
+        iq.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let base = raw.baseAddress!
+            for i in 0..<inSamples {
+                let o = i * 4
+                var I = Double(base.loadUnaligned(fromByteOffset: o, as: Int16.self).littleEndian)
+                var Q = Double(base.loadUnaligned(fromByteOffset: o + 2, as: Int16.self).littleEndian)
+                if wfmIfRate > 0 { wfmIf.step(I, Q); I = wfmIf.lastI; Q = wfmIf.lastQ }
+                inBandSum += I * I + Q * Q
+                let denom = I * prevI + Q * prevQ
+                let numer = Q * prevI - I * prevQ
+                var demod: Double = 0
+                if abs(denom) + abs(numer) > 1 { demod = atan2(numer, denom) }
+                prevI = I
+                prevQ = Q
+
+                var lpr = demod
+                for k in 0..<4 { lpr = lprLpf[k].step(lpr) }
+                let pilot = pilotBpf.step(demod)
+
+                let cosV = cos(pllPhase), sinV = sin(pllPhase)
+                pllPdI += pllPdLpfAlpha * (pilot * cosV - pllPdI)
+                pllPdQ += pllPdLpfAlpha * (pilot * sinV - pllPdQ)
+                let phaseErr = -atan2(pllPdQ, pllPdI)
+                // Clamp the integrator: 0.05 rad/sample is far more offset than
+                // any real pilot drifts, and it stops windup if the loop latches
+                // onto something that is not a pilot at all.
+                pllFreqOffset += pllBeta * phaseErr
+                pllFreqOffset = min(max(pllFreqOffset, -0.05), 0.05)
+                pllPhase += pllNominalDelta + pllAlpha * phaseErr + pllFreqOffset
+                while pllPhase > Double.pi { pllPhase -= 2 * Double.pi }
+                while pllPhase < -Double.pi { pllPhase += 2 * Double.pi }
+
+                // Phase-coherence test rather than raw magnitude. A real pilot
+                // at lock gives pdI ~ A/2 and pdQ ~ 0; a loop stalking noise
+                // gives both a similar random magnitude, so pdI - |pdQ| lands
+                // near zero. Magnitude alone reads positive in both cases.
+                let lockMetric = pllPdI - abs(pllPdQ)
+                pilotPower = 0.999 * pilotPower + 0.001 * lockMetric
+
+                let ref38 = cos(2 * pllPhase)
+                // x2 compensates the 1/2 from cos.cos.
+                var lmr = demod * ref38 * 2
+                for k in 0..<4 { lmr = lmrLpf[k].step(lmr) }
+
+                guard i % decimate == 0, oi < outSamples else { continue }
+                if stereoLocked {
+                    if pilotPower < 0.002 { stereoLocked = false }
+                } else if pilotPower > 0.005 {
+                    stereoLocked = true
+                }
+                deempL = a * lpr + (1 - a) * deempL
+                deempR = a * lmr + (1 - a) * deempR
+                var L = deempL + deempR
+                var R = deempL - deempR
+                if audioLpfEnabled { L = audioLpf.step(L); R = audioLpfR.step(R) }
+                if audioHpfEnabled { L = audioHpf.step(L); R = audioHpfR.step(R) }
+                out[oi * 2] = Self.toFloat(L * gain)
+                out[oi * 2 + 1] = Self.toFloat(R * gain)
+                oi += 1
+            }
+        }
+        wfmInBandMeanPower = inSamples > 0 ? inBandSum / Double(inSamples) : 0
+        return out
     }
 
     /// Narrow FM: discriminator straight into the audio filters.
@@ -336,7 +463,11 @@ final class Demods {
         ssbPhase = 0; cwPhase = 0; cwAgcAmp = 0
         audioLpf.reset(); audioHpf.reset()
         wfmIf.reset()
-        for i in 0..<4 { lprLpf[i].reset() }
+        pllPhase = 0; pllPdI = 0; pllPdQ = 0; pllFreqOffset = 0
+        pilotPower = 0; deempL = 0; deempR = 0; stereoLocked = false
+        audioLpfR.reset(); audioHpfR.reset()
+        pilotBpf.reset()
+        for i in 0..<4 { lprLpf[i].reset(); lmrLpf[i].reset() }
         for i in 0..<2 { ssbLpfI[i].reset(); ssbLpfQ[i].reset(); cwLpf[i].reset() }
     }
 }

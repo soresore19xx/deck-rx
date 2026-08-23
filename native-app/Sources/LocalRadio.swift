@@ -17,6 +17,8 @@ final class LocalRadio {
     private let am = AMDemod()
     private let other = Demods()
     private let sink = AudioSink()
+    private let leveler = OutputLeveler()
+    private let iqnr = IqNr()
     private let queue = DispatchQueue(label: "deck-rx.localradio")
 
     private(set) var isConnected = false
@@ -41,9 +43,30 @@ final class LocalRadio {
     var bandwidthHz: Double = 9000
     /// Demod mode, using the plugin's numbering so the two agree:
     /// 0 WFM, 1 NFM, 2 AM, 3 USB, 4 LSB, 5 CW.
-    var mode: Int = 2 { didSet { if mode != oldValue { queue.async { self.configureDemods() } } } }
+    var mode: Int = 2 {
+        didSet {
+            guard mode != oldValue else { return }
+            queue.async {
+                self.configureDemods()
+                self.applyNrMode()
+                // Channel count is a property of the graph, so a mode change
+                // that crosses mono/stereo has to rebuild it.
+                if self.audioEnabled { self.restartAudio() }
+            }
+        }
+    }
     var audioEnabled = false {
         didSet { if !audioEnabled { sink.stop() } else { restartAudio() } }
+    }
+    /// Master trim on top of the per-mode makeup, matching cfg.audioGain.
+    var audioGain: Double = 1
+    /// IF noise reduction, FM modes only. Off by default, as on the deck.
+    var iqNrEnabled = false { didSet { queue.async { self.applyNrMode() } } }
+    /// Adaptive output AGC. Off by default: the static per-mode makeup is the
+    /// leveller, and this one's level-riding is audible.
+    var levelingEnabled: Bool {
+        get { leveler.config.enabled }
+        set { leveler.config.enabled = newValue; if !newValue { leveler.reset() } }
     }
     var volume: Double { get { sink.volume } set { sink.volume = newValue } }
     var muted: Bool { get { sink.muted } set { sink.muted = newValue } }
@@ -174,12 +197,27 @@ final class LocalRadio {
         other.setupSSB(iqRate: iq, audioRate: audioRate)
         other.setupCW(iqRate: iq)
         other.setAudioFilters(rate: audioRate, lowPassHz: 0, highPassHz: 0)
+        other.setStereoAudioFilters(rate: audioRate, lowPassHz: 0, highPassHz: 0)
+        applyNrMode()
     }
 
-    private func demodulate(_ body: Data) -> [Float] {
+    /// WFM is the only stereo mode, so the sink's channel count follows it.
+    var isStereoMode: Bool { mode == 0 }
+    var stereoLocked: Bool { other.stereoLocked }
+
+    private func applyNrMode() {
+        iqnr.reset()
+        iqnr.setMode(iqNrEnabled ? mode : -1)
+    }
+
+    private func demodulate(_ rawBody: Data) -> [Float] {
+        // NR runs on the IQ before the demodulator, which is where the FMIF
+        // tracking filter belongs — after detection the noise is already mixed
+        // into the audio.
+        let body = iqNrEnabled ? iqnr.process(rawBody) : rawBody
         let g = Double(gain) / 10.0
         switch mode {
-        case 0:  return other.processWFM(int16IQ: body, decimate: audioDecimate)
+        case 0:  return other.processWFMStereo(int16IQ: body, decimate: audioDecimate)
         case 1:  return other.processFM(int16IQ: body, decimate: audioDecimate)
         case 3:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: true)
         case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: false)
@@ -188,9 +226,25 @@ final class LocalRadio {
         }
     }
 
+    /// Makeup, optional AGC, then the soft ceiling — the plugin's order, and
+    /// the order matters: limiting before the gain would waste the headroom the
+    /// makeup is there to use.
+    private func level(_ pcm: inout [Float]) {
+        let makeup = (AudioLeveling.modeMakeup[mode] ?? 1) * audioGain
+        let dt = audioRate > 0 ? Double(pcm.count) / (audioRate * (isStereoMode ? 2 : 1)) : 0
+        let g = leveler.observe(pcm, makeup: makeup, dt: dt) * makeup
+        guard g != 1 || leveler.config.enabled else { return }
+        for i in 0..<pcm.count {
+            // int16 domain, because that is what the limiter's knee is
+            // calibrated in.
+            let v = Double(pcm[i]) * 32768 * g
+            pcm[i] = Float(AudioLeveling.softLimit(v) / 32768)
+        }
+    }
+
     private func restartAudio() {
         guard audioRate > 0 else { return }
-        do { try sink.start(sourceRate: audioRate) }
+        do { try sink.start(sourceRate: audioRate, channels: isStereoMode ? 2 : 1) }
         catch { lastError = "audio: \(error.localizedDescription)" }
     }
 
@@ -200,8 +254,11 @@ final class LocalRadio {
             // Demodulate per packet, not per display frame: audio has to be
             // continuous, and the frame timer deliberately skips samples.
             if self.audioEnabled, self.audioRate > 0 {
-                let pcm = self.demodulate(pkt.body)
-                if !pcm.isEmpty { self.sink.write(pcm) }
+                var pcm = self.demodulate(pkt.body)
+                if !pcm.isEmpty {
+                    self.level(&pcm)
+                    self.sink.write(pcm)
+                }
             }
             self.iq.append(pkt.body)
             // Keep a little more than one transform's worth. Unbounded growth

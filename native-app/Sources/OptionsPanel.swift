@@ -15,6 +15,12 @@ final class OptionsPanel: NSView {
     /// reached at all. Scrolling costs nothing when everything already fits.
     private let scroll = NSScrollView()
     private let doc = NSView()
+    /// Width an overlay scroller occupies when it appears. A system dimension,
+    /// so it is asked for rather than guessed, with a floor for the case where
+    /// the style reports zero.
+    private var scrollerClearance: CGFloat {
+        max(16, NSScroller.scrollerWidth(for: .small, scrollerStyle: .overlay))
+    }
     private var live: [String: Any] = [:]
     private var mode = -1
 
@@ -46,10 +52,12 @@ final class OptionsPanel: NSView {
             doc.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
             stack.topAnchor.constraint(equalTo: doc.topAnchor, constant: S(10)),
             stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: S(12)),
-            // Clear of the scroller rather than under it. An overlay scroller
-            // is about 15 pt wide and the rows end with their value column, so
-            // a 12 pt inset put the bar on top of the values it was next to.
-            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: S(-20)),
+            // Clear of the scroller, plus a margin. The scroller's width is a
+            // system size and does not follow our scale, so this inset must not
+            // either: scaling it left 14 pt at min, under the ~15 pt bar, and
+            // the values sat against it. Fixed clearance, scaled margin.
+            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor,
+                                            constant: -(scrollerClearance + S(8))),
             // The document's height is the stack's: what makes it scrollable.
             stack.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: S(-10)),
         ])

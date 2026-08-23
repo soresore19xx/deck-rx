@@ -19,6 +19,11 @@ final class LocalRadio {
     private let sink = AudioSink()
     private let leveler = OutputLeveler()
     private let iqnr = IqNr()
+    /// Persisted settings. The app owns this; the plugin's config seeds it on a
+    /// first run and is never written back to.
+    var config = RadioConfig.load() {
+        didSet { queue.async { self.configureDemods() } }
+    }
     private let queue = DispatchQueue(label: "deck-rx.localradio")
 
     private(set) var isConnected = false
@@ -35,17 +40,24 @@ final class LocalRadio {
     /// Offset from the device's MinimumIQDecimation, matching SDR++'s srId.
     /// 1 puts an Airspy HF+ at about 456 kHz, which is the plugin's default and
     /// the reason far-adjacent FM stations stopped aliasing into baseband.
-    var decimationOffset: UInt32 = 1
-    var gain: UInt32 = 5
+    var decimationOffset: UInt32 { config.iqDecimation }
+    var gain: UInt32 { config.gain }
     /// Audio decimation from the IQ rate. 456 kHz / 48 = 9.5 kHz, which is
     /// enough for a 9 kHz AM channel and cheap to filter.
-    var audioDecimate = 48
-    var bandwidthHz: Double = 9000
+    /// IQ rate over this is the audio rate. The plugin's own default is 4,
+    /// which at 456 kHz gives 114 kHz — deliberately high, because the FM
+    /// stereo subcarrier lives at 38 kHz and has to survive the decimation.
+    var audioDecimate: Int { config.audioDecimate * 12 }
+    var bandwidthHz: Double { config.bandwidth(for: mode) }
     /// Demod mode, using the plugin's numbering so the two agree:
     /// 0 WFM, 1 NFM, 2 AM, 3 USB, 4 LSB, 5 CW.
     var mode: Int = 2 {
+        // Persisted so the app comes back where it was left, not where the
+        // plugin last happened to be.
         didSet {
             guard mode != oldValue else { return }
+            config.mode = mode
+            config.save()
             queue.async {
                 self.configureDemods()
                 self.applyNrMode()
@@ -59,28 +71,33 @@ final class LocalRadio {
         didSet { if !audioEnabled { sink.stop() } else { restartAudio() } }
     }
     /// Master trim on top of the per-mode makeup, matching cfg.audioGain.
-    var audioGain: Double = 1
+    var audioGain: Double { config.audioGain }
     /// IF noise reduction, FM modes only. Off by default, as on the deck.
     var iqNrEnabled = false { didSet { queue.async { self.applyNrMode() } } }
     /// Adaptive output AGC. Off by default: the static per-mode makeup is the
     /// leveller, and this one's level-riding is audible.
     var levelingEnabled: Bool {
         get { leveler.config.enabled }
-        set { leveler.config.enabled = newValue; if !newValue { leveler.reset() } }
+        set {
+            leveler.config.enabled = newValue
+            if !newValue { leveler.reset() }
+            config.levelingEnabled = newValue
+            config.save()
+        }
     }
-    var volume: Double { get { sink.volume } set { sink.volume = newValue } }
-    var muted: Bool { get { sink.muted } set { sink.muted = newValue } }
+    var volume: Double {
+        get { sink.volume }
+        set { sink.volume = newValue; config.volume = newValue; config.save() }
+    }
+    var muted: Bool {
+        get { sink.muted }
+        set { sink.muted = newValue; config.muted = newValue; config.save() }
+    }
     private(set) var audioRate: Double = 0
 
     /// Tune step for tick-based control. Follows the mode so a knob click
     /// means the same thing it does on the deck.
-    var tuneStepHz: Double {
-        switch mode {
-        case 0, 1: return 100_000     // FM broadcast raster
-        case 2:    return 9_000       // JP medium wave
-        default:   return 1_000
-        }
-    }
+    var tuneStepHz: Double { config.step(for: mode) }
     private(set) var frequency: UInt32 = 1_134_000
     private(set) var iqRate: UInt32 = 0
     var iqRateHz: UInt32 { iqRate }
@@ -94,8 +111,17 @@ final class LocalRadio {
 
     // MARK: control
 
-    func connect(host: String, port: UInt16, frequency freq: UInt32) {
-        frequency = freq
+    /// Connects using the persisted server address unless one is given. The
+    /// app is meant to work with no plugin present, so the config is the source
+    /// of truth for where the receiver is.
+    func connect(host: String? = nil, port: UInt16? = nil, frequency freq: UInt32? = nil) {
+        let host = host ?? config.host
+        let port = port ?? UInt16(clamping: config.port)
+        frequency = freq ?? UInt32(max(0, config.frequencyHz))
+        sink.volume = config.volume
+        sink.muted = config.muted
+        leveler.config.enabled = config.levelingEnabled
+        iqNrEnabled = config.fmIfnr
         lastError = nil
         queue.async { self.fft = FFTPipeline(self.fftSize) }
 
@@ -141,6 +167,8 @@ final class LocalRadio {
 
     func setFrequency(_ hz: UInt32) {
         frequency = hz
+        config.frequencyHz = Double(hz)
+        config.save()
         guard isConnected else { return }
         client.setFrequency(hz)
         am.resetForRetune()
@@ -188,12 +216,14 @@ final class LocalRadio {
         guard iqRate > 0, audioRate > 0 else { return }
         let iq = Double(iqRate)
         am.reset()
-        am.setBandwidth(audioRate: audioRate, bandwidthHz: bandwidthHz, iqRate: iq)
+        am.setBandwidth(audioRate: audioRate, bandwidthHz: config.amBandwidthHz, iqRate: iq)
         am.configureSync(rate: audioRate)
+        am.agcEnabled = config.amCarrierAgc
+        am.syncEnabled = config.amSync
         other.reset()
         other.setWfmAudioBand(iqRate: iq)
-        other.setWfmIfBandwidth(iqRate: iq, cutoffHz: 80000)
-        other.setDeemphasis(audioRate: audioRate, tau: 50e-6)   // 50 us, the JP/EU curve
+        other.setWfmIfBandwidth(iqRate: iq, cutoffHz: config.fmBandwidthHz / 2)
+        other.setDeemphasis(audioRate: audioRate, tau: config.deemphasisTau)
         other.setupSSB(iqRate: iq, audioRate: audioRate)
         other.setupCW(iqRate: iq)
         other.setAudioFilters(rate: audioRate, lowPassHz: 0, highPassHz: 0)
@@ -202,7 +232,7 @@ final class LocalRadio {
     }
 
     /// WFM is the only stereo mode, so the sink's channel count follows it.
-    var isStereoMode: Bool { mode == 0 }
+    var isStereoMode: Bool { mode == 0 && config.fmStereo }
     var stereoLocked: Bool { other.stereoLocked }
 
     private func applyNrMode() {
@@ -217,7 +247,9 @@ final class LocalRadio {
         let body = iqNrEnabled ? iqnr.process(rawBody) : rawBody
         let g = Double(gain) / 10.0
         switch mode {
-        case 0:  return other.processWFMStereo(int16IQ: body, decimate: audioDecimate)
+        case 0:  return config.fmStereo
+                    ? other.processWFMStereo(int16IQ: body, decimate: audioDecimate)
+                    : other.processWFM(int16IQ: body, decimate: audioDecimate)
         case 1:  return other.processFM(int16IQ: body, decimate: audioDecimate)
         case 3:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: true)
         case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: false)

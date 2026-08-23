@@ -237,6 +237,10 @@ final class MainView: NSView {
     lazy var srcAudioPad: TogglePad = TogglePad("AUDIO", font: mono(13), momentary: false) {
         [weak self] in self?.onAudioToggle?()
     }
+    var onImportPresets: (() -> Void)?
+    lazy var importPad: TogglePad = TogglePad("IMPORT", font: mono(13), momentary: true) {
+        [weak self] in self?.onImportPresets?()
+    }
     var onNrToggle: (() -> Void)?
     var onLevelToggle: (() -> Void)?
     lazy var nrPad: TogglePad = TogglePad("NR", font: mono(13), momentary: false) {
@@ -421,7 +425,7 @@ final class MainView: NSView {
             
             label("SMOOTH", mono(14), P.faint), smoothField, smoothStepper, avgLabel,
             holdPad,
-            srcPad, srcAudioPad, nrPad, levelPad, srcLabel,
+            srcPad, srcAudioPad, nrPad, levelPad, importPad, srcLabel,
             NSView(),
             dbLabel,
         ])
@@ -925,7 +929,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastLabelledFreq: Double = -1
     /// JP region for the station database. Follows the plugin's setting when
     /// the feed is up, so the two do not disagree about which 関東 is meant.
-    private var region: StationLabel.Region = .kanto
+    private var region: StationLabel.Region {
+        StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
+    }
     private var timer: Timer?
     private var aliveTimer: Timer?
 
@@ -955,10 +961,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         radio.onState = { [weak self] in self?.syncSource() }
         view.onSourceToggle = { [weak self] in self?.toggleSource() }
+        view.onImportPresets = { [weak self] in
+            guard let self else { return }
+            do {
+                let r = try PresetStore.importFromSdrpp()
+                self.view.srcLabel.stringValue =
+                    "import +\(r.added) skip \(r.skipped) dedup \(r.migrated)"
+                self.view.srcLabel.textColor = P.dim
+                self.view.presetList.reload()
+            } catch {
+                self.view.srcLabel.stringValue = "import failed: \(error.localizedDescription)"
+                self.view.srcLabel.textColor = P.warn
+            }
+        }
         view.onNrToggle = { [weak self] in
             guard let self, self.direct else { self?.view.nrPad.isOn = false; return }
             self.radio.iqNrEnabled.toggle()
             self.view.nrPad.isOn = self.radio.iqNrEnabled
+            self.radio.config.fmIfnr = self.radio.iqNrEnabled
+            self.radio.config.save()
         }
         view.onLevelToggle = { [weak self] in
             guard let self, self.direct else { self?.view.levelPad.isOn = false; return }
@@ -1009,12 +1030,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func toggleSource() {
         direct.toggle()
         if direct {
-            let s = Receiver.status()
-            let host = s.host.isEmpty ? "127.0.0.1" : s.host
-            let port = UInt16(s.port > 0 ? s.port : 5555)
-            let freq = UInt32(max(0, s.freqHz))
-            radio.mode = s.mode
-            radio.connect(host: host, port: port, frequency: freq > 0 ? freq : 1_134_000)
+            // Prefer the live feed when the plugin happens to be up — following
+            // it avoids a jump when switching — but fall back to the app's own
+            // config, which is what a machine with no plugin has.
+            let s = Receiver.status_fromFeed()
+            radio.mode = s.fresh ? s.mode : radio.config.mode
+            radio.connect(host: s.fresh && !s.host.isEmpty ? s.host : nil,
+                          port: s.fresh && s.port > 0 ? UInt16(s.port) : nil,
+                          frequency: s.fresh && s.freqHz > 0 ? UInt32(s.freqHz) : nil)
             installDirectControl()
         } else {
             Receiver.direct = nil

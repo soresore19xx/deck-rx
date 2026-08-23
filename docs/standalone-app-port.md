@@ -117,11 +117,32 @@ fraction of it.
 `naudiodon` and `deck-rx-asrc` are absent from this path — AVAudioEngine
 owns the device and AVAudioConverter does the rate conversion.
 
-### Still on the plugin
+### Nothing is left on the plugin
 
-- Presets are read from `data/presets.json` directly, so they work, but
-  **the SDR++ import that maintains that file is the plugin's**.
-- Tune step, bandwidth and the per-mode option sets are fixed defaults
-  here rather than the receiver's configured values.
-- Phase 4 (deck becomes a client) is not started, so the plugin still
-  runs its own signal path when it is running at all.
+Settings, presets and the SDR++ import all moved across.
+
+`RadioConfig` is the app's own file, in
+`~/Library/Application Support/deck-rx/receiver.json`. The plugin's
+`config.json` seeds it on a first run — so a machine with both comes up
+where the deck left off — and is never written back to. Two processes
+writing one JSON file is how a setting silently reverts.
+
+`PresetStore` does the SDR++ import the plugin's PI button did, from the
+IMPORT control. SDR++'s `frequency_manager_config.json` stays read-only,
+which is not a preference: its parser is strict about indentation, float
+bandwidths and ASCII names, and a plain JSON round-trip breaks SDR++ on
+its next launch.
+
+One deliberate difference from the plugin. The plugin iterates the
+source in file order, which decides something it should not: a simulcast
+broadcaster is one name at two frequencies (NHK at 594 kHz and
+82.5 MHz), the store is name-keyed, so whichever is seen first wins and
+the other is dropped — making the result depend on the order SDR++
+happened to write its file. This iterates by ascending frequency, so the
+MW entry wins, which is the one whose name came from the MW table. On a
+37-bookmark import the counts are identical (31 added, 6 skipped) and 26
+of 31 entries match exactly; the 5 that differ are precisely the
+MW/FM simulcast pairs.
+
+Phase 4 (deck becomes a client) is still not started, so the plugin
+continues to run its own signal path whenever it is running.

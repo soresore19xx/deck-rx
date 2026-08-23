@@ -177,6 +177,20 @@ enum StationLabel {
         return nil
     }
 
+    /// The bare broadcaster name, with no callsign or site annotation. What
+    /// the preset importer wants: a stable key, not a display label.
+    ///
+    /// Deliberately **not** region-filtered, matching the plugin's importer.
+    /// A bookmark is a station the user chose to keep, which is often exactly
+    /// the out-of-region one they are DX-ing; filtering here would leave those
+    /// under SDR++'s ASCII placeholder while every local station got its real
+    /// name. Display lookup still filters — that one is about what is
+    /// receivable here, which is a different question.
+    static func rawName(freqHz: Double, region: Region? = nil) -> String? {
+        load()
+        return lookupJp(freqHz: freqHz, region: region)?.name
+    }
+
     private static func format(_ s: JpStation) -> String {
         var name = s.name
         if name == "NHK" { name = s.band == "MW" ? "NHK第1" : "NHK-FM" }
@@ -196,7 +210,7 @@ enum StationLabel {
         return best.map { ($0, bestDelta) }
     }
 
-    private static func lookupJp(freqHz: Double, region: Region) -> JpStation? {
+    private static func lookupJp(freqHz: Double, region: Region?) -> JpStation? {
         let band: String
         if freqHz >= 76_000_000, freqHz <= 108_000_000 { band = "FM" }
         else if freqHz >= 522_000, freqHz <= 1_710_000 { band = "MW" }
@@ -206,7 +220,10 @@ enum StationLabel {
         // Region filter. Entries with no region are kept: those are the
         // deliberately global ones. Treating hand-curated entries as always
         // global — the old rule — leaked 近畿 stations into 関東 lookups.
-        let inRegion: (JpStation) -> Bool = { $0.region == nil || $0.region == region.rawValue }
+        let inRegion: (JpStation) -> Bool = { s in
+            guard let region else { return true }
+            return s.region == nil || s.region == region.rawValue
+        }
         let m = scan(manual.filter(inRegion), freqHz, band, tol)
         let a = scan(auto.filter(inRegion), freqHz, band, tol)
 
@@ -216,7 +233,8 @@ enum StationLabel {
         if let m, let a { best = m.1 <= a.1 ? m.0 : a.0 }
         else { best = m?.0 ?? a?.0 }
         guard var b = best else { return nil }
-        if b.callsign == nil, let c = findCallsign(freqHz: freqHz, band: band, region: region) {
+        if b.callsign == nil, let region,
+           let c = findCallsign(freqHz: freqHz, band: band, region: region) {
             b.callsign = c
         }
         return b

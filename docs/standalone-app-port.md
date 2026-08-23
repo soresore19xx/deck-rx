@@ -67,11 +67,11 @@ something that can be run.
    noise reduction, levelling. Ends when the app matches the plugin by ear and
    by meter on every band.
 4. **Deck becomes a client** — the plugin drops its own signal path and drives
-   the app through the control endpoint, the way `knobctl` already does. One
-   receiver implementation, two front-ends.
+   the app through the control endpoint. **Dropped; see below.** The server
+   half was built and is useful on its own.
 
-Phases 1-3 leave the plugin untouched and working. Nothing user-visible is
-removed until 4, and 4 is a separate decision.
+Phases 1-3 leave the plugin untouched and working, and nothing user-visible
+was ever removed.
 
 ## Risks worth naming up front
 
@@ -191,8 +191,22 @@ present. `/preset` answers **409** with an empty store, which is the
 behaviour worth keeping: a control path with nothing to land on must not
 look identical to a working one from the far side.
 
-**What is left:** the plugin still runs its own signal path when it is
-running. Turning it into a pure client means replacing `spyService` with
-a proxy over these endpoints and reworking every dial that reads service
-state directly — a large change to the working deck, and the last one.
-The app no longer needs it either way.
+### The client half is not going to be built
+
+The plugin keeps its own signal path.
+
+The only argument for converting it was not having to make a demod fix
+twice. That cost is only paid if the plugin keeps changing — freeze it
+and there is nothing to pay. Against that: 12 actions read `spyService`
+at 380 sites (84 in `spyDialTune.ts` alone), synchronous reads would
+become asynchronous, and push subscriptions would become polling. The
+Tune dial's auto-jump timing is exactly where this repo has been bitten
+twice before, and it is documented in CLAUDE.md for that reason.
+
+The deck's dials and screens are not redundant with the app either.
+Physical controls are their own thing, so this was never a question of
+consolidating onto one front-end.
+
+Running both at once is fine and needs no guard. SpyServer takes multiple
+clients by design — running SDR++ alongside deck-rx is how every
+comparison in this port was made.

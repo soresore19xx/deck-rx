@@ -1019,7 +1019,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UI.scale = UI.from(RadioConfig.load().uiScale)
 #endif
         Receiver.touchAlive()
-        view = MainView(frame: NSRect(x: 0, y: 0, width: 1440, height: 860))
+        view = makeView()
         window = NSWindow(contentRect: view.frame,
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
@@ -1074,47 +1074,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.server.publish(frame)
         }
         server.onStateChange = { [weak self] in self?.syncSource() }
+        server.onUiScaleChanged = { [weak self] in self?.rebuildForScale() }
         radio.onState = { [weak self] in self?.syncSource() }
-        view.onSourceToggle = { [weak self] in self?.toggleSource() }
-        view.onImportPresets = { [weak self] in
-            guard let self else { return }
-            do {
-                let r = try PresetStore.importFromSdrpp()
-                self.view.srcLabel.stringValue =
-                    "import +\(r.added) skip \(r.skipped) dedup \(r.migrated)"
-                self.view.srcLabel.textColor = P.dim
-                self.view.presetList.reload()
-            } catch {
-                self.view.srcLabel.stringValue = "import failed: \(error.localizedDescription)"
-                self.view.srcLabel.textColor = P.warn
-            }
-        }
-        view.onNrToggle = { [weak self] in
-            guard let self, self.direct else { self?.view.nrPad.isOn = false; return }
-            self.radio.iqNrEnabled.toggle()
-            self.view.nrPad.isOn = self.radio.iqNrEnabled
-            self.radio.config.fmIfnr = self.radio.iqNrEnabled
-            self.radio.config.save()
-        }
-        view.onLevelToggle = { [weak self] in
-            guard let self, self.direct else { self?.view.levelPad.isOn = false; return }
-            self.radio.levelingEnabled.toggle()
-            self.view.levelPad.isOn = self.radio.levelingEnabled
-        }
-        view.onFftSize = { [weak self] size in
-            guard let self, self.direct else { return false }
-            self.radio.fftSize = size
-            return true
-        }
-        view.onAudioToggle = { [weak self] in
-            guard let self else { return }
-            // Audio only means anything on the app's own connection; through
-            // the plugin the plugin owns the sound card.
-            guard self.direct else { self.view.srcAudioPad.isOn = false; return }
-            self.radio.audioEnabled.toggle()
-            self.view.srcAudioPad.isOn = self.radio.audioEnabled
-            self.syncSource()
-        }
+        wire(view)
 #endif
         // Seed the display controls from the receiver's live settings.
         Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
@@ -1251,6 +1213,124 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+
+    /// The window's contents, built fresh. Fonts and constraint constants are
+    /// captured here from `UI.scale`, which is why a scale change needs a new
+    /// one rather than a redraw.
+    private func makeView() -> MainView {
+        let v = MainView(frame: NSRect(x: 0, y: 0, width: 1440, height: 860))
+        wire(v)
+        return v
+    }
+
+    /// Everything hung off the view. Split out so rebuilding it re-attaches
+    /// the same callbacks instead of leaving a live view wired to a dead one.
+    private func wire(_ v: MainView) {
+#if STANDALONE
+        v.onSourceToggle = { [weak self] in self?.toggleSource() }
+        v.onImportPresets = { [weak self] in self?.importPresets() }
+        v.onNrToggle = { [weak self] in self?.toggleNr() }
+        v.onLevelToggle = { [weak self] in self?.toggleLeveling() }
+        v.onFftSize = { [weak self] size in
+            guard let self, self.direct else { return false }
+            self.radio.fftSize = size
+            return true
+        }
+        v.onAudioToggle = { [weak self] in self?.toggleAudio() }
+        // Not wired to the panel: its change goes through the same endpoint,
+        // so the server's callback covers both paths and wiring here too would
+        // rebuild twice.
+#endif
+    }
+
+#if STANDALONE
+    /// Swaps in a freshly built view at the new scale. The alternative was a
+    /// relaunch, which is a poor answer to a three-way picker.
+    ///
+    /// The waterfall's history does not survive: it is a bitmap sized to the
+    /// old panel, and there is no honest way to rescale one — stretching it
+    /// would put frames at times they did not happen. Everything else is read
+    /// back from the receiver on the next tick, so it returns on its own.
+    private func importPresets() {
+        do {
+            let r = try PresetStore.importFromSdrpp()
+            view.srcLabel.stringValue = "import +\(r.added) skip \(r.skipped) dedup \(r.migrated)"
+            view.srcLabel.textColor = P.dim
+            view.presetList.reload()
+        } catch {
+            view.srcLabel.stringValue = "import failed: \(error.localizedDescription)"
+            view.srcLabel.textColor = P.warn
+        }
+    }
+
+    private func toggleNr() {
+        guard direct else { view.nrPad.isOn = false; return }
+        radio.iqNrEnabled.toggle()
+        view.nrPad.isOn = radio.iqNrEnabled
+        radio.config.fmIfnr = radio.iqNrEnabled
+        radio.config.save()
+    }
+
+    private func toggleLeveling() {
+        guard direct else { view.levelPad.isOn = false; return }
+        radio.levelingEnabled.toggle()
+        view.levelPad.isOn = radio.levelingEnabled
+    }
+
+    private func toggleAudio() {
+        // Audio only means anything on the app's own connection; through the
+        // plugin the plugin owns the sound card.
+        guard direct else { view.srcAudioPad.isOn = false; return }
+        radio.audioEnabled.toggle()
+        view.srcAudioPad.isOn = radio.audioEnabled
+        syncSource()
+    }
+
+    private func rebuildForScale() {
+        // From memory, not disk. The endpoint has already applied and saved
+        // it; re-reading the file only added a race to lose.
+        let wanted = UI.from(radio.config.uiScale)
+        guard wanted != UI.scale else { return }
+        UI.scale = wanted
+
+        let wasDirect = direct
+        let frame = window.frame
+        let fresh = makeView()
+        view = fresh
+        window.contentView = fresh
+        window.contentMinSize = NSSize(width: S(1040), height: S(700))
+        // Keep the window where it was, only clamped up to the new minimum.
+        var f = frame
+        f.size.width = max(f.size.width, window.contentMinSize.width)
+        f.size.height = max(f.size.height, window.contentMinSize.height)
+        window.setFrame(f, display: true)
+
+        // Restore what the new view cannot know about itself.
+        fresh.srcPad.isOn = wasDirect
+        fresh.srcAudioPad.isOn = radio.audioEnabled
+        fresh.nrPad.isOn = radio.iqNrEnabled
+        fresh.levelPad.isOn = radio.levelingEnabled
+        syncSource()
+        fresh.refresh()
+        fresh.options.refresh()
+        if ProcessInfo.processInfo.environment["DECK_RX_LAYOUT_DEBUG"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                let h = self.view.debugPanels().first { $0.0 == "header" }?.1.fittingSize ?? .zero
+                FileHandle.standardError.write(Data(String(
+                    format: "rebuilt: UI.scale %.2f header %.0f x %.0f min %.0f x %.0f\n",
+                    UI.scale, h.width, h.height,
+                    self.window.contentMinSize.width, self.window.contentMinSize.height).utf8))
+            }
+        }
+        Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
+        Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
+        Receiver.stations { [weak self] list in
+            self?.view.spectrum.markers = list
+            self?.view.spectrum.needsDisplay = true
+        }
+    }
+#endif
 
     /// Built by hand: there is no nib, so without this the app has no menu bar
     /// at all — no About, and no Cmd-Q either. The Quit item is the one that

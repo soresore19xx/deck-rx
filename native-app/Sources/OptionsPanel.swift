@@ -8,6 +8,7 @@ import AppKit
 /// de-emphasis and an FM one has no carrier AGC, and showing both with half
 /// greyed out is worse than showing what applies.
 final class OptionsPanel: NSView {
+
     private let stack = NSStackView()
     /// The rows are stacked top-down with no bound on the total, so on a short
     /// screen the last of them ran off the bottom of the panel and could not be

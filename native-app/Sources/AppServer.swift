@@ -31,6 +31,11 @@ final class AppServer {
     private(set) var portBusy = false
 
     var onStateChange: (() -> Void)?
+    /// The display scale changed. The window has to be rebuilt for it, which
+    /// only the delegate can do — and it has to fire here rather than in the
+    /// options panel, or the same change made over the endpoint (by curl, by
+    /// another machine) would set the value and leave the screen alone.
+    var onUiScaleChanged: (() -> Void)?
 
     private let controlPort: UInt16
     private let spectrumPath: String
@@ -355,6 +360,11 @@ final class AppServer {
 
     private func applyReceiver(_ name: String, _ raw: String) -> Bool {
         var c = radio.config
+        // Set by the uiScale case and acted on after the save below. Notifying
+        // from inside the case fired before c.save() had run, so the rebuild
+        // read the previous value back off disk — which worked for two of the
+        // three transitions and not the third.
+        var scaleChanged = false
         switch name {
         case "tuneMode":      c.tuneMode = raw
         case "jpRegion":      c.jpRegion = raw
@@ -363,6 +373,7 @@ final class AppServer {
         case "uiScale":
             guard UI.names.contains(raw) else { return false }
             c.uiScale = raw
+            scaleChanged = true
         case "host":
             let h = raw.trimmingCharacters(in: .whitespaces)
             guard !h.isEmpty else { return false }
@@ -374,6 +385,7 @@ final class AppServer {
         }
         c.save()
         radio.config = c
+        if scaleChanged { DispatchQueue.main.async { self.onUiScaleChanged?() } }
         // The address only takes effect on the next connection, so dial it now
         // — otherwise the field accepts a new host and nothing happens.
         if name == "host" || name == "port", radio.isConnected {

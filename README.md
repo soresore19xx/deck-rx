@@ -332,6 +332,10 @@ Press **DIRECT** to connect, then **AUDIO** to demodulate and play. `autoDirect`
 and `autoAudio` in the config do both at launch, which is the only way to drive
 it on a machine nobody sits at.
 
+The menu bar is built by hand — there is no nib — so About and Quit exist at
+all. About reports which of the two builds is running and what it is pointed
+at, which is a real question with both installed.
+
 ### Why it exists
 
 The app owned no receiver state, so it was useless without the plugin on the
@@ -360,16 +364,19 @@ Host and port are editable from the options panel, so a copied app needs no
 hand-edited file. The station databases ship inside the bundle and seed
 `~/Library/Application Support/deck-rx/data` on first launch.
 
-`uiScale` picks `normal`, `compact` or `tiny` — fonts and every fixed dimension
+`uiScale` picks `min`, `middle` or `max` — fonts and every fixed dimension
 scale together, since scaling only the text leaves the panels their full width.
-It takes a relaunch, because constraint constants are captured when the window
-is built.
+The frequency readout and the station line above it take a further reduction on
+top of that: they are the largest things on screen by a wide margin. Applied
+immediately; the window is rebuilt in place and the receiver keeps running,
+though the waterfall's history restarts because its bitmap is sized to the old
+panel.
 
 | scale | minimum window |
 | --- | --- |
-| normal | 1435 × 784 |
-| compact | 1278 × 681 |
-| tiny | 1139 × 620 |
+| max | 1435 × 784 |
+| middle | 1278 × 681 |
+| min | 1139 × 620 |
 
 An 11-inch MacBook Air is 1366 × 768, so `compact` is what fits it.
 

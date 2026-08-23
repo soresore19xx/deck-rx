@@ -62,7 +62,28 @@ enum Receiver {
         var fresh = false      // feed updated recently — otherwise nothing is live
     }
 
+    /// Installed while the app is receiving on its own. Every control below
+    /// consults it first, so the existing call sites do not each need to know
+    /// which receiver is live — returning true means the direct path took it.
+    struct DirectControl {
+        var status: () -> Status
+        var tuneHz: (Int) -> Void
+        var tuneTicks: (Int) -> Void
+        var mode: (Int) -> Void
+        var volume: (Double) -> Void
+        var toggleMute: () -> Void
+    }
+    static var direct: DirectControl?
+
     static func status() -> Status {
+        if let d = direct { return d.status() }
+        return status_fromFeed()
+    }
+
+    /// The feed on its own, with no direct-control override. The direct path
+    /// starts from this so fields it does not own — station name above all —
+    /// keep working whenever the plugin happens to be up too.
+    static func status_fromFeed() -> Status {
         var s = Status()
         guard let data = FileManager.default.contents(atPath: statusPath),
               let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return s }
@@ -154,16 +175,31 @@ enum Receiver {
         }.resume()
     }
 
-    static func tune(ticks: Int)   { call("/tune?ticks=\(ticks)") }
-    static func tune(hz: Int)      { call("/tune?hz=\(hz)") }
+    static func tune(ticks: Int)   {
+        if let d = direct { d.tuneTicks(ticks); return }
+        call("/tune?ticks=\(ticks)")
+    }
+    static func tune(hz: Int)      {
+        if let d = direct { d.tuneHz(hz); return }
+        call("/tune?hz=\(hz)")
+    }
     static func volume(delta: Int) { call("/volume?d=\(delta)") }
     /// Absolute 0..1 — what a click on the volume bar means.
-    static func volume(level: Double) { call(String(format: "/volume?v=%.3f", max(0, min(1, level)))) }
-    static func toggleMute()       { call("/mute?toggle=1") }
+    static func volume(level: Double) {
+        if let d = direct { d.volume(max(0, min(1, level))); return }
+        call(String(format: "/volume?v=%.3f", max(0, min(1, level))))
+    }
+    static func toggleMute()       {
+        if let d = direct { d.toggleMute(); return }
+        call("/mute?toggle=1")
+    }
     static func togglePower()      { call("/power?toggle=1") }
     static func preset(step: Int)  { call("/preset?d=\(step > 0 ? 1 : -1)") }
     /// Demod mode by index (see MODE_NAMES). A preset's mode travels with it.
-    static func mode(_ m: Int)     { call("/mode?m=\(m)") }
+    static func mode(_ m: Int)     {
+        if let d = direct { d.mode(m); return }
+        call("/mode?m=\(m)")
+    }
 
     /// Receiver-wide settings: tune mode, JP region, audio sink and the SDR++
     /// import. The deck exposes these through its Property Inspector; this is

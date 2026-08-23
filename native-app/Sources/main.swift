@@ -991,13 +991,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let host = s.host.isEmpty ? "127.0.0.1" : s.host
             let port = UInt16(s.port > 0 ? s.port : 5555)
             let freq = UInt32(max(0, s.freqHz))
+            radio.mode = s.mode
             radio.connect(host: host, port: port, frequency: freq > 0 ? freq : 1_134_000)
+            installDirectControl()
         } else {
+            Receiver.direct = nil
             radio.audioEnabled = false
             view.srcAudioPad.isOn = false
             radio.disconnect()
         }
         syncSource()
+    }
+
+    /// Routes control and the status readout at the app's own receiver, so the
+    /// window shows what it is actually doing rather than the last thing the
+    /// plugin said before it was stopped.
+    private func installDirectControl() {
+        Receiver.direct = Receiver.DirectControl(
+            status: { [weak self] in
+                guard let self else { return Receiver.Status() }
+                var s = Receiver.status_fromFeed()   // keep station name etc. when the plugin is up
+                s.connected = self.radio.isConnected
+                s.enabled = self.radio.isConnected
+                s.fresh = true
+                s.freqHz = Double(self.radio.frequency)
+                s.mode = self.radio.mode
+                s.iqRateHz = Double(self.radio.iqRateHz)
+                s.tuneStepHz = self.radio.tuneStepHz
+                s.volume = self.radio.volume
+                s.muted = self.radio.muted
+                s.device = self.radio.deviceInfo.map { "SpyServer type \($0.deviceType)" } ?? s.device
+                s.audioSink = self.radio.audioEnabled ? "local" : "off"
+                return s
+            },
+            tuneHz: { [weak self] hz in self?.radio.setFrequency(UInt32(max(0, hz))) },
+            tuneTicks: { [weak self] t in self?.radio.tune(ticks: t) },
+            mode: { [weak self] m in self?.radio.mode = m },
+            volume: { [weak self] v in self?.radio.volume = v },
+            toggleMute: { [weak self] in
+                guard let self else { return }
+                self.radio.muted.toggle()
+            })
     }
 
     private func syncSource() {

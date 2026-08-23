@@ -14,7 +14,8 @@ final class LocalRadio {
 
     private let client = SpyClient()
     private var fft: FFTPipeline?
-    private let demod = AMDemod()
+    private let am = AMDemod()
+    private let other = Demods()
     private let sink = AudioSink()
     private let queue = DispatchQueue(label: "deck-rx.localradio")
 
@@ -38,6 +39,9 @@ final class LocalRadio {
     /// enough for a 9 kHz AM channel and cheap to filter.
     var audioDecimate = 48
     var bandwidthHz: Double = 9000
+    /// Demod mode, using the plugin's numbering so the two agree:
+    /// 0 WFM, 1 NFM, 2 AM, 3 USB, 4 LSB, 5 CW.
+    var mode: Int = 2 { didSet { if mode != oldValue { queue.async { self.configureDemods() } } } }
     var audioEnabled = false {
         didSet { if !audioEnabled { sink.stop() } else { restartAudio() } }
     }
@@ -45,8 +49,18 @@ final class LocalRadio {
     var muted: Bool { get { sink.muted } set { sink.muted = newValue } }
     private(set) var audioRate: Double = 0
 
-    private var frequency: UInt32 = 1_134_000
-    private var iqRate: UInt32 = 0
+    /// Tune step for tick-based control. Follows the mode so a knob click
+    /// means the same thing it does on the deck.
+    var tuneStepHz: Double {
+        switch mode {
+        case 0, 1: return 100_000     // FM broadcast raster
+        case 2:    return 9_000       // JP medium wave
+        default:   return 1_000
+        }
+    }
+    private(set) var frequency: UInt32 = 1_134_000
+    private(set) var iqRate: UInt32 = 0
+    var iqRateHz: UInt32 { iqRate }
     private var seq: UInt32 = 0
 
     /// Rolling IQ, trimmed to what the current FFT needs. Frames are built on a
@@ -96,11 +110,18 @@ final class LocalRadio {
         DispatchQueue.main.async { self.onState?() }
     }
 
+    func tune(ticks: Int) {
+        let delta = Double(ticks) * tuneStepHz
+        let next = max(0, Double(frequency) + delta)
+        setFrequency(UInt32(next))
+    }
+
     func setFrequency(_ hz: UInt32) {
         frequency = hz
         guard isConnected else { return }
         client.setFrequency(hz)
-        demod.resetForRetune()
+        am.resetForRetune()
+        other.resetForRetune()
         // The bins are about to describe a different part of the spectrum; the
         // old ones are not a smaller version of the new ones.
         queue.async { self.iq.removeAll(keepingCapacity: true) }
@@ -129,15 +150,43 @@ final class LocalRadio {
 
         isConnected = true
         audioRate = Double(iqRate) / Double(max(1, audioDecimate))
-        demod.reset()
-        demod.setBandwidth(audioRate: audioRate, bandwidthHz: bandwidthHz, iqRate: Double(iqRate))
-        demod.configureSync(rate: audioRate)
+        configureDemods()
         if audioEnabled { restartAudio() }
         startFrameTimer()
         DispatchQueue.main.async { self.onState?() }
     }
 
     // MARK: IQ -> frames
+
+    /// Rebuilds every filter for the current rates and mode. Cheap enough to
+    /// run on any change, and doing it in one place is what keeps the AM and
+    /// non-AM paths from drifting into different ideas of the same rate.
+    private func configureDemods() {
+        guard iqRate > 0, audioRate > 0 else { return }
+        let iq = Double(iqRate)
+        am.reset()
+        am.setBandwidth(audioRate: audioRate, bandwidthHz: bandwidthHz, iqRate: iq)
+        am.configureSync(rate: audioRate)
+        other.reset()
+        other.setWfmAudioBand(iqRate: iq)
+        other.setWfmIfBandwidth(iqRate: iq, cutoffHz: 80000)
+        other.setDeemphasis(audioRate: audioRate, tau: 50e-6)   // 50 us, the JP/EU curve
+        other.setupSSB(iqRate: iq, audioRate: audioRate)
+        other.setupCW(iqRate: iq)
+        other.setAudioFilters(rate: audioRate, lowPassHz: 0, highPassHz: 0)
+    }
+
+    private func demodulate(_ body: Data) -> [Float] {
+        let g = Double(gain) / 10.0
+        switch mode {
+        case 0:  return other.processWFM(int16IQ: body, decimate: audioDecimate)
+        case 1:  return other.processFM(int16IQ: body, decimate: audioDecimate)
+        case 3:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: true)
+        case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: false)
+        case 5:  return other.processCW(int16IQ: body, decimate: audioDecimate)
+        default: return am.process(int16IQ: body, decimate: audioDecimate, gainScale: g)
+        }
+    }
 
     private func restartAudio() {
         guard audioRate > 0 else { return }
@@ -151,8 +200,7 @@ final class LocalRadio {
             // Demodulate per packet, not per display frame: audio has to be
             // continuous, and the frame timer deliberately skips samples.
             if self.audioEnabled, self.audioRate > 0 {
-                let pcm = self.demod.process(int16IQ: pkt.body, decimate: self.audioDecimate,
-                                             gainScale: Double(self.gain) / 10.0)
+                let pcm = self.demodulate(pkt.body)
                 if !pcm.isEmpty { self.sink.write(pcm) }
             }
             self.iq.append(pkt.body)

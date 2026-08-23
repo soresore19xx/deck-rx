@@ -76,7 +76,9 @@ final class AMDemod {
     private var syncAlpha: Double = 0
     private var syncBeta: Double = 0
 
-    var agcEnabled = true
+    /// Off by default, as in the plugin: the fixed-gain path is what the
+    /// levelling stage downstream was tuned against.
+    var agcEnabled = false
     var syncEnabled = false
 
     /// Scratch for the IF-filtered stream. Pass 2's look-ahead reads forward
@@ -165,7 +167,10 @@ final class AMDemod {
         let gs = min(max(gainScale, 0), 1)
         let fixedGain = agcEnabled ? 1.0 : 32.0 * gs
         let alphaDc = 0.001
-        let atk = 0.05, dcy = 0.0005          // per-sample IIR factors
+        // Per-sample IIR factors. SDR++ expresses these as a rate in Hz over
+        // the sample rate; 50 and 5 at 57 kHz are the plugin's defaults and
+        // the numbers the AM path was tuned with.
+        let atk = 50.0 / 57000.0, dcy = 5.0 / 57000.0
         let invAtk = 1 - atk, invDec = 1 - dcy
 
         var out = [Float](repeating: 0, count: outSamples)

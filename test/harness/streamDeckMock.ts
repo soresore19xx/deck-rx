@@ -251,13 +251,18 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
     plugin.stderr?.on('data', d => process.stderr.write(`[plugin stderr] ${d}`));
   }
 
-  // Wait for the plugin's WS connection + register handshake
+  // Wait for the plugin's WS connection + register handshake.
+  //
+  // 5 s was tight even one at a time on a loaded machine. The real fix for
+  // the failures was fileParallelism: false in vitest.config.ts; this is
+  // headroom, overridable so a slower machine needs no edit here.
+  const startupMs = Number(process.env.DECK_RX_TEST_STARTUP_MS ?? 10000);
   const client = await new Promise<WebSocket>((res, rej) => {
     const timer = setTimeout(() => {
       wss.close();
       plugin.kill();
-      rej(new Error('timeout: plugin did not connect / register within 5 s'));
-    }, 5000);
+      rej(new Error(`timeout: plugin did not connect / register within ${startupMs} ms`));
+    }, startupMs);
     wss.once('connection', (sock) => {
       sock.once('message', (data) => {
         const msg = JSON.parse(data.toString());

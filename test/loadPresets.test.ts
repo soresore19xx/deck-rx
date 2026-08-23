@@ -1,6 +1,12 @@
-// loadPresets region-merge tests. Points the loader at a fixture SDR++
-// config and the live jp-stations.json so the merge / dedup logic is
-// exercised end-to-end without the user's actual SDR++ bookmarks.
+// loadPresets tests. Points the loader at a fixture preset store and the live
+// jp-stations.json, so the region argument is exercised without touching the
+// user's own bookmarks.
+//
+// These used to assert that the JP DB was merged into the list. It is not, and
+// deliberately: 32a5e99 made the store the sole source of records because
+// merging every station in a region inflated the roster with entries nobody
+// imported. The tests were not updated with it and had been failing since,
+// asserting a behaviour that had been removed on purpose.
 import { describe, it, expect, beforeAll } from 'vitest';
 import { resolve } from 'path';
 
@@ -17,7 +23,7 @@ async function importLoader() {
   return mod;
 }
 
-describe('loadPresets — deck-rx presets + JP DB merge', () => {
+describe('loadPresets — the store is the sole source of records', () => {
   it('without region: deck-rx preset entries only', async () => {
     const { loadPresets, clearPresetsCache } = await importLoader();
     clearPresetsCache();
@@ -33,59 +39,48 @@ describe('loadPresets — deck-rx presets + JP DB merge', () => {
     expect(freqs.has(594_000)).toBe(false);
   });
 
-  it('with region=kanto: merged with auto-scraped 関東 entries', async () => {
+  it('the region does not add records', async () => {
+    // The argument exists for cache-keying and for the render-time name
+    // lookup, not for the roster. Same count whichever region is asked for.
     const { loadPresets, clearPresetsCache } = await importLoader();
     clearPresetsCache();
-    const presets = await loadPresets('kanto');
-    expect(presets.length).toBeGreaterThan(3);  // includes 関東 entries
-    const byFreq = new Map(presets.map(p => [p.freq, p]));
-    // 関東 NHK 594 from the auto-scraped pool
-    expect(byFreq.get(594_000)?.name).toBe('NHK');
-    // 90.5 MHz collision: deck-rx fixture has "TBS Radio (FM補完)", JP DB has
-    // "TBSラジオ". JP DB wins on freq collision per loadPresets dedup rule.
-    expect(byFreq.get(90_500_000)?.name).toBe('TBSラジオ');
-    // 9910 kHz only in deck-rx fixture — preserved untouched.
+    const kanto = await loadPresets('kanto');
+    clearPresetsCache();
+    const kinki = await loadPresets('kinki');
+    clearPresetsCache();
+    const none = await loadPresets();
+    expect(kanto.length).toBe(3);
+    expect(kinki.length).toBe(3);
+    expect(none.length).toBe(3);
+    // And the JP DB's own 関東 entries stay out of it.
+    expect(kanto.some(p => p.freq === 594_000)).toBe(false);
+    expect(kinki.some(p => p.freq === 1_008_000)).toBe(false);
+  });
+
+  it('every fixture entry survives unchanged', async () => {
+    const { loadPresets, clearPresetsCache } = await importLoader();
+    clearPresetsCache();
+    const byFreq = new Map((await loadPresets('kanto')).map(p => [p.freq, p]));
+    // The store's own name wins: nothing rewrites it at load time.
+    expect(byFreq.get(90_500_000)?.name).toBe('TBS Radio (FM補完)');
     expect(byFreq.get(9_910_000)?.name).toBe('KTWR SW');
+    expect(byFreq.get(693_000)?.name).toBe('NHK R2 Tokyo (manual SDR++)');
   });
 
-  it('with region=kinki: 関東 auto entries are gone, ABCラジオ is in', async () => {
+  it('is sorted by frequency', async () => {
     const { loadPresets, clearPresetsCache } = await importLoader();
     clearPresetsCache();
-    const presets = await loadPresets('kinki');
-    const byFreq = new Map(presets.map(p => [p.freq, p]));
-    // ABCラジオ at 1008 kHz comes from manualStations[region=kinki]
-    expect(byFreq.get(1_008_000)?.name).toBe('ABCラジオ');
-    // 関東 NHK 594 (auto-scraped, region=kanto) MUST NOT leak into kinki
-    expect(byFreq.has(594_000)).toBe(false);
-    // deck-rx fixture entries are still there
-    expect(byFreq.get(9_910_000)?.name).toBe('KTWR SW');
+    const freqs = (await loadPresets('kanto')).map(p => p.freq);
+    expect(freqs).toEqual([...freqs].sort((a, b) => a - b));
   });
 
-  it('region switch produces different lists', async () => {
+  it('carries the store bandwidth and mode through', async () => {
     const { loadPresets, clearPresetsCache } = await importLoader();
     clearPresetsCache();
-    const kantoList = await loadPresets('kanto');
-    clearPresetsCache();
-    const kinkiList = await loadPresets('kinki');
-    expect(kantoList.length).not.toBe(kinkiList.length);
-    // The two regions should have non-identical name sets
-    const kantoNames = new Set(kantoList.map(p => p.name));
-    const kinkiNames = new Set(kinkiList.map(p => p.name));
-    expect(kantoNames.has('NHK')).toBe(true);          // 関東 NHK
-    expect(kinkiNames.has('ABCラジオ')).toBe(true);    // 近畿 manualStations
-  });
-
-  it('preset bandwidth/mode follow the JP DB band classification', async () => {
-    const { loadPresets, clearPresetsCache } = await importLoader();
-    clearPresetsCache();
-    const presets = await loadPresets('kanto');
-    const byFreq = new Map(presets.map(p => [p.freq, p]));
-    const nhkAm = byFreq.get(594_000);
-    expect(nhkAm?.mode).toBe(2);          // AM
-    expect(nhkAm?.bandwidth).toBe(9_000);
-    // Pick any FM band entry (there are many); just sanity-check shape
-    const fmEntry = presets.find(p => p.freq >= 76_000_000 && p.freq <= 108_000_000 && p.name !== 'TBS Radio (FM補完)');
-    expect(fmEntry?.mode).toBe(1);        // WFM
-    expect(fmEntry?.bandwidth).toBe(200_000);
+    const byFreq = new Map((await loadPresets('kanto')).map(p => [p.freq, p]));
+    // Mode indices are SDR++'s: 1 = WFM, 2 = AM.
+    expect(byFreq.get(90_500_000)?.mode).toBe(1);
+    expect(byFreq.get(693_000)?.mode).toBe(2);
+    expect(byFreq.get(693_000)?.bandwidth).toBeGreaterThan(0);
   });
 });

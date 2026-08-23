@@ -5,6 +5,7 @@
 // cursor is a single continuous index across both columns; PUSH on a Band
 // row immediately calls setDemodMode (no edit-mode roundtrip).
 
+import { readFileSync } from 'fs';
 import { describe, it, expect, afterEach } from 'vitest';
 import { startPlugin, type MockHarness } from './harness/streamDeckMock.js';
 
@@ -42,7 +43,11 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     await harness.willAppearDial(COMBO_UUID, CTX);
     await harness.settle(200);
     const svg = await waitForCombFeedback(harness);
-    expect(svg).toMatch(/Mode/);
+    // Label is 'Pre/Stp' since 951781b shortened it to fit the half-width
+    // column, and the value reads 'Preset' in preset mode. These asserted the
+    // old wording and had been failing ever since.
+    expect(svg).toMatch(/Pre\/Stp/);
+    expect(svg).toMatch(/Preset/);
     expect(svg).toMatch(/Preset/);
   }, 10_000);
 
@@ -167,57 +172,51 @@ describe('A3 — Combo Options dial Mode/Step row', () => {
     expect(svg).toMatch(/width="3"/);
   }, 10_000);
 
-  it('preset → vfo on edit, vfo → preset on CCW past the smallest step', async () => {
+  it('long push toggles preset/vfo; edit cycles the step', async () => {
     harness = await startPlugin();
     await harness.willAppearDial(COMBO_UUID, CTX);
     await harness.settle(200);
 
-    // Navigate selectedIdx 0 → 6 (Mode/Step row at Band column bottom), enter
-    // edit mode. Band cells (idx 0..5) are non-edit; idx 6 = Mode/Step is
-    // edit-toggleable.
+    // Rewritten twice over. It asserted that a CW edit switched preset -> vfo,
+    // which the dial has not done since c0e05fd made the row data-driven:
+    // edit cycles the step value, long press toggles the mode. And it looked
+    // for the words "Mode" and "Step" in the SVG, which 951781b renamed to
+    // 'Pre/Stp' — and which is unreadable there anyway, since the glyphs are
+    // drawn rather than set as text. State is read from the persisted config.
+    const readCfg = (): { tuneMode?: string; tuneStepHz?: number } => {
+      try { return JSON.parse(readFileSync(harness.configPath, 'utf8')); } catch { return {}; }
+    };
+    const settleUntil = async (pred: () => boolean): Promise<boolean> => {
+      for (let i = 0; i < 40; i++) {
+        if (pred()) return true;
+        await harness.settle(100);
+      }
+      return pred();
+    };
+
+    // Navigate to idx 6, the Pre/Stp row at the Band column's bottom.
     for (let i = 0; i < 6; i++) harness.dialRotate(COMBO_UUID, CTX, 1);
     await harness.settle(100);
+    expect(readCfg().tuneMode ?? 'preset').toBe('preset');
+
+    // Long press toggles to vfo.
+    // dialRowHelper.longPressMs is 1000; 900 was under it and the press
+    // registered as a short one.
+    harness.dialDown(COMBO_UUID, CTX);
+    await harness.settle(1300);
+    harness.dialUp(COMBO_UUID, CTX);
+    expect(await settleUntil(() => readCfg().tuneMode === 'vfo'),
+           'long press should switch preset -> vfo').toBe(true);
+
+    // Short press enters edit mode; a CW tick then moves the step to the next
+    // value in the list rather than touching the mode.
     harness.dialDown(COMBO_UUID, CTX);
     harness.dialUp(COMBO_UUID, CTX);
-    await harness.settle(100);
-
-    // CW edit on idx 6 in preset → toggles to vfo.
+    await harness.settle(150);
+    const before = readCfg().tuneStepHz ?? 0;
     harness.dialRotate(COMBO_UUID, CTX, 1);
-    // Spin until we see "Step" text in a setFeedback payload (or fail after
-    // a generous budget). spyService.setTuneMode → listener → render is
-    // synchronous from the dial's perspective but goes through a couple of
-    // queued microtasks + a config persistField write so we keep a margin.
-    let vfoSvg = '';
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const msg = await harness.awaitMessage<SetFeedbackMsg>(
-        m => (m as SetFeedbackMsg)?.event === 'setFeedback' && (m as SetFeedbackMsg)?.context === CTX,
-        2000,
-      );
-      const s = decodeOptionsSvg(msg);
-      if (/>Step</.test(s)) { vfoSvg = s; break; }
-    }
-    expect(vfoSvg, 'Expected "Step" label after preset→vfo toggle').toMatch(/>Step</);
-    // Mode/Step row sits in the Band column bottom (single position). The
-    // default step is 9 kHz → "9k" should appear as the value.
-    expect(vfoSvg).toMatch(/>9k</);
-
-    // Now CCW: cycle down through TUNE_STEP_VALUES then wrap back to preset.
-    // List = [1, 10, 100, 1000, 5000, 9000, 10000, 25000, 50000, 100000,
-    //        200000, 500000, 1000000]. Default after toggle is 9000 → 5
-    // CCW reaches 1; one more wraps to preset. We send 8 CCW with margin.
-    for (let i = 0; i < 8; i++) {
-      harness.dialRotate(COMBO_UUID, CTX, -1);
-      await harness.settle(40);
-    }
-    let presetSvg = '';
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const msg = await harness.awaitMessage<SetFeedbackMsg>(
-        m => (m as SetFeedbackMsg)?.event === 'setFeedback' && (m as SetFeedbackMsg)?.context === CTX,
-        2000,
-      );
-      const s = decodeOptionsSvg(msg);
-      if (/>Preset</.test(s)) { presetSvg = s; break; }
-    }
-    expect(presetSvg, 'Expected "Preset" after CCW past min step wraps').toMatch(/>Preset</);
+    expect(await settleUntil(() => (readCfg().tuneStepHz ?? 0) !== before),
+           'edit should cycle the tune step').toBe(true);
+    expect(readCfg().tuneMode).toBe('vfo');
   }, 20_000);
 });

@@ -119,7 +119,23 @@ owns the device and AVAudioConverter does the rate conversion.
 
 ### Nothing is left on the plugin
 
-Settings, presets and the SDR++ import all moved across.
+Settings, presets, the station databases and the SDR++ import all moved
+across, and the data files moved with them.
+
+Everything the receiver reads now lives in
+`~/Library/Application Support/deck-rx/data`. It was still pointing into
+the plugin's bundle until this was checked properly — presets and all
+three station databases — which meant a Mac without the plugin had no
+directory to read and would have come up with no presets and no station
+names. The station databases ship inside the `.app` and seed that
+directory on first launch; `presets.json` deliberately does not, because
+one host's station list is not a sensible default for another machine.
+A plugin install is still used as a seed source when one is present.
+
+Verified with the app's data directory seeded **only** from the bundle:
+41 MW and 97 FM names from the JP DB, 895 shortwave entries active at
+that moment from EIBI, and a config fallback of 127.0.0.1:5555 when
+neither config file exists.
 
 `RadioConfig` is the app's own file, in
 `~/Library/Application Support/deck-rx/receiver.json`. The plugin's

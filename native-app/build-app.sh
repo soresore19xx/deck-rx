@@ -91,6 +91,21 @@ cp "$BIN" "$EXE" || { echo "ERROR: could not install executable"; exit 1; }
 chmod +x "$EXE"
 [ -f "$ICNS" ] && cp -p "$ICNS" "$APP/Contents/Resources/deck-rx-receiver.icns"
 
+# --- station databases, bundled ---
+# The app seeds its own data directory from these on first run. Bundling them
+# is what makes the .app portable: a Mac with no plugin installed has no
+# plugin data directory to read, and that Mac is the point of the app.
+# presets.json is deliberately NOT bundled - it is the user's own list, and
+# shipping one host's presets to another machine is not a sensible default.
+DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
+for f in jp-stations.json eibi.txt callsigns.json; do
+  if [ -f "$DATA_SRC/$f" ]; then
+    cp -p "$DATA_SRC/$f" "$APP/Contents/Resources/$f"
+  else
+    echo "WARN: $f missing - the app will start without it and show no station names"
+  fi
+done
+
 if codesign --force --deep -s - "$APP" 2>/dev/null; then
   echo "ad-hoc signature OK"
 else

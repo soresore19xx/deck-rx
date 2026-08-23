@@ -936,6 +936,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var aliveTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Receiver.seedData()
         Receiver.touchAlive()
         view = MainView(frame: NSRect(x: 0, y: 0, width: 1440, height: 860))
         window = NSWindow(contentRect: view.frame,

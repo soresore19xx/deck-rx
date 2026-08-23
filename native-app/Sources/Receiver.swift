@@ -24,7 +24,44 @@ enum Receiver {
     static let alivePath = baseDir + "/deck-rx-app.alive"
     static let pluginDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin")
-    static let presetsPath = pluginDir.appendingPathComponent("data/presets.json").path
+    /// The app's own data directory. Everything the receiver needs to run —
+    /// presets, the station databases — lives here, not in the plugin bundle:
+    /// a machine with no plugin has no such bundle, and that machine is the
+    /// whole point of the standalone app.
+    ///
+    /// Seeded once from the plugin's copy when there is one, and from the
+    /// bundled resources otherwise. After that it is the app's, and the plugin
+    /// never touches it.
+    static let dataDir: String = {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/deck-rx/data")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.path
+    }()
+
+    static let presetsPath = dataDir + "/presets.json"
+
+    /// Copies a data file in if it is not there yet. Never overwrites: the
+    /// user's presets are edited here, and re-seeding would silently undo that.
+    static func seedDataFile(_ name: String) {
+        let fm = FileManager.default
+        let dst = dataDir + "/" + name
+        guard !fm.fileExists(atPath: dst) else { return }
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent(name).path,
+            pluginDir.appendingPathComponent("data/" + name).path,
+        ].compactMap { $0 }
+        for src in candidates where fm.fileExists(atPath: src) {
+            try? fm.copyItem(atPath: src, toPath: dst)
+            return
+        }
+    }
+
+    static func seedData() {
+        for f in ["presets.json", "jp-stations.json", "eibi.txt", "callsigns.json"] {
+            seedDataFile(f)
+        }
+    }
     static let controlPort = Int(ProcessInfo.processInfo.environment["DECK_RX_CONTROL_PORT"] ?? "") ?? 8771
 
     static func touchAlive() {

@@ -88,10 +88,9 @@ enum StationLabel {
     private static var eibi: [EibiEntry] = []
     private static var loaded = false
 
-    /// The plugin's own data directory, resolved the same way the preset store
-    /// is. Read-only from here: the plugin owns these files, and SDR++ owns the
-    /// bookmark file they were built from.
-    static var dataDir = Receiver.pluginDir.appendingPathComponent("data").path
+    /// The app's own data directory. Seeded from the plugin's copy or from the
+    /// bundled resources; after that it belongs to the app.
+    static var dataDir = Receiver.dataDir
 
     /// Loaded once. A missing file is not an error: the caller falls back to the
     /// preset name, which is better than refusing to show a frequency at all.

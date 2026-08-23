@@ -925,6 +925,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var view: MainView!
     private var feed: SpectrumFeed?
     private let radio = LocalRadio()
+    private lazy var server = AppServer(radio: radio)
     private var direct = false
     private var lastLabelledFreq: Double = -1
     /// JP region for the station database. Follows the plugin's setting when
@@ -959,7 +960,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         radio.onFrame = { [weak self] frame in
             guard let self, self.direct else { return }
             self.view.spectrum.accept(frame)
+            // Republish for anything reading the socket — the deck, knobctl,
+            // whatever else speaks it. Free when nobody is connected.
+            self.server.publish(frame)
         }
+        server.onStateChange = { [weak self] in self?.syncSource() }
         radio.onState = { [weak self] in self?.syncSource() }
         view.onSourceToggle = { [weak self] in self?.toggleSource() }
         view.onImportPresets = { [weak self] in
@@ -1040,7 +1045,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                           port: s.fresh && s.port > 0 ? UInt16(s.port) : nil,
                           frequency: s.fresh && s.freqHz > 0 ? UInt32(s.freqHz) : nil)
             installDirectControl()
+            // Serve the plugin's three interfaces so a front-end can drive this
+            // app instead. Silently declines when the plugin already owns them.
+            server.start()
         } else {
+            server.stop()
             Receiver.direct = nil
             radio.iqNrEnabled = false
             radio.levelingEnabled = false
@@ -1102,8 +1111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             view.srcLabel.textColor = P.warn
         } else if radio.isConnected {
             let a = radio.audioEnabled ? String(format: " audio %.1f k", radio.audioRate / 1000) : ""
+            let srv = server.isServing ? " serving" : (server.portBusy ? " (plugin owns :8771)" : "")
             let r = radio.deviceInfo.map { "IQ \(Int(Double($0.maxSampleRate) / 1000)) k max" } ?? ""
-            view.srcLabel.stringValue = "direct \(r)\(a)"
+            view.srcLabel.stringValue = "direct \(r)\(a)\(srv)"
             view.srcLabel.textColor = P.dim
         } else {
             view.srcLabel.stringValue = "connecting..."

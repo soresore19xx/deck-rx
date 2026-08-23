@@ -27,6 +27,10 @@ final class LocalRadio {
     private let queue = DispatchQueue(label: "deck-rx.localradio")
 
     private(set) var isConnected = false
+    /// Signal meters, measured from the IQ the demodulator just saw. dBFS
+    /// against int16 full scale, so they read the same as the plugin's.
+    private(set) var rssiDbfs: Double = -120
+    private(set) var snrDb: Double = 0
     private(set) var lastError: String?
     private(set) var deviceInfo: SpyClient.DeviceInfo?
 
@@ -292,6 +296,7 @@ final class LocalRadio {
                     self.sink.write(pcm)
                 }
             }
+            self.measure(pkt.body)
             self.iq.append(pkt.body)
             // Keep a little more than one transform's worth. Unbounded growth
             // here is how a receiver quietly turns into a memory leak.
@@ -300,6 +305,46 @@ final class LocalRadio {
                 self.iq.removeSubrange(0 ..< (self.iq.count - need))
             }
         }
+    }
+
+    /// RSSI is the packet's mean power; SNR is the peak bin over the median
+    /// bin of the last spectrum frame. Median rather than mean for the floor —
+    /// a strong carrier drags a mean upward and would report its own presence
+    /// as a worse noise floor.
+    private func measure(_ body: Data) {
+        let n = body.count / 4
+        guard n > 0 else { return }
+        var sumSq = 0.0
+        body.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let base = raw.baseAddress!
+            for i in 0..<n {
+                let I = Double(base.loadUnaligned(fromByteOffset: i * 4, as: Int16.self).littleEndian)
+                let Q = Double(base.loadUnaligned(fromByteOffset: i * 4 + 2, as: Int16.self).littleEndian)
+                sumSq += I * I + Q * Q
+            }
+        }
+        let meanP = sumSq / Double(n)
+        let db = meanP > 1 ? 10 * log10(meanP / (32767.0 * 32767.0)) : -120
+        rssiDbfs = rssiDbfs * 0.8 + db * 0.2
+    }
+
+    /// Preset stepping, shared with the control endpoint. Returns the frequency
+    /// landed on, or nil when there is nothing receivable to land on — the
+    /// caller turns that into a 409 rather than a silent success.
+    func stepPreset(_ dir: Int) -> UInt32? {
+        let presets = Receiver.presets().sorted { $0.freq < $1.freq }
+        guard !presets.isEmpty else { return nil }
+        let cur = Double(frequency)
+        let next: Receiver.Preset?
+        if dir > 0 {
+            next = presets.first { $0.freq > cur + 1 } ?? presets.first
+        } else {
+            next = presets.last { $0.freq < cur - 1 } ?? presets.last
+        }
+        guard let p = next else { return nil }
+        mode = p.mode
+        setFrequency(UInt32(max(0, p.freq)))
+        return UInt32(max(0, p.freq))
     }
 
     private func startFrameTimer() {
@@ -321,6 +366,12 @@ final class LocalRadio {
         guard let fft, iq.count >= fftSize * 4,
               let bins = fft.process(int16IQ: iq, smoothingFactor: smoothingFactor) else { return }
         seq &+= 1
+        // SNR from the frame we just built: peak over median. Free here, and
+        // it saves a second FFT purely for the meter.
+        let sorted = bins.sorted()
+        let median = Double(sorted[sorted.count / 2])
+        let peak = Double(sorted[sorted.count - 1])
+        snrDb = max(0, peak - median)
         let frame = SpectrumFeed.Frame(bins: bins, iqRate: iqRate,
                                        centerFreq: frequency, seq: seq)
         DispatchQueue.main.async { self.onFrame?(frame) }

@@ -160,5 +160,39 @@ MW entry wins, which is the one whose name came from the MW table. On a
 of 31 entries match exactly; the 5 that differ are precisely the
 MW/FM simulcast pairs.
 
-Phase 4 (deck becomes a client) is still not started, so the plugin
-continues to run its own signal path whenever it is running.
+### Phase 4 — the app serves what the plugin serves
+
+The app now produces all three interfaces it used to only consume: the
+loopback control endpoint on 8771, the status feed file, and the
+spectrum socket. Wire formats are the plugin's, unchanged, so anything
+that already speaks them — the deck, and `knobctl`, which has spoken
+this protocol since it was written — can drive the app instead.
+
+Ownership is exclusive and checked, not assumed. Binding is attempted
+and allowed to fail: with the plugin running it owns the port, and the
+app says so ("plugin owns :8771") rather than fighting for it. Two
+receivers answering the same requests at random is the failure this
+avoids.
+
+Verified by standing the server up on an isolated port and calling it:
+
+    /health           200  {"ok":true,"receiver":"native-app",...}
+    /tune?hz=1242000  200  freqHz 1242000
+    /mode?m=2         200
+    /volume?v=0.55    200
+    /mute             200
+    /step?hz=9000     200
+    /preset?d=1       200  freqHz 1260000
+    /tune?ticks=2     200  freqHz 1278000
+    /nope             404
+
+with the status feed written and parseable, and the spectrum socket
+present. `/preset` answers **409** with an empty store, which is the
+behaviour worth keeping: a control path with nothing to land on must not
+look identical to a working one from the far side.
+
+**What is left:** the plugin still runs its own signal path when it is
+running. Turning it into a pure client means replacing `spyService` with
+a proxy over these endpoints and reworking every dial that reads service
+state directly — a large change to the working deck, and the last one.
+The app no longer needs it either way.

@@ -98,7 +98,11 @@ PLIST
 
   # Station databases. Only the standalone build reads them — the front-end
   # gets station names from the plugin's status feed.
-  for f in jp-stations.json eibi.txt callsigns.json; do
+  # presets.json is bundled too. The first cut left it out on the grounds that
+  # one host's station list is not a default for another machine — wrong here,
+  # where every machine is the same user's, in the same region, wanting the same
+  # stations. A copied .app with an empty preset list is not a working receiver.
+  for f in jp-stations.json eibi.txt callsigns.json presets.json; do
     if [ -n "$FLAGS" ] && [ -f "$DATA_SRC/$f" ]; then
       cp -p "$DATA_SRC/$f" "$APP/Contents/Resources/$f"
     elif [ -n "$FLAGS" ]; then

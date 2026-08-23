@@ -39,6 +39,13 @@ struct RadioConfig: Codable {
     var audioDecimate = 4
     var audioGain: Double = 1
     var levelingEnabled = false
+    /// Come up receiving instead of waiting for DIRECT to be pressed. A machine
+    /// whose job is to be a receiver should not need a click to become one, and
+    /// it is the only way to drive the app on a box nobody sits at.
+    var autoDirect = false
+    /// Same for the audio path. Ignored unless autoDirect is on — there is
+    /// nothing to demodulate otherwise.
+    var autoAudio = false
 
     /// Seconds of tau for the de-emphasis IIR.
     var deemphasisTau: Double { fmDeemphasis == "50us" ? 50e-6 : 75e-6 }
@@ -47,8 +54,10 @@ struct RadioConfig: Codable {
         tuneStepByMode[String(mode)] ?? tuneStepHz
     }
 
+    /// 0 NFM and 1 WFM are the FM family; 3 DSB rides the FM path too, as it
+    /// does in the plugin.
     func bandwidth(for mode: Int) -> Double {
-        mode == 0 || mode == 1 ? fmBandwidthHz : amBandwidthHz
+        mode == 0 || mode == 1 || mode == 3 ? fmBandwidthHz : amBandwidthHz
     }
 
     // MARK: persistence

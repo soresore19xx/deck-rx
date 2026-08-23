@@ -133,7 +133,17 @@ final class AppServer {
 
         switch path {
         case "/health":
-            return ok("\"receiver\":\"native-app\",\"connected\":\(radio.isConnected)")
+            // Enough to diagnose a receiver that came up but is not receiving,
+            // without needing the window in front of you. A machine nobody sits
+            // at has no other way to say what went wrong.
+            let err = radio.lastError.map { "\"\($0)\"" } ?? "null"
+            return ok("\"receiver\":\"native-app\",\"connected\":\(radio.isConnected)"
+                + ",\"host\":\"\(radio.config.host)\",\"port\":\(radio.config.port)"
+                + ",\"autoDirect\":\(radio.config.autoDirect)"
+                + ",\"autoAudio\":\(radio.config.autoAudio)"
+                + ",\"audio\":\(radio.audioEnabled)"
+                + ",\"iqRateHz\":\(radio.iqRate)"
+                + ",\"lastError\":\(err)")
 
         case "/tune":
             if let hz = q["hz"].flatMap(Double.init) {

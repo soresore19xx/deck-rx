@@ -19,20 +19,23 @@ import Foundation
 ///      not breathe the way an AGC does.
 enum AudioLeveling {
 
-    /// Keyed by the plugin's mode numbering. Calibrated to bring each band to a
-    /// common loudness with the AGC off. CW is below 1 because the demodulator's
-    /// own AGC has already normalised the BFO tone.
+    /// Keyed by the SDR++ mode index — the numbering the plugin's MODE_MAKEUP
+    /// uses, with the same values. Calibrated to bring each band to a common
+    /// loudness with the AGC off. CW is below 1 because the demodulator's own
+    /// AGC has already normalised the BFO tone.
     ///
     /// AM was 3 once: it over-drove envelope peaks into the limiter and the
     /// result was broadband distortion. 1.5 is about +3.5 dB and stays under
     /// the knee.
     static let modeMakeup: [Int: Double] = [
-        0: 10,   // WFM
-        1: 5,    // NFM
+        0: 5,    // NFM
+        1: 10,   // WFM
         2: 1.5,  // AM
-        3: 3,    // USB
-        4: 3,    // LSB
+        3: 5,    // DSB
+        4: 3,    // USB
         5: 0.6,  // CW
+        6: 3,    // LSB
+        7: 5,    // RAW
     ]
 
     static let int16Max: Double = 32767

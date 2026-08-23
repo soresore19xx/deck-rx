@@ -1048,6 +1048,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.view.syncWaterfallSpan()
         }
         view.options.refresh()
+#if STANDALONE
+        // Honour autoDirect after the window is up, so a failure to connect is
+        // visible in the label rather than happening before anything is drawn.
+        if radio.config.autoDirect {
+            toggleSource()
+            if radio.config.autoAudio {
+                radio.audioEnabled = true
+                view.srcAudioPad.isOn = true
+                syncSource()
+            }
+        }
+#endif
         // The plugin only publishes the status feed while this flag is fresh.
         aliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in Receiver.touchAlive() }
     }

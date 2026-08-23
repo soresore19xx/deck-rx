@@ -53,8 +53,10 @@ final class LocalRadio {
     /// stereo subcarrier lives at 38 kHz and has to survive the decimation.
     var audioDecimate: Int { config.audioDecimate * 12 }
     var bandwidthHz: Double { config.bandwidth(for: mode) }
-    /// Demod mode, using the plugin's numbering so the two agree:
-    /// 0 WFM, 1 NFM, 2 AM, 3 USB, 4 LSB, 5 CW.
+    /// Demod mode. The numbering is not ours to choose: SDR++ assigns it, the
+    /// plugin follows it, and it travels inside every preset and bookmark —
+    /// `MODE_NAMES` in Receiver.swift is the same list.
+    ///   0 NFM, 1 WFM, 2 AM, 3 DSB, 4 USB, 5 CW, 6 LSB, 7 RAW
     var mode: Int = 2 {
         // Persisted so the app comes back where it was left, not where the
         // plugin last happened to be.
@@ -236,12 +238,23 @@ final class LocalRadio {
     }
 
     /// WFM is the only stereo mode, so the sink's channel count follows it.
-    var isStereoMode: Bool { mode == 0 && config.fmStereo }
+    var isStereoMode: Bool { mode == 1 && config.fmStereo }
     var stereoLocked: Bool { other.stereoLocked }
 
     private func applyNrMode() {
         iqnr.reset()
         iqnr.setMode(iqNrEnabled ? mode : -1)
+    }
+
+    /// Test seam. Demodulation is otherwise reachable only through a live
+    /// SpyServer connection, which is exactly why the mode routing went wrong
+    /// unnoticed — there was no way to ask "which detector does index 1 pick?"
+    /// without a receiver on the air.
+    func demodulateForTesting(_ body: Data, iqRate rate: UInt32) -> [Float] {
+        iqRate = rate
+        audioRate = Double(rate) / Double(max(1, audioDecimate))
+        configureDemods()
+        return demodulate(body)
     }
 
     private func demodulate(_ rawBody: Data) -> [Float] {
@@ -251,12 +264,13 @@ final class LocalRadio {
         let body = iqNrEnabled ? iqnr.process(rawBody) : rawBody
         let g = Double(gain) / 10.0
         switch mode {
-        case 0:  return config.fmStereo
+        case 0:  return other.processFM(int16IQ: body, decimate: audioDecimate)
+        case 1, 3:
+                 return config.fmStereo && mode == 1
                     ? other.processWFMStereo(int16IQ: body, decimate: audioDecimate)
                     : other.processWFM(int16IQ: body, decimate: audioDecimate)
-        case 1:  return other.processFM(int16IQ: body, decimate: audioDecimate)
-        case 3:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: true)
-        case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: false)
+        case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: true)
+        case 6:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: false)
         case 5:  return other.processCW(int16IQ: body, decimate: audioDecimate)
         default: return am.process(int16IQ: body, decimate: audioDecimate, gainScale: g)
         }

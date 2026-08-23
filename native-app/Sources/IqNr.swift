@@ -24,7 +24,9 @@ final class IqNr {
     /// estimator's behaviour.
     private static let binsNFM = 16
 
-    private var bins = IqNr.binsWFM
+    /// Readable so a test can assert which preset a mode selected. Checking
+    /// only that two modes differ passes just as happily when they are swapped.
+    private(set) var bins = IqNr.binsWFM
     private var window = [Double]()
     private var histI = [Double]()
     private var histQ = [Double]()
@@ -63,13 +65,13 @@ final class IqNr {
         im = [Float](repeating: 0, count: b)
     }
 
-    /// Mode numbering follows the app: 0 WFM, 1 NFM. Everything else bypasses,
+    /// SDR++ numbering: 0 NFM, 1 WFM. Everything else bypasses,
     /// which is SDR++'s policy and not an arbitrary one — the peak-bin trick
     /// only holds for a signal with a single instantaneous frequency.
     func setMode(_ mode: Int) {
         guard mode == 0 || mode == 1 else { active = false; return }
         active = true
-        setBins(mode == 0 ? Self.binsWFM : Self.binsNFM)
+        setBins(mode == 1 ? Self.binsWFM : Self.binsNFM)
     }
 
     func reset() {

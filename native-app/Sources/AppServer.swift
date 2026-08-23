@@ -70,8 +70,12 @@ final class AppServer {
 
     private func startControl() {
         guard let port = NWEndpoint.Port(rawValue: controlPort) else { return }
+        // Listens on every interface, deliberately. requiredInterfaceType was
+        // set here once and had no effect anyway — the socket came up on
+        // *:8771 regardless — but the reachable version is the useful one:
+        // another machine can drive this receiver over the LAN, which is the
+        // whole point of an app that copies between Macs.
         let params = NWParameters.tcp
-        params.requiredInterfaceType = .loopback
         // Deliberately not reusing the address. If something else holds this
         // port it is the plugin, and quietly sharing it would give two
         // receivers answering the same requests at random.
@@ -143,11 +147,20 @@ final class AppServer {
                 + ",\"autoAudio\":\(radio.config.autoAudio)"
                 + ",\"audio\":\(radio.audioEnabled)"
                 + ",\"iqRateHz\":\(radio.iqRate)"
+                + ",\"canControl\":\(radio.canControl)"
+                + ",\"deviceFreqHz\":\(radio.deviceFreq)"
                 + ",\"stereo\":\(radio.stereoLocked)"
                 + ",\"pilot\":\(String(format: "%.6f", radio.pilotMetric))"
                 + ",\"lastError\":\(err)")
 
         case "/tune":
+            // 409 rather than a silent 200: a caller that cannot steer the
+            // device has to be able to tell that from one that can.
+            guard radio.canControl else {
+                return ("409 Conflict",
+                        "{\"ok\":false,\"error\":\"another client owns the device\""
+                        + ",\"deviceFreqHz\":\(radio.deviceFreq)}")
+            }
             if let hz = q["hz"].flatMap(Double.init) {
                 radio.setFrequency(UInt32(max(0, hz)))
                 return ok("\"freqHz\":\(Int(hz))")
@@ -379,6 +392,7 @@ final class AppServer {
             "audioSink": radio.audioEnabled ? "local" : "off",
             "host": radio.config.host,
             "port": radio.config.port,
+            "canControl": radio.canControl,
         ]
         // Null rather than a stale number when nothing is live — the same
         // choice the plugin makes, and the reason its meters blank instead of

@@ -29,6 +29,15 @@ final class LocalRadio {
     private(set) var isConnected = false
     /// Signal meters, measured from the IQ the demodulator just saw. dBFS
     /// against int16 full scale, so they read the same as the plugin's.
+    /// SpyServer takes several clients at once, but only the first one may
+    /// steer the device. A later client's retune is accepted and ignored — no
+    /// error, no reply, the frequency simply does not move. Reported so the
+    /// window can say so instead of looking broken.
+    private(set) var canControl = true
+    /// What the server says the device is actually tuned to. When we cannot
+    /// control it, this is where the radio really is, and the frequency we
+    /// asked for is fiction.
+    private(set) var deviceFreq: UInt32 = 0
     private(set) var rssiDbfs: Double = -120
     private(set) var snrDb: Double = 0
     private(set) var lastError: String?
@@ -159,6 +168,18 @@ final class LocalRadio {
 
         client.onDeviceInfo = { [weak self] info in self?.start(with: info) }
         client.onIQ = { [weak self] pkt in self?.absorb(pkt) }
+        client.onSync = { [weak self] sync in
+            guard let self else { return }
+            let was = self.canControl
+            self.canControl = sync.canControl
+            self.deviceFreq = sync.iqCenterFreq
+            // Follow the device when we cannot steer it, or the readout claims
+            // a frequency the receiver is not on.
+            if !sync.canControl, sync.iqCenterFreq > 0, self.frequency != sync.iqCenterFreq {
+                self.frequency = sync.iqCenterFreq
+            }
+            if was != sync.canControl { DispatchQueue.main.async { self.onState?() } }
+        }
         client.onDisconnect = { [weak self] in
             guard let self else { return }
             self.isConnected = false
@@ -222,6 +243,10 @@ final class LocalRadio {
     }
 
     func setFrequency(_ hz: UInt32) {
+        // Refuse rather than pretend. A second client's retune is dropped by
+        // the server without a word, so accepting it here would leave the
+        // window showing a frequency nothing is receiving.
+        guard canControl else { return }
         frequency = hz
         config.frequencyHz = Double(hz)
         config.save()

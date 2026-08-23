@@ -1222,9 +1222,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             view.srcLabel.textColor = P.warn
         } else if radio.isConnected {
             let a = radio.audioEnabled ? String(format: " audio %.1f k", radio.audioRate / 1000) : ""
+            // SpyServer hands control to the first client only. Without this
+            // the window looks fine and tuning simply does nothing.
+            let ctl = radio.canControl ? "" : " · LISTEN ONLY (another client has the device)"
             let srv = server.isServing ? " serving" : (server.portBusy ? " (plugin owns :8771)" : "")
             let r = radio.deviceInfo.map { "IQ \(Int(Double($0.maxSampleRate) / 1000)) k max" } ?? ""
-            view.srcLabel.stringValue = "direct \(r)\(a)\(srv)"
+            view.srcLabel.stringValue = "direct \(r)\(a)\(srv)\(ctl)"
+            view.srcLabel.textColor = radio.canControl ? P.dim : P.warn
             view.srcLabel.textColor = P.dim
         } else {
             view.srcLabel.stringValue = "connecting..."

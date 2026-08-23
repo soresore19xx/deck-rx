@@ -229,6 +229,7 @@ final class MainView: NSView {
     /// Spectrum source: the plugin's socket, or the app's own SpyServer
     /// connection. Both exist while the standalone port is in progress —
     /// switching between them on one screen is how parity gets checked.
+#if STANDALONE
     var onSourceToggle: (() -> Void)?
     var onAudioToggle: (() -> Void)?
     /// Returns true when the direct path took the change, so it is not also
@@ -253,6 +254,7 @@ final class MainView: NSView {
         [weak self] in self?.onSourceToggle?()
     }
     let srcLabel = label("via plugin", mono(13), P.faint)
+#endif
     private let zoomSlider = NSSlider()
     private let wfSlider = NSSlider()
     private let wfLabel = label("--", mono(14), P.dim)
@@ -353,14 +355,20 @@ final class MainView: NSView {
         // where a JS transform stopped being affordable; vDSP has neither
         // limit, and 65536 is what SDR++ runs here — worth 12 dB of noise
         // floor against 4096.
+#if STANDALONE
         fftPop.addItems(withTitles: ["256", "512", "1024", "2048", "4096",
                                      "8192", "16384", "32768", "65536"])
+#else
+        fftPop.addItems(withTitles: ["256", "512", "1024", "2048", "4096"])
+#endif
         fftPop.font = mono(16)
         fftPop.target = ButtonBox.shared
         fftPop.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(fftPop)] = { [weak self] in
             guard let self, let t = self.fftPop.titleOfSelectedItem, let v = Int(t) else { return }
+#if STANDALONE
             if let set = self.onFftSize, set(v) { return }   // handled by the direct path
+#endif
             Receiver.spectrum(fft: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
         }
         fpsPop.addItems(withTitles: ["5", "10", "15", "20", "30", "60"])
@@ -425,10 +433,16 @@ final class MainView: NSView {
             
             label("SMOOTH", mono(14), P.faint), smoothField, smoothStepper, avgLabel,
             holdPad,
-            srcPad, srcAudioPad, nrPad, levelPad, importPad, srcLabel,
             NSView(),
             dbLabel,
         ])
+#if STANDALONE
+        // The receiver controls exist only in the standalone build. Deck RX is
+        // a front-end onto the plugin's receiver and has nothing to point them
+        // at; showing dead buttons would be worse than not having them.
+        for v in [srcPad, srcAudioPad, nrPad, levelPad, importPad] { barRow.addArrangedSubview(v) }
+        barRow.addArrangedSubview(srcLabel)
+#endif
         barRow.orientation = .horizontal
         barRow.spacing = 6
         barRow.alignment = .centerY
@@ -924,6 +938,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var view: MainView!
     private var feed: SpectrumFeed?
+#if STANDALONE
     private let radio = LocalRadio()
     private lazy var server = AppServer(radio: radio)
     private var direct = false
@@ -933,11 +948,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var region: StationLabel.Region {
         StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
     }
+#endif
     private var timer: Timer?
     private var aliveTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+#if STANDALONE
         Receiver.seedData()
+#endif
         Receiver.touchAlive()
         view = MainView(frame: NSRect(x: 0, y: 0, width: 1440, height: 860))
         window = NSWindow(contentRect: view.frame,
@@ -952,11 +970,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         feed = SpectrumFeed { [weak self] frame in
-            guard let self, !self.direct else { return }   // DIRECT wins while it is on
+            guard let self else { return }
+#if STANDALONE
+            guard !self.direct else { return }             // DIRECT wins while it is on
+#endif
             self.view.spectrum.accept(frame)
         }
         feed?.start()
 
+#if STANDALONE
         radio.onFrame = { [weak self] frame in
             guard let self, self.direct else { return }
             self.view.spectrum.accept(frame)
@@ -1006,6 +1028,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.view.srcAudioPad.isOn = self.radio.audioEnabled
             self.syncSource()
         }
+#endif
         // Seed the display controls from the receiver's live settings.
         Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
         Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
@@ -1029,6 +1052,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         aliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in Receiver.touchAlive() }
     }
 
+#if STANDALONE
     /// DIRECT: the app connects to SpyServer itself instead of reading the
     /// plugin's socket. Server address and tuned frequency come from the status
     /// feed, so this follows whatever the receiver is already set to rather than
@@ -1120,6 +1144,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             view.srcLabel.textColor = P.faint
         }
     }
+
+#endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
 }

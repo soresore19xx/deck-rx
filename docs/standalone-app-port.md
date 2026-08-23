@@ -1,5 +1,13 @@
 # Standalone app port — plan of record
 
+> **Shipped as two bundles (2026-08-23).** `Deck RX.app` stays what it was:
+> a front-end onto the plugin's receiver, and the Stream Deck profile's
+> `AppIdentifier` still points at it. `Deck RX Solo.app` is the same window
+> with its own receiver inside. One source tree, one `STANDALONE` compile
+> flag; the receiver sources are not compiled into the front-end at all, so
+> a display fix lands in both and cannot drift. Nothing stops both running
+> at once — that is the user's call, not the build's.
+
 **Decision (2026-08-23):** the native app becomes a complete receiver in
 Swift. Not a front-end that needs the plugin running, and not a remote
 front-end talking to studio over the network — a `.app` that can be copied to

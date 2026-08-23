@@ -1,50 +1,22 @@
 #!/bin/bash
 # === Claude origin ===
 # Created/placed by Anthropic Claude Code at: 2026-08-20-221500
-# Builds /Applications/Deck RX.app — the native receiver front-end (design D).
+# Builds two bundles from one source tree:
+#   /Applications/Deck RX.app       front-end onto the plugin's receiver
+#   /Applications/Deck RX Solo.app  the same window with its own receiver
+# They differ only by the STANDALONE compile flag, so a fix to the display
+# lands in both and cannot drift.
 # This bundle is the focus target a Stream Deck profile binds to (AppIdentifier),
 # so the deck follows the window instead of being switched by hand.
 # ====================
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-APP="/Applications/Deck RX.app"
+# Which bundle to build. Both by default.
+VARIANT="${1:-both}"
 BIN="$HERE/deck-rx-receiver"
-EXE="$APP/Contents/MacOS/deck-rx-receiver"
 SVG="$HERE/../com.hogehoge.deck-rx.sdPlugin/imgs/icon-source.svg"
 ICONSET="$HERE/deck-rx-receiver.iconset"
 ICNS="$HERE/deck-rx-receiver.icns"
-
-# --- binary: universal (arm64 + x86_64) ---
-# Built as two slices and lipo'd rather than left thin: an arm64-only bundle
-# launches nowhere on an Intel Mac, and the failure looks like a broken app
-# rather than a wrong architecture. Both slices target the same macOS 12.0
-# floor the Info.plist declares.
-DEPLOY_TARGET="12.0"
-SLICE_ARM="$HERE/.slice-arm64"
-SLICE_X86="$HERE/.slice-x86_64"
-rm -f "$SLICE_ARM" "$SLICE_X86"
-
-echo "==> swiftc build (-O, arm64) ..."
-if ! ( cd "$HERE" && swiftc Sources/*.swift -o "$SLICE_ARM" -framework AppKit -O \
-        -target "arm64-apple-macos$DEPLOY_TARGET" ); then
-  echo "ERROR: swiftc build failed (arm64)"; exit 1
-fi
-
-# The x86_64 slice is allowed to fail without taking the build down: a machine
-# without the cross SDK should still get a working native binary rather than
-# nothing at all. It says so, so a thin bundle is never a silent surprise.
-echo "==> swiftc build (-O, x86_64) ..."
-if ( cd "$HERE" && swiftc Sources/*.swift -o "$SLICE_X86" -framework AppKit -O \
-        -target "x86_64-apple-macos$DEPLOY_TARGET" ); then
-  lipo -create "$SLICE_ARM" "$SLICE_X86" -output "$BIN" \
-    || { echo "ERROR: lipo failed"; exit 1; }
-else
-  echo "WARN: x86_64 slice failed to build - bundle will be arm64 only"
-  cp "$SLICE_ARM" "$BIN"
-fi
-rm -f "$SLICE_ARM" "$SLICE_X86"
-[ -x "$BIN" ] || { echo "ERROR: binary missing ($BIN)"; exit 1; }
-echo "==> architectures: $(lipo -archs "$BIN")"
 
 # --- icon: rendered from the plugin's own icon-source.svg ---
 # Re-rendered only when the SVG is newer than the .icns, so a plain rebuild
@@ -65,8 +37,41 @@ if [ -n "$RSVG" ] && [ -f "$SVG" ] && { [ ! -f "$ICNS" ] || [ "$SVG" -nt "$ICNS"
   rm -rf "$ICONSET"
 fi
 
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" || { echo "ERROR: mkdir failed"; exit 1; }
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+# --- build one bundle ---
+# $1 app path, $2 bundle id, $3 display name, $4 extra swiftc flags
+build_variant() {
+  local APP="$1" BUNDLE_ID="$2" NAME="$3" FLAGS="$4"
+  local EXE="$APP/Contents/MacOS/deck-rx-receiver"
+
+  # Two slices and lipo rather than thin: an arm64-only bundle does not launch
+  # at all on an Intel Mac, and the failure reads as a broken app rather than a
+  # wrong architecture. Both target the macOS floor the Info.plist declares.
+  local DEPLOY_TARGET="12.0"
+  local SLICE_ARM="$HERE/.slice-arm64" SLICE_X86="$HERE/.slice-x86_64"
+  rm -f "$SLICE_ARM" "$SLICE_X86"
+
+  echo "==> $NAME: swiftc (-O, arm64) ..."
+  if ! ( cd "$HERE" && swiftc $SRC_FILES -o "$SLICE_ARM" -framework AppKit -O $FLAGS \
+          -target "arm64-apple-macos$DEPLOY_TARGET" ); then
+    echo "ERROR: swiftc build failed (arm64, $NAME)"; return 1
+  fi
+
+  # The x86_64 slice may fail without taking the build down: a machine without
+  # the cross SDK should still get a working native binary. It says so, so a
+  # thin bundle is never a silent surprise.
+  echo "==> $NAME: swiftc (-O, x86_64) ..."
+  if ( cd "$HERE" && swiftc $SRC_FILES -o "$SLICE_X86" -framework AppKit -O $FLAGS \
+          -target "x86_64-apple-macos$DEPLOY_TARGET" ); then
+    lipo -create "$SLICE_ARM" "$SLICE_X86" -output "$BIN" || { echo "ERROR: lipo failed"; return 1; }
+  else
+    echo "WARN: x86_64 slice failed to build - $NAME will be arm64 only"
+    cp "$SLICE_ARM" "$BIN"
+  fi
+  rm -f "$SLICE_ARM" "$SLICE_X86"
+  [ -x "$BIN" ] || { echo "ERROR: binary missing ($BIN)"; return 1; }
+
+  mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" || { echo "ERROR: mkdir failed"; return 1; }
+  cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -74,45 +79,66 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<key>CFBundleDevelopmentRegion</key><string>en</string>
 	<key>CFBundleExecutable</key><string>deck-rx-receiver</string>
 	<key>CFBundleIconFile</key><string>deck-rx-receiver</string>
-	<key>CFBundleIdentifier</key><string>com.hogehoge.deckrx.receiver</string>
+	<key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-	<key>CFBundleName</key><string>Deck RX</string>
-	<key>CFBundleDisplayName</key><string>Deck RX</string>
+	<key>CFBundleName</key><string>$NAME</string>
+	<key>CFBundleDisplayName</key><string>$NAME</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>0.1</string>
 	<key>CFBundleVersion</key><string>1</string>
-	<key>LSMinimumSystemVersion</key><string>12.0</string>
+	<key>LSMinimumSystemVersion</key><string>$DEPLOY_TARGET</string>
 	<key>NSHighResolutionCapable</key><true/>
 	<key>NSPrincipalClass</key><string>NSApplication</string>
 </dict>
 </plist>
 PLIST
-cp "$BIN" "$EXE" || { echo "ERROR: could not install executable"; exit 1; }
-chmod +x "$EXE"
-[ -f "$ICNS" ] && cp -p "$ICNS" "$APP/Contents/Resources/deck-rx-receiver.icns"
+  cp "$BIN" "$EXE" || { echo "ERROR: could not install executable"; return 1; }
+  chmod +x "$EXE"
+  [ -f "$ICNS" ] && cp -p "$ICNS" "$APP/Contents/Resources/deck-rx-receiver.icns"
 
-# --- station databases, bundled ---
-# The app seeds its own data directory from these on first run. Bundling them
-# is what makes the .app portable: a Mac with no plugin installed has no
-# plugin data directory to read, and that Mac is the point of the app.
-# presets.json is deliberately NOT bundled - it is the user's own list, and
-# shipping one host's presets to another machine is not a sensible default.
-DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
-for f in jp-stations.json eibi.txt callsigns.json; do
-  if [ -f "$DATA_SRC/$f" ]; then
-    cp -p "$DATA_SRC/$f" "$APP/Contents/Resources/$f"
+  # Station databases. Only the standalone build reads them — the front-end
+  # gets station names from the plugin's status feed.
+  for f in jp-stations.json eibi.txt callsigns.json; do
+    if [ -n "$FLAGS" ] && [ -f "$DATA_SRC/$f" ]; then
+      cp -p "$DATA_SRC/$f" "$APP/Contents/Resources/$f"
+    elif [ -n "$FLAGS" ]; then
+      echo "WARN: $f missing - $NAME will show no station names"
+    else
+      # Clear a copy an earlier build left behind, or the front-end ships a
+      # megabyte of data it never opens.
+      rm -f "$APP/Contents/Resources/$f"
+    fi
+  done
+
+  if codesign --force --deep -s - "$APP" 2>/dev/null; then
+    echo "ad-hoc signature OK"
   else
-    echo "WARN: $f missing - the app will start without it and show no station names"
+    rm -rf "$APP/Contents/_CodeSignature"
+    echo "signing failed -> runs unsigned, locally"
   fi
-done
+  xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+    -f "$APP" 2>/dev/null || true
+  echo "deployed: $EXE  ($(lipo -archs "$EXE"))"
+}
 
-if codesign --force --deep -s - "$APP" 2>/dev/null; then
-  echo "ad-hoc signature OK"
-else
-  rm -rf "$APP/Contents/_CodeSignature"
-  echo "signing failed -> runs unsigned, locally"
+DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
+
+# The front-end has no receiver in it, so the receiver sources are not compiled
+# into it at all — not merely switched off. Dead code that cannot run is still
+# code that has to be read.
+SHARED="Sources/main.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
+        Sources/SpectrumView.swift Sources/OptionsPanel.swift Sources/FreqView.swift"
+RECEIVER="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
+          Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
+          Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
+          Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift"
+
+if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "front" ]; then
+  SRC_FILES="$SHARED"
+  build_variant "/Applications/Deck RX.app" "com.hogehoge.deckrx.receiver" "Deck RX" "" || exit 1
 fi
-xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -f "$APP" 2>/dev/null || true
-echo "deployed: $EXE"
+if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "solo" ]; then
+  SRC_FILES="$SHARED $RECEIVER"
+  build_variant "/Applications/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE" || exit 1
+fi

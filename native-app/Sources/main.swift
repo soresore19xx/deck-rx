@@ -1053,6 +1053,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         window.setFrameAutosaveName("deckRxReceiver")
         window.makeKeyAndOrderFront(nil)
+        buildMenu()
         NSApp.activate(ignoringOtherApps: true)
 
         feed = SpectrumFeed { [weak self] frame in
@@ -1250,6 +1251,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+
+    /// Built by hand: there is no nib, so without this the app has no menu bar
+    /// at all — no About, and no Cmd-Q either. The Quit item is the one that
+    /// matters; an app you can only close by killing the process is not
+    /// finished.
+    private func buildMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        main.addItem(appItem)
+
+        let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Deck RX"
+        let appMenu = NSMenu(title: name)
+        appMenu.addItem(withTitle: "\(name) について",
+                        action: #selector(showAbout), keyEquivalent: "")
+            .target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "\(name) を隠す",
+                        action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let others = appMenu.addItem(withTitle: "ほかを隠す",
+                                     action: #selector(NSApplication.hideOtherApplications(_:)),
+                                     keyEquivalent: "h")
+        others.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "すべてを表示",
+                        action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "\(name) を終了",
+                        action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+
+        // Window menu, so close and minimise have their usual keys. Cmd-W
+        // closes the only window, which terminates the app — see
+        // applicationShouldTerminateAfterLastWindowClosed above.
+        let windowItem = NSMenuItem()
+        main.addItem(windowItem)
+        let windowMenu = NSMenu(title: "ウインドウ")
+        windowMenu.addItem(withTitle: "しまう",
+                           action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "閉じる",
+                           action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowItem.submenu = windowMenu
+        NSApp.windowsMenu = windowMenu
+
+        NSApp.mainMenu = main
+    }
+
+    /// Says what this build is and what it is talking to. The receiver's
+    /// address is the useful half: with two bundles installed and a config
+    /// seeded from several places, "which one is this and where is it pointed"
+    /// is a real question.
+    @objc private func showAbout() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let name = info["CFBundleName"] as? String ?? "Deck RX"
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        let arch: String
+#if arch(arm64)
+        arch = "arm64"
+#else
+        arch = "x86_64"
+#endif
+        var lines = ["\(name) \(version) (build \(build), \(arch))"]
+#if STANDALONE
+        let s = Receiver.status()
+        lines.append("Standalone receiver — connects to SpyServer itself")
+        lines.append("Server: \(s.host.isEmpty ? "—" : "\(s.host):\(s.port)")")
+        lines.append(s.connected ? "Connected" : "Not connected")
+#else
+        lines.append("Front-end — drives the Stream Deck plugin's receiver")
+#endif
+        lines.append("Settings: ~/Library/Application Support/deck-rx/")
+
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: name,
+            .applicationVersion: "\(version) (\(arch))",
+            .credits: NSAttributedString(
+                string: lines.dropFirst().joined(separator: "\n"),
+                attributes: [.font: NSFont.systemFont(ofSize: 11),
+                             .foregroundColor: NSColor.labelColor]),
+        ])
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }
 
 let app = NSApplication.shared

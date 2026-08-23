@@ -173,12 +173,15 @@ section("LocalRadio routes each mode index to the right demodulator")
 // The routing that was wrong. Comparing LocalRadio's output against the
 // demodulator called directly is what pins index to detector — the level
 // checks above prove the detectors work, not that the right one is picked.
-let lr = LocalRadio()
 var lrCfg = RadioConfig()
 lrCfg.fmStereo = false            // mono, so the comparison is one channel
 lrCfg.audioDecimate = 4
-lr.config = lrCfg
 for (m, name) in [(NFM, "NFM"), (WFM, "WFM"), (USB, "USB"), (LSB, "LSB"), (CW, "CW")] {
+    // A fresh receiver per mode: filter state carries across a mode change in
+    // real use too, but a test that depends on the order it ran in is a test
+    // that will lie eventually.
+    let lr = LocalRadio()
+    lr.config = lrCfg
     lr.mode = m
     let viaRadio = lr.demodulateForTesting(wideIQ, iqRate: UInt32(rate))
     let direct = demodOutput(mode: m, iq: wideIQ,
@@ -243,6 +246,25 @@ if let data = try? enc.encode(c), let back = try? dec.decode(RadioConfig.self, f
     check("config encodes and decodes", false, "encode or decode threw")
 }
 check("defaults are safe with no file", RadioConfig().host == "127.0.0.1")
+
+// A file written by an older build lacks whatever fields were added since.
+// The synthesised decoder treats that as a whole-object failure, so every
+// setting reverts at once — which is how a machine with autoDirect true on
+// disk came up not connecting, and said nothing.
+let partial = """
+{"host":"192.168.0.142","port":8888,"autoDirect":true,"mode":1}
+"""
+if let old = try? dec.decode(RadioConfig.self, from: Data(partial.utf8)) {
+    check("known keys survive a file missing newer ones", old.host == "192.168.0.142" && old.port == 8888,
+          "host \(old.host) port \(old.port)")
+    check("autoDirect survives", old.autoDirect)
+    check("absent keys take their default", old.jpRegion == "kanto" && old.audioDecimate == 4,
+          "region \(old.jpRegion) dec \(old.audioDecimate)")
+} else {
+    check("a partial config still decodes", false, "decode threw on missing keys")
+}
+// And an outright broken file must not take the app down with it.
+check("garbage does not decode", (try? dec.decode(RadioConfig.self, from: Data("not json".utf8))) == nil)
 
 section("soft limiter")
 check("linear under the knee", near(AudioLeveling.softLimit(1000), 1000, 1e-9))

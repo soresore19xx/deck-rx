@@ -37,6 +37,54 @@ final class AudioSink {
 
     /// Capacity is rounded to an even number of samples so a stereo frame
     /// never straddles the wrap.
+    /// Output devices the engine can reach, for the panel's picker. Empty
+    /// first entry means "system default", which is what the panel expects.
+    static func outputDeviceNames() -> [String] {
+        var names: [String] = []
+        var size = UInt32(0)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject),
+                                             &addr, 0, nil, &size) == noErr else { return names }
+        let count = Int(size) / MemoryLayout<AudioObjectID>.size
+        var ids = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                         &addr, 0, nil, &size, &ids) == noErr else { return names }
+        for id in ids {
+            // Output devices only: a microphone in an output picker is noise.
+            var cfgAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreamConfiguration,
+                mScope: kAudioDevicePropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain)
+            var cfgSize = UInt32(0)
+            guard AudioObjectGetPropertyDataSize(id, &cfgAddr, 0, nil, &cfgSize) == noErr,
+                  cfgSize > 0 else { continue }
+            let buf = UnsafeMutableRawPointer.allocate(byteCount: Int(cfgSize),
+                                                       alignment: MemoryLayout<AudioBufferList>.alignment)
+            defer { buf.deallocate() }
+            guard AudioObjectGetPropertyData(id, &cfgAddr, 0, nil, &cfgSize, buf) == noErr else { continue }
+            let abl = UnsafeMutableAudioBufferListPointer(buf.assumingMemoryBound(to: AudioBufferList.self))
+            guard abl.reduce(0, { $0 + Int($1.mNumberChannels) }) > 0 else { continue }
+
+            var nameAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioObjectPropertyName,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain)
+            // Unmanaged, because taking a raw pointer to a CFString variable
+            // hands CoreAudio the address of a reference rather than a slot to
+            // write one into.
+            var nameRef: Unmanaged<CFString>?
+            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            if AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &nameSize, &nameRef) == noErr,
+               let s = nameRef?.takeRetainedValue() as String?, !s.isEmpty {
+                names.append(s)
+            }
+        }
+        return names
+    }
+
     init(capacity: Int = 96_000) {
         self.capacity = capacity - (capacity % 2)
         ring = UnsafeMutablePointer<Float>.allocate(capacity: capacity)

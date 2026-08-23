@@ -251,10 +251,16 @@ final class LocalRadio {
     /// unnoticed — there was no way to ask "which detector does index 1 pick?"
     /// without a receiver on the air.
     func demodulateForTesting(_ body: Data, iqRate rate: UInt32) -> [Float] {
-        iqRate = rate
-        audioRate = Double(rate) / Double(max(1, audioDecimate))
-        configureDemods()
-        return demodulate(body)
+        // On the same queue everything else uses. Setting `mode` posts
+        // configureDemods asynchronously, so calling in from a test thread
+        // raced it and the result depended on which landed first — the suite
+        // gave a different count on consecutive runs.
+        queue.sync {
+            iqRate = rate
+            audioRate = Double(rate) / Double(max(1, audioDecimate))
+            configureDemods()
+            return demodulate(body)
+        }
     }
 
     private func demodulate(_ rawBody: Data) -> [Float] {

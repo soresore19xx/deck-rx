@@ -294,6 +294,16 @@ final class MainView: NSView {
         topRow.orientation = .horizontal
         topRow.spacing = 8
         topRow.alignment = .centerY
+        // Let the status text give way when the window is narrowed. Every label
+        // here defends its full width by default, and their sum became the
+        // window's minimum — the window could not be resized at all, measured
+        // pinned at 1930 px wide. These are status readouts: truncating one is
+        // a far smaller loss than a window that will not move.
+        for v in [linkLabel, deviceLabel, iqLabel, dropsLabel, outLabel] {
+            v.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+            v.lineBreakMode = .byTruncatingTail
+            v.cell?.usesSingleLineMode = true
+        }
         linkDot.layer?.cornerRadius = 3
         linkDot.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -446,6 +456,14 @@ final class MainView: NSView {
         barRow.orientation = .horizontal
         barRow.spacing = 6
         barRow.alignment = .centerY
+        // Same for the display toolbar: the source label carries an error
+        // message that can be arbitrarily long.
+#if STANDALONE
+        srcLabel.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        srcLabel.lineBreakMode = .byTruncatingTail
+        srcLabel.cell?.usesSingleLineMode = true
+#endif
+        dbLabel.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         embed(barRow, in: bar, inset: 12)
 
         // Zoom and the dB window as continuous vertical sliders down the right
@@ -965,6 +983,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = view
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
+        // A floor rather than a wall: below this the spectrum is too narrow to
+        // read and the preset list crowds it out. Above it the window is free.
+        window.contentMinSize = NSSize(width: 1040, height: 700)
         window.setFrameAutosaveName("deckRxReceiver")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

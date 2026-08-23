@@ -195,9 +195,151 @@ final class AppServer {
             }
             return ok("\"tuneStepHz\":\(Int(radio.tuneStepHz))")
 
+        case "/options":
+            // The demod's own settings, mode-scoped and flat — fm.stereo,
+            // am.sync, ssb.bandwidth, gain — because a checkbox changes exactly
+            // one of them and a GET anyone can type beats a tidy document.
+            if let set = q["set"], let raw = q["value"] {
+                if !applyOption(set, raw) { return bad("unknown option \(set)") }
+            }
+            return ("200 OK", optionsJSON())
+
+        case "/receiver":
+            // Receiver-wide settings, including the server address. Without
+            // this the window can drive the radio but not configure it, and on
+            // a machine with no plugin there is nowhere else to set the host.
+            if q["action"] == "importSdrpp" {
+                guard let r = try? PresetStore.importFromSdrpp() else {
+                    return ("500 Internal Server Error", "{\"ok\":false,\"error\":\"import failed\"}")
+                }
+                return ("200 OK", "{\"added\":\(r.added),\"skipped\":\(r.skipped)"
+                    + ",\"migrated\":\(r.migrated),\"lists\":\(r.lists)}")
+            }
+            if let set = q["set"], let raw = q["value"] {
+                if !applyReceiver(set, raw) { return bad("unknown setting \(set)") }
+            }
+            return ("200 OK", receiverJSON())
+
+        case "/stations":
+            // Names for the frequencies a front-end is about to label on its
+            // spectrum, resolved through the same lookup that names the station
+            // above the readout, so the two can never disagree.
+            return ("200 OK", stationsJSON(from: q["from"].flatMap(Double.init),
+                                           to: q["to"].flatMap(Double.init)))
+
         default:
             return ("404 Not Found", "{\"ok\":false,\"error\":\"unknown path\"}")
         }
+    }
+
+    // MARK: settings
+
+    private func json(_ o: [String: Any]) -> String {
+        guard let d = try? JSONSerialization.data(withJSONObject: o, options: [.sortedKeys]),
+              let s = String(data: d, encoding: .utf8) else { return "{}" }
+        return s
+    }
+
+    private func optionsJSON() -> String {
+        let c = radio.config
+        return json([
+            "mode": radio.mode,
+            "fm": ["bandwidth": c.fmBandwidthHz, "deemphasis": c.fmDeemphasis,
+                   "ifnr": c.fmIfnr, "highPass": c.fmHighPass, "lowPass": c.fmLowPass,
+                   "stereo": c.fmStereo],
+            "am": ["bandwidth": c.amBandwidthHz, "carrierAgc": c.amCarrierAgc,
+                   "agcAttack": c.amAgcAttack, "agcDecay": c.amAgcDecay, "sync": c.amSync],
+            "ssb": ["bandwidthHz": c.ssbBandwidthHz, "bfoPitchHz": c.cwBfoHz],
+            // One gain here, reported under both keys: the plugin keeps a
+            // separate AM and FM gain because its dial does. This receiver has
+            // one, and claiming two would let the panel show a value that
+            // nothing reads.
+            "gain": ["am": Int(c.gain), "fm": Int(c.gain),
+                     "max": Int(radio.deviceInfo?.maxGainIndex ?? 8)],
+        ])
+    }
+
+    private func receiverJSON() -> String {
+        let c = radio.config
+        return json([
+            "tuneMode": c.tuneMode,
+            "jpRegion": c.jpRegion,
+            "regions": StationLabel.Region.allCases.map(\.rawValue),
+            "autoSyncSdrpp": c.autoSyncSdrpp,
+            "audioDevice": c.audioDevice,
+            "audioDevices": AudioSink.outputDeviceNames(),
+            // The icecast path is the plugin's; this receiver only has a local
+            // sink, so it says so rather than offering a mode it cannot enter.
+            "audioSink": "local",
+            "host": c.host,
+            "port": c.port,
+        ])
+    }
+
+    private func stationsJSON(from: Double?, to: Double?) -> String {
+        let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
+        let list = Receiver.presets()
+            .filter { (from == nil || $0.freq >= from!) && (to == nil || $0.freq <= to!) }
+            .map { p -> [String: Any] in
+                ["freq": p.freq,
+                 "name": StationLabel.lookup(freqHz: p.freq, region: region) ?? p.name]
+            }
+        return json(["stations": list])
+    }
+
+    /// Returns false for a name it does not know, so the caller answers 400
+    /// rather than reporting success for a setting that went nowhere.
+    private func applyOption(_ name: String, _ raw: String) -> Bool {
+        let b = raw == "1" || raw == "true"
+        let n = Double(raw) ?? 0
+        var c = radio.config
+        switch name {
+        case "fm.bandwidth":   c.fmBandwidthHz = n
+        case "fm.deemphasis":  c.fmDeemphasis = raw
+        case "fm.ifnr":        c.fmIfnr = b; radio.iqNrEnabled = b
+        case "fm.highPass":    c.fmHighPass = b
+        case "fm.lowPass":     c.fmLowPass = b
+        case "fm.stereo":      c.fmStereo = b
+        case "am.bandwidth":   c.amBandwidthHz = n
+        case "am.carrierAgc":  c.amCarrierAgc = b
+        case "am.agcAttack":   c.amAgcAttack = n
+        case "am.agcDecay":    c.amAgcDecay = n
+        case "am.sync":        c.amSync = b
+        case "ssb.bandwidth", "ssb.bandwidthHz": c.ssbBandwidthHz = n
+        case "ssb.bfo", "ssb.bfoPitchHz":        c.cwBfoHz = n
+        case "gain":           c.gain = UInt32(max(0, min(n, 64)))
+        default: return false
+        }
+        c.save()
+        radio.config = c
+        return true
+    }
+
+    private func applyReceiver(_ name: String, _ raw: String) -> Bool {
+        var c = radio.config
+        switch name {
+        case "tuneMode":      c.tuneMode = raw
+        case "jpRegion":      c.jpRegion = raw
+        case "autoSyncSdrpp": c.autoSyncSdrpp = (raw == "1" || raw == "true")
+        case "audioDevice":   c.audioDevice = raw
+        case "host":
+            let h = raw.trimmingCharacters(in: .whitespaces)
+            guard !h.isEmpty else { return false }
+            c.host = h
+        case "port":
+            guard let p = Int(raw), p > 0, p < 65536 else { return false }
+            c.port = p
+        default: return false
+        }
+        c.save()
+        radio.config = c
+        // The address only takes effect on the next connection, so dial it now
+        // — otherwise the field accepts a new host and nothing happens.
+        if name == "host" || name == "port", radio.isConnected {
+            radio.disconnect()
+            radio.connect()
+        }
+        return true
     }
 
     // MARK: status feed

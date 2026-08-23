@@ -7,8 +7,52 @@ import AppKit
 final class SpectrumView: NSView {
     /// dBFS window. Matches the FFT dial's default floor/ceiling so the same
     /// signal looks the same on the deck and on screen.
-    var dbFloor: Float = -100
-    var dbCeil: Float = -20
+    var dbFloor: Float = -160
+    var dbCeil: Float = -1
+    /// The waterfall maps colour over its own dB window, tracked from the data
+    /// rather than shared with the trace. Sharing looked reasonable and was the
+    /// reason the ramp read as two flat tones: with the trace window set wide
+    /// enough to see the noise floor and the peaks at once, everything on air
+    /// lands in the bottom third of the ramp, so blue and cyan are the only
+    /// colours that ever appear and the greens through reds are dead weight.
+    /// Anchoring the window on the measured noise floor keeps the whole ramp in
+    /// use on any band, at any gain.
+    var wfRangeDb: Float = 55 { didSet { needsDisplay = true } }
+    private var wfFloorEst: Float = -100
+
+    /// Waterfall history depth, asked for in seconds. Frames per row is the
+    /// mechanism, but it is the wrong thing to set: it makes the time on screen
+    /// depend on the frame rate, so changing RATE silently changes how far back
+    /// the waterfall reaches. Holding seconds and deriving the divider keeps the
+    /// history put when the rate moves.
+    ///
+    /// At 60 fps a full-height waterfall is about 6 seconds with one row per
+    /// frame — the whole picture gone before a slow fade has finished. Hence a
+    /// default well above the floor.
+    var wfTargetSeconds: Double = 45 { didSet { wfSkipCount = 0 } }
+    /// Frames merged into the next row, derived from the target and the
+    /// measured rate. At least 1.
+    private var wfFrameSkip: Int {
+        guard frameInterval > 0, fallHeight > 0 else { return 1 }
+        let rows = wfTargetSeconds / (frameInterval * Double(fallHeight))
+        return max(1, min(400, Int(rows.rounded())))
+    }
+    private var wfSkipCount = 0
+    /// Frames are merged, not dropped, while waiting for the next row: the peak
+    /// of each bin over the interval. Dropping is simpler and loses exactly what
+    /// a waterfall is watched for — a burst shorter than the interval would
+    /// leave no mark at all.
+    private var wfAccum: [Float] = []
+    /// Measured seconds between frames, so the depth can be reported in time
+    /// rather than in frames the user never sees.
+    private var frameInterval: Double = 0
+
+    /// Seconds of history currently on screen. 0 until frames have been timed.
+    var wfSpanSeconds: Double {
+        guard frameInterval > 0, fallHeight > 0 else { return 0 }
+        return frameInterval * Double(wfFrameSkip) * Double(fallHeight)
+    }
+
     /// Fraction of the height given to the spectrum; the rest is waterfall.
     private let spectrumFraction: CGFloat = 0.45
 
@@ -77,8 +121,24 @@ final class SpectrumView: NSView {
         }
         iqRate = frame.iqRate
         centerFreq = frame.centerFreq
-        lastFrameAt = Date()
-        pushWaterfallRow()
+        let now = Date()
+        if let prev = lastFrameAt {
+            let dt = now.timeIntervalSince(prev)
+            // Ignore a gap that means "the feed stalled", not "this is the rate".
+            if dt > 0, dt < 2 { frameInterval = frameInterval == 0 ? dt : frameInterval * 0.9 + dt * 0.1 }
+        }
+        lastFrameAt = now
+        if wfAccum.count != bins.count {
+            wfAccum = bins
+        } else {
+            for i in 0..<bins.count where bins[i] > wfAccum[i] { wfAccum[i] = bins[i] }
+        }
+        wfSkipCount += 1
+        if wfSkipCount >= wfFrameSkip {
+            wfSkipCount = 0
+            pushWaterfallRow()
+            wfAccum = []
+        }
         needsDisplay = true
     }
 
@@ -87,6 +147,48 @@ final class SpectrumView: NSView {
     private var isLive: Bool {
         guard let t = lastFrameAt else { return false }
         return Date().timeIntervalSince(t) < 1.5
+    }
+
+
+    /// Map a bin window onto `count` output columns, the way the deck's FFT
+    /// dial already does it (`src/actions/spyDialFft.ts`).
+    ///
+    /// The obvious loop — one bin sampled per column — silently discards every
+    /// other bin under that column. At zoom 1 that is most of them, and a
+    /// carrier narrower than a column vanishes or not depending purely on where
+    /// it happens to land. Two regimes instead:
+    ///   * a column covers >= 1 bin: take the peak, so nothing narrow is lost
+    ///   * a column covers < 1 bin: interpolate, so high zoom draws a curve
+    ///     rather than a staircase of repeated bin values
+    private func columns(from src: [Float], _ start: Int, _ end: Int, _ count: Int) -> [Float] {
+        let n = src.count
+        guard n > 0, count > 0 else { return [] }
+        let lo = max(0, min(n - 1, start))
+        let hi = max(lo + 1, min(n, end))
+        let visN = hi - lo
+        var out = [Float](repeating: -200, count: count)
+        if visN >= count {
+            var lastEnd = lo
+            for x in 0..<count {
+                let s = lastEnd
+                let e = min(hi, lo + (x + 1) * visN / count)
+                var m = -Float.greatestFiniteMagnitude
+                var k = s
+                while k < e { if src[k] > m { m = src[k] }; k += 1 }
+                out[x] = e > s ? m : src[min(n - 1, s)]
+                lastEnd = e
+            }
+        } else {
+            let perCol = Double(visN) / Double(count)
+            for x in 0..<count {
+                let f = Double(lo) + (Double(x) + 0.5) * perCol
+                let i0 = max(lo, min(hi - 1, Int(f)))
+                let i1 = min(hi - 1, i0 + 1)
+                let t = Float(f - Double(i0))
+                out[x] = src[i0] + (src[i1] - src[i0]) * t
+            }
+        }
+        return out
     }
 
     private func norm(_ db: Float) -> CGFloat {
@@ -103,6 +205,7 @@ final class SpectrumView: NSView {
 
     private func pushWaterfallRow() {
         guard fallWidth > 0, fallHeight > 0, !bins.isEmpty else { return }
+        let src = wfAccum.count == bins.count ? wfAccum : bins
         // Scroll down by one row, then paint the new row at the top.
         let rowBytes = fallWidth * 4
         if fallHeight > 1 {
@@ -113,9 +216,29 @@ final class SpectrumView: NSView {
         }
         let win = visible(bins.count)
         let winCount = max(1, win.end - win.start)
+
+        // Noise floor for this frame, as a low percentile of the visible bins.
+        // A percentile rather than the minimum: one dead bin would otherwise
+        // anchor the whole ramp. Sampled every 8th bin — the floor is a bulk
+        // property, and sorting the full FFT every frame is not worth it.
+        var sample: [Float] = []
+        sample.reserveCapacity(winCount / 8 + 1)
+        var i = win.start
+        while i < win.end { sample.append(src[i]); i += 8 }
+        if sample.count > 4 {
+            sample.sort()
+            let p15 = sample[max(0, min(sample.count - 1, sample.count * 15 / 100))]
+            // Ease toward the estimate so a burst of noise does not make the
+            // whole waterfall change colour for one row and back again.
+            wfFloorEst = frameInterval > 0 && wfFloorEst > -300 ? wfFloorEst * 0.92 + p15 * 0.08 : p15
+        }
+        let lo = wfFloorEst - 4
+        let hi = lo + max(10, wfRangeDb)
+        let cols = columns(from: src, win.start, win.end, fallWidth)
         for x in 0..<fallWidth {
-            let b = bins[min(bins.count - 1, win.start + x * winCount / fallWidth)]
-            let (r, g, bl) = color(for: norm(b))
+            let b = cols[x]
+            let t = CGFloat(max(0, min(1, (b - lo) / (hi - lo))))
+            let (r, g, bl) = color(for: t)
             let o = x * 4
             fallPixels[o] = r; fallPixels[o + 1] = g; fallPixels[o + 2] = bl; fallPixels[o + 3] = 255
         }
@@ -204,7 +327,6 @@ final class SpectrumView: NSView {
 
         let n = bins.count
         let win = visible(n)
-        let winCount = max(1, win.end - win.start)
         let span = win.span
         let lo = win.lo
         func x(forHz hz: Double) -> CGFloat {
@@ -215,10 +337,54 @@ final class SpectrumView: NSView {
         // Frequency scale, ruled through the trace and labelled in the strip
         // between trace and waterfall so both share one x mapping.
         if span > 0 {
-            let targetTicks = 8.0
+            // Grid step chosen as the ladder rung *nearest* the ideal spacing,
+            // judged in log space so rungs are compared by ratio the way spacing
+            // is actually perceived.
+            //
+            // The ladder is deliberately finer than the usual 1-2-5. Every gap
+            // in 1-2-5 is a factor of 2, so the line count had to swing by that
+            // much between rungs: measured over a 1x-64x sweep it ran 3.2-8.0
+            // lines (2.49x). Filling in 1.25/1.5/2.5/3/4/6/8 caps every gap at
+            // 1.33x and holds the count at 7.0-9.2 (1.31x) — the graticule now
+            // subdivides smoothly under zoom instead of lurching at each rung.
+            // 1-2-2.5-5 was tried first and only reached 1.97x, not enough.
+            // Major spacing follows the window, not a fixed count: one labelled
+            // line per ~LABEL_PITCH px keeps the labels from crowding as the
+            // window is resized, and a wide window earns more of them.
+            let LABEL_PITCH: CGFloat = 110
+            let targetTicks = max(4.0, Double(plotW / LABEL_PITCH))
             let raw = span / targetTicks
             let mag = pow(10, (log10(raw)).rounded(.down))
-            let step = [1.0, 2.0, 5.0, 10.0].first { mag * $0 >= raw }.map { mag * $0 } ?? mag * 10
+            let step = [1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0].map { mag * $0 }
+                .min(by: { abs(log($0 / raw)) < abs(log($1 / raw)) }) ?? mag
+
+            // Minor lines subdivide each major interval. Label width — not
+            // legibility of the ruling — is what caps the major spacing, so
+            // without these the graticule is only ever as fine as the text
+            // allows, which is what read as coarse under zoom. Subdivision
+            // matches the rung so the minors land on round values too: 5 parts
+            // for a 1/2.5/5 rung, 4 for 4/8, 3 for 1.5/3/6, 2 otherwise.
+            let rung = step / mag
+            let sub: Int
+            switch rung {
+            case 1.0, 2.5, 5.0, 10.0: sub = 5
+            case 4.0, 8.0:            sub = 4
+            case 1.5, 3.0, 6.0:       sub = 3
+            default:                  sub = 2
+            }
+            let minorStep = step / Double(sub)
+            if plotW / CGFloat(span / minorStep) >= 9 {
+                ctx.setStrokeColor(NSColor(white: 0.030, alpha: 1).cgColor)
+                ctx.setLineWidth(0.5)
+                var mf = (lo / minorStep).rounded(.up) * minorStep
+                while mf < lo + span {
+                    let px = x(forHz: mf)
+                    ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
+                    mf += minorStep
+                }
+                ctx.strokePath()
+            }
+
             var f = (lo / step).rounded(.up) * step
             ctx.setStrokeColor(NSColor(white: 0.052, alpha: 1).cgColor)
             ctx.setLineWidth(0.5)
@@ -234,7 +400,13 @@ final class SpectrumView: NSView {
         }
 
         // waterfall
-        ensureFall(width: max(1, Int(plotW)), height: max(1, Int(fallH)))
+        // The waterfall is a bitmap, so unlike every vector element around it
+        // it has a resolution of its own. Sizing it in points meant a 2x display
+        // stretched each pixel over four, and the waterfall alone looked soft
+        // against crisp text and rules. Size it in device pixels instead; the
+        // buffer is a few MB either way.
+        let scale = max(1, Int((window?.backingScaleFactor ?? 1).rounded()))
+        ensureFall(width: max(1, Int(plotW) * scale), height: max(1, Int(fallH) * scale))
         if fallWidth > 0, fallHeight > 0 {
             fallPixels.withUnsafeMutableBytes { raw in
                 guard let base = raw.baseAddress,
@@ -254,6 +426,9 @@ final class SpectrumView: NSView {
                     ctx.saveGState()
                     ctx.translateBy(x: 0, y: fallTop + fallH)
                     ctx.scaleBy(x: 1, y: -1)
+                    // Pixel-for-pixel at this point, so any smoothing is loss
+                    // with no upside.
+                    ctx.interpolationQuality = .none
                     ctx.draw(img, in: CGRect(x: plotX, y: 0, width: plotW, height: fallH))
                     ctx.restoreGState()
                 }
@@ -272,8 +447,9 @@ final class SpectrumView: NSView {
 
         // trace + fill
         let path = CGMutablePath()
+        let traceCols = columns(from: bins, win.start, win.end, max(1, Int(plotW)))
         for px in 0..<Int(plotW) {
-            let b = bins[min(n - 1, win.start + px * winCount / max(1, Int(plotW)))]
+            let b = traceCols[px]
             let p = CGPoint(x: plotX + CGFloat(px), y: specH - norm(b) * specH)
             if px == 0 { path.move(to: p) } else { path.addLine(to: p) }
         }
@@ -297,8 +473,9 @@ final class SpectrumView: NSView {
 
         if holdEnabled, hold.count == n {
             let hp = CGMutablePath()
+            let holdCols = columns(from: hold, win.start, win.end, max(1, Int(plotW)))
             for px in 0..<Int(plotW) {
-                let v = hold[min(n - 1, win.start + px * winCount / max(1, Int(plotW)))]
+                let v = holdCols[px]
                 let p = CGPoint(x: plotX + CGFloat(px), y: specH - norm(v) * specH)
                 if px == 0 { hp.move(to: p) } else { hp.addLine(to: p) }
             }

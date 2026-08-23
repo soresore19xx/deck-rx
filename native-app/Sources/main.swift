@@ -227,6 +227,8 @@ final class MainView: NSView {
     private var holdPad: TogglePad!
     private let stepPop = NSPopUpButton()
     private let zoomSlider = NSSlider()
+    private let wfSlider = NSSlider()
+    private let wfLabel = label("--", mono(14), P.dim)
     private let maxSlider = NSSlider()
     private let minSlider = NSSlider()
     private let zoomLabel = label("1×", mono(14), P.dim)
@@ -402,9 +404,14 @@ final class MainView: NSView {
         // watching the waterfall, so they want a handle rather than a menu.
         let rail = panelView(P.panel)
         zoomSlider.minValue = 0; zoomSlider.maxValue = 5; zoomSlider.doubleValue = 0
+        // Waterfall depth in seconds. The scale is log so the short end, where
+        // a few seconds either way is the whole picture, gets as much travel as
+        // the long end where it is a rounding error.
+        wfSlider.minValue = log(5.0); wfSlider.maxValue = log(600.0)
+        wfSlider.doubleValue = log(spectrum.wfTargetSeconds)
         maxSlider.minValue = -60; maxSlider.maxValue = 0; maxSlider.doubleValue = Double(spectrum.dbCeil)
-        minSlider.minValue = -140; minSlider.maxValue = -60; minSlider.doubleValue = Double(spectrum.dbFloor)
-        for sl in [zoomSlider, maxSlider, minSlider] {
+        minSlider.minValue = -160; minSlider.maxValue = -60; minSlider.doubleValue = Double(spectrum.dbFloor)
+        for sl in [zoomSlider, wfSlider, maxSlider, minSlider] {
             sl.isVertical = true
             sl.target = ButtonBox.shared
             sl.action = #selector(ButtonBox.fire(_:))
@@ -418,6 +425,11 @@ final class MainView: NSView {
             guard let self else { return }
             self.spectrum.zoom = pow(2, self.zoomSlider.doubleValue)
             self.zoomLabel.stringValue = String(format: "%.0f×", pow(2, self.zoomSlider.doubleValue))
+        }
+        ButtonBox.shared.actions[ObjectIdentifier(wfSlider)] = { [weak self] in
+            guard let self else { return }
+            self.spectrum.wfTargetSeconds = exp(self.wfSlider.doubleValue)
+            self.syncWaterfallSpan()
         }
         ButtonBox.shared.actions[ObjectIdentifier(maxSlider)] = { [weak self] in
             guard let self else { return }
@@ -433,8 +445,9 @@ final class MainView: NSView {
         }
         let railStack = NSStackView(views: [
             label("ZOOM", mono(13), P.faint), zoomSlider, zoomLabel,
-            label("MAX", mono(13), P.faint), maxSlider,
             label("MIN", mono(13), P.faint), minSlider,
+            label("MAX", mono(13), P.faint), maxSlider,
+            label("TIME", mono(13), P.faint), wfSlider, wfLabel,
         ])
         railStack.orientation = .vertical
         railStack.alignment = .centerX
@@ -590,6 +603,17 @@ final class MainView: NSView {
     private func syncRange() {
         dbLabel.stringValue = String(format: "%.0f / %.0f dB", spectrum.dbFloor, spectrum.dbCeil)
         spectrum.needsDisplay = true
+    }
+
+    /// Depth readout. Shown in seconds because that is what the user is asking
+    /// for when they reach for this; a dash until enough frames have arrived to
+    /// time the feed, rather than a made-up number from a nominal rate.
+    func syncWaterfallSpan() {
+        let secs = spectrum.wfSpanSeconds
+        wfLabel.stringValue = secs > 0
+            ? (secs < 60 ? String(format: "%.0fs", secs)
+                         : String(format: "%.0fm%02ds", secs / 60, Int(secs) % 60))
+            : "--"
     }
 
     private func meterRow(_ name: String, _ bar: MeterBar, _ num: NSTextField) -> NSStackView {
@@ -898,6 +922,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // on its own, it only has to notice a change made from the deck.
             tick += 1
             if tick % 4 == 0 { self.view.options.refresh() }
+            // Depth in seconds moves with the measured frame rate and with the
+            // window height, so it is refreshed rather than set once.
+            self.view.syncWaterfallSpan()
         }
         view.options.refresh()
         // The plugin only publishes the status feed while this flag is fresh.

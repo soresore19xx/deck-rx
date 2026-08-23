@@ -218,3 +218,29 @@ consolidating onto one front-end.
 Running both at once is fine and needs no guard. SpyServer takes multiple
 clients by design — running SDR++ alongside deck-rx is how every
 comparison in this port was made.
+
+## CPU, measured
+
+An 11-inch MacBook Air from 2015 (two cores, Broadwell) runs the receiver
+at 79% of a core. What moves that number is not what I assumed:
+
+| setting | CPU |
+| --- | --- |
+| FFT 4096, 30 fps, IQ 456 kHz | 79% |
+| FFT 1024, 10 fps, IQ 456 kHz | 84% |
+| FFT 1024, 10 fps, IQ 228 kHz | 44% |
+
+FFT size and frame rate do essentially nothing. Demodulation runs per IQ
+sample — a 16th-order IF filter on I and Q for AM, an atan2 per sample
+for FM — which at 456 kHz is millions of operations a second, and a
+transform 30 times a second is noise beside it. Only the IQ rate matters.
+
+Halving it to 228 kHz costs FM quality, and that is documented rather
+than theoretical: the plugin raised its own default from 228 to 456 kHz
+because far-adjacent FM stations aliased back into the audible baseband.
+AM is unaffected — a 9 kHz channel does not care. So on a slow machine
+used mostly for medium wave, `iqDecimation: 2` is a real option; on one
+used for FM it is not.
+
+Stereo still locks at 228 kHz (pilot 0.10 on J-WAVE), so the lock is not
+the thing that degrades.

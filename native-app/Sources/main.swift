@@ -226,6 +226,21 @@ final class MainView: NSView {
     private var powerPad: TogglePad!
     private var holdPad: TogglePad!
     private let stepPop = NSPopUpButton()
+    /// Spectrum source: the plugin's socket, or the app's own SpyServer
+    /// connection. Both exist while the standalone port is in progress —
+    /// switching between them on one screen is how parity gets checked.
+    var onSourceToggle: (() -> Void)?
+    var onAudioToggle: (() -> Void)?
+    /// Returns true when the direct path took the change, so it is not also
+    /// sent to the plugin.
+    var onFftSize: ((Int) -> Bool)?
+    lazy var srcAudioPad: TogglePad = TogglePad("AUDIO", font: mono(13), momentary: false) {
+        [weak self] in self?.onAudioToggle?()
+    }
+    lazy var srcPad: TogglePad = TogglePad("DIRECT", font: mono(13), momentary: false) {
+        [weak self] in self?.onSourceToggle?()
+    }
+    let srcLabel = label("via plugin", mono(13), P.faint)
     private let zoomSlider = NSSlider()
     private let wfSlider = NSSlider()
     private let wfLabel = label("--", mono(14), P.dim)
@@ -321,12 +336,19 @@ final class MainView: NSView {
 
         // display toolbar, between the header and the spectrum
         let bar = panelView(P.sunken)
-        fftPop.addItems(withTitles: ["256", "512", "1024", "2048", "4096"])
+        // Sizes above 4096 are only reachable on the app's own connection. The
+        // plugin's ladder stops where a 200x100 LCD stopped needing more and
+        // where a JS transform stopped being affordable; vDSP has neither
+        // limit, and 65536 is what SDR++ runs here — worth 12 dB of noise
+        // floor against 4096.
+        fftPop.addItems(withTitles: ["256", "512", "1024", "2048", "4096",
+                                     "8192", "16384", "32768", "65536"])
         fftPop.font = mono(16)
         fftPop.target = ButtonBox.shared
         fftPop.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(fftPop)] = { [weak self] in
             guard let self, let t = self.fftPop.titleOfSelectedItem, let v = Int(t) else { return }
+            if let set = self.onFftSize, set(v) { return }   // handled by the direct path
             Receiver.spectrum(fft: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
         }
         fpsPop.addItems(withTitles: ["5", "10", "15", "20", "30", "60"])
@@ -391,6 +413,7 @@ final class MainView: NSView {
             
             label("SMOOTH", mono(14), P.faint), smoothField, smoothStepper, avgLabel,
             holdPad,
+            srcPad, srcAudioPad, srcLabel,
             NSView(),
             dbLabel,
         ])
@@ -889,6 +912,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var view: MainView!
     private var feed: SpectrumFeed?
+    private let radio = LocalRadio()
+    private var direct = false
     private var timer: Timer?
     private var aliveTimer: Timer?
 
@@ -906,8 +931,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        feed = SpectrumFeed { [weak self] frame in self?.view.spectrum.accept(frame) }
+        feed = SpectrumFeed { [weak self] frame in
+            guard let self, !self.direct else { return }   // DIRECT wins while it is on
+            self.view.spectrum.accept(frame)
+        }
         feed?.start()
+
+        radio.onFrame = { [weak self] frame in
+            guard let self, self.direct else { return }
+            self.view.spectrum.accept(frame)
+        }
+        radio.onState = { [weak self] in self?.syncSource() }
+        view.onSourceToggle = { [weak self] in self?.toggleSource() }
+        view.onFftSize = { [weak self] size in
+            guard let self, self.direct else { return false }
+            self.radio.fftSize = size
+            return true
+        }
+        view.onAudioToggle = { [weak self] in
+            guard let self else { return }
+            // Audio only means anything on the app's own connection; through
+            // the plugin the plugin owns the sound card.
+            guard self.direct else { self.view.srcAudioPad.isOn = false; return }
+            self.radio.audioEnabled.toggle()
+            self.view.srcAudioPad.isOn = self.radio.audioEnabled
+            self.syncSource()
+        }
         // Seed the display controls from the receiver's live settings.
         Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
         Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
@@ -929,6 +978,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.options.refresh()
         // The plugin only publishes the status feed while this flag is fresh.
         aliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in Receiver.touchAlive() }
+    }
+
+    /// DIRECT: the app connects to SpyServer itself instead of reading the
+    /// plugin's socket. Server address and tuned frequency come from the status
+    /// feed, so this follows whatever the receiver is already set to rather than
+    /// introducing a second place to configure the same thing.
+    private func toggleSource() {
+        direct.toggle()
+        if direct {
+            let s = Receiver.status()
+            let host = s.host.isEmpty ? "127.0.0.1" : s.host
+            let port = UInt16(s.port > 0 ? s.port : 5555)
+            let freq = UInt32(max(0, s.freqHz))
+            radio.connect(host: host, port: port, frequency: freq > 0 ? freq : 1_134_000)
+        } else {
+            radio.audioEnabled = false
+            view.srcAudioPad.isOn = false
+            radio.disconnect()
+        }
+        syncSource()
+    }
+
+    private func syncSource() {
+        view.srcPad.isOn = direct
+        if !direct {
+            view.srcLabel.stringValue = "via plugin"
+            view.srcLabel.textColor = P.faint
+        } else if let e = radio.lastError {
+            view.srcLabel.stringValue = e
+            view.srcLabel.textColor = P.warn
+        } else if radio.isConnected {
+            let a = radio.audioEnabled ? String(format: " audio %.1f k", radio.audioRate / 1000) : ""
+            let r = radio.deviceInfo.map { "IQ \(Int(Double($0.maxSampleRate) / 1000)) k max" } ?? ""
+            view.srcLabel.stringValue = "direct \(r)\(a)"
+            view.srcLabel.textColor = P.dim
+        } else {
+            view.srcLabel.stringValue = "connecting..."
+            view.srcLabel.textColor = P.faint
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }

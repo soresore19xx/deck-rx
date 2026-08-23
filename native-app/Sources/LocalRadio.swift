@@ -115,6 +115,14 @@ final class LocalRadio {
     private var iq = Data()
     private var frameTimer: DispatchSourceTimer?
 
+    /// Reconnect state. A receiver that drops off the air and stays off is
+    /// worse than one that never started: the window keeps showing the last
+    /// frequency and nothing says the link is gone.
+    private var wantConnection = false
+    private var reconnectTimer: DispatchSourceTimer?
+    private var reconnectDelay: TimeInterval = 1
+    private static let reconnectMax: TimeInterval = 30
+
     // MARK: control
 
     /// Connects using the persisted server address unless one is given. The
@@ -128,7 +136,25 @@ final class LocalRadio {
         sink.muted = config.muted
         leveler.config.enabled = config.levelingEnabled
         iqNrEnabled = config.fmIfnr
-        lastError = nil
+        connectHost = host
+        connectPort = port
+        wantConnection = true
+        reconnectDelay = 1
+        openConnection()
+    }
+
+    private var connectHost = ""
+    private var connectPort: UInt16 = 5555
+
+    /// The connection attempt itself, separated from `connect` so a retry does
+    /// not re-run the setup — and so the address it dials is the one recorded,
+    /// not whatever the config says now.
+    private func openConnection() {
+        let host = connectHost
+        let port = connectPort
+        // The error is NOT cleared here. Each retry used to blank it, so a
+        // receiver that had been failing for an hour showed nothing at all
+        // between attempts. It clears when a connection actually succeeds.
         queue.async { self.fft = FFTPipeline(self.fftSize) }
 
         client.onDeviceInfo = { [weak self] info in self?.start(with: info) }
@@ -138,6 +164,7 @@ final class LocalRadio {
             self.isConnected = false
             self.stopFrameTimer()
             DispatchQueue.main.async { self.onState?() }
+            self.scheduleReconnect()
         }
         client.onError = { [weak self] e in
             guard let self else { return }
@@ -151,11 +178,34 @@ final class LocalRadio {
                 self.lastError = e.localizedDescription
                 self.isConnected = false
                 DispatchQueue.main.async { self.onState?() }
+                self.scheduleReconnect()
             }
         }
     }
 
+    /// Backs off to `reconnectMax` and stays there. The server being down for
+    /// an hour is normal; hammering it every second for that hour is not, and
+    /// giving up entirely means noticing by ear that the radio went quiet.
+    private func scheduleReconnect() {
+        guard wantConnection else { return }
+        reconnectTimer?.cancel()
+        let delay = reconnectDelay
+        reconnectDelay = min(reconnectDelay * 2, Self.reconnectMax)
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + delay)
+        t.setEventHandler { [weak self] in
+            guard let self, self.wantConnection, !self.isConnected else { return }
+            self.lastError = "reconnecting..."
+            DispatchQueue.main.async { self.onState?() }
+            self.openConnection()
+        }
+        reconnectTimer = t
+        t.resume()
+    }
+
     func disconnect() {
+        wantConnection = false
+        reconnectTimer?.cancel(); reconnectTimer = nil
         sink.stop()
         client.stopStreaming()
         client.disconnect()
@@ -206,6 +256,9 @@ final class LocalRadio {
         client.setSetting(.streamingEnabled, 1)
 
         isConnected = true
+        lastError = nil
+        reconnectDelay = 1        // a good connection earns a fast first retry
+        reconnectTimer?.cancel(); reconnectTimer = nil
         audioRate = Double(iqRate) / Double(max(1, audioDecimate))
         configureDemods()
         if audioEnabled { restartAudio() }
@@ -240,6 +293,7 @@ final class LocalRadio {
     /// WFM is the only stereo mode, so the sink's channel count follows it.
     var isStereoMode: Bool { mode == 1 && config.fmStereo }
     var stereoLocked: Bool { other.stereoLocked }
+    var pilotMetric: Double { other.pilotMetric }
 
     private func applyNrMode() {
         iqnr.reset()

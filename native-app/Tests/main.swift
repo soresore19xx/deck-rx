@@ -314,6 +314,30 @@ if let r = try? PresetStore.importFromSdrpp(sdrPath: src, storePath: dst) {
     check("import runs", false, "threw")
 }
 
+section("a dropped link is retried, and a deliberate stop is not")
+// Connecting to a port nothing listens on fails, and the receiver must keep
+// trying: SpyServer being down for an hour is normal, and a receiver that
+// gives up means noticing by ear that the radio went quiet.
+let rc = LocalRadio()
+var rcCfg = RadioConfig()
+rcCfg.host = "127.0.0.1"; rcCfg.port = 1        // nothing listens here
+rc.config = rcCfg
+rc.connect()
+// Longer than the client's 5 s connect timeout: 127.0.0.1:1 is not refused
+// here, it is dropped, so the failure arrives on the timeout rather than
+// immediately. Waiting 1.5 s asserted against a connection still in progress.
+Thread.sleep(forTimeInterval: 6.5)
+check("a failed connect reports why", rc.lastError != nil, "lastError nil")
+check("and is not left claiming a connection", !rc.isConnected)
+rc.disconnect()
+Thread.sleep(forTimeInterval: 0.3)
+let errAfterStop = rc.lastError
+Thread.sleep(forTimeInterval: 2.5)
+// After disconnect the retry loop must be silent: an unchanged error string
+// is the observable form of "no further attempts".
+check("disconnect stops the retries", rc.lastError == errAfterStop,
+      "error moved to \(rc.lastError ?? "nil")")
+
 section("audio sink accepts the channel counts the modes need")
 let sink = AudioSink()
 check("mono starts", (try? sink.start(sourceRate: 9500, channels: 1)) != nil)

@@ -143,6 +143,8 @@ final class AppServer {
                 + ",\"autoAudio\":\(radio.config.autoAudio)"
                 + ",\"audio\":\(radio.audioEnabled)"
                 + ",\"iqRateHz\":\(radio.iqRate)"
+                + ",\"stereo\":\(radio.stereoLocked)"
+                + ",\"pilot\":\(String(format: "%.6f", radio.pilotMetric))"
                 + ",\"lastError\":\(err)")
 
         case "/tune":

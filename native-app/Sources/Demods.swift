@@ -140,6 +140,10 @@ final class Demods {
     /// threshold: the L-R mix runs regardless, but the badge should only appear
     /// when pilot power is confidently clear of the noise floor.
     private(set) var stereoLocked = false
+    /// The smoothed lock metric itself. A boolean says the badge is off; this
+    /// says whether the pilot is absent, marginal, or present but under the
+    /// threshold — three different problems that look identical from outside.
+    var pilotMetric: Double { pilotPower }
 
     /// Transition band is 25 % of the cutoff: a tight skirt with a bounded tap
     /// count. The lower clamp keeps the 19 kHz pilot inside the passband; the

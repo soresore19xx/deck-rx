@@ -38,10 +38,10 @@ struct RadioConfig: Codable, Equatable {
     /// Empty means the system default output. A name that no longer exists
     /// falls back to the default rather than going silent.
     var audioDevice = ""
-    /// "normal", "compact" or "tiny". Applied at construction, so changing it
+    /// "min", "middle" or "max". Applied at construction, so changing it
     /// takes a relaunch — every constraint constant and font size is baked in
     /// when the window is built.
-    var uiScale = "normal"
+    var uiScale = "max"
 
     var audioDecimate = 4
     var audioGain: Double = 1

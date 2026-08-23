@@ -9,6 +9,11 @@ import AppKit
 /// greyed out is worse than showing what applies.
 final class OptionsPanel: NSView {
     private let stack = NSStackView()
+    /// The rows are stacked top-down with no bound on the total, so on a short
+    /// screen the last of them ran off the bottom of the panel and could not be
+    /// reached at all. Scrolling costs nothing when everything already fits.
+    private let scroll = NSScrollView()
+    private let doc = NSView()
     private var live: [String: Any] = [:]
     private var mode = -1
 
@@ -20,11 +25,32 @@ final class OptionsPanel: NSView {
         stack.alignment = .leading
         stack.spacing = 2
         stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        doc.translatesAutoresizingMaskIntoConstraints = false
+        doc.addSubview(stack)
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.drawsBackground = false
+        // Overlay, so the scroller does not take a column away from rows that
+        // are already tight in a 228 pt panel.
+        scroll.scrollerStyle = .overlay
+        scroll.autohidesScrollers = true
+        scroll.documentView = doc
+        addSubview(scroll)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            scroll.topAnchor.constraint(equalTo: topAnchor),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            doc.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            stack.topAnchor.constraint(equalTo: doc.topAnchor, constant: S(10)),
+            stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: S(12)),
+            // Clear of the scroller rather than under it. An overlay scroller
+            // is about 15 pt wide and the rows end with their value column, so
+            // a 12 pt inset put the bar on top of the values it was next to.
+            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: S(-20)),
+            // The document's height is the stack's: what makes it scrollable.
+            stack.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: S(-10)),
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -161,7 +187,7 @@ final class OptionsPanel: NSView {
         // Takes effect on the next launch: fonts and panel sizes are fixed when
         // the window is built, so the label says so rather than looking broken.
         views.append(row("UI scale *", "rx.uiScale",
-                         .text((rx["uiScales"] as? [String]) ?? ["normal", "compact", "tiny"])))
+                         .text((rx["uiScales"] as? [String]) ?? ["min", "middle", "max"])))
         views.append(row("Audio out", "rx.audioDevice", .text(audioDevices())))
         views.append(row("Output", "rx.outputMode", .text(["local", "icecast"])))
         views.append(row("SDR++ auto-sync", "rx.autoSyncSdrpp", .bool))

@@ -50,7 +50,8 @@ Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / 
 | Audio sink | ✅ Local output via `naudiodon` (PortAudio → CoreAudio HAL); optional icecast publish path (ffmpeg + MP3 + icecast SOURCE) auto-selected from `cfg.ffmpeg.mode`. Native bindings (`naudiodon`, `deck-rx-asrc`, `segfault-handler`) need an ABI-matched rebuild against the Stream Deck app's bundled Node — run `npm run rebuild-native` once after `npm install`. See [Audio path (long-running stability)](#audio-path-long-running-stability) for the libsamplerate ASRC + drift-compensation details. |
 | Output loudness leveling | ✅ Single output stage (`src/audioLeveling.ts`) applied to the final PCM before the sink, so it covers **both** the naudiodon and icecast paths. **(1)** Static per-band makeup gains (`MODE_MAKEUP`, overridable per host via `cfg.audioMakeup`, e.g. `{"1": 8}` to bring WFM down) lift each demod mode to a common loudness — WFM/NFM/SSB are raw fixed-gain, AM/CW are demod-AGC'd to different setpoints, so without this the bands jump in level and deck-rx is much quieter than other apps. This is the **default** leveller: fixed per-band gain, **no dynamic motion / no pumping**. **(2)** An adaptive output AGC is **opt-in** (`cfg.audioLeveling: true`, default off) for also tracking within-band signal-strength changes — off by default because its dynamic level-riding is audible. **(3)** A soft-knee tanh limiter is an instantaneous peak ceiling so the static gain can run hot near full-scale without hard-clip distortion (peak-only, no breathing). `cfg.audioGain` (default `1.0`, clamped `0.1..4`) is a master trim on top of the makeup; the Volume dial (0–100%) attenuates further. Independent of RF / demod gain. Unit-tested in `test/audioLeveling.test.ts`. |
 | External knob control | ✅ loopback HTTP endpoint on `127.0.0.1:8771` (`src/controlServer.ts`) so a hardware knob can tune, ride volume, mute, power and step presets on the receiver alongside the Stream Deck+ dials. Frequency stepping goes through the same `nextFreqForTicks()` the Tune dial uses and preset stepping through the same `nextPresetSlot()`, so the knob honours the active tune step, the device's receivable bands and the dial's preset-skipping rules. Driven today by `knobctl` (BRIMFORD two-tier knob). See [External knob control](#external-knob-control-http). |
-| Native receiver app | ✅ `native-app/` builds `/Applications/Deck RX.app` — preset table, live spectrum + waterfall, station / frequency / mode readout, S/N meters and a transport row, in one window. It owns no receiver state: reads come from the status feed and the spectrum socket, writes go to the control endpoint, so the deck, the knob and this app can all drive the same receiver. It is also the focus target a Stream Deck profile binds to, so the deck switches to the deck-rx profile when the app comes to the front instead of being selected by hand. |
+| Native receiver app | ✅ `native-app/` builds two bundles from one source tree. `Deck RX.app` is a front-end over the plugin's receiver — preset table, live spectrum + waterfall, station / frequency / mode readout, S/N meters and a transport row — and the focus target a Stream Deck profile binds to, so the deck switches profile when the app comes to the front. `Deck RX Solo.app` is the same window with a receiver of its own. |
+| Standalone receiver | ✅ `Deck RX Solo.app` connects to SpyServer itself and needs no plugin, no Node and no native modules: SpyServer client, all six demods with FM stereo, audio, station names, presets, SDR++ import and the control endpoint are all in the app. Universal binary, macOS 12+ — verified on a 2015 Intel MacBook Air. Copy the `.app` and clear its quarantine attribute. See [Standalone receiver](#standalone-receiver-deck-rx-solo). |
 | Headless receiver | ✅ `bin/headless.js` runs the whole signal path — SpyServer client, demodulator, audio chain, control endpoint, status feed — with no Stream Deck involved. The core logs through `src/log.ts` instead of the SDK, so the plugin and the headless process share every module. Run it with the Node the native modules were built against. |
 | Spectrum feed | ✅ binary FFT frames over a Unix socket (`/tmp/deck-rx-spectrum.sock`, `src/spectrumFeed.ts`) for a native front-end. Computes nothing while nobody is connected, and drops frames for a reader that falls behind rather than queueing them. See [Spectrum feed](#spectrum-feed-native-front-end). |
 
@@ -220,8 +221,25 @@ process that does not exist.
 without their 200×100 px and four-panel limits.
 
 ```sh
-native-app/build-app.sh       # -> /Applications/Deck RX.app
+native-app/build-app.sh          # both bundles
+native-app/build-app.sh front    # /Applications/Deck RX.app only
+native-app/build-app.sh solo     # /Applications/Deck RX Solo.app only
+native-app/run-tests.sh          # 56 assertions over the receiver
 ```
+
+Two bundles, one source tree, separated by a `STANDALONE` compile flag:
+
+| | `Deck RX.app` | `Deck RX Solo.app` |
+| --- | --- | --- |
+| receiver | the plugin's | its own |
+| needs the plugin running | yes | no |
+| Stream Deck profile target | yes | no |
+| bundle id | `com.hogehoge.deckrx.receiver` | `com.hogehoge.deckrx.solo` |
+
+The receiver sources are not compiled into the front-end at all rather than
+switched off inside it — dead code that cannot run is still code someone has to
+read. The display is shared, so a fix to the spectrum lands in both and cannot
+drift between them.
 
 Stream Deck switches to a profile automatically when the application it is bound
 to comes to the front — but a plugin is not an application, so a deck-rx profile
@@ -236,10 +254,10 @@ when that RAM-backed volume is mounted and `/tmp` otherwise — measured at 320 
 per write, 3.9 writes/s, with no measurable plugin CPU cost. A closed app costs
 the plugin one `stat()` per tick and nothing else.
 
-It reads the status feed and the spectrum socket and writes through the control
-endpoint, exactly like any other front-end; nothing about the receiver lives in
-the app. The preset table comes from the plugin's own `data/presets.json`
-(read-only — the plugin owns that file), and the row the receiver is currently
+`Deck RX.app` reads the status feed and the spectrum socket and writes through
+the control endpoint, exactly like any other front-end; nothing about the
+receiver lives in it. The preset table comes from `data/presets.json`
+(read-only), and the row the receiver is currently
 on is highlighted by frequency, so a retune from a dial or the knob shows up
 here too.
 
@@ -299,6 +317,87 @@ per-mode options, RF gain, IQ rate and the demod-mode selector. Those need
 fields the status feed does not publish yet, plus a `/mode` endpoint on the
 control server.
 
+## Standalone receiver (Deck RX Solo)
+
+`Deck RX Solo.app` is the whole receiver in one bundle. No plugin, no Node, no
+native modules — copy the `.app` to any Mac and it works.
+
+```sh
+cp -R "/Applications/Deck RX Solo.app" /Volumes/somewhere/
+# on the other machine, after copying:
+xattr -dr com.apple.quarantine "/Applications/Deck RX Solo.app"
+```
+
+Press **DIRECT** to connect, then **AUDIO** to demodulate and play. `autoDirect`
+and `autoAudio` in the config do both at launch, which is the only way to drive
+it on a machine nobody sits at.
+
+### Why it exists
+
+The app owned no receiver state, so it was useless without the plugin on the
+same machine — and in exchange the whole thing carried Node plus two ABI-locked
+native modules (`naudiodon`, `deck-rx-asrc`) that had to be rebuilt against
+whatever Node the Stream Deck app shipped. Portability was the point.
+
+`fft.ts`, `AudioOutput.ts` and `asrc.ts` have no counterpart here: Accelerate,
+AVAudioEngine and AVAudioConverter replace them, and both native modules are
+absent from this path. The demodulators are ports, verified numerically against
+the TypeScript — AM 100.7 dB agreement, WFM mono/stereo 58.8/63.2, NFM 76.4,
+USB/LSB 92.5/79.0, CW 102.5. Worst-case sample difference is 1/32768 in every
+mode, which is the reference rounding to int16 while this keeps doubles.
+
+The plugin keeps its own signal path. Converting it into a client of this one
+was considered and dropped: the only argument was not making a demod fix twice,
+which costs nothing if the plugin is left alone, against 380 `spyService` call
+sites and the Tune dial timing this repo has been bitten by before. Reasoning
+in [docs/standalone-app-port.md](docs/standalone-app-port.md).
+
+### Settings
+
+`~/Library/Application Support/deck-rx/receiver.json`, seeded from the plugin's
+`config.json` on a first run when there is one and never written back to it.
+Host and port are editable from the options panel, so a copied app needs no
+hand-edited file. The station databases ship inside the bundle and seed
+`~/Library/Application Support/deck-rx/data` on first launch.
+
+`uiScale` picks `normal`, `compact` or `tiny` — fonts and every fixed dimension
+scale together, since scaling only the text leaves the panels their full width.
+It takes a relaunch, because constraint constants are captured when the window
+is built.
+
+| scale | minimum window |
+| --- | --- |
+| normal | 1435 × 784 |
+| compact | 1278 × 681 |
+| tiny | 1139 × 620 |
+
+An 11-inch MacBook Air is 1366 × 768, so `compact` is what fits it.
+
+### Sharing the receiver
+
+SpyServer takes several clients at once and gives control to the first only. A
+later client's retune is discarded silently, so the app reports it: `canControl`
+in `/health`, **LISTEN ONLY** in the window, 409 from `/tune`, and the readout
+follows the device rather than claiming a frequency nothing is receiving. There
+is no arbitration — which client owns the radio is the user's call.
+
+### CPU
+
+Measured on a 2015 MacBook Air 11 (two Broadwell cores):
+
+| setting | CPU |
+| --- | --- |
+| FFT 4096, 30 fps, IQ 456 kHz | 79% |
+| FFT 1024, 10 fps, IQ 456 kHz | 84% |
+| FFT 1024, 10 fps, IQ 228 kHz | 44% |
+
+FFT size and frame rate do essentially nothing: demodulation runs per IQ sample
+and a transform thirty times a second is noise beside it. Only the IQ rate
+matters, and halving it costs FM quality — the plugin raised its own default
+from 228 to 456 kHz because far-adjacent stations aliased into the audible
+baseband. AM does not care, so `iqDecimation: 2` is a real option on a slow
+machine used for medium wave and not on one used for FM.
+
 ## Documentation
 
 - [Repository layout](docs/repository-layout.md)
@@ -308,6 +407,7 @@ control server.
 - [Architecture notes](docs/architecture.md) — dial details, signal-path implementation, internal mechanisms
 - [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules, NHK channel inference + transmitter-site + callsign annotation
 - [Data sources & attribution](docs/data-sources.md) — Japan-only sources (総務省 MIC / 関東総通局 / 沖縄総通局) plus the international EIBI shortwave DB; license terms + refresh scripts
+- [Standalone app port](docs/standalone-app-port.md) — what moved to Swift, what the system frameworks replaced, and why the plugin keeps its own signal path
 - [Debug helpers](docs/debug-helpers.md) — LCD dump / lint / compare-baseline scripts
 
 ## Credits / References

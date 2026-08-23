@@ -309,6 +309,8 @@ final class AppServer {
             "audioSink": "local",
             "host": c.host,
             "port": c.port,
+            "uiScale": c.uiScale,
+            "uiScales": UI.names,
         ])
     }
 
@@ -417,8 +419,6 @@ final class AppServer {
             "host": radio.config.host,
             "port": radio.config.port,
             "canControl": radio.canControl,
-            "uiScale": radio.config.uiScale,
-            "uiScales": UI.names,
         ]
         // Null rather than a stale number when nothing is live — the same
         // choice the plugin makes, and the reason its meters blank instead of

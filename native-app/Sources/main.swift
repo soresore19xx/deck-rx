@@ -106,23 +106,26 @@ final class PresetList: NSView {
             row.addSubview(bar)
             for v in [f, u, n, m] { v.translatesAutoresizingMaskIntoConstraints = false; row.addSubview(v) }
             NSLayoutConstraint.activate([
-                row.heightAnchor.constraint(equalToConstant: 29),
+                // Every one of these was a fixed constant, so the list kept its
+                // full row height and column widths at any scale while the
+                // panel around it shrank.
+                row.heightAnchor.constraint(equalToConstant: S(29)),
                 bar.leadingAnchor.constraint(equalTo: row.leadingAnchor),
                 bar.topAnchor.constraint(equalTo: row.topAnchor),
                 bar.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-                bar.widthAnchor.constraint(equalToConstant: 4),
-                f.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
-                f.widthAnchor.constraint(equalToConstant: 78),
+                bar.widthAnchor.constraint(equalToConstant: S(4)),
+                f.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: S(10)),
+                f.widthAnchor.constraint(equalToConstant: S(78)),
                 f.centerYAnchor.constraint(equalTo: row.centerYAnchor),
                 u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 1),
-                u.widthAnchor.constraint(equalToConstant: 26),
+                u.widthAnchor.constraint(equalToConstant: S(26)),
                 u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
-                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: 8),
-                n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -6),
+                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: S(8)),
+                n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: S(-6)),
                 n.centerYAnchor.constraint(equalTo: row.centerYAnchor),
                 // -24, not -10: the vertical scroller overlays the row's
                 // trailing edge and would clip the mode column to "A" / "WF".
-                m.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -20),
+                m.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: S(-20)),
                 m.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             ])
             row.wantsLayer = true
@@ -194,7 +197,7 @@ final class MainView: NSView {
     private let dropsLabel = label("—", mono(17), P.faint)
     private let outLabel = label("—", mono(17), P.faint)
 
-    private let stationLabel = label("—", .systemFont(ofSize: max(9, S(26))), P.text)
+    private let stationLabel = label("—", .systemFont(ofSize: max(11, UI.H(26))), P.text)
     private let freqView = FreqView(frame: .zero)
     private let modeChip = label("—", mono(22, .medium), P.text)
     /// FM stereo pilot lock, drawn as the deck's LCD draws it: a red outlined
@@ -318,7 +321,9 @@ final class MainView: NSView {
         let header = panelView(NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1))
         freqView.onTune = { hz in Receiver.tune(hz: Int(hz)) }
         freqView.translatesAutoresizingMaskIntoConstraints = false
-        freqView.heightAnchor.constraint(equalToConstant: 96).isActive = true
+        // FreqView derives its digit height from its own bounds, so this one
+        // constant sizes the whole readout.
+        freqView.heightAnchor.constraint(equalToConstant: UI.H(96)).isActive = true
         stereoBadge.isHidden = true
         stereoBadge.translatesAutoresizingMaskIntoConstraints = false
         let freqRow = NSStackView(views: [freqView, modeChip, stereoBadge])
@@ -601,7 +606,7 @@ final class MainView: NSView {
             header.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
             // Tall enough for the 68 pt readout plus the station line above it
             // and the BW / STEP line below; at 118 the last line was clipped.
-            header.heightAnchor.constraint(equalToConstant: S(168)),
+            header.heightAnchor.constraint(equalToConstant: UI.H(168)),
 
             bar.topAnchor.constraint(equalTo: header.bottomAnchor),
             bar.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),

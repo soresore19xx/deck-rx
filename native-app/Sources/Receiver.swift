@@ -10,12 +10,24 @@ enum UI {
 
     static func from(_ name: String) -> CGFloat {
         switch name {
-        case "compact": return 0.85
-        case "tiny":    return 0.72
-        default:        return 1
+        // "normal"/"compact"/"tiny" were the first names; a config written
+        // under them still loads rather than silently reverting to max.
+        case "min",    "tiny":    return 0.72
+        case "middle", "compact": return 0.85
+        default:                  return 1
         }
     }
-    static let names = ["normal", "compact", "tiny"]
+    static let names = ["min", "middle", "max"]
+
+    /// The frequency readout and the station line above it take a second
+    /// reduction on top of the window scale. They are the largest things on
+    /// screen by a wide margin — a 96 pt seven-segment row and a 26 pt name —
+    /// so scaling them with everything else still leaves them dominating a
+    /// small window while the panels around them have given all they can.
+    static var headline: CGFloat { scale < 0.8 ? scale * 0.78 : scale < 1 ? scale * 0.88 : 1 }
+
+    /// Dimension scaled for those two, rounded.
+    static func H(_ v: CGFloat) -> CGFloat { (v * headline).rounded() }
 }
 
 /// Scaled dimension. Rounded, because a half-pixel constraint on every panel

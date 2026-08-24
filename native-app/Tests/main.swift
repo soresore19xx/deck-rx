@@ -79,6 +79,44 @@ func rms(_ a: [Float]) -> Double {
 // test reads as intent rather than as a magic number.
 let NFM = 0, WFM = 1, AM = 2, DSB = 3, USB = 4, CW = 5, LSB = 6, RAW = 7
 
+section("the readout groups in threes, read as kHz")
+// The digits are dotted in threes and the unit label says kHz, so the last
+// group is the fraction of a kilohertz: 000.954.000 is 954.000 kHz. Labelling
+// the same digits Hz made that group read as a fraction of the wrong unit.
+// The decades below are in Hz regardless — the unit is a label, and the tuning
+// arithmetic underneath it never changes.
+do {
+    let (t, w) = FreqView.render(954_000)
+    check("954 kHz groups as 000.954.000", t == "000.954.000", t)
+    check("the unit label is kHz", FreqView.unit == "kHz", FreqView.unit)
+    check("one weight per character", w.count == t.count, "\(w.count) vs \(t.count)")
+    check("separators carry no decade", w[3] == 0 && w[7] == 0, "\(w[3]), \(w[7])")
+    check("first digit is the 100 MHz decade", w[0] == 100_000_000, "\(w[0])")
+    check("last digit is the 1 Hz decade", w.last == 1, "\(w.last ?? -1)")
+    check("1134 kHz groups as 001.134.000", FreqView.render(1_134_000).0 == "001.134.000",
+          FreqView.render(1_134_000).0)
+    check("the top of the range still fits", FreqView.render(999_999_999).0 == "999.999.999",
+          FreqView.render(999_999_999).0)
+    check("zero reads as all zeros", FreqView.render(0).0 == "000.000.000", FreqView.render(0).0)
+}
+
+// The leading zeros are dropped from the layout, not dimmed, so the frequency
+// starts at the readout's left edge under the station name.
+do {
+    check("954 kHz starts at the 100 kHz digit",
+          FreqView.significantStart("000.954.000") == 4, "\(FreqView.significantStart("000.954.000"))")
+    check("9740 kHz keeps one more digit",
+          FreqView.significantStart("009.740.000") == 2, "\(FreqView.significantStart("009.740.000"))")
+    check("100 MHz drops nothing",
+          FreqView.significantStart("100.000.000") == 0, "\(FreqView.significantStart("100.000.000"))")
+    check("a separator alone is never the start",
+          FreqView.significantStart("000.000.001") == 10, "\(FreqView.significantStart("000.000.001"))")
+    check("all zeros keep the last digit",
+          FreqView.significantStart("000.000.000") == 10, "\(FreqView.significantStart("000.000.000"))")
+    check("the placeholder survives", FreqView.significantStart("—") == 0,
+          "\(FreqView.significantStart("—"))")
+}
+
 section("mode indices agree with SDR++ and the plugin")
 check("MODE_NAMES order", MODE_NAMES == ["NFM", "WFM", "AM", "DSB", "USB", "CW", "LSB", "RAW"],
       "got \(MODE_NAMES)")

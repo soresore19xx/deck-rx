@@ -49,3 +49,7 @@ native/samplerate/build/
 native-app/deck-rx-receiver
 native-app/deck-rx-receiver.icns
 native-app/deck-rx-receiver.iconset/
+native-app/deck-rx-solo.icns
+native-app/deck-rx-solo.iconset/
+# iPadOS bundles (native-app/build-ios.sh regenerates them, signing included)
+native-app/build/

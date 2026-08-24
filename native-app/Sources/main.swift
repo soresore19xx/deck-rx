@@ -14,6 +14,18 @@ enum P {
     static let bg      = NSColor(red: 0.071, green: 0.075, blue: 0.086, alpha: 1) // #121316
     static let panel   = NSColor(red: 0.090, green: 0.094, blue: 0.110, alpha: 1) // #17181C
     static let sunken  = NSColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1) // #0C0D0F
+    /// Separator between rows. The first attempt was #25272D against a
+    /// #17181C panel — a difference small enough that the line was not there
+    /// as far as the eye was concerned. A separator nobody can see is not a
+    /// separator; this one is meant to be read, not merely to exist.
+    static let rule    = NSColor(red: 0.271, green: 0.286, blue: 0.322, alpha: 1) // #454952
+    /// Every other row's background. A line per row read as a table with more
+    /// structure than the content has; banding separates the rows without
+    /// drawing anything, and a row's own name and value sit on one shade.
+    /// #212328 first, which against a #17181C panel was invisible — the same
+    /// mistake as the rule colour, made twice. Banding that cannot be seen is
+    /// not banding.
+    static let band    = NSColor(red: 0.208, green: 0.220, blue: 0.251, alpha: 1) // #353840
     static let line    = NSColor(red: 0.149, green: 0.157, blue: 0.176, alpha: 1) // #26282D
     // Contrast against the near-black panels, not just a tidy grey ramp. The
     // previous dim/faint pair measured about 5:1 and 3.4:1 against #17181C —
@@ -93,10 +105,13 @@ final class PresetList: NSView {
             let row = NSView()
             row.translatesAutoresizingMaskIntoConstraints = false
             let (num, unit) = formatFreq(p.freq)
-            let f = label(num, mono(21, .light), P.text)
-            let u = label(unit, mono(13), P.faint)
-            let n = label(p.name, .systemFont(ofSize: max(9, S(18))), P.dim)
-            let m = label(modeName(p.mode), mono(13), P.faint)
+            // Sized against the options panel across the window: 21/18 beside
+            // a 13 pt panel read as two unrelated designs. The frequency stays
+            // the largest thing in the list, by less.
+            let f = label(num, mono(17, .light), P.text)
+            let u = label(unit, mono(11), P.faint)
+            let n = label(p.name, mono(13), P.dim)
+            let m = label(modeName(p.mode), mono(11), P.faint)
             n.lineBreakMode = .byTruncatingTail
             // Selection marker: a solid accent bar down the leading edge. A
             // background tint alone was nearly invisible against the panel.
@@ -209,8 +224,8 @@ final class MainView: NSView {
     private let bwLabel = label("—", mono(19), P.dim)
     private let stepLabel = label("—", mono(19), P.dim)
 
-    private let sBar = MeterBar(); private let sNum = label("—", mono(21), P.text)
-    private let nBar = MeterBar(); private let nNum = label("—", mono(21), P.text)
+    private let sBar = SignalMeter(); private let sNum = label("—", mono(21), P.text)
+    private let nBar = SignalMeter(); private let nNum = label("—", mono(21), P.text)
 
     private let bandBar = panelView()
     private let volBar = VolumeBar()
@@ -225,7 +240,12 @@ final class MainView: NSView {
     private let avgLabel = label("(0.3s)", mono(15), P.faint)
     private let smoothField = NSTextField(string: "30")
     private let smoothStepper = NSStepper()
-    private let dbLabel = label("−100 / −20 dB", mono(17), P.dim)
+    /// Filled in by syncRange() as soon as the rail is built. The text here is
+    /// only what the field is sized against; it used to be a plausible-looking
+    /// "-100 / -20 dB" that nothing ever replaced until a slider was touched,
+    /// so the readout spent every session until then describing a window the
+    /// spectrum was not using.
+    private let dbLabel = label("--- / --- dB", mono(17), P.dim)
     private var modePads: [TogglePad] = []
     private var mutePad: TogglePad!
     private var powerPad: TogglePad!
@@ -275,6 +295,12 @@ final class MainView: NSView {
         layer?.backgroundColor = P.bg.cgColor
         nBar.tint = P.blue
         sBar.tint = P.accent
+        // The scales the two values are actually mapped onto below: S is dBFS
+        // over -100..-10, N is signal-to-noise in dB over 0..60. Written here
+        // beside the tints so the labels and the mapping cannot drift apart.
+        sBar.ticks = [(0, "-100"), (2.0 / 9, "-80"), (4.0 / 9, "-60"),
+                      (6.0 / 9, "-40"), (8.0 / 9, "-20")]
+        nBar.ticks = [(0, "0"), (0.25, "15"), (0.5, "30"), (0.75, "45"), (1, "60")]
         build()
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -337,8 +363,13 @@ final class MainView: NSView {
         detail.orientation = .horizontal; detail.spacing = 6; detail.alignment = .firstBaseline
         let left = NSStackView(views: [stationLabel, freqRow, detail])
         left.orientation = .vertical; left.alignment = .leading; left.spacing = 4
-        let headerRow = NSStackView(views: [left, NSView(), meters])
-        headerRow.orientation = .horizontal; headerRow.alignment = .centerY; headerRow.spacing = 20
+        // No spacer between them: the meters are what fills the gap now, so the
+        // header carries the readout on the left and an instrument across the
+        // rest, instead of two blocks pinned to opposite edges with a void
+        // between them.
+        let headerRow = NSStackView(views: [left, meters])
+        headerRow.orientation = .horizontal; headerRow.alignment = .centerY; headerRow.spacing = 24
+        left.setContentHuggingPriority(.required, for: .horizontal)
         embed(headerRow, in: header, inset: 14)
 
         // bottom transport
@@ -537,16 +568,25 @@ final class MainView: NSView {
             self.spectrum.dbFloor = Float(min(self.minSlider.doubleValue, Double(self.spectrum.dbCeil) - 10))
             self.syncRange()
         }
+        // MAX above MIN, because the axis they act on runs that way: the dB
+        // scale down the left of the trace has the ceiling at the top and the
+        // floor at the bottom. With MIN on top the pair moved against the
+        // numbers beside it — pushing up the upper handle pulled the bottom of
+        // the window, which reads as a control wired backwards.
         let railStack = NSStackView(views: [
             label("ZOOM", mono(13), P.faint), zoomSlider, zoomLabel,
-            label("MIN", mono(13), P.faint), minSlider,
             label("MAX", mono(13), P.faint), maxSlider,
+            label("MIN", mono(13), P.faint), minSlider,
             label("TIME", mono(13), P.faint), wfSlider, wfLabel,
         ])
         railStack.orientation = .vertical
         railStack.alignment = .centerX
         railStack.spacing = 4
         railStack.distribution = .fill
+        // Say what the sliders are actually set to, before anyone touches one.
+        syncRange()
+        zoomLabel.stringValue = String(format: "%.0f×", pow(2, zoomSlider.doubleValue))
+        syncWaterfallSpan()
         railStack.translatesAutoresizingMaskIntoConstraints = false
         rail.addSubview(railStack)
         NSLayoutConstraint.activate([
@@ -571,10 +611,18 @@ final class MainView: NSView {
         bandBar.addSubview(bandTitle)
         bandBar.addSubview(bandGrid)
         NSLayoutConstraint.activate([
-            bandTitle.topAnchor.constraint(equalTo: bandBar.topAnchor, constant: 6),
-            bandTitle.leadingAnchor.constraint(equalTo: bandBar.leadingAnchor, constant: 10),
-            bandGrid.topAnchor.constraint(equalTo: bandTitle.bottomAnchor, constant: 4),
-            bandGrid.leadingAnchor.constraint(equalTo: bandBar.leadingAnchor, constant: 10),
+            bandTitle.topAnchor.constraint(equalTo: bandBar.topAnchor, constant: S(6)),
+            bandTitle.leadingAnchor.constraint(equalTo: bandBar.leadingAnchor, constant: S(10)),
+            bandGrid.topAnchor.constraint(equalTo: bandTitle.bottomAnchor, constant: S(4)),
+            bandGrid.leadingAnchor.constraint(equalTo: bandBar.leadingAnchor, constant: S(10)),
+            // The panel's height comes from what is in it. It used to be a flat
+            // 76 pt, which the heading plus two rows of pads overran: the second
+            // row hung past the bottom of its own panel and sat against the
+            // transport bar, so the whole left column read as pushed down into
+            // the edge of the window. A constant cannot be right here anyway —
+            // the pads carry a scaled font, so the content is a different height
+            // at each of the three display scales.
+            bandGrid.bottomAnchor.constraint(equalTo: bandBar.bottomAnchor, constant: -S(10)),
         ])
 
         for (n, v) in [("top", top), ("header", header), ("bottom", bottom),
@@ -599,7 +647,6 @@ final class MainView: NSView {
             bandBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             bandBar.widthAnchor.constraint(equalTo: presetList.widthAnchor),
             bandBar.bottomAnchor.constraint(equalTo: bottom.topAnchor),
-            bandBar.heightAnchor.constraint(equalToConstant: S(76)),
 
             header.topAnchor.constraint(equalTo: top.bottomAnchor),
             header.leadingAnchor.constraint(equalTo: presetList.trailingAnchor),
@@ -718,16 +765,17 @@ final class MainView: NSView {
             : "--"
     }
 
-    private func meterRow(_ name: String, _ bar: MeterBar, _ num: NSTextField) -> NSStackView {
+    private func meterRow(_ name: String, _ bar: SignalMeter, _ num: NSTextField) -> NSStackView {
         bar.translatesAutoresizingMaskIntoConstraints = false
-        bar.heightAnchor.constraint(equalToConstant: S(11)).isActive = true
-        // Preferred, not fixed. A meter reads fine at half this width, and the
-        // pair of them plus the readout beside each was part of what stopped
-        // the window narrowing at all.
-        let wide = bar.widthAnchor.constraint(equalToConstant: S(250))
-        wide.priority = .defaultLow
-        wide.isActive = true
-        bar.widthAnchor.constraint(greaterThanOrEqualToConstant: S(120)).isActive = true
+        // Room for the bar and the scale under it.
+        bar.heightAnchor.constraint(equalToConstant: S(30)).isActive = true
+        // The meter takes whatever the header has left rather than a width of
+        // its own: the readout beside it changes width with the frequency, and
+        // a fixed meter left a hole in the middle of the header that moved
+        // around with it. A floor keeps it readable when the window is narrow.
+        bar.setContentHuggingPriority(.init(1), for: .horizontal)
+        bar.setContentCompressionResistancePriority(.init(200), for: .horizontal)
+        bar.widthAnchor.constraint(greaterThanOrEqualToConstant: S(140)).isActive = true
         let row = NSStackView(views: [label(name, mono(18), P.faint), bar, num])
         row.orientation = .horizontal; row.spacing = 8; row.alignment = .centerY
         return row
@@ -981,15 +1029,87 @@ final class VolumeBar: NSView {
     }
 }
 
-final class MeterBar: NSView {
+/// Signal meter: a segmented bar over a labelled scale, with a peak that hangs
+/// behind the reading.
+///
+/// It used to be a track with a fill — the same drawing as `VolumeBar` below,
+/// which made an instrument look like a control you could drag. Nothing about a
+/// signal reading is settable, and the two live on the same window. Three
+/// things separate them now, and each earns its place: segments say "measured
+/// in steps" the way every meter on a receiver does, the scale gives the
+/// numbers somewhere to land so a level can be read rather than merely
+/// compared, and the peak marker holds what a slider has no reason to hold —
+/// the last strong moment of a signal that is fading in and out.
+final class SignalMeter: NSView {
     var tint: NSColor = P.accent { didSet { needsDisplay = true } }
-    var value: Double = 0 { didSet { needsDisplay = true } }
+    /// Normalised 0-1 over the scale the ticks describe.
+    var value: Double = 0 {
+        didSet {
+            // Falls a little on each update rather than following the reading
+            // down. At the 4 Hz the status feed runs, this is a couple of
+            // seconds from full scale to zero — long enough to catch a peak
+            // that has already gone, short enough not to lie about the present.
+            peak = max(value, peak - 0.012)
+            needsDisplay = true
+        }
+    }
+    private var peak: Double = 0
+    /// Tick positions, 0-1 across the bar, with what to write under them.
+    var ticks: [(at: Double, label: String)] = []
+
+    private let barH: CGFloat = 12
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 30) }
+
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        ctx.setFillColor(NSColor(red: 0.137, green: 0.149, blue: 0.169, alpha: 1).cgColor)
-        ctx.fill(bounds)
-        ctx.setFillColor(tint.cgColor)
-        ctx.fill(CGRect(x: 0, y: 0, width: bounds.width * CGFloat(max(0, min(1, value))), height: bounds.height))
+        let w = bounds.width
+        // This view is not flipped, so the bar goes at the top and the scale
+        // hangs below it. Drawn from y = 0 the numbers came out above the bar,
+        // where the N meter's scale sat closer to the S meter's bar than to its
+        // own — a scale has to belong to the thing it is under.
+        let barY: CGFloat = bounds.height - barH
+
+        // Segments rather than a continuous fill. 4 pt lit, 2 pt dark: any
+        // finer and the gaps close up at this height into the solid bar this
+        // was meant to stop being.
+        let seg: CGFloat = 4, gap: CGFloat = 2
+        let n = max(1, Int((w + gap) / (seg + gap)))
+        let lit = Int((Double(n) * max(0, min(1, value))).rounded())
+        let peakSeg = Int((Double(n) * max(0, min(1, peak))).rounded()) - 1
+        for i in 0..<n {
+            let x = CGFloat(i) * (seg + gap)
+            let r = CGRect(x: x, y: barY, width: seg, height: barH)
+            if i < lit {
+                ctx.setFillColor(tint.cgColor)
+            } else if i == peakSeg {
+                // The peak reads as the same signal, not a second one: the
+                // meter's own colour, dimmed, rather than a colour of its own.
+                ctx.setFillColor(tint.withAlphaComponent(0.55).cgColor)
+            } else {
+                ctx.setFillColor(P.line.cgColor)
+            }
+            ctx.fill(r)
+        }
+
+        // Scale. Ticks rise from the numbers to just under the bar, so the
+        // number belongs to a position rather than floating beneath it.
+        let font = NSFont.monospacedSystemFont(ofSize: max(8, 10 * UI.scale), weight: .regular)
+        ctx.setStrokeColor(P.faint.withAlphaComponent(0.5).cgColor)
+        ctx.setLineWidth(1)
+        for t in ticks {
+            let x = (w * CGFloat(max(0, min(1, t.at)))).rounded()
+            let tx = min(max(0.5, x), w - 0.5)
+            ctx.move(to: CGPoint(x: tx, y: barY - 2))
+            ctx.addLine(to: CGPoint(x: tx, y: barY - 6))
+            let str = t.label as NSString
+            let size = str.size(withAttributes: [.font: font])
+            // Clamped to the bar's ends: the outermost numbers would otherwise
+            // hang off the meter and collide with what sits beside it.
+            let lx = min(max(0, x - size.width / 2), w - size.width)
+            str.draw(at: CGPoint(x: lx, y: barY - 8 - size.height),
+                     withAttributes: [.font: font, .foregroundColor: P.faint])
+        }
+        ctx.strokePath()
     }
 }
 
@@ -1014,10 +1134,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
 #if STANDALONE
         Receiver.seedData()
-        // Before the view is built: every constraint constant and font size is
-        // captured at construction, so a later change needs a relaunch.
-        UI.scale = UI.from(RadioConfig.load().uiScale)
 #endif
+        // Before the view is built: every constraint constant and font size is
+        // captured at construction, so a later change rebuilds the view.
+        // Both bundles read it. The scale belongs to the window, not to the
+        // receiver behind it, and the front-end has a window of its own — it
+        // used to skip this line and come up at max whatever the file said.
+        UI.scale = UI.from(RadioConfig.load().uiScale)
         Receiver.touchAlive()
         view = makeView()
         window = NSWindow(contentRect: view.frame,
@@ -1237,20 +1360,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         v.onAudioToggle = { [weak self] in self?.toggleAudio() }
-        // Not wired to the panel: its change goes through the same endpoint,
-        // so the server's callback covers both paths and wiring here too would
-        // rebuild twice.
+#endif
+        // Both bundles. The display scale does not travel over the control
+        // endpoint: it is this window's size, and the endpoint may belong to
+        // the plugin, which has nothing to say about it.
+        v.options.onUiScaleChanged = { [weak self] name in self?.applyUiScale(name) }
+        // Same for the trace/waterfall split, restored here rather than in the
+        // view so a rebuilt view comes back at the split it was dragged to.
+        v.spectrum.spectrumFraction = CGFloat(currentConfig.spectrumSplit)
+        v.spectrum.onSplitChanged = { [weak self] f in self?.applySpectrumSplit(f) }
+    }
+
+    /// The config as it stands, from whichever copy is authoritative in this
+    /// bundle. The standalone app holds one in memory; the front-end has only
+    /// the file.
+    private var currentConfig: RadioConfig {
+#if STANDALONE
+        return radio.config
+#else
+        return RadioConfig.load()
 #endif
     }
 
+    /// Persists the split a drag just settled on. No rebuild: the view has
+    /// already drawn itself at the new fraction, which is what makes the drag
+    /// follow the pointer.
+    private func applySpectrumSplit(_ f: CGFloat) {
+        var c = currentConfig
+        c.spectrumSplit = Double(f)
+        c.save()
 #if STANDALONE
-    /// Swaps in a freshly built view at the new scale. The alternative was a
-    /// relaunch, which is a poor answer to a three-way picker.
+        radio.config = c
+#endif
+    }
+
+    /// Persists the scale the panel just picked, then rebuilds at it.
     ///
-    /// The waterfall's history does not survive: it is a bitmap sized to the
-    /// old panel, and there is no honest way to rescale one — stretching it
-    /// would put frames at times they did not happen. Everything else is read
-    /// back from the receiver on the next tick, so it returns on its own.
+    /// The write belongs here rather than in the panel because the standalone
+    /// app holds the config in memory as well as on disk: a panel that wrote
+    /// only the file would have that copy overwrite the new scale the next time
+    /// anything else saved a setting.
+    private func applyUiScale(_ name: String) {
+        var c = currentConfig
+        c.uiScale = name
+        c.save()
+#if STANDALONE
+        radio.config = c
+#endif
+        rebuildForScale()
+    }
+
+#if STANDALONE
     private func importPresets() {
         do {
             let r = try PresetStore.importFromSdrpp()
@@ -1286,14 +1446,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncSource()
     }
 
+#endif
+
+    /// Swaps in a freshly built view at the new scale. The alternative was a
+    /// relaunch, which is a poor answer to a three-way picker.
+    ///
+    /// The waterfall's history does not survive: it is a bitmap sized to the
+    /// old panel, and there is no honest way to rescale one — stretching it
+    /// would put frames at times they did not happen. Everything else is read
+    /// back from the receiver on the next tick, so it returns on its own.
+    ///
+    /// Both bundles: the view being rebuilt is the same view, and only the
+    /// source of the new value differs.
     private func rebuildForScale() {
+#if STANDALONE
         // From memory, not disk. The endpoint has already applied and saved
         // it; re-reading the file only added a race to lose.
         let wanted = UI.from(radio.config.uiScale)
+#else
+        // The front-end holds no config in memory — it has no receiver to hold
+        // one for. The panel wrote the file a moment ago; this reads back what
+        // it wrote.
+        let wanted = UI.from(RadioConfig.load().uiScale)
+#endif
         guard wanted != UI.scale else { return }
         UI.scale = wanted
 
+#if STANDALONE
         let wasDirect = direct
+#endif
         let frame = window.frame
         let fresh = makeView()
         view = fresh
@@ -1305,12 +1486,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         f.size.height = max(f.size.height, window.contentMinSize.height)
         window.setFrame(f, display: true)
 
-        // Restore what the new view cannot know about itself.
+        // Restore what the new view cannot know about itself. All of it is the
+        // app's own receiver state, so the front-end has nothing to restore:
+        // its pads are read-only there and its readings arrive on the next tick.
+#if STANDALONE
         fresh.srcPad.isOn = wasDirect
         fresh.srcAudioPad.isOn = radio.audioEnabled
         fresh.nrPad.isOn = radio.iqNrEnabled
         fresh.levelPad.isOn = radio.levelingEnabled
         syncSource()
+#endif
         fresh.refresh()
         fresh.options.refresh()
         if ProcessInfo.processInfo.environment["DECK_RX_LAYOUT_DEBUG"] == "1" {
@@ -1330,7 +1515,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.view.spectrum.needsDisplay = true
         }
     }
-#endif
 
     /// Built by hand: there is no nib, so without this the app has no menu bar
     /// at all — no About, and no Cmd-Q either. The Quit item is the one that

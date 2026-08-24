@@ -38,10 +38,15 @@ struct RadioConfig: Codable, Equatable {
     /// Empty means the system default output. A name that no longer exists
     /// falls back to the default rather than going silent.
     var audioDevice = ""
-    /// "min", "middle" or "max". Applied at construction, so changing it
-    /// takes a relaunch — every constraint constant and font size is baked in
-    /// when the window is built.
+    /// "min", "middle" or "max". Applied at construction — every constraint
+    /// constant and font size is baked in when the window is built — so
+    /// changing it swaps in a freshly built view rather than taking a relaunch.
+    /// Read and written by both bundles: it describes the window, not the radio.
     var uiScale = "max"
+    /// Fraction of the spectrum panel given to the trace; the rest is the
+    /// waterfall. Dragged on the rail between the two, and kept because how
+    /// much history a band is worth is a habit, not a per-session decision.
+    var spectrumSplit: Double = 0.45
 
     var audioDecimate = 4
     var audioGain: Double = 1
@@ -110,6 +115,7 @@ struct RadioConfig: Codable, Equatable {
         autoSyncSdrpp = (try? c.decodeIfPresent(Bool.self, forKey: .autoSyncSdrpp)) .flatMap { $0 } ?? d.autoSyncSdrpp
         audioDevice = (try? c.decodeIfPresent(String.self, forKey: .audioDevice)) .flatMap { $0 } ?? d.audioDevice
         uiScale = (try? c.decodeIfPresent(String.self, forKey: .uiScale)) .flatMap { $0 } ?? d.uiScale
+        spectrumSplit = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSplit)) .flatMap { $0 } ?? d.spectrumSplit
         audioDecimate = (try? c.decodeIfPresent(Int.self, forKey: .audioDecimate)) .flatMap { $0 } ?? d.audioDecimate
         audioGain = (try? c.decodeIfPresent(Double.self, forKey: .audioGain)) .flatMap { $0 } ?? d.audioGain
         levelingEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .levelingEnabled)) .flatMap { $0 } ?? d.levelingEnabled
@@ -120,8 +126,7 @@ struct RadioConfig: Codable, Equatable {
     // MARK: persistence
 
     private static let ownPath: String = {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/deck-rx")
+        let dir = Plat.appSupport.appendingPathComponent("deck-rx")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("receiver.json").path
     }()

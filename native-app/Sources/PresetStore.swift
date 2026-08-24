@@ -28,9 +28,13 @@ enum PresetStore {
 
     static var storePath: String { Receiver.presetsPath }
 
+    /// Where SDR++ keeps its bookmarks. Only ever read, never written — see
+    /// CLAUDE.md. On iOS there is no SDR++ to read from and the path resolves
+    /// to a container file that does not exist; the importer reports "no such
+    /// file" the same way it does on a Mac without SDR++ installed.
     static var sdrppPath: String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/sdrpp/frequency_manager_config.json")
+        Plat.appSupport
+            .appendingPathComponent("sdrpp/frequency_manager_config.json")
             .path
     }
 

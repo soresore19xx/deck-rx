@@ -235,6 +235,12 @@ Two bundles, one source tree, separated by a `STANDALONE` compile flag:
 | needs the plugin running | yes | no |
 | Stream Deck profile target | yes | no |
 | bundle id | `com.hogehoge.deckrx.receiver` | `com.hogehoge.deckrx.solo` |
+| icon | grey disc, the plugin's own | square pale-blue plate |
+
+The icons differ in shape as well as colour, which is what keeps them apart at
+16 px in a Dock or a Finder list. Solo's is rendered from `native-app/icon-solo.svg`;
+the front-end wears the plugin's `imgs/icon-source.svg`, because that is what it
+is a face for.
 
 The receiver sources are not compiled into the front-end at all rather than
 switched off inside it — dead code that cannot run is still code someone has to
@@ -269,20 +275,63 @@ blue → cyan → green → yellow → red ramp — a single-hue ramp looks tidi
 the rest of the UI but costs the thing a waterfall is for, telling a moderate
 signal from a strong one at a glance.
 
+Trace, scale rail and waterfall are drawn as three surfaces rather than one flat
+field, so where each ends is visible rather than inferred. **The rail between
+trace and waterfall is a handle: drag it to give either one more room**, from
+15% to 85% of the panel. Grip marks in the gutter's width of the rail say so,
+and the split is kept in `receiver.json` — how much history a band is worth is a
+habit, not a per-session decision. The waterfall's bitmap is sized to the old
+split, so its history restarts on a drag; there is no honest way to rescale it,
+since stretching would put rows at times they did not happen.
+
+Before the first frame arrives the panel draws its frame, its dB scale and an
+even, unlabelled graticule through both halves, so an idle receiver reads as an
+instrument waiting rather than as an empty black field. Unlabelled on purpose:
+with no frame there is no span, and a frequency scale drawn over nothing would
+be a number the receiver never reported.
+
 **The frequency readout tunes digit by digit.** Click above a digit to step that
 decade up, below it to step down, or scroll over it — the way most SDR
 front-ends work, and the fastest way to move a known distance: 954 kHz to
 1134 kHz is two nudges of the 100 kHz digit rather than twenty presses of a tune
-button. It shows the full frequency in Hz, grouped in threes with the leading
-zeros dimmed, so every decade from 100 MHz down to 1 Hz is on screen and
-therefore reachable. A unit-switching readout cannot offer that: in MHz form the
-smallest digit was 10 kHz, and the set of digits moved under the cursor whenever
-the display crossed a unit boundary.
+button. Every decade from 100 MHz down to 1 Hz has a digit, so anything is
+reachable by hand — which a unit-switching readout cannot offer: in MHz form the
+smallest digit was 10 kHz, and nothing finer could be tuned at all.
+
+The digits are grouped in threes and labelled kHz, so `594.000 kHz` reads as
+what it is. The unit is a label, not a conversion — the rightmost digit is
+always 1 Hz — but calling the same digits Hz made the last group read as a
+fraction of the wrong unit.
+
+Digits above the first significant one are not drawn, and the readout starts at
+its left edge, under the station name. Dimmed leading zeros were the first cut
+and left the number floating a third of the way across the header with the
+station name over nothing. The decades that disappear stay reachable: a step
+adds its weight rather than wrapping inside the digit, so pushing the leftmost
+digit up carries the number into the next decade and the digit for it appears.
+That carry also slides the digits one cell left under a stationary pointer, so
+the next click there lands on the new decade rather than the one just pushed.
 
 Zoom and the dB window sit as vertical sliders down the right edge (ZOOM / MAX /
-MIN), since those are the three you ride while watching a waterfall. Zoom is
-done in the app — every frame already carries all the bins, and asking for a
-narrower FFT would cost the resolution zooming is meant to reveal.
+MIN), since those are the three you ride while watching a waterfall. MAX above
+MIN, because the dB scale they act on runs that way — with them the other way
+round, pushing the upper handle up moved the bottom of the window, which reads
+as a control wired backwards. Zoom is done in the app — every frame already
+carries all the bins, and asking for a narrower FFT would cost the resolution
+zooming is meant to reveal.
+
+The window's readout beside HOLD is filled in from the sliders when the rail is
+built. It used to be a fixed `-100 / -20 dB` in the layout that nothing replaced
+until a slider was touched, so until then it described a window the spectrum was
+not using: the receiver comes up on `-160 / -1`, matching the FFT dial's default
+on the deck.
+
+Signal and noise are a segmented meter over a labelled scale, with a peak that
+hangs behind the reading — not a track with a fill, which is what the volume
+control below is, and an instrument that looks like a control invites a drag
+that does nothing. The meter takes whatever width the header has left over, so
+the readout beside it can change width with the frequency without leaving a hole
+in the middle.
 
 The toolbar carries STEP alongside the display settings. STEP goes to the
 receiver, and the TUNE buttons
@@ -364,6 +413,9 @@ Host and port are editable from the options panel, so a copied app needs no
 hand-edited file. The station databases ship inside the bundle and seed
 `~/Library/Application Support/deck-rx/data` on first launch.
 
+`spectrumSplit` is the fraction of the spectrum panel given to the trace,
+dragged on the rail rather than typed.
+
 `uiScale` picks `min`, `middle` or `max` — fonts and every fixed dimension
 scale together, since scaling only the text leaves the panels their full width.
 The frequency readout and the station line above it take a further reduction on
@@ -371,6 +423,12 @@ top of that: they are the largest things on screen by a wide margin. Applied
 immediately; the window is rebuilt in place and the receiver keeps running,
 though the waterfall's history restarts because its bitmap is sized to the old
 panel.
+
+Both bundles read and write it, and neither sends it over the control endpoint:
+the scale is the window's own size, and the endpoint on `:8771` may well belong
+to the plugin, which has no opinion about it. It used to be asked for over that
+link, so the row read `—` and its click came back 400 — in the front-end always,
+and in the standalone app whenever the plugin held the port.
 
 | scale | minimum window |
 | --- | --- |

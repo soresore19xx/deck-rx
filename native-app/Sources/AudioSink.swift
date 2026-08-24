@@ -40,6 +40,12 @@ final class AudioSink {
     /// Output devices the engine can reach, for the panel's picker. Empty
     /// first entry means "system default", which is what the panel expects.
     static func outputDeviceNames() -> [String] {
+        #if os(iOS)
+        // No picker on iOS: the output route belongs to the system and the
+        // user changes it in Control Center. An empty list is what the panel
+        // already renders as "system default", which is the truth here.
+        return []
+        #else
         var names: [String] = []
         var size = UInt32(0)
         var addr = AudioObjectPropertyAddress(
@@ -83,18 +89,66 @@ final class AudioSink {
             }
         }
         return names
+        #endif
     }
 
     init(capacity: Int = 96_000) {
         self.capacity = capacity - (capacity % 2)
         ring = UnsafeMutablePointer<Float>.allocate(capacity: capacity)
         ring.initialize(repeating: 0, count: capacity)
+        #if os(iOS)
+        observeSessionEvents()
+        #endif
     }
 
     deinit {
         stop()
         ring.deallocate()
+        #if os(iOS)
+        for t in observers { NotificationCenter.default.removeObserver(t) }
+        #endif
     }
+
+    #if os(iOS)
+    private var observers: [NSObjectProtocol] = []
+
+    /// Category `.playback` is what makes this a receiver rather than a beep:
+    /// it keeps audio alive with the screen locked and with the ring/silent
+    /// switch set to silent. Combined with the bundle's `audio` background
+    /// mode, the radio keeps playing when the app is not on screen.
+    private func configureSession() throws {
+        let s = AVAudioSession.sharedInstance()
+        try s.setCategory(.playback, mode: .default, options: [])
+        try s.setActive(true)
+    }
+
+    /// A phone call, Siri, or a yanked headphone jack stops the engine without
+    /// telling the producer, and the app then looks connected while playing
+    /// nothing. Restarting on both notifications is the difference between a
+    /// two-second gap and a silence that only a relaunch clears.
+    private func observeSessionEvents() {
+        let nc = NotificationCenter.default
+        observers.append(nc.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil, queue: .main) { [weak self] note in
+                guard let self,
+                      let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+                self.resumeAfterSystemStop()
+            })
+        observers.append(nc.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                self?.resumeAfterSystemStop()
+            })
+    }
+
+    private func resumeAfterSystemStop() {
+        guard sourceRate > 0, !engine.isRunning else { return }
+        try? configureSession()
+        try? engine.start()
+    }
+    #endif
 
     /// (Re)starts the engine for a producer running at `rate` Hz.
     /// Called again with a different rate rebuilds the graph — the engine
@@ -107,6 +161,10 @@ final class AudioSink {
         stop()
         sourceRate = rate
         channels = ch
+
+        #if os(iOS)
+        try configureSession()
+        #endif
 
         guard let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: ch) else { return }
         let node = AVAudioSourceNode(format: fmt) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in

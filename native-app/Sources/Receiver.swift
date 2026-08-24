@@ -57,20 +57,17 @@ func S(_ v: CGFloat) -> CGFloat { (v * UI.scale).rounded() }
 enum Receiver {
     // MARK: paths
 
-    static let baseDir: String = {
-        var isDir: ObjCBool = false
-        if FileManager.default.fileExists(atPath: "/Volumes/RAMDisk", isDirectory: &isDir), isDir.boolValue {
-            return "/Volumes/RAMDisk"
-        }
-        return "/tmp"
-    }()
+    static let baseDir: String = Plat.scratch
     static let statusPath = ProcessInfo.processInfo.environment["DECK_RX_STATUS_PATH"]
         ?? (baseDir + "/deck-rx-status.json")
     /// The plugin writes the feed only while this flag stays fresh, so a closed
     /// app costs it nothing.
     static let alivePath = baseDir + "/deck-rx-app.alive"
-    static let pluginDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin")
+    /// Resolves inside the app container on iOS, where it never exists. The
+    /// seeding below already skips a candidate that is not there, so an absent
+    /// plugin needs no special case beyond this one.
+    static let pluginDir = Plat.appSupport
+        .appendingPathComponent("com.elgato.StreamDeck/Plugins/com.hogehoge.deck-rx.sdPlugin")
     /// The app's own data directory. Everything the receiver needs to run —
     /// presets, the station databases — lives here, not in the plugin bundle:
     /// a machine with no plugin has no such bundle, and that machine is the
@@ -80,8 +77,7 @@ enum Receiver {
     /// bundled resources otherwise. After that it is the app's, and the plugin
     /// never touches it.
     static let dataDir: String = {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/deck-rx/data")
+        let dir = Plat.appSupport.appendingPathComponent("deck-rx/data")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.path
     }()

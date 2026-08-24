@@ -54,7 +54,26 @@ final class SpectrumView: NSView {
     }
 
     /// Fraction of the height given to the spectrum; the rest is waterfall.
-    private let spectrumFraction: CGFloat = 0.45
+    ///
+    /// Dragged, not fixed: how much trace against how much history is the one
+    /// split that changes with what is being listened to — a crowded broadcast
+    /// band wants the trace, a slow chase across a quiet band wants the history.
+    /// The scale rail between the two is the grab handle.
+    var spectrumFraction: CGFloat = 0.45 {
+        didSet {
+            // Clamped here rather than at each caller: a restored config and a
+            // drag both arrive through this one door. Assigning inside didSet
+            // does not re-enter it.
+            spectrumFraction = min(0.85, max(0.15, spectrumFraction))
+            // ensureFall re-allocates on a size change, so the history is
+            // dropped rather than stretched over times it did not happen.
+            needsDisplay = true
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+    /// Called when a drag settles, so the split can be persisted. Not on every
+    /// dragged pixel: that would be a file write per mouse event.
+    var onSplitChanged: ((CGFloat) -> Void)?
 
     /// Peak hold, the way SDR++'s "FFT Hold" works: keep the highest value each
     /// bin has reached and decay it slowly, so a brief signal stays visible
@@ -286,6 +305,48 @@ final class SpectrumView: NSView {
         return String(format: "%.0fK", hz / 1000)
     }
 
+    // MARK: the split, dragged
+
+    /// The scale rail, which doubles as the split's grab handle. One geometry,
+    /// used by the drawing, the cursor rect and the hit test, so the handle
+    /// cannot drift away from the line it appears to move.
+    private func railRect(_ b: CGRect) -> CGRect {
+        let specH = ((b.height - axisStrip) * spectrumFraction).rounded()
+        return CGRect(x: 0, y: specH, width: b.width, height: axisStrip)
+    }
+
+    private var draggingSplit = false
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(railRect(bounds), cursor: .resizeUpDown)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        // A few points of slop on each edge: the rail is 24 pt tall, but the
+        // line the eye aims at is its border, and a handle that starts exactly
+        // where the target ends is one the pointer keeps missing.
+        draggingSplit = railRect(bounds).insetBy(dx: 0, dy: -4).contains(p)
+        if !draggingSplit { super.mouseDown(with: event) }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard draggingSplit else { super.mouseDragged(with: event); return }
+        let usable = bounds.height - axisStrip
+        guard usable > 0 else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        // The pointer holds the middle of the rail, not its top edge, so the
+        // handle does not jump under the cursor on the first movement.
+        spectrumFraction = (p.y - axisStrip / 2) / usable
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard draggingSplit else { super.mouseUp(with: event); return }
+        draggingSplit = false
+        onSplitChanged?(spectrumFraction)
+    }
+
     // MARK: drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -299,6 +360,47 @@ final class SpectrumView: NSView {
 
         ctx.setFillColor(NSColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1).cgColor)
         ctx.fill(bounds)
+
+        // Three surfaces rather than one flat field: the trace, the scale rail
+        // under it, and the waterfall well. The display used to be a single
+        // ground with the plot floating in it — running, where the spectrum
+        // ended and the waterfall began was left to the eye to work out, and
+        // before the first frame there was nothing on screen at all but a
+        // column of dB numbers.
+        ctx.setFillColor(NSColor(white: 0.085, alpha: 1).cgColor)
+        ctx.fill(CGRect(x: 0, y: specH, width: w, height: axisStrip))
+        ctx.setFillColor(NSColor(white: 0.018, alpha: 1).cgColor)
+        ctx.fill(CGRect(x: plotX, y: fallTop, width: plotW, height: fallH))
+
+        // The frame: the two horizontal rules that divide those surfaces, and
+        // the gutter's own edge. Brighter than the graticule inside the plot on
+        // purpose — a frame that reads no stronger than the ruling it contains
+        // is not doing a frame's job.
+        // Half-pixel offsets so a 1 pt rule lands on one physical row instead
+        // of straddling two and going soft.
+        ctx.setStrokeColor(NSColor(white: 0.20, alpha: 1).cgColor)
+        ctx.setLineWidth(1)
+        for y in [specH, fallTop] {
+            ctx.move(to: CGPoint(x: 0, y: y + 0.5))
+            ctx.addLine(to: CGPoint(x: w, y: y + 0.5))
+        }
+        ctx.move(to: CGPoint(x: plotX + 0.5, y: 0))
+        ctx.addLine(to: CGPoint(x: plotX + 0.5, y: h))
+        ctx.strokePath()
+
+        // Grip marks, so the rail reads as something to take hold of. Drawn in
+        // the gutter's width of it, which carries no frequency label and is the
+        // only part of the rail that is always free.
+        ctx.setStrokeColor(NSColor(white: 0.34, alpha: 1).cgColor)
+        ctx.setLineWidth(1)
+        let gripW: CGFloat = 18
+        let gripX = ((gutter - gripW) / 2).rounded()
+        for k in -1...1 {
+            let y = (specH + axisStrip / 2).rounded() + CGFloat(k) * 4 + 0.5
+            ctx.move(to: CGPoint(x: gripX, y: y))
+            ctx.addLine(to: CGPoint(x: gripX + gripW, y: y))
+        }
+        ctx.strokePath()
 
         // dB scale: label every 10 dB, rule every one of them. Reading a level
         // off the trace is the point of a spectrum; without a scale it is just
@@ -322,7 +424,33 @@ final class SpectrumView: NSView {
             axisLabel(bins.isEmpty ? "waiting for the receiver" : "feed stalled",
                       at: CGPoint(x: plotX + 8, y: 8), size: 15,
                       color: NSColor(white: 0.66, alpha: 1))
-            if bins.isEmpty { return }
+            if bins.isEmpty {
+                // An even graticule while there is nothing to draw, so an idle
+                // receiver reads as an instrument waiting for a signal rather
+                // than as an empty panel. Deliberately unlabelled: with no
+                // frame there is no span, and a frequency scale drawn over
+                // nothing would be a number the receiver never reported.
+                //
+                // Carried through the waterfall well too, which is the larger
+                // half of the display and otherwise sits there as a void. Once
+                // frames arrive the bitmap covers it and the graticule belongs
+                // to the trace alone, as it does on any receiver.
+                // A step brighter than the live ruling: with nothing drawn over
+                // it there is no trace for it to stay behind, and at the live
+                // value it was invisible.
+                ctx.setStrokeColor(NSColor(white: 0.085, alpha: 1).cgColor)
+                ctx.setLineWidth(0.5)
+                let cols = 12
+                for i in 1..<cols {
+                    let px = (plotX + plotW * CGFloat(i) / CGFloat(cols)).rounded() + 0.5
+                    ctx.move(to: CGPoint(x: px, y: 0))
+                    ctx.addLine(to: CGPoint(x: px, y: specH))
+                    ctx.move(to: CGPoint(x: px, y: fallTop))
+                    ctx.addLine(to: CGPoint(x: px, y: h))
+                }
+                ctx.strokePath()
+                return
+            }
         }
 
         let n = bins.count

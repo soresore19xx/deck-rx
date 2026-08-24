@@ -14,34 +14,42 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # Which bundle to build. Both by default.
 VARIANT="${1:-both}"
 BIN="$HERE/deck-rx-receiver"
-SVG="$HERE/../com.hogehoge.deck-rx.sdPlugin/imgs/icon-source.svg"
-ICONSET="$HERE/deck-rx-receiver.iconset"
-ICNS="$HERE/deck-rx-receiver.icns"
 
-# --- icon: rendered from the plugin's own icon-source.svg ---
-# Re-rendered only when the SVG is newer than the .icns, so a plain rebuild
-# costs nothing. Without rsvg-convert the app falls back to the generic bundle
-# icon, which is exactly how it looked before this step existed — a missing
-# renderer must not fail the build.
+# --- icons: one per bundle, or the two apps are indistinguishable in the Dock ---
+# The front-end wears the plugin's own icon, because that is what it is a face
+# for. Solo has its own: a square pale-blue plate rather than a grey disc, so shape
+# and colour both separate them, and the pair still reads apart at 16 px.
 RSVG="$(command -v rsvg-convert || true)"
-if [ -n "$RSVG" ] && [ -f "$SVG" ] && { [ ! -f "$ICNS" ] || [ "$SVG" -nt "$ICNS" ]; }; then
-  echo "==> rendering icon from $SVG ..."
-  rm -rf "$ICONSET"; mkdir -p "$ICONSET"
+
+# $1 source SVG, $2 .icns to write. Re-rendered only when the SVG is newer than
+# the .icns, so a plain rebuild costs nothing. Without rsvg-convert the app falls
+# back to the generic bundle icon, which is exactly how it looked before this
+# step existed — a missing renderer must not fail the build.
+render_icon() {
+  local svg="$1" icns="$2" iconset="${2%.icns}.iconset"
+  [ -n "$RSVG" ] && [ -f "$svg" ] || return 0
+  { [ ! -f "$icns" ] || [ "$svg" -nt "$icns" ]; } || return 0
+  echo "==> rendering icon from $svg ..."
+  rm -rf "$iconset"; mkdir -p "$iconset"
   for spec in 16:icon_16x16 32:icon_16x16@2x 32:icon_32x32 64:icon_32x32@2x \
               128:icon_128x128 256:icon_128x128@2x 256:icon_256x256 512:icon_256x256@2x \
               512:icon_512x512 1024:icon_512x512@2x; do
     px="${spec%%:*}"; name="${spec##*:}"
-    "$RSVG" -w "$px" -h "$px" "$SVG" -o "$ICONSET/$name.png" || echo "WARN: render $name failed"
+    "$RSVG" -w "$px" -h "$px" "$svg" -o "$iconset/$name.png" || echo "WARN: render $name failed"
   done
-  iconutil -c icns "$ICONSET" -o "$ICNS" || echo "WARN: iconutil failed (app keeps the default icon)"
-  rm -rf "$ICONSET"
-fi
+  iconutil -c icns "$iconset" -o "$icns" || echo "WARN: iconutil failed (app keeps the default icon)"
+  rm -rf "$iconset"
+}
+
+render_icon "$HERE/../com.hogehoge.deck-rx.sdPlugin/imgs/icon-source.svg" "$HERE/deck-rx-receiver.icns"
+render_icon "$HERE/icon-solo.svg" "$HERE/deck-rx-solo.icns"
 
 # --- build one bundle ---
-# $1 app path, $2 bundle id, $3 display name, $4 extra swiftc flags
+# $1 app path, $2 bundle id, $3 display name, $4 extra swiftc flags, $5 icon base
 build_variant() {
-  local APP="$1" BUNDLE_ID="$2" NAME="$3" FLAGS="$4"
+  local APP="$1" BUNDLE_ID="$2" NAME="$3" FLAGS="$4" ICON="$5"
   local EXE="$APP/Contents/MacOS/deck-rx-receiver"
+  local ICNS="$HERE/$ICON.icns"
 
   # Two slices and lipo rather than thin: an arm64-only bundle does not launch
   # at all on an Intel Mac, and the failure reads as a broken app rather than a
@@ -78,7 +86,7 @@ build_variant() {
 <dict>
 	<key>CFBundleDevelopmentRegion</key><string>en</string>
 	<key>CFBundleExecutable</key><string>deck-rx-receiver</string>
-	<key>CFBundleIconFile</key><string>deck-rx-receiver</string>
+	<key>CFBundleIconFile</key><string>$ICON</string>
 	<key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>$NAME</string>
@@ -94,7 +102,11 @@ build_variant() {
 PLIST
   cp "$BIN" "$EXE" || { echo "ERROR: could not install executable"; return 1; }
   chmod +x "$EXE"
-  [ -f "$ICNS" ] && cp -p "$ICNS" "$APP/Contents/Resources/deck-rx-receiver.icns"
+  # Clear the other variant's icon if an earlier build left one behind: two
+  # .icns in Resources with the plist naming the stale one is a bundle that
+  # keeps the face it was meant to lose.
+  rm -f "$APP/Contents/Resources/deck-rx-receiver.icns" "$APP/Contents/Resources/deck-rx-solo.icns"
+  [ -f "$ICNS" ] && cp -p "$ICNS" "$APP/Contents/Resources/$ICON.icns"
 
   # Station databases. Only the standalone build reads them — the front-end
   # gets station names from the plugin's status feed.
@@ -121,6 +133,12 @@ PLIST
     echo "signing failed -> runs unsigned, locally"
   fi
   xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+  # Bump the bundle directory's own mtime before re-registering. Everything this
+  # script writes lands inside Contents/, which leaves the .app's timestamp
+  # untouched, and IconServices keeps serving the cached icon off it: the first
+  # build after Solo got its own icon still showed the front-end's disc at 32 and
+  # 128 px, and only the 16 px size had changed.
+  touch "$APP"
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
     -f "$APP" 2>/dev/null || true
   echo "deployed: $EXE  ($(lipo -archs "$EXE"))"
@@ -131,18 +149,24 @@ DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
 # The front-end has no receiver in it, so the receiver sources are not compiled
 # into it at all — not merely switched off. Dead code that cannot run is still
 # code that has to be read.
+# RadioConfig is shared, not receiver-only: the display scale lives in it, and
+# that is the window's setting rather than the radio's. Without it here the
+# front-end could not read the scale it was saved at, nor change it.
 SHARED="Sources/main.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
-        Sources/SpectrumView.swift Sources/OptionsPanel.swift Sources/FreqView.swift"
+        Sources/SpectrumView.swift Sources/OptionsPanel.swift Sources/FreqView.swift \
+        Sources/Platform.swift Sources/RadioConfig.swift"
 RECEIVER="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
           Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
           Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
-          Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift"
+          Sources/StationLabel.swift Sources/PresetStore.swift"
 
 if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "front" ]; then
   SRC_FILES="$SHARED"
-  build_variant "/Applications/Deck RX.app" "com.hogehoge.deckrx.receiver" "Deck RX" "" || exit 1
+  build_variant "/Applications/Deck RX.app" "com.hogehoge.deckrx.receiver" "Deck RX" "" \
+                "deck-rx-receiver" || exit 1
 fi
 if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "solo" ]; then
   SRC_FILES="$SHARED $RECEIVER"
-  build_variant "/Applications/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE" || exit 1
+  build_variant "/Applications/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE" \
+                "deck-rx-solo" || exit 1
 fi

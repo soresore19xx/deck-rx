@@ -23,6 +23,20 @@ final class OptionsPanel: NSView {
     }
     private var live: [String: Any] = [:]
     private var mode = -1
+    /// The display scale. Never read from the control endpoint, in either
+    /// bundle: it is this window's size, and the endpoint on :8771 may well
+    /// belong to the plugin — which has no opinion about it and answered the
+    /// row with "—" and its click with a 400. That happened to the front-end
+    /// always, and to the standalone app whenever the plugin held the port.
+    ///
+    /// Held here rather than re-read on every refresh: the panel refreshes
+    /// several times a second and this changes only when the row is clicked.
+    /// A rebuild constructs a fresh panel, so a change made elsewhere — the
+    /// standalone app's endpoint, say — is picked up on the way back in.
+    private var localUiScale = RadioConfig.load().uiScale
+    /// The user picked a scale. Persisting it belongs to the delegate, which
+    /// knows whether there is a live receiver holding a copy of the config.
+    var onUiScaleChanged: ((String) -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -30,7 +44,9 @@ final class OptionsPanel: NSView {
         layer?.backgroundColor = P.panel.cgColor
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 2
+        // No gap: the banding separates the rows, and a space between them put
+        // the panel's ground back between two shades that were doing the work.
+        stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
         doc.translatesAutoresizingMaskIntoConstraints = false
         doc.addSubview(stack)
@@ -51,13 +67,14 @@ final class OptionsPanel: NSView {
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
             doc.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
             stack.topAnchor.constraint(equalTo: doc.topAnchor, constant: S(10)),
-            stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: S(12)),
+            // The stack runs edge to edge so a banded row's ground reaches the
+            // panel sides; the text inset moved inside the row instead.
+            stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
             // Clear of the scroller, plus a margin. The scroller's width is a
             // system size and does not follow our scale, so this inset must not
             // either: scaling it left 14 pt at min, under the ~15 pt bar, and
             // the values sat against it. Fixed clearance, scaled margin.
-            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor,
-                                            constant: -(scrollerClearance + S(8))),
+            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor),
             // The document's height is the stack's: what makes it scrollable.
             stack.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: S(-10)),
         ])
@@ -97,42 +114,104 @@ final class OptionsPanel: NSView {
         [""] + ((rx["audioDevices"] as? [String]) ?? [])
     }
 
+    /// Section heading. It used to be a plain label in the same rhythm as the
+    /// rows, sitting right under the previous row's separator — indistinguishable
+    /// from a row whose value had gone missing. Space above it and letter
+    /// spacing below are what make it read as a heading by position rather than
+    /// by being noticed.
     private func header(_ t: String) -> NSView {
-        let l = label(t, mono(13), P.faint)
-        return l
+        let l = label(t, mono(11), P.faint)
+        l.attributedStringValue = NSAttributedString(
+            string: t,
+            attributes: [.font: mono(11),
+                         .foregroundColor: P.faint,
+                         .kern: 1.4])
+        let host = NSView()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        l.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(l)
+        NSLayoutConstraint.activate([
+            l.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: S(12)),
+            l.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor, constant: S(-12)),
+            l.topAnchor.constraint(equalTo: host.topAnchor, constant: S(13)),
+            l.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: S(-4)),
+        ])
+        // A rule above the heading, not under every row: the grouping that
+        // matters here is AM OPTIONS / RF / RECEIVER, and a line per row turned
+        // the panel into a table with more structure than its content has.
+        let rule = NSView()
+        rule.wantsLayer = true
+        rule.layer?.backgroundColor = P.rule.cgColor
+        rule.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(rule)
+        NSLayoutConstraint.activate([
+            rule.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            rule.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            rule.topAnchor.constraint(equalTo: host.topAnchor, constant: S(6)),
+            rule.heightAnchor.constraint(equalToConstant: 1),
+        ])
+        return host
     }
 
     private func row(_ title: String, _ name: String, _ kind: Kind) -> NSView {
-        let t = label(title, .systemFont(ofSize: 15), P.dim)
+        // Monospaced, like the value. A proportional name beside a monospaced
+        // value put two rhythms in one line and read as two different tables.
+        let t = label(title, mono(13), P.dim)
         t.lineBreakMode = .byTruncatingTail
         // The value is the part you read; let the name lose characters first.
         t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let v = label("—", mono(15), P.text)
-        v.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let v = label("—", mono(13), P.text)
+        // Half the panel, at most. A long value — "system default" — otherwise
+        // pushed the name out entirely and left "Audi...", which says nothing
+        // about what the value belongs to. Both truncate; the name goes second.
+        v.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        v.lineBreakMode = .byTruncatingTail
+        v.cell?.usesSingleLineMode = true
+        v.setContentHuggingPriority(.required, for: .horizontal)
+        t.setContentCompressionResistancePriority(.init(251), for: .horizontal)
         let r = NSStackView(views: [t, NSView(), v])
         r.orientation = .horizontal
-        r.spacing = 8
+        r.spacing = S(8)
         r.translatesAutoresizingMaskIntoConstraints = false
-        r.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        r.heightAnchor.constraint(equalToConstant: S(23)).isActive = true
+        // 0.55 was too tight for this one row: "Audio out" and "system
+        // default" both truncated, which is the worst of both. 0.66 lets a long
+        // value keep its shape while the name stays readable.
+        v.widthAnchor.constraint(lessThanOrEqualTo: r.widthAnchor, multiplier: 0.66).isActive = true
         rows.append((name, v, kind))
         let pad = ClickRow { [weak self] in self?.cycle(name, kind) }
         pad.translatesAutoresizingMaskIntoConstraints = false
         pad.addSubview(r)
         NSLayoutConstraint.activate([
-            r.leadingAnchor.constraint(equalTo: pad.leadingAnchor),
-            r.trailingAnchor.constraint(equalTo: pad.trailingAnchor),
+            r.leadingAnchor.constraint(equalTo: pad.leadingAnchor, constant: S(12)),
+            // Clear of the scroller: its width is a system dimension and does
+            // not follow our scale, so the clearance must not either.
+            r.trailingAnchor.constraint(equalTo: pad.trailingAnchor,
+                                        constant: -(scrollerClearance + S(6))),
             r.topAnchor.constraint(equalTo: pad.topAnchor),
             r.bottomAnchor.constraint(equalTo: pad.bottomAnchor),
         ])
+        // Alternate rows get a lighter ground. That is what makes a name and
+        // its value read as one row: a line between rows says where rows end,
+        // a band says which pieces belong together.
+        //
+        // This had been dropped while reverting the per-row rule, so exactly
+        // one row in the panel — the last, which goes through editRow — was
+        // banded, and the feature looked broken rather than absent.
+        if bandIndex % 2 == 1 {
+            pad.wantsLayer = true
+            pad.layer?.backgroundColor = P.band.cgColor
+        }
+        bandIndex += 1
         return pad
     }
 
     /// A row whose value is typed rather than cycled. Host and port are the two
     /// settings with no sensible list to walk.
     private func editRow(_ title: String, _ name: String, width: CGFloat) -> NSView {
-        let t = label(title, .systemFont(ofSize: 15), P.dim)
+        let t = label(title, mono(13), P.dim)
         let f = NSTextField(string: "")
-        f.font = mono(15)
+        f.font = mono(13)
         f.alignment = .right
         f.isBezeled = true
         f.drawsBackground = true
@@ -150,15 +229,61 @@ final class OptionsPanel: NSView {
             }
         }
         fields.append((name, f))
-        let r = NSStackView(views: [t, NSView(), f])
-        r.orientation = .horizontal
-        r.spacing = 8
+        let inner = NSStackView(views: [t, NSView(), f])
+        let r = NSView()
         r.translatesAutoresizingMaskIntoConstraints = false
-        r.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        inner.translatesAutoresizingMaskIntoConstraints = false
+        r.addSubview(inner)
+        NSLayoutConstraint.activate([
+            inner.leadingAnchor.constraint(equalTo: r.leadingAnchor, constant: S(12)),
+            inner.trailingAnchor.constraint(equalTo: r.trailingAnchor,
+                                            constant: -(scrollerClearance + S(6))),
+            inner.topAnchor.constraint(equalTo: r.topAnchor),
+            inner.bottomAnchor.constraint(equalTo: r.bottomAnchor),
+        ])
+        inner.orientation = .horizontal
+        inner.spacing = S(8)
+        r.heightAnchor.constraint(equalToConstant: S(26)).isActive = true
+        if bandIndex % 2 == 1 {
+            r.wantsLayer = true
+            r.layer?.backgroundColor = P.band.cgColor
+        }
+        bandIndex += 1
         return r
     }
 
+    /// Wraps a row with the separator beneath it.
+    private func ruled(_ inner: NSView) -> NSView {
+        let host = NSView()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        inner.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(inner)
+        let rule = NSView()
+        rule.wantsLayer = true
+        rule.layer?.backgroundColor = P.rule.cgColor
+        rule.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(rule)
+        NSLayoutConstraint.activate([
+            inner.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            inner.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            inner.topAnchor.constraint(equalTo: host.topAnchor),
+            inner.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+            rule.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            rule.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            rule.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+            rule.heightAnchor.constraint(equalToConstant: 1),
+        ])
+        return host
+    }
+
+    /// Counts rows so alternate ones can be tinted. Runs across the whole
+    /// panel: resetting it at each heading made every section start unbanded,
+    /// and with odd-length sections that left almost no bands at all — the
+    /// first attempt tinted exactly one row out of fifteen.
+    private var bandIndex = 0
+
     private func rebuild() {
+        bandIndex = 0
         for v in stack.arrangedSubviews { stack.removeArrangedSubview(v); v.removeFromSuperview() }
         rows.removeAll()
         fields.removeAll()
@@ -193,20 +318,24 @@ final class OptionsPanel: NSView {
         views.append(header("RECEIVER"))
         views.append(row("Tune mode", "rx.tuneMode", .text(["preset", "vfo"])))
         views.append(row("JP region", "rx.jpRegion", .text(jpRegions())))
-        // Takes effect on the next launch: fonts and panel sizes are fixed when
-        // the window is built, so the label says so rather than looking broken.
-        views.append(row("UI scale *", "rx.uiScale",
-                         .text((rx["uiScales"] as? [String]) ?? ["min", "middle", "max"])))
-        views.append(row("Audio out", "rx.audioDevice", .text(audioDevices())))
+        // The list is compiled in rather than read from the endpoint's
+        // "uiScales": both bundles hold the same UI.names, and the endpoint
+        // this panel is talking to may not report the scale at all. It applies
+        // by rebuilding the view, so the label no longer carries the asterisk
+        // it wore back when the change needed a relaunch.
+        views.append(row("UI scale", "rx.uiScale", .text(UI.names)))
+        // "Audio" rather than "Audio out": the device names are long and the
+        // column is 228 pt. A name that survives beats one that explains.
+        views.append(row("Audio", "rx.audioDevice", .text(audioDevices())))
         views.append(row("Output", "rx.outputMode", .text(["local", "icecast"])))
-        views.append(row("SDR++ auto-sync", "rx.autoSyncSdrpp", .bool))
-        views.append(row("Import SDR++ now", "rx.import", .action))
+        views.append(row("SDR++ sync", "rx.autoSyncSdrpp", .bool))
+        views.append(row("SDR++ import", "rx.import", .action))
         // The link's address. Changing either dials the new server, so these
         // are typed and applied on Enter rather than cycled by accident.
         // Short names: "Server host" truncates to "Serve" in this column, and a
         // label that loses its last word says less than one that never had it.
-        views.append(editRow("Host", "rx.host", width: 150))
-        views.append(editRow("Port", "rx.port", width: 80))
+        views.append(editRow("Host", "rx.host", width: S(128)))
+        views.append(editRow("Port", "rx.port", width: S(64)))
         for v in views {
             stack.addArrangedSubview(v)
             v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -219,6 +348,7 @@ final class OptionsPanel: NSView {
             let key = String(name.dropFirst(3))
             if key == "import" { return "run" }
             if key == "outputMode" { return rx["audioSink"] }
+            if key == "uiScale" { return localUiScale }
             return rx[key]
         }
         let parts = name.split(separator: ".")
@@ -280,6 +410,12 @@ final class OptionsPanel: NSView {
         let isRx = name.hasPrefix("rx.")
         let key = isRx ? String(name.dropFirst(3)) : name
         func send(_ v: String) {
+            if isRx, key == "uiScale" {
+                localUiScale = v
+                updateValues()
+                onUiScaleChanged?(v)
+                return
+            }
             if isRx {
                 Receiver.receiver(set: key, value: v) { [weak self] j in
                     guard let self else { return }

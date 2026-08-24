@@ -108,6 +108,27 @@ startControlServer();
 // nothing while no one is connected. See src/spectrumFeed.ts.
 startSpectrumFeed();
 
+// Dial the persisted SpyServer at startup, rather than waiting for a dial to
+// appear. Connecting used to be driven only by an action's willAppear, so a
+// plugin that restarted while the deck was showing another profile came up
+// enabled but with no address — `connected: false`, `host: ""` — and stayed
+// that way. Nothing on the deck was wrong, but a front-end saw a receiver that
+// never received, and pressing POWER twice was the only way back.
+//
+// connect() returns immediately when the master switch is off or a dial has
+// already started one, so this only ever fills in the case nobody covered.
+(async () => {
+  try {
+    await spyService.ready;
+    const { host } = await spyService.getServerConfigPersisted();
+    if (!host) return;                 // nothing configured yet: nothing to dial
+    if (!spyService.isEnabled()) return;
+    await spyService.connect();
+  } catch (e) {
+    streamDeck.logger.warn(`[deck-rx] startup connect failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+})();
+
 // One-shot SDR++ auto-sync at startup — opt-in via PI checkbox. Waits for
 // spyService.ready so we know the autoSyncSdrpp flag has been hydrated
 // from config before deciding. Failures are logged but never block plugin

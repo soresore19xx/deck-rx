@@ -5,7 +5,11 @@
 // waterfall rather than as an error. These tests pin every field.
 
 import { describe, it, expect } from 'vitest';
-import { encodeSpectrumFrame, HEADER_BYTES } from '../src/spectrumFeed.js';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import net from 'net';
+import { encodeSpectrumFrame, HEADER_BYTES, unlinkIfOurs, socketIdentity } from '../src/spectrumFeed.js';
 
 const MAGIC = 0x53585244; // 'DRXS'
 
@@ -47,5 +51,62 @@ describe('encodeSpectrumFrame', () => {
     const f = encodeSpectrumFrame(bins(-80), 384_000.6, 90_500_000.4, 0);
     expect(f.readUInt32LE(12)).toBe(384_001);
     expect(f.readUInt32LE(16)).toBe(90_500_000);
+  });
+});
+
+// The socket file is shared state between whatever instances happen to be
+// running. Deleting one that belongs to somebody else leaves them bound to a
+// name that no longer exists: still listening, still receiving, unreachable.
+// That failure is silent on both sides, so the ownership rule is pinned here.
+describe('unlinkIfOurs', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drx-sock-'));
+  const sock = path.join(dir, 's.sock');
+
+  function bind(): Promise<{ srv: net.Server; id: string }> {
+    return new Promise((resolve) => {
+      const srv = net.createServer();
+      srv.listen(sock, () => resolve({ srv, id: socketIdentity(sock) }));
+    });
+  }
+
+  it('removes the file it bound', async () => {
+    const { srv, id } = await bind();
+    unlinkIfOurs(sock, id);
+    expect(fs.existsSync(sock)).toBe(false);
+    srv.close();
+  });
+
+  it('leaves a file that another instance has since taken over', async () => {
+    const first = await bind();
+    // close() takes the socket file with it — Node unlinks a pipe server's
+    // path when the handle closes, which is the same behaviour the watchdog in
+    // spectrumFeed.ts has to work around.
+    await new Promise<void>((r) => first.srv.close(() => r()));
+    expect(fs.existsSync(sock)).toBe(false);
+    // A moment, so the replacement cannot share a creation timestamp. The
+    // inode alone is no help here: the filesystem hands the same number
+    // straight back, which is why the identity carries the birth time too.
+    await new Promise((r) => setTimeout(r, 20));
+    const second = await bind();
+    expect(second.id).not.toBe(first.id);
+    // The first instance exits now and must not take the second one's path.
+    unlinkIfOurs(sock, first.id);
+    expect(fs.existsSync(sock)).toBe(true);
+    await new Promise<void>((r) => second.srv.close(() => r()));
+  });
+
+  it('does nothing when this process never listened', () => {
+    fs.writeFileSync(sock, '');
+    unlinkIfOurs(sock, '');
+    expect(fs.existsSync(sock)).toBe(true);
+    fs.unlinkSync(sock);
+  });
+
+  it('is quiet when the file is already gone', () => {
+    expect(() => unlinkIfOurs(sock, '12345:678')).not.toThrow();
+  });
+
+  it('an identity for a path with nothing at it is empty', () => {
+    expect(socketIdentity(path.join(dir, 'nope.sock'))).toBe('');
   });
 });

@@ -117,6 +117,10 @@ export function encodeSpectrumFrame(
 }
 
 let server: net.Server | null = null;
+/// Identity of the socket file this process bound, so a path that belongs to
+/// somebody else is never mistaken for ours. Empty while nothing is listening.
+let socketId = '';
+let watchdog: NodeJS.Timeout | null = null;
 const clients = new Set<net.Socket>();
 let fft: FftPipeline | null = null;
 let iqListener: ((iq: Buffer, iqRate: number, freq: number) => void) | null = null;
@@ -214,6 +218,71 @@ export function startSpectrumFeed(): void {
     log.warn(`[spectrumFeed] disabled: socket path is ${Buffer.byteLength(SOCKET_PATH)} bytes, over the 104-byte limit — ${SOCKET_PATH}`);
     return;
   }
+  listen();
+
+  // The socket file can disappear while this process still holds the bind — a
+  // second instance that starts and exits takes the path with it, and any
+  // stray `rm` in /tmp does the same. What is left is a listener nobody can
+  // reach: the plugin goes on receiving, the status feed goes on updating, and
+  // a front-end waits for frames forever with no error anywhere to explain it.
+  // That state ran for a day before anyone worked out why the spectrum was
+  // blank while the meters moved. Notice it and take the name back.
+  watchdog = setInterval(() => {
+    if (!server || !socketId) return;
+    if (socketIdentity(SOCKET_PATH) === socketId) return;
+    log.warn('[spectrumFeed] socket file gone from under us — re-listening');
+    // The old listener is dropped, not closed. Node unlinks a pipe server's
+    // path when its handle finally closes, and that close waits for existing
+    // connections — so a close() here would fire its unlink at some unknowable
+    // later moment and take the replacement socket with it. What is left
+    // behind is one bound descriptor with no name, which nothing can reach and
+    // which costs a file descriptor until the plugin exits. That is the
+    // cheaper of the two, and it only happens when somebody deletes the socket
+    // out from under a running plugin.
+    server = null;
+    socketId = '';
+    listen();
+  }, 5000);
+  watchdog.unref?.();
+
+  process.on('exit', () => unlinkIfOurs(SOCKET_PATH, socketId));
+}
+
+/**
+ * Identity of a socket file: inode and creation time together.
+ *
+ * The inode alone is not enough — the filesystem hands the same number straight
+ * back to the next file at that path, so a takeover measured moments later
+ * looks identical to the file we bound ourselves.
+ *
+ * Returns '' when there is nothing there.
+ */
+export function socketIdentity(path: string): string {
+  try {
+    const st = fs.statSync(path);
+    return `${st.ino}:${st.birthtimeMs}`;
+  } catch { return ''; }
+}
+
+/**
+ * Remove a socket file only when it is still the one this process bound.
+ *
+ * Unlinking blindly is what orphaned a live listener: a second, short-lived
+ * instance deleted the path the long-running plugin was serving on, leaving it
+ * bound to a name that no longer existed. The plugin kept receiving and the
+ * status feed kept updating, so nothing looked broken — a front-end simply
+ * waited for frames that could never arrive.
+ *
+ * An empty `id` means we never listened, so there is nothing of ours to remove.
+ */
+export function unlinkIfOurs(path: string, id: string): void {
+  if (!id) return;
+  if (socketIdentity(path) !== id) return;   // gone, or somebody else's now
+  try { fs.unlinkSync(path); } catch { /* raced with someone */ }
+}
+
+/** Bind the socket. Split out so the watchdog can bind it again. */
+function listen(): void {
   // A socket file outlives the process that made it, so a crash leaves one
   // behind that would make listen() fail with EADDRINUSE forever.
   try { fs.unlinkSync(SOCKET_PATH); } catch { /* not there */ }
@@ -234,12 +303,15 @@ export function startSpectrumFeed(): void {
   srv.on('error', (e: NodeJS.ErrnoException) => {
     log.warn(`[spectrumFeed] disabled: ${e.code ?? e.message}`);
     server = null;
+    socketId = '';
     try { srv.close(); } catch { /* already down */ }
   });
-  srv.listen(SOCKET_PATH, () => log.info(`[spectrumFeed] listening on ${SOCKET_PATH}`));
+  srv.listen(SOCKET_PATH, () => {
+    socketId = socketIdentity(SOCKET_PATH);
+    log.info(`[spectrumFeed] listening on ${SOCKET_PATH}`);
+  });
   srv.unref?.();
   server = srv;
-  process.on('exit', () => { try { fs.unlinkSync(SOCKET_PATH); } catch { /* already gone */ } });
 }
 
 /** Stop the feed and drop every client. Used by tests and on shutdown. */
@@ -247,6 +319,10 @@ export function stopSpectrumFeed(): void {
   for (const c of clients) { try { c.destroy(); } catch { /* already down */ } }
   clients.clear();
   stopPipeline();
+  if (watchdog) { clearInterval(watchdog); watchdog = null; }
   if (server) { try { server.close(); } catch { /* already down */ } server = null; }
-  try { fs.unlinkSync(SOCKET_PATH); } catch { /* already gone */ }
+  // Same ownership check as the exit handler: a test that stops the feed must
+  // not delete the socket a different instance is serving on.
+  unlinkIfOurs(SOCKET_PATH, socketId);
+  socketId = '';
 }

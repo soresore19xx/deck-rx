@@ -184,6 +184,56 @@ const TUNE_STEP_AM  = [100, 1000, 5000, 9000, 10000, 25000];
 const TUNE_STEP_SSB = [50, 100, 500, 1000, 5000, 10000];
 const TUNE_STEP_CW  = [10, 50, 100, 500, 1000];
 
+/**
+ * The broadcast band a frequency sits in, as far as tuning steps care.
+ *
+ * Step was remembered per demod mode, which cannot tell medium wave from
+ * short wave — both are AM. Tuning across 1.6 MHz therefore carried MW's
+ * 9 kHz onto the 49 m band, where the channels are 5 kHz apart, and every
+ * step landed between two stations.
+ */
+export type StepBand = 'mw' | 'sw' | 'vhf';
+export function stepBandFor(hz: number): StepBand {
+  if (hz < 1_800_000) return 'mw';        // long wave and medium wave
+  if (hz < 30_000_000) return 'sw';       // everything else on HF
+  return 'vhf';
+}
+
+/**
+ * The step a band is channelised on, for when nothing has been chosen yet.
+ *
+ *   WFM  Japanese and European FM broadcast sits on a 100 kHz raster. The
+ *        list started at 10 kHz, so a fresh install crawled across the band
+ *        ten presses per station.
+ *   NFM  VHF/UHF business and amateur: 12.5 kHz is the common narrow raster.
+ *   AM   9 kHz on medium wave (JP/EU), 5 kHz on the short-wave broadcast
+ *        bands.
+ *
+ * SSB and CW have no channel raster — what is right there is whatever the
+ * operator is chasing — but they still need somewhere to start, or the step
+ * is whatever the last mode's value snaps to. With WFM now sitting at
+ * 100 kHz, that snap put USB at the top of its list, 10 kHz, which is a step
+ * that cannot land on a voice signal at all.
+ */
+export function defaultTuneStepFor(mode: number, hz: number): number | null {
+  switch (mode) {
+    case 1: return 100_000;                                     // WFM
+    case 0: return 12_500;                                      // NFM
+    case 2: return stepBandFor(hz) === 'sw' ? 5_000 : 9_000;    // AM
+    case 4: case 6: return 1_000;                               // USB / LSB
+    case 5: return 100;                                         // CW
+    default: return null;
+  }
+}
+
+/**
+ * Key the remembered step is filed under. AM is split by band; everything
+ * else is one raster per mode, so the mode alone says it.
+ */
+export function tuneStepKey(mode: number, hz: number): string {
+  return mode === 2 ? `2:${stepBandFor(hz)}` : String(mode);
+}
+
 export function tuneStepValuesForMode(mode: number): number[] {
   switch (mode) {
     case 1:                return TUNE_STEP_WFM;
@@ -342,12 +392,14 @@ class SpyService {
   // settings.mode / settings.stepHz.
   private tuneMode: TuneMode = 'preset';
   private tuneStepHz: number = 9000;
-  // Per-mode last-used step value. setDemodMode saves the active step
-  // to this.tuneStepByMode[outgoingMode] and restores from
-  // this.tuneStepByMode[incomingMode] (when remembered). So switching
-  // WFM → AM goes back to e.g. 9 kHz instead of clamping the 100 kHz
-  // WFM step into AM's nearest valid value.
-  private tuneStepByMode: Record<number, number> = {};
+  // Last-used step, filed under tuneStepKey(): the mode, except on AM where
+  // medium wave and short wave keep their own. setDemodMode and setFrequency
+  // save the active step under the outgoing key and restore the incoming
+  // one, so WFM → AM goes back to 9 kHz instead of clamping 100 kHz into
+  // AM's nearest value, and MW → 49 m goes to 5 kHz instead of carrying 9.
+  // Keys are strings; a config written before the AM split has a bare "2",
+  // which is read as the medium-wave entry it was.
+  private tuneStepByMode: Record<string, number> = {};
   private tuneModeListeners = new Set<TuneModeListener>();
   private tuneStepListeners = new Set<TuneStepListener>();
   // Debounced SpyServer apply for rapid dial rotations.
@@ -713,6 +765,7 @@ class SpyService {
   private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
   setFrequency(hz: number, opts: { smooth?: boolean } = {}): void {
     this._currentFreq = hz;
+    this.applyStepForBand(hz);
     // Two retune flavours:
     //   smooth=false (default) — preset PUSH, band fallback, connect
     //     seed: one big freq jump. 100 ms mute + resetForRetune() so
@@ -1005,13 +1058,55 @@ class SpyService {
     for (const fn of this.tuneModeListeners) fn(mode);
     this.persistField('tuneMode', mode).catch(() => {});
   }
+  /// The step key the receiver is currently on, so a retune can tell when it
+  /// has crossed into a band with a different raster.
+  private stepKey = '';
+
+  /**
+   * The step to use for a mode and frequency: what was last chosen there, or
+   * the band's own raster, or — for SSB and CW, which have no raster — the
+   * current step snapped into the mode's list.
+   */
+  private stepFor(mode: number, hz: number): number {
+    const list = tuneStepValuesForMode(mode);
+    const key = tuneStepKey(mode, hz);
+    let remembered = this.tuneStepByMode[key];
+    // A config written before AM was split by band has a bare "2". That value
+    // was chosen on medium wave, since that is where the old default sat.
+    if (remembered === undefined && key === '2:mw') remembered = this.tuneStepByMode['2'];
+    if (typeof remembered === 'number' && list.includes(remembered)) return remembered;
+    const preferred = defaultTuneStepFor(mode, hz);
+    if (preferred !== null && list.includes(preferred)) return preferred;
+    return snapTuneStepToList(this.tuneStepHz, list);
+  }
+
+  /**
+   * Move the step to the band's raster when a retune crosses into one. Only on
+   * a crossing: inside a band the step is the user's to set, and re-applying a
+   * default under every dial detent would fight them.
+   */
+  private applyStepForBand(hz: number): void {
+    const key = tuneStepKey(this.currentDemodMode, hz);
+    if (key === this.stepKey) return;
+    if (this.stepKey) this.tuneStepByMode[this.stepKey] = this.tuneStepHz;
+    this.stepKey = key;
+    const next = this.stepFor(this.currentDemodMode, hz);
+    if (next === this.tuneStepHz) return;
+    this.tuneStepHz = next;
+    log.info(`[spyService] step ${next} for ${key}`);
+    for (const fn of this.tuneStepListeners) fn(next);
+    this.persistField('tuneStepHz', next).catch(() => {});
+    this.persistField('tuneStepByMode', this.tuneStepByMode).catch(() => {});
+  }
+
   setTuneStepHz(hz: number): void {
     if (!(hz > 0) || this.tuneStepHz === hz) return;
     this.tuneStepHz = hz;
-    // Remember per-mode so a future setDemodMode round trip restores
-    // the value the user explicitly picked here, not just a clamped
-    // version of an unrelated other-mode step.
-    this.tuneStepByMode[this.currentDemodMode] = hz;
+    // Remember under the current mode and band, so a round trip restores the
+    // value the user explicitly picked here rather than a clamped version of
+    // an unrelated one.
+    this.tuneStepByMode[tuneStepKey(this.currentDemodMode, this._currentFreq)] = hz;
+    this.stepKey = tuneStepKey(this.currentDemodMode, this._currentFreq);
     for (const fn of this.tuneStepListeners) fn(hz);
     this.persistField('tuneStepHz', hz).catch(() => {});
     this.persistField('tuneStepByMode', this.tuneStepByMode).catch(() => {});
@@ -1035,7 +1130,7 @@ class SpyService {
     // Remember the step the user had for the outgoing mode so a future
     // round trip restores it. Cheap and lets WFM 100 kHz / AM 9 kHz /
     // SSB 100 Hz / etc. each stay sticky per band.
-    this.tuneStepByMode[prevMode] = this.tuneStepHz;
+    this.tuneStepByMode[tuneStepKey(prevMode, this._currentFreq)] = this.tuneStepHz;
     this.currentDemodMode = mode;
     this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
     this.demod.reset();
@@ -1043,11 +1138,13 @@ class SpyService {
     // Restore the step we last used in this mode, if known and still
     // valid for the mode's candidate list. Otherwise fall back to
     // snapping the previous step into the new mode's range.
-    const newStepList = tuneStepValuesForMode(mode);
-    const remembered = this.tuneStepByMode[mode];
-    const next = (typeof remembered === 'number' && newStepList.includes(remembered))
-      ? remembered
-      : snapTuneStepToList(this.tuneStepHz, newStepList);
+    // Move the key with the mode, before the step is read for it. Without
+    // this the key still named the outgoing band when the next retune ran, so
+    // applyStepForBand filed the incoming mode's step under the band being
+    // left — which is how short wave came to remember 100 kHz, a step from
+    // FM that it had never been tuned with.
+    this.stepKey = tuneStepKey(mode, this._currentFreq);
+    const next = this.stepFor(mode, this._currentFreq);
     if (next !== this.tuneStepHz) {
       this.tuneStepHz = next;
       this.persistField('tuneStepHz', next).catch(() => {});

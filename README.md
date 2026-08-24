@@ -340,6 +340,16 @@ Japanese medium wave sits on multiples of 9 kHz, so a receiver parked on
 960 kHz by a coarser step otherwise walks 969, 978 … and never lands on a
 station.
 
+**The step follows the band, not just the mode.** Medium wave and short wave
+are both AM, so a step remembered per mode carried MW's 9 kHz onto the 49 m
+band, where the channels are 5 kHz apart and every press landed between two
+stations. Crossing 1.8 MHz now moves the step to the raster of the band being
+entered — 9 kHz on MW, 5 kHz on HF broadcast, 100 kHz on FM, 12.5 kHz on
+narrow FM — and each band remembers what was last chosen in it, so a step set
+by hand is not overwritten by moving away and coming back. SSB and CW have no
+raster; they start at 1 kHz and 100 Hz, which is a place to begin rather than
+a grid to land on.
+
 The right-hand panel carries every setting the receiver exposes, not just the
 demod's: below the mode-specific block and RF gain sits a RECEIVER section with
 tune mode, JP region, audio device, output mode, SDR++ auto-sync, a one-shot

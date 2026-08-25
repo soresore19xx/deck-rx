@@ -120,18 +120,41 @@ IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
             | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')"
 if [ -z "$IDENTITY" ]; then
   echo "ERROR: no Apple Development certificate in the keychain."
-  echo "  Xcode > Settings > Accounts > (Apple ID) > Manage Certificates > + > Apple Development"
-  echo "  then connect the iPad once so Xcode registers it and issues a profile."
+  echo "  Xcode > Settings > Accounts > + > Apple ID, then that account's"
+  echo "  Manage Certificates > + > Apple Development."
+  echo "  Then connect the iPad by cable and trust this Mac, so Xcode registers"
+  echo "  it and issues a profile."
+  echo
+  echo "  A free Apple ID works: the certificate lasts 7 days and the app stops"
+  echo "  launching after that until it is installed again. A paid Developer"
+  echo "  Program account lasts a year."
   exit 1
 fi
+echo "==> identity: $IDENTITY"
 
-PROFILE="$(ls -t ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/*.mobileprovision \
-           ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision 2>/dev/null | head -1)"
+# Pick the profile that is actually for this app, not simply the newest one.
+# Newest is right exactly once — the first time a profile exists at all. After
+# that, any other app built on this Mac leaves a newer one, and signing with it
+# fails on the device with a mismatch that reads like a certificate problem.
+PROFILE=""
+for f in ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/*.mobileprovision \
+         ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision; do
+  [ -f "$f" ] || continue
+  appid="$(security cms -D -i "$f" 2>/dev/null \
+           | plutil -extract Entitlements.application-identifier raw - 2>/dev/null)"
+  case "$appid" in
+    # TEAMID.com.hogehoge.deckrx.ipad, or a team wildcard that covers it.
+    *".$BUNDLE_ID"|*".\*") PROFILE="$f"; break ;;
+  esac
+done
 if [ -z "$PROFILE" ]; then
-  echo "ERROR: no provisioning profile. Connect the iPad to Xcode once with"
-  echo "  automatic signing on, so a profile for $BUNDLE_ID is issued."
+  echo "ERROR: no provisioning profile for $BUNDLE_ID."
+  echo "  Xcode > Settings > Accounts: sign in, then Manage Certificates > + >"
+  echo "  Apple Development. Connect the iPad by cable and trust this Mac, so"
+  echo "  Xcode registers the device and issues a profile for this bundle id."
   exit 1
 fi
+echo "==> profile: $(basename "$PROFILE")"
 cp "$PROFILE" "$APP/embedded.mobileprovision"
 
 TEAM="$(security cms -D -i "$PROFILE" 2>/dev/null \

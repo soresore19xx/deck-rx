@@ -122,12 +122,8 @@ if [ -z "$IDENTITY" ]; then
   echo "ERROR: no Apple Development certificate in the keychain."
   echo "  Xcode > Settings > Accounts > + > Apple ID, then that account's"
   echo "  Manage Certificates > + > Apple Development."
-  echo "  Then connect the iPad by cable and trust this Mac, so Xcode registers"
-  echo "  it and issues a profile."
-  echo
-  echo "  A free Apple ID works: the certificate lasts 7 days and the app stops"
-  echo "  launching after that until it is installed again. A paid Developer"
-  echo "  Program account lasts a year."
+  echo "  A Developer Program certificate lasts a year; a free Apple ID gives"
+  echo "  seven days, after which the installed app stops launching."
   exit 1
 fi
 echo "==> identity: $IDENTITY"
@@ -149,9 +145,21 @@ for f in ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/*.mobileprovi
 done
 if [ -z "$PROFILE" ]; then
   echo "ERROR: no provisioning profile for $BUNDLE_ID."
-  echo "  Xcode > Settings > Accounts: sign in, then Manage Certificates > + >"
-  echo "  Apple Development. Connect the iPad by cable and trust this Mac, so"
-  echo "  Xcode registers the device and issues a profile for this bundle id."
+  echo
+  echo "  This is a bare swiftc build, not an Xcode project, so nothing here"
+  echo "  asks Xcode to create one. With a Developer Program account, either:"
+  echo
+  echo "   a) developer.apple.com > Certificates, Identifiers & Profiles:"
+  echo "      register the iPad's UDID under Devices, add an App ID for"
+  echo "      $BUNDLE_ID (or a wildcard), create an iOS App Development"
+  echo "      profile from it, download it, and double-click it — or drop it in"
+  echo "      ~/Library/MobileDevice/Provisioning Profiles/"
+  echo "   b) or make a throwaway Xcode project with this bundle id, let"
+  echo "      automatic signing issue the profile once, then never open it"
+  echo "      again. This script finds what Xcode leaves behind."
+  echo
+  echo "  A wildcard App ID is worth preferring: it covers this bundle id and"
+  echo "  anything else built the same way, and the search above accepts it."
   exit 1
 fi
 echo "==> profile: $(basename "$PROFILE")"

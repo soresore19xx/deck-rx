@@ -211,6 +211,19 @@ enum Receiver {
         Band(name: "FM",  lo: 76_000_000, hi:  95_000_000, mode: 1),
     ]
 
+    /// The broadcast band a frequency belongs to, for grouping the preset list.
+    ///
+    /// Coarse on purpose. Grouping by metre band — the names on the BAND JUMP
+    /// buttons — sounds better and reads worse: a store holding 5750, 6055,
+    /// 7325, 9975 and 17650 falls into seven groups for eight entries, because
+    /// half of them sit between the broadcast bands rather than inside one.
+    static func bandName(ofHz hz: Double) -> String {
+        if hz < 1_800_000 { return "MW" }        // long wave and medium wave
+        if hz < 30_000_000 { return "SW" }       // everything else on HF
+        if hz < 108_000_000 { return "FM" }      // the broadcast band and below it
+        return "VHF"
+    }
+
     /// Jump to a band: the first preset inside it if there is one — landing on
     /// a station beats landing on the band edge — otherwise the low edge.
     static func jump(to band: Band) {

@@ -97,11 +97,64 @@ final class PresetList: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    /// One colour per band, on the heading only. The rows are a dense column of
+    /// numbers; colouring every one of them turns the list into confetti, and
+    /// the three colours already in use on the spectrum — amber for presets,
+    /// red for tuned, blue for the trace — would start meaning two things.
+    static func bandColor(_ band: String) -> NSColor {
+        switch band {
+        case "MW":  return NSColor(red: 0.878, green: 0.639, blue: 0.290, alpha: 1)
+        case "SW":  return NSColor(red: 0.435, green: 0.659, blue: 0.863, alpha: 1)
+        case "FM":  return NSColor(red: 0.498, green: 0.796, blue: 0.561, alpha: 1)
+        default:    return P.faint
+        }
+    }
+
+    /// Heading for a band group: the name, and a rule in the band's colour
+    /// running to the edge so the group reads as a block rather than as one
+    /// more row that happens to be small.
+    private func groupHeader(_ band: String) -> NSView {
+        let host = NSView()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        let c = Self.bandColor(band)
+        let l = label(band, mono(11, .medium), c)
+        l.attributedStringValue = NSAttributedString(
+            string: band,
+            attributes: [.font: mono(11, .medium), .foregroundColor: c, .kern: 1.6])
+        l.translatesAutoresizingMaskIntoConstraints = false
+        let rule = NSView()
+        rule.wantsLayer = true
+        rule.layer?.backgroundColor = c.withAlphaComponent(0.35).cgColor
+        rule.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(l); host.addSubview(rule)
+        NSLayoutConstraint.activate([
+            host.heightAnchor.constraint(equalToConstant: S(22)),
+            l.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: S(10)),
+            l.centerYAnchor.constraint(equalTo: host.centerYAnchor, constant: S(2)),
+            rule.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: S(8)),
+            rule.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: S(-20)),
+            rule.centerYAnchor.constraint(equalTo: l.centerYAnchor),
+            rule.heightAnchor.constraint(equalToConstant: 1),
+        ])
+        return host
+    }
+
     func reload() {
         presets = Receiver.presets()
-        for r in rows { stack.removeArrangedSubview(r.row); r.row.removeFromSuperview() }
+        for v in stack.arrangedSubviews { stack.removeArrangedSubview(v); v.removeFromSuperview() }
         rows.removeAll()
+        var band = ""
         for p in presets {
+            let b = Receiver.bandName(ofHz: p.freq)
+            if b != band {
+                band = b
+                let h = groupHeader(b)
+                stack.addArrangedSubview(h)
+                NSLayoutConstraint.activate([
+                    h.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+                    h.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+                ])
+            }
             let row = NSView()
             row.translatesAutoresizingMaskIntoConstraints = false
             let (num, unit) = formatFreq(p.freq)

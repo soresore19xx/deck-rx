@@ -265,7 +265,15 @@ the control endpoint, exactly like any other front-end; nothing about the
 receiver lives in it. The preset table comes from `data/presets.json`
 (read-only), and the row the receiver is currently
 on is highlighted by frequency, so a retune from a dial or the knob shows up
-here too.
+here too. The list is grouped by band — MW, SW, FM — with a heading in the
+band's own colour. The grouping is deliberately coarser than the BAND JUMP
+buttons beside it: by metre band, a store holding 5750, 6055, 7325, 9975 and
+17650 kHz falls into seven headings for eight entries, since half of what is
+worth hearing on HF sits between the broadcast bands rather than inside one.
+Only the headings are coloured; the rows are a dense column of numbers, and
+tinting each of them would turn the list into confetti while re-using the
+three colours the spectrum already spends on presets, the tuned marker and the
+trace.
 
 The spectrum carries the scales a receiver needs: dB rules and labels down the
 left, a frequency scale between trace and waterfall (both share one x mapping),

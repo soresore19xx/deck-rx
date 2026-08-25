@@ -117,6 +117,20 @@ do {
           "\(FreqView.significantStart("—"))")
 }
 
+section("the preset list groups by band")
+// Coarse on purpose: metre-band grouping fragments a real store into almost as
+// many headings as entries, because half of what is worth listening to on HF
+// sits between the broadcast bands.
+check("medium wave", Receiver.bandName(ofHz: 594_000) == "MW")
+check("the top of the JP MW band", Receiver.bandName(ofHz: 1_602_000) == "MW")
+check("160 m is already short wave", Receiver.bandName(ofHz: 1_800_000) == "SW")
+check("49 m", Receiver.bandName(ofHz: 6_055_000) == "SW")
+check("between the bands is still short wave", Receiver.bandName(ofHz: 9_975_000) == "SW")
+check("the top of HF", Receiver.bandName(ofHz: 29_999_999) == "SW")
+check("30 MHz is FM's group", Receiver.bandName(ofHz: 30_000_000) == "FM")
+check("FM broadcast", Receiver.bandName(ofHz: 80_000_000) == "FM")
+check("above the FM band", Receiver.bandName(ofHz: 145_000_000) == "VHF")
+
 section("mode indices agree with SDR++ and the plugin")
 check("MODE_NAMES order", MODE_NAMES == ["NFM", "WFM", "AM", "DSB", "USB", "CW", "LSB", "RAW"],
       "got \(MODE_NAMES)")

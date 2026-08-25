@@ -117,24 +117,38 @@ final class PresetList: NSView {
         let host = NSView()
         host.translatesAutoresizingMaskIntoConstraints = false
         let c = Self.bandColor(band)
-        // 15 semibold, between the row's 17 pt frequency and its 13 pt name.
-        // At 11 it was smaller than everything it was heading, which is the
-        // wrong way round — a heading has to win against the rows under it.
-        let f = mono(15, .semibold)
+        // Bigger than the 17 pt frequency under it, not merely bigger than the
+        // 13 pt station name. 11 lost to everything it was heading and 15 was
+        // still not winning: a heading is read before the rows, so it has to be
+        // the largest thing in the column, not something in between.
+        let f = mono(19, .bold)
         let l = label(band, f, c)
         l.attributedStringValue = NSAttributedString(
             string: band,
             attributes: [.font: f, .foregroundColor: c, .kern: 1.6])
         l.translatesAutoresizingMaskIntoConstraints = false
+        // Two rules: one across the full width above the name, which is the
+        // break between one band and the next, and one running out from the
+        // name to the edge, which ties the name to the group under it. The
+        // second alone left the groups touching — the last row of MW sat
+        // directly on SW's heading with nothing between them.
+        let divider = NSView()
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = c.withAlphaComponent(0.55).cgColor
+        divider.translatesAutoresizingMaskIntoConstraints = false
         let rule = NSView()
         rule.wantsLayer = true
-        rule.layer?.backgroundColor = c.withAlphaComponent(0.35).cgColor
+        rule.layer?.backgroundColor = c.withAlphaComponent(0.30).cgColor
         rule.translatesAutoresizingMaskIntoConstraints = false
-        host.addSubview(l); host.addSubview(rule)
+        host.addSubview(divider); host.addSubview(l); host.addSubview(rule)
         NSLayoutConstraint.activate([
-            host.heightAnchor.constraint(equalToConstant: S(28)),
+            host.heightAnchor.constraint(equalToConstant: S(42)),
+            divider.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            divider.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            divider.topAnchor.constraint(equalTo: host.topAnchor, constant: S(7)),
+            divider.heightAnchor.constraint(equalToConstant: 2),
             l.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: S(10)),
-            l.centerYAnchor.constraint(equalTo: host.centerYAnchor, constant: S(2)),
+            l.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: S(5)),
             rule.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: S(8)),
             rule.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: S(-20)),
             rule.centerYAnchor.constraint(equalTo: l.centerYAnchor),

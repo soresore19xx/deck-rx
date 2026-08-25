@@ -266,7 +266,10 @@ receiver lives in it. The preset table comes from `data/presets.json`
 (read-only), and the row the receiver is currently
 on is highlighted by frequency, so a retune from a dial or the knob shows up
 here too. The list is grouped by band — MW, SW, FM — with a heading in the
-band's own colour. The grouping is deliberately coarser than the BAND JUMP
+band's own colour, above a rule of its own that runs the full width. The
+heading is set larger than the frequencies it heads: at anything smaller it
+lost to every row under it, which is the wrong way round for something read
+before them. The grouping is deliberately coarser than the BAND JUMP
 buttons beside it: by metre band, a store holding 5750, 6055, 7325, 9975 and
 17650 kHz falls into seven headings for eight entries, since half of what is
 worth hearing on HF sits between the broadcast bands rather than inside one.

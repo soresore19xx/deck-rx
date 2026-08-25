@@ -363,13 +363,17 @@ final class MainView: NSView {
         detail.orientation = .horizontal; detail.spacing = 6; detail.alignment = .firstBaseline
         let left = NSStackView(views: [stationLabel, freqRow, detail])
         left.orientation = .vertical; left.alignment = .leading; left.spacing = 4
-        // No spacer between them: the meters are what fills the gap now, so the
-        // header carries the readout on the left and an instrument across the
-        // rest, instead of two blocks pinned to opposite edges with a void
-        // between them.
-        let headerRow = NSStackView(views: [left, meters])
+        // A spacer between them again, now that the meter has a ceiling: what
+        // is left over after both have taken their width goes here rather than
+        // stretching the meter across the window.
+        let headerRow = NSStackView(views: [left, NSView(), meters])
         headerRow.orientation = .horizontal; headerRow.alignment = .centerY; headerRow.spacing = 24
         left.setContentHuggingPriority(.required, for: .horizontal)
+        // The readout used to start a third of the way in, behind three dim
+        // zeros. With those gone it sits against the panel edge, which reads as
+        // crowded — the indent gives the whole left block, name and all, the
+        // margin the zeros used to provide.
+        headerRow.edgeInsets = NSEdgeInsets(top: 0, left: S(16), bottom: 0, right: 0)
         embed(headerRow, in: header, inset: 14)
 
         // bottom transport
@@ -528,12 +532,26 @@ final class MainView: NSView {
         // edge, the way SDR++ presents them: these are the three you ride while
         // watching the waterfall, so they want a handle rather than a menu.
         let rail = panelView(P.panel)
-        zoomSlider.minValue = 0; zoomSlider.maxValue = 5; zoomSlider.doubleValue = 0
+        // Seeded from the saved display settings, not from the view's defaults:
+        // these are ridden constantly and used to be rebuilt from scratch on
+        // every launch.
+        let saved = RadioConfig.load()
+        spectrum.dbFloor = Float(saved.spectrumDbFloor)
+        spectrum.dbCeil = Float(saved.spectrumDbCeil)
+        spectrum.zoom = saved.spectrumZoom
+        spectrum.wfTargetSeconds = saved.waterfallSeconds
+        // Enough to place the presets on a scale straight away, before a frame
+        // and before the status feed — the last frequency and the last IQ
+        // width the receiver reported.
+        spectrum.idleCenterHz = saved.frequencyHz
+        spectrum.idleSpanHz = saved.spectrumSpanHz
+        zoomSlider.minValue = 0; zoomSlider.maxValue = 5
+        zoomSlider.doubleValue = max(0, min(5, log2(saved.spectrumZoom)))
         // Waterfall depth in seconds. The scale is log so the short end, where
         // a few seconds either way is the whole picture, gets as much travel as
         // the long end where it is a rounding error.
         wfSlider.minValue = log(5.0); wfSlider.maxValue = log(600.0)
-        wfSlider.doubleValue = log(spectrum.wfTargetSeconds)
+        wfSlider.doubleValue = max(wfSlider.minValue, min(wfSlider.maxValue, log(spectrum.wfTargetSeconds)))
         maxSlider.minValue = -60; maxSlider.maxValue = 0; maxSlider.doubleValue = Double(spectrum.dbCeil)
         minSlider.minValue = -160; minSlider.maxValue = -60; minSlider.doubleValue = Double(spectrum.dbFloor)
         for sl in [zoomSlider, wfSlider, maxSlider, minSlider] {
@@ -550,11 +568,13 @@ final class MainView: NSView {
             guard let self else { return }
             self.spectrum.zoom = pow(2, self.zoomSlider.doubleValue)
             self.zoomLabel.stringValue = String(format: "%.0f×", pow(2, self.zoomSlider.doubleValue))
+            self.saveDisplaySoon()
         }
         ButtonBox.shared.actions[ObjectIdentifier(wfSlider)] = { [weak self] in
             guard let self else { return }
             self.spectrum.wfTargetSeconds = exp(self.wfSlider.doubleValue)
             self.syncWaterfallSpan()
+            self.saveDisplaySoon()
         }
         ButtonBox.shared.actions[ObjectIdentifier(maxSlider)] = { [weak self] in
             guard let self else { return }
@@ -562,11 +582,13 @@ final class MainView: NSView {
             // block and looks like a dead receiver.
             self.spectrum.dbCeil = Float(max(self.maxSlider.doubleValue, Double(self.spectrum.dbFloor) + 10))
             self.syncRange()
+            self.saveDisplaySoon()
         }
         ButtonBox.shared.actions[ObjectIdentifier(minSlider)] = { [weak self] in
             guard let self else { return }
             self.spectrum.dbFloor = Float(min(self.minSlider.doubleValue, Double(self.spectrum.dbCeil) - 10))
             self.syncRange()
+            self.saveDisplaySoon()
         }
         // MAX above MIN, because the axis they act on runs that way: the dB
         // scale down the left of the trace has the ceiling at the top and the
@@ -749,6 +771,27 @@ final class MainView: NSView {
     private(set) var debugPanelRefs: [(String, NSView)] = []
     func debugPanels() -> [(String, NSView)] { debugPanelRefs }
 
+    private var displaySaveTimer: Timer?
+    /// Writes the display settings a beat after the last change. The sliders
+    /// are continuous so the trace follows the drag, which would otherwise be
+    /// a file write per mouse event.
+    private func saveDisplaySoon() {
+        displaySaveTimer?.invalidate()
+        displaySaveTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            var c = RadioConfig.load()
+            c.spectrumDbFloor = Double(self.spectrum.dbFloor)
+            c.spectrumDbCeil = Double(self.spectrum.dbCeil)
+            c.spectrumZoom = self.spectrum.zoom
+            c.waterfallSeconds = self.spectrum.wfTargetSeconds
+            if self.spectrum.idleSpanHz > 0 { c.spectrumSpanHz = self.spectrum.idleSpanHz }
+            // Where the receiver was, so the waiting display places the presets
+            // around it rather than around whatever the config was seeded with.
+            if self.spectrum.idleCenterHz > 0 { c.frequencyHz = self.spectrum.idleCenterHz }
+            c.save()
+        }
+    }
+
     private func syncRange() {
         dbLabel.stringValue = String(format: "%.0f / %.0f dB", spectrum.dbFloor, spectrum.dbCeil)
         spectrum.needsDisplay = true
@@ -769,12 +812,19 @@ final class MainView: NSView {
         bar.translatesAutoresizingMaskIntoConstraints = false
         // Room for the bar and the scale under it.
         bar.heightAnchor.constraint(equalToConstant: S(30)).isActive = true
-        // The meter takes whatever the header has left rather than a width of
-        // its own: the readout beside it changes width with the frequency, and
-        // a fixed meter left a hole in the middle of the header that moved
-        // around with it. A floor keeps it readable when the window is narrow.
-        bar.setContentHuggingPriority(.init(1), for: .horizontal)
+        // Wide enough to read a level off, bounded so it stays a meter. Letting
+        // it take every spare point made it run the whole width of the header,
+        // which reads as a progress bar rather than an instrument. It still
+        // stretches into the space the readout leaves — the readout's width
+        // changes with the frequency — but only up to the ceiling.
         bar.setContentCompressionResistancePriority(.init(200), for: .horizontal)
+        // A definite width rather than "whatever is spare". Left to stretch it
+        // ran the whole header and read as a progress bar; left to hug, the
+        // spacer took everything instead and the scale under it collapsed into
+        // overlapping numbers. This is wide enough for five of them to breathe.
+        let wide = bar.widthAnchor.constraint(equalToConstant: S(430))
+        wide.priority = .defaultHigh
+        wide.isActive = true
         bar.widthAnchor.constraint(greaterThanOrEqualToConstant: S(140)).isActive = true
         let row = NSStackView(views: [label(name, mono(18), P.faint), bar, num])
         row.orientation = .horizontal; row.spacing = 8; row.alignment = .centerY
@@ -855,6 +905,17 @@ final class MainView: NSView {
 
         currentFreqHz = s.freqHz
         spectrum.bandwidthHz = s.bandwidthHz
+        // Where the receiver is and how wide its window is, so the spectrum can
+        // place the presets before the first frame arrives. The header already
+        // says both; the panel below it used to sit blank anyway.
+        if s.freqHz > 0, s.freqHz != spectrum.idleCenterHz {
+            spectrum.idleCenterHz = s.freqHz
+            saveDisplaySoon()
+        }
+        if s.iqRateHz > 0, s.iqRateHz != spectrum.idleSpanHz {
+            spectrum.idleSpanHz = s.iqRateHz
+            saveDisplaySoon()
+        }
         bwLabel.stringValue = s.bandwidthHz > 0
             ? (s.bandwidthHz >= 1000 ? String(format: "%.0f kHz", s.bandwidthHz / 1000)
                                      : String(format: "%.0f Hz", s.bandwidthHz))
@@ -1096,7 +1157,13 @@ final class SignalMeter: NSView {
         let font = NSFont.monospacedSystemFont(ofSize: max(8, 10 * UI.scale), weight: .regular)
         ctx.setStrokeColor(P.faint.withAlphaComponent(0.5).cgColor)
         ctx.setLineWidth(1)
-        for t in ticks {
+        // Thin the scale when the bar is short: five numbers across 200 pt
+        // overlap into a smear, and a scale that cannot be read is worse than
+        // a coarser one that can. Ends and middle survive.
+        let room = w / CGFloat(max(1, ticks.count))
+        let shown = room >= 52 ? ticks
+                  : ticks.enumerated().filter { $0.offset % 2 == 0 }.map { $0.element }
+        for t in shown {
             let x = (w * CGFloat(max(0, min(1, t.at)))).rounded()
             let tx = min(max(0.5, x), w - 0.5)
             ctx.move(to: CGPoint(x: tx, y: barY - 2))

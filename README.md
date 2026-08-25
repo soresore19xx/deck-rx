@@ -284,11 +284,20 @@ habit, not a per-session decision. The waterfall's bitmap is sized to the old
 split, so its history restarts on a drag; there is no honest way to rescale it,
 since stretching would put rows at times they did not happen.
 
-Before the first frame arrives the panel draws its frame, its dB scale and an
-even, unlabelled graticule through both halves, so an idle receiver reads as an
-instrument waiting rather than as an empty black field. Unlabelled on purpose:
-with no frame there is no span, and a frequency scale drawn over nothing would
-be a number the receiver never reported.
+Before the first frame arrives the panel draws the scale and the presets on it.
+The receiver's frequency and IQ width are known without a frame — from the
+status feed, and from `receiver.json` when even that is not up yet — so what is
+missing while waiting is the trace, not the axis: the frequency scale, the
+preset names, the passband marker and the dB scale are all there, and the
+notice sits in the empty waterfall well where it does not cover a label. With
+no saved width either (a first run), the panel falls back to an unlabelled
+graticule rather than inventing a scale the receiver never reported.
+
+The display's own settings are kept: the dB window, the zoom, the waterfall
+depth and the last IQ width, written a beat after the last slider move so a
+drag is one file write rather than one per mouse event. They used to be rebuilt
+from defaults on every launch, which meant a receiver that came up on a band
+you had already set the window for showed a flat line until you set it again.
 
 **The frequency readout tunes digit by digit.** Click above a digit to step that
 decade up, below it to step down, or scroll over it — the way most SDR

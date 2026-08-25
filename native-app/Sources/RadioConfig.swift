@@ -47,6 +47,21 @@ struct RadioConfig: Codable, Equatable {
     /// waterfall. Dragged on the rail between the two, and kept because how
     /// much history a band is worth is a habit, not a per-session decision.
     var spectrumSplit: Double = 0.45
+    /// The display's own settings: the dB window the trace is drawn in, the
+    /// zoom, and how far back the waterfall reaches. Kept because they are
+    /// ridden constantly and were rebuilt from scratch on every launch — a
+    /// receiver that came up on a band you had already set the window for
+    /// showed a flat line until you set it again. Defaults match the FFT
+    /// dial's on the deck, so the two displays start out saying the same
+    /// thing about the same signal.
+    var spectrumDbFloor: Double = -160
+    var spectrumDbCeil: Double = -1
+    var spectrumZoom: Double = 1
+    var waterfallSeconds: Double = 45
+    /// The IQ width the receiver last reported. Kept so the display can place
+    /// the presets on a scale at startup, before any frame — and even with the
+    /// plugin down, when there is no status feed to ask.
+    var spectrumSpanHz: Double = 0
 
     var audioDecimate = 4
     var audioGain: Double = 1
@@ -116,6 +131,11 @@ struct RadioConfig: Codable, Equatable {
         audioDevice = (try? c.decodeIfPresent(String.self, forKey: .audioDevice)) .flatMap { $0 } ?? d.audioDevice
         uiScale = (try? c.decodeIfPresent(String.self, forKey: .uiScale)) .flatMap { $0 } ?? d.uiScale
         spectrumSplit = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSplit)) .flatMap { $0 } ?? d.spectrumSplit
+        spectrumDbFloor = (try? c.decodeIfPresent(Double.self, forKey: .spectrumDbFloor)) .flatMap { $0 } ?? d.spectrumDbFloor
+        spectrumDbCeil = (try? c.decodeIfPresent(Double.self, forKey: .spectrumDbCeil)) .flatMap { $0 } ?? d.spectrumDbCeil
+        spectrumZoom = (try? c.decodeIfPresent(Double.self, forKey: .spectrumZoom)) .flatMap { $0 } ?? d.spectrumZoom
+        waterfallSeconds = (try? c.decodeIfPresent(Double.self, forKey: .waterfallSeconds)) .flatMap { $0 } ?? d.waterfallSeconds
+        spectrumSpanHz = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSpanHz)) .flatMap { $0 } ?? d.spectrumSpanHz
         audioDecimate = (try? c.decodeIfPresent(Int.self, forKey: .audioDecimate)) .flatMap { $0 } ?? d.audioDecimate
         audioGain = (try? c.decodeIfPresent(Double.self, forKey: .audioGain)) .flatMap { $0 } ?? d.audioGain
         levelingEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .levelingEnabled)) .flatMap { $0 } ?? d.levelingEnabled

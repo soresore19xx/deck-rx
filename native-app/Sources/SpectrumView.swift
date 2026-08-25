@@ -111,6 +111,14 @@ final class SpectrumView: NSView {
     private let gutter: CGFloat = 62
     private let axisStrip: CGFloat = 24
 
+    /// Where the receiver is and how wide its IQ window is, from the status
+    /// feed rather than from a frame. Before the first frame arrives these are
+    /// all the display has, and they are enough to place the presets: the
+    /// panel would otherwise sit blank next to a header that already says
+    /// 810 kHz and IQ 456k.
+    var idleCenterHz: Double = 0 { didSet { if bins.isEmpty { needsDisplay = true } } }
+    var idleSpanHz: Double = 0 { didSet { if bins.isEmpty { needsDisplay = true } } }
+
     private var bins: [Float] = []
     private var iqRate: UInt32 = 0
     private var centerFreq: UInt32 = 0
@@ -347,6 +355,132 @@ final class SpectrumView: NSView {
         onSplitChanged?(spectrumFraction)
     }
 
+    /// Frequency scale: ruled through the trace, labelled in the strip between
+    /// trace and waterfall so both share one x mapping.
+    ///
+    /// Split out of draw() so the waiting display can use it. The receiver's
+    /// centre and IQ width are known from the status feed before any frame
+    /// arrives, and a scale drawn from those is the same scale — what is
+    /// missing while waiting is the trace, not the axis.
+    private func drawFrequencyScale(_ ctx: CGContext, plotX: CGFloat, plotW: CGFloat,
+                                    specH: CGFloat, lo: Double, span: Double,
+                                    xOf: (Double) -> CGFloat) {
+        func x(forHz hz: Double) -> CGFloat { xOf(hz) }
+        // Grid step chosen as the ladder rung *nearest* the ideal spacing,
+        // judged in log space so rungs are compared by ratio the way spacing
+        // is actually perceived.
+        //
+        // The ladder is deliberately finer than the usual 1-2-5. Every gap
+        // in 1-2-5 is a factor of 2, so the line count had to swing by that
+        // much between rungs: measured over a 1x-64x sweep it ran 3.2-8.0
+        // lines (2.49x). Filling in 1.25/1.5/2.5/3/4/6/8 caps every gap at
+        // 1.33x and holds the count at 7.0-9.2 (1.31x) — the graticule now
+        // subdivides smoothly under zoom instead of lurching at each rung.
+        // 1-2-2.5-5 was tried first and only reached 1.97x, not enough.
+        // Major spacing follows the window, not a fixed count: one labelled
+        // line per ~LABEL_PITCH px keeps the labels from crowding as the
+        // window is resized, and a wide window earns more of them.
+        let LABEL_PITCH: CGFloat = 110
+        let targetTicks = max(4.0, Double(plotW / LABEL_PITCH))
+        let raw = span / targetTicks
+        let mag = pow(10, (log10(raw)).rounded(.down))
+        let step = [1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0].map { mag * $0 }
+            .min(by: { abs(log($0 / raw)) < abs(log($1 / raw)) }) ?? mag
+
+        // Minor lines subdivide each major interval. Label width — not
+        // legibility of the ruling — is what caps the major spacing, so
+        // without these the graticule is only ever as fine as the text
+        // allows, which is what read as coarse under zoom. Subdivision
+        // matches the rung so the minors land on round values too: 5 parts
+        // for a 1/2.5/5 rung, 4 for 4/8, 3 for 1.5/3/6, 2 otherwise.
+        let rung = step / mag
+        let sub: Int
+        switch rung {
+        case 1.0, 2.5, 5.0, 10.0: sub = 5
+        case 4.0, 8.0:            sub = 4
+        case 1.5, 3.0, 6.0:       sub = 3
+        default:                  sub = 2
+        }
+        let minorStep = step / Double(sub)
+        if plotW / CGFloat(span / minorStep) >= 9 {
+            ctx.setStrokeColor(NSColor(white: 0.030, alpha: 1).cgColor)
+            ctx.setLineWidth(0.5)
+            var mf = (lo / minorStep).rounded(.up) * minorStep
+            while mf < lo + span {
+                let px = x(forHz: mf)
+                ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
+                mf += minorStep
+            }
+            ctx.strokePath()
+        }
+
+        var f = (lo / step).rounded(.up) * step
+        ctx.setStrokeColor(NSColor(white: 0.052, alpha: 1).cgColor)
+        ctx.setLineWidth(0.5)
+        while f < lo + span {
+            let px = x(forHz: f)
+            ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
+            let text = axisFreq(f)
+            axisLabel(text, at: CGPoint(x: px - CGFloat(text.count) * 3.9, y: specH + 4))
+            f += step
+        }
+        ctx.strokePath()
+        ctx.setLineWidth(1)
+    }
+
+    /// Preset names on the trace, stacked so they never overlap.
+    ///
+    /// Split out of draw() so the waiting display can use it: the presets are
+    /// what the panel has to show before a frame arrives, and they need an x
+    /// mapping rather than a trace.
+    private func drawStationLabels(_ ctx: CGContext, specH: CGFloat,
+                                   lo: Double, span: Double,
+                                   xOf: (Double) -> CGFloat) {
+        guard span > 0 else { return }
+        func x(forHz hz: Double) -> CGFloat { xOf(hz) }
+    // Station labels, stacked so they never overlap.
+    //
+    // Medium wave puts stations 9 kHz apart; at a wide span their labels
+    // are far wider than that gap, and drawn at one height they overprint
+    // each other into an unreadable smear ("RKB毎日放 HBCラジオ"). Each
+    // label takes the topmost row whose previous label has already ended,
+    // so neighbours step down instead of colliding.
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .semibold),
+            .foregroundColor: NSColor.black,
+        ]
+        let rowH: CGFloat = 24
+        let maxRows = max(1, Int((specH * 0.45) / rowH))
+        var rowEnds = [CGFloat](repeating: -1_000_000, count: maxRows)
+
+        let visible = markers.filter { $0.freq > lo && $0.freq < lo + span }
+                             .sorted { $0.freq < $1.freq }
+        for m in visible {
+            let px = x(forHz: m.freq)
+            let text = m.name as NSString
+            let size = text.size(withAttributes: attrs)
+            let boxX = px - size.width / 2 - 5
+            let boxW = size.width + 10
+            let boxH = size.height + 4
+            // First row this label fits on. When every row is still
+            // occupied at this x the label is dropped rather than drawn
+            // over another one — a smeared name is worse than no name.
+            guard let row = (0..<maxRows).first(where: { rowEnds[$0] < boxX - 4 }) else { continue }
+            rowEnds[row] = boxX + boxW
+            let y = CGFloat(row) * rowH + 1
+
+            ctx.setStrokeColor(NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.55).cgColor)
+            ctx.setLineWidth(1)
+            ctx.move(to: CGPoint(x: px, y: y + boxH))
+            ctx.addLine(to: CGPoint(x: px, y: specH))
+            ctx.strokePath()
+
+            ctx.setFillColor(NSColor(red: 0.949, green: 0.808, blue: 0.349, alpha: 0.92).cgColor)
+            ctx.fill(CGRect(x: boxX, y: y, width: boxW, height: boxH))
+            text.draw(at: CGPoint(x: boxX + 5, y: y + 2), withAttributes: attrs)
+        }
+    }
+
     // MARK: drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -420,10 +554,55 @@ final class SpectrumView: NSView {
         }
         ctx.strokePath()
 
+        // The window on screen, from a frame when there is one and from the
+        // status feed when there is not. Deriving it in both states is what
+        // lets the presets be drawn while waiting: they need an x mapping, not
+        // a trace.
+        let liveWin = bins.isEmpty ? nil : visible(bins.count)
+        let span: Double
+        let lo: Double
+        /// The frequency to mark as tuned. Frames carry it; before they do,
+        /// the status feed does.
+        let tunedHz: Double
+        if let w = liveWin {
+            span = w.span
+            lo = w.lo
+            tunedHz = Double(centerFreq)
+        } else {
+            span = idleSpanHz > 0 ? idleSpanHz / max(1, zoom) : 0
+            lo = idleCenterHz - span / 2
+            tunedHz = idleCenterHz
+        }
+        func x(forHz hz: Double) -> CGFloat {
+            guard span > 0 else { return plotX }
+            return plotX + CGFloat((hz - lo) / span) * plotW
+        }
+
         if bins.isEmpty || !isLive {
+            // The notice goes in the waterfall's well while waiting, and over
+            // the trace only when a live feed has stalled. At the top of the
+            // plot it collided with the station labels, which start in that
+            // same corner — and the labels are the thing worth reading.
+            let noticeAt = bins.isEmpty
+                ? CGPoint(x: plotX + 10, y: fallTop + 14)
+                : CGPoint(x: plotX + 8, y: 8)
             axisLabel(bins.isEmpty ? "waiting for the receiver" : "feed stalled",
-                      at: CGPoint(x: plotX + 8, y: 8), size: 15,
+                      at: noticeAt, size: 15,
                       color: NSColor(white: 0.66, alpha: 1))
+            if bins.isEmpty, span > 0 {
+                // The receiver's frequency and IQ width are known before any
+                // frame is, so the scale and the presets can be drawn now.
+                // What is missing is the trace, and only the trace.
+                drawFrequencyScale(ctx, plotX: plotX, plotW: plotW, specH: specH,
+                                   lo: lo, span: span, xOf: x(forHz:))
+                ctx.setStrokeColor(NSColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
+                ctx.setLineWidth(1.6)
+                let cx = x(forHz: tunedHz).rounded()
+                ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
+                ctx.strokePath()
+                drawStationLabels(ctx, specH: specH, lo: lo, span: span, xOf: x(forHz:))
+                return
+            }
             if bins.isEmpty {
                 // An even graticule while there is nothing to draw, so an idle
                 // receiver reads as an instrument waiting for a signal rather
@@ -454,77 +633,11 @@ final class SpectrumView: NSView {
         }
 
         let n = bins.count
-        let win = visible(n)
-        let span = win.span
-        let lo = win.lo
-        func x(forHz hz: Double) -> CGFloat {
-            guard span > 0 else { return plotX }
-            return plotX + CGFloat((hz - lo) / span) * plotW
-        }
+        let win = liveWin!
 
-        // Frequency scale, ruled through the trace and labelled in the strip
-        // between trace and waterfall so both share one x mapping.
         if span > 0 {
-            // Grid step chosen as the ladder rung *nearest* the ideal spacing,
-            // judged in log space so rungs are compared by ratio the way spacing
-            // is actually perceived.
-            //
-            // The ladder is deliberately finer than the usual 1-2-5. Every gap
-            // in 1-2-5 is a factor of 2, so the line count had to swing by that
-            // much between rungs: measured over a 1x-64x sweep it ran 3.2-8.0
-            // lines (2.49x). Filling in 1.25/1.5/2.5/3/4/6/8 caps every gap at
-            // 1.33x and holds the count at 7.0-9.2 (1.31x) — the graticule now
-            // subdivides smoothly under zoom instead of lurching at each rung.
-            // 1-2-2.5-5 was tried first and only reached 1.97x, not enough.
-            // Major spacing follows the window, not a fixed count: one labelled
-            // line per ~LABEL_PITCH px keeps the labels from crowding as the
-            // window is resized, and a wide window earns more of them.
-            let LABEL_PITCH: CGFloat = 110
-            let targetTicks = max(4.0, Double(plotW / LABEL_PITCH))
-            let raw = span / targetTicks
-            let mag = pow(10, (log10(raw)).rounded(.down))
-            let step = [1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0].map { mag * $0 }
-                .min(by: { abs(log($0 / raw)) < abs(log($1 / raw)) }) ?? mag
-
-            // Minor lines subdivide each major interval. Label width — not
-            // legibility of the ruling — is what caps the major spacing, so
-            // without these the graticule is only ever as fine as the text
-            // allows, which is what read as coarse under zoom. Subdivision
-            // matches the rung so the minors land on round values too: 5 parts
-            // for a 1/2.5/5 rung, 4 for 4/8, 3 for 1.5/3/6, 2 otherwise.
-            let rung = step / mag
-            let sub: Int
-            switch rung {
-            case 1.0, 2.5, 5.0, 10.0: sub = 5
-            case 4.0, 8.0:            sub = 4
-            case 1.5, 3.0, 6.0:       sub = 3
-            default:                  sub = 2
-            }
-            let minorStep = step / Double(sub)
-            if plotW / CGFloat(span / minorStep) >= 9 {
-                ctx.setStrokeColor(NSColor(white: 0.030, alpha: 1).cgColor)
-                ctx.setLineWidth(0.5)
-                var mf = (lo / minorStep).rounded(.up) * minorStep
-                while mf < lo + span {
-                    let px = x(forHz: mf)
-                    ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
-                    mf += minorStep
-                }
-                ctx.strokePath()
-            }
-
-            var f = (lo / step).rounded(.up) * step
-            ctx.setStrokeColor(NSColor(white: 0.052, alpha: 1).cgColor)
-            ctx.setLineWidth(0.5)
-            while f < lo + span {
-                let px = x(forHz: f)
-                ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
-                let text = axisFreq(f)
-                axisLabel(text, at: CGPoint(x: px - CGFloat(text.count) * 3.9, y: specH + 4))
-                f += step
-            }
-            ctx.strokePath()
-            ctx.setLineWidth(1)
+            drawFrequencyScale(ctx, plotX: plotX, plotW: plotW, specH: specH,
+                               lo: lo, span: span, xOf: x(forHz:))
         }
 
         // waterfall
@@ -623,49 +736,7 @@ final class SpectrumView: NSView {
         ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
         ctx.strokePath()
 
-        // Station labels, stacked so they never overlap.
-        //
-        // Medium wave puts stations 9 kHz apart; at a wide span their labels
-        // are far wider than that gap, and drawn at one height they overprint
-        // each other into an unreadable smear ("RKB毎日放 HBCラジオ"). Each
-        // label takes the topmost row whose previous label has already ended,
-        // so neighbours step down instead of colliding.
-        if span > 0 {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .semibold),
-                .foregroundColor: NSColor.black,
-            ]
-            let rowH: CGFloat = 24
-            let maxRows = max(1, Int((specH * 0.45) / rowH))
-            var rowEnds = [CGFloat](repeating: -1_000_000, count: maxRows)
-
-            let visible = markers.filter { $0.freq > lo && $0.freq < lo + span }
-                                 .sorted { $0.freq < $1.freq }
-            for m in visible {
-                let px = x(forHz: m.freq)
-                let text = m.name as NSString
-                let size = text.size(withAttributes: attrs)
-                let boxX = px - size.width / 2 - 5
-                let boxW = size.width + 10
-                let boxH = size.height + 4
-                // First row this label fits on. When every row is still
-                // occupied at this x the label is dropped rather than drawn
-                // over another one — a smeared name is worse than no name.
-                guard let row = (0..<maxRows).first(where: { rowEnds[$0] < boxX - 4 }) else { continue }
-                rowEnds[row] = boxX + boxW
-                let y = CGFloat(row) * rowH + 1
-
-                ctx.setStrokeColor(NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.55).cgColor)
-                ctx.setLineWidth(1)
-                ctx.move(to: CGPoint(x: px, y: y + boxH))
-                ctx.addLine(to: CGPoint(x: px, y: specH))
-                ctx.strokePath()
-
-                ctx.setFillColor(NSColor(red: 0.949, green: 0.808, blue: 0.349, alpha: 0.92).cgColor)
-                ctx.fill(CGRect(x: boxX, y: y, width: boxW, height: boxH))
-                text.draw(at: CGPoint(x: boxX + 5, y: y + 2), withAttributes: attrs)
-            }
-        }
+        drawStationLabels(ctx, specH: specH, lo: lo, span: span, xOf: x(forHz:))
     }
 
 }

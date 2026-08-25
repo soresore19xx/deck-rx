@@ -5,6 +5,7 @@
       "freqHz": 594000,
       "band": "MW",
       "name": "NHK",
+      "siteName": "東京",
       "region": "kanto"
     },
     {
@@ -17,12 +18,14 @@
       "freqHz": 864000,
       "band": "MW",
       "name": "栃木放送",
+      "siteName": "那須",
       "region": "kanto"
     },
     {
       "freqHz": 927000,
       "band": "MW",
       "name": "NHK",
+      "siteName": "甲府",
       "region": "kanto"
     },
     {
@@ -35,12 +38,19 @@
       "freqHz": 1062000,
       "band": "MW",
       "name": "栃木放送",
+      "siteName": "足利",
       "region": "kanto"
     },
     {
       "freqHz": 1134000,
       "band": "MW",
       "name": "文化放送",
+      "region": "kanto"
+    },
+    {
+      "freqHz": 1197000,
+      "band": "MW",
+      "name": "LuckyFM",
       "region": "kanto"
     },
     {
@@ -56,9 +66,17 @@
       "region": "kanto"
     },
     {
+      "freqHz": 1458000,
+      "band": "MW",
+      "name": "LuckyFM",
+      "siteName": "関城、土浦",
+      "region": "kanto"
+    },
+    {
       "freqHz": 1485000,
       "band": "MW",
       "name": "ラジオ日本",
+      "siteName": "小田原",
       "region": "kanto"
     },
     {
@@ -71,858 +89,1001 @@
       "freqHz": 1584000,
       "band": "MW",
       "name": "NHK",
+      "siteName": "富士吉田",
       "region": "kanto"
     },
     {
       "freqHz": 76100000,
       "band": "FM",
       "name": "FMわたらせ",
+      "siteName": "加須市",
       "region": "kanto"
     },
     {
       "freqHz": 76200000,
       "band": "FM",
       "name": "FMぱるるん",
+      "siteName": "水戸市",
       "region": "kanto"
     },
     {
       "freqHz": 76200000,
       "band": "FM",
       "name": "ラジオ高崎",
+      "siteName": "高崎市",
       "region": "kanto"
     },
     {
       "freqHz": 76300000,
       "band": "FM",
       "name": "エフエム甲府",
+      "siteName": "甲府市",
       "region": "kanto"
     },
     {
       "freqHz": 76400000,
       "band": "FM",
       "name": "エフエム栃木",
+      "siteName": "宇都宮",
       "region": "kanto"
     },
     {
       "freqHz": 76500000,
       "band": "FM",
       "name": "InterFM897",
+      "siteName": "横浜",
       "region": "kanto"
     },
     {
       "freqHz": 76500000,
       "band": "FM",
       "name": "FM OZE",
+      "siteName": "沼田市",
       "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
       "name": "エフエム東京",
+      "siteName": "新島",
       "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
       "name": "エフエム群馬",
+      "siteName": "草津",
       "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
       "name": "FMかしま",
+      "siteName": "鹿嶋市",
       "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
       "name": "エフエム太郎",
+      "siteName": "太田市",
       "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
       "name": "フラワーラジオ",
+      "siteName": "鴻巣市",
       "region": "kanto"
     },
     {
       "freqHz": 76700000,
       "band": "FM",
       "name": "いちはらFM",
+      "siteName": "市原市",
       "region": "kanto"
     },
     {
       "freqHz": 76800000,
       "band": "FM",
       "name": "エフエムふじごこ",
+      "siteName": "富士吉田市",
       "region": "kanto"
     },
     {
       "freqHz": 76900000,
       "band": "FM",
       "name": "いせさきFM",
+      "siteName": "伊勢崎市",
       "region": "kanto"
     },
     {
       "freqHz": 77300000,
       "band": "FM",
       "name": "ミヤラジ",
+      "siteName": "宇都宮市",
       "region": "kanto"
     },
     {
       "freqHz": 77300000,
       "band": "FM",
       "name": "ラヂオななみ",
+      "siteName": "佐波郡玉村町",
       "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "新島",
       "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
       "name": "エフエムナックファイブ",
+      "siteName": "秩父",
       "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
       "name": "FMだいご",
+      "siteName": "久慈郡大子町",
       "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
       "name": "おーラジ",
+      "siteName": "小山市",
       "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
       "name": "ナナコライブリーエフエム",
+      "siteName": "朝霞市",
       "region": "kanto"
     },
     {
       "freqHz": 77500000,
       "band": "FM",
       "name": "Tokyo Star Radio",
+      "siteName": "八王子市",
       "region": "kanto"
     },
     {
       "freqHz": 77600000,
       "band": "FM",
       "name": "FMふじやま",
+      "siteName": "南都留郡富士河口湖町",
       "region": "kanto"
     },
     {
       "freqHz": 77700000,
       "band": "FM",
       "name": "ベイエフエム",
+      "siteName": "館山",
       "region": "kanto"
     },
     {
       "freqHz": 77700000,
       "band": "FM",
       "name": "エフエムきりゅう",
+      "siteName": "桐生市",
       "region": "kanto"
     },
     {
       "freqHz": 77700000,
       "band": "FM",
       "name": "FMチャッピー",
+      "siteName": "入間市",
       "region": "kanto"
     },
     {
       "freqHz": 77700000,
       "band": "FM",
       "name": "FMやまと",
+      "siteName": "大和市",
       "region": "kanto"
     },
     {
       "freqHz": 77800000,
       "band": "FM",
       "name": "エフエム群馬",
+      "siteName": "沼田",
       "region": "kanto"
     },
     {
       "freqHz": 78000000,
       "band": "FM",
       "name": "ベイエフエム",
+      "siteName": "千葉",
       "region": "kanto"
     },
     {
       "freqHz": 78200000,
       "band": "FM",
       "name": "むさしのFM",
+      "siteName": "武蔵野市",
       "region": "kanto"
     },
     {
       "freqHz": 78300000,
       "band": "FM",
       "name": "エフエム栃木",
+      "siteName": "足利",
       "region": "kanto"
     },
     {
       "freqHz": 78300000,
       "band": "FM",
       "name": "FM湘南ナパサ",
+      "siteName": "平塚市",
       "region": "kanto"
     },
     {
       "freqHz": 78500000,
       "band": "FM",
       "name": "エフエム栃木",
+      "siteName": "塩原",
       "region": "kanto"
     },
     {
       "freqHz": 78500000,
       "band": "FM",
       "name": "FM・ブルー湘南",
+      "siteName": "横須賀市",
       "region": "kanto"
     },
     {
       "freqHz": 78600000,
       "band": "FM",
       "name": "エフエム富士",
+      "siteName": "三ツ峠",
       "region": "kanto"
     },
     {
       "freqHz": 78900000,
       "band": "FM",
       "name": "かつしかFM",
+      "siteName": "葛飾区",
       "region": "kanto"
     },
     {
       "freqHz": 78900000,
       "band": "FM",
       "name": "湘南ビーチFM",
+      "siteName": "逗子市",
       "region": "kanto"
     },
     {
       "freqHz": 79000000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "館山",
       "region": "kanto"
     },
     {
       "freqHz": 79000000,
       "band": "FM",
       "name": "ちちぶエフエム",
+      "siteName": "秩父市",
       "region": "kanto"
     },
     {
       "freqHz": 79000000,
       "band": "FM",
       "name": "多摩レイクサイドFM",
+      "siteName": "東村山市",
       "region": "kanto"
     },
     {
       "freqHz": 79100000,
       "band": "FM",
       "name": "エフエム栃木",
+      "siteName": "今市",
       "region": "kanto"
     },
     {
       "freqHz": 79100000,
       "band": "FM",
       "name": "かわさきFM",
+      "siteName": "川崎市中原区",
       "region": "kanto"
     },
     {
       "freqHz": 79300000,
       "band": "FM",
       "name": "ベイエフエム",
+      "siteName": "銚子",
       "region": "kanto"
     },
     {
       "freqHz": 79400000,
       "band": "FM",
       "name": "エフエム群馬",
+      "siteName": "利根",
       "region": "kanto"
     },
     {
       "freqHz": 79500000,
       "band": "FM",
       "name": "エフエムナックファイブ",
+      "siteName": "さいたま",
       "region": "kanto"
     },
     {
       "freqHz": 79600000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "父島・母島",
       "region": "kanto"
     },
     {
       "freqHz": 79700000,
       "band": "FM",
       "name": "ベイエフエム",
+      "siteName": "白浜",
       "region": "kanto"
     },
     {
       "freqHz": 80000000,
       "band": "FM",
       "name": "エフエム東京",
+      "siteName": "東京・芝",
       "region": "kanto"
     },
     {
       "freqHz": 80300000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "宇都宮",
       "region": "kanto"
     },
     {
       "freqHz": 80400000,
       "band": "FM",
       "name": "横浜エフエム放送",
+      "siteName": "小田原",
       "region": "kanto"
     },
     {
       "freqHz": 80500000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "榛名",
       "region": "kanto"
     },
     {
       "freqHz": 80500000,
       "band": "FM",
       "name": "エフエム東京",
+      "siteName": "八王子",
       "region": "kanto"
     },
     {
       "freqHz": 80500000,
       "band": "FM",
       "name": "エフエム富士",
+      "siteName": "身延",
       "region": "kanto"
     },
     {
       "freqHz": 80700000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "千葉",
       "region": "kanto"
     },
     {
       "freqHz": 81300000,
       "band": "FM",
-      "name": "J−WAVE",
+      "name": "J－WAVE",
+      "siteName": "東京・墨田",
       "region": "kanto"
     },
     {
       "freqHz": 81600000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "前橋",
       "region": "kanto"
     },
     {
       "freqHz": 81900000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "横浜",
       "region": "kanto"
     },
     {
       "freqHz": 82000000,
       "band": "FM",
       "name": "エフエム群馬",
+      "siteName": "長野原",
       "region": "kanto"
     },
     {
       "freqHz": 82200000,
       "band": "FM",
       "name": "エフエム群馬",
+      "siteName": "榛名",
       "region": "kanto"
     },
     {
       "freqHz": 82200000,
       "band": "FM",
       "name": "FMひたち",
+      "siteName": "日立市",
       "region": "kanto"
     },
     {
       "freqHz": 82200000,
       "band": "FM",
       "name": "エフエム八ヶ岳",
+      "siteName": "北杜市",
       "region": "kanto"
     },
     {
       "freqHz": 82500000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "東京・墨田",
       "region": "kanto"
     },
     {
       "freqHz": 82600000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "父島、母島",
       "region": "kanto"
     },
     {
       "freqHz": 82800000,
       "band": "FM",
       "name": "鎌倉エフエム",
+      "siteName": "鎌倉市",
       "region": "kanto"
     },
     {
       "freqHz": 82900000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "八丈",
       "region": "kanto"
     },
     {
       "freqHz": 83000000,
       "band": "FM",
       "name": "エフエム富士",
+      "siteName": "甲府",
       "region": "kanto"
     },
     {
       "freqHz": 83000000,
       "band": "FM",
       "name": "市川うららFM",
+      "siteName": "浦安市",
       "region": "kanto"
     },
     {
       "freqHz": 83100000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "長野原",
       "region": "kanto"
     },
     {
       "freqHz": 83100000,
       "band": "FM",
       "name": "レディオ湘南",
+      "siteName": "藤沢市",
       "region": "kanto"
     },
     {
       "freqHz": 83200000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "水戸",
       "region": "kanto"
     },
     {
       "freqHz": 83400000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "沼田",
       "region": "kanto"
     },
     {
       "freqHz": 83400000,
       "band": "FM",
       "name": "かずさエフエム",
+      "siteName": "木更津市",
       "region": "kanto"
     },
     {
       "freqHz": 83400000,
       "band": "FM",
       "name": "エフエム世田谷",
+      "siteName": "世田谷区",
       "region": "kanto"
     },
     {
       "freqHz": 83500000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "秩父",
       "region": "kanto"
     },
     {
       "freqHz": 83600000,
       "band": "FM",
       "name": "エフエム東京",
+      "siteName": "青梅",
       "region": "kanto"
     },
     {
       "freqHz": 83600000,
       "band": "FM",
       "name": "むらラジ やまラジ 836",
+      "siteName": "愛甲郡清川村",
       "region": "kanto"
     },
     {
       "freqHz": 83700000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "足利",
       "region": "kanto"
     },
     {
       "freqHz": 83700000,
       "band": "FM",
       "name": "Radio NARITA",
+      "siteName": "成田市",
       "region": "kanto"
     },
     {
       "freqHz": 83700000,
       "band": "FM",
       "name": "エフエム戸塚",
+      "siteName": "横浜市戸塚区",
       "region": "kanto"
     },
     {
       "freqHz": 83800000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "利根",
       "region": "kanto"
     },
     {
       "freqHz": 83800000,
       "band": "FM",
       "name": "調布FM",
+      "siteName": "調布市",
       "region": "kanto"
     },
     {
       "freqHz": 83900000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "銚子",
       "region": "kanto"
     },
     {
       "freqHz": 83900000,
       "band": "FM",
       "name": "FM HOT 839",
+      "siteName": "相模原市中央区",
       "region": "kanto"
     },
     {
       "freqHz": 84000000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "今市",
       "region": "kanto"
     },
     {
       "freqHz": 84000000,
       "band": "FM",
       "name": "発するFM",
+      "siteName": "入間郡三芳町",
       "region": "kanto"
     },
     {
       "freqHz": 84000000,
       "band": "FM",
       "name": "Radio City",
+      "siteName": "中央区",
       "region": "kanto"
     },
     {
       "freqHz": 84100000,
       "band": "FM",
       "name": "FMサルース",
+      "siteName": "横浜市青葉区",
       "region": "kanto"
     },
     {
       "freqHz": 84200000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "日立",
       "region": "kanto"
     },
     {
       "freqHz": 84200000,
       "band": "FM",
       "name": "ラヂオつくば",
+      "siteName": "つくば市",
       "region": "kanto"
     },
     {
       "freqHz": 84200000,
       "band": "FM",
       "name": "エフエム西東京",
+      "siteName": "西東京市",
       "region": "kanto"
     },
     {
       "freqHz": 84200000,
       "band": "FM",
       "name": "FMカオン",
+      "siteName": "海老名市",
       "region": "kanto"
     },
     {
       "freqHz": 84300000,
       "band": "FM",
       "name": "エフエム東京",
+      "siteName": "八丈",
       "region": "kanto"
     },
     {
       "freqHz": 84300000,
       "band": "FM",
       "name": "FMえどがわ",
+      "siteName": "江戸川区",
       "region": "kanto"
     },
     {
       "freqHz": 84400000,
       "band": "FM",
       "name": "エフエム栃木",
+      "siteName": "葛生",
       "region": "kanto"
     },
     {
       "freqHz": 84400000,
       "band": "FM",
       "name": "エフエムたちかわ",
+      "siteName": "立川市",
       "region": "kanto"
     },
     {
       "freqHz": 84500000,
       "band": "FM",
       "name": "M-wave",
+      "siteName": "前橋市",
       "region": "kanto"
     },
     {
       "freqHz": 84700000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "身延",
       "region": "kanto"
     },
     {
       "freqHz": 84700000,
       "band": "FM",
       "name": "横浜エフエム放送",
+      "siteName": "横浜・大山",
       "region": "kanto"
     },
     {
       "freqHz": 84800000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "大子",
       "region": "kanto"
     },
     {
       "freqHz": 84900000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "塩原",
       "region": "kanto"
     },
     {
       "freqHz": 85100000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "さいたま",
       "region": "kanto"
     },
     {
       "freqHz": 85400000,
       "band": "FM",
       "name": "FM うしくうれしく放送",
+      "siteName": "牛久市",
       "region": "kanto"
     },
     {
       "freqHz": 85400000,
       "band": "FM",
       "name": "TOKYO854くるめラ",
+      "siteName": "東久留米市",
       "region": "kanto"
     },
     {
       "freqHz": 85500000,
       "band": "FM",
       "name": "金沢シーサイドFM",
+      "siteName": "横浜市金沢区",
       "region": "kanto"
     },
     {
       "freqHz": 85600000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "甲府",
       "region": "kanto"
     },
     {
       "freqHz": 85600000,
       "band": "FM",
       "name": "FM Kawaguchi",
+      "siteName": "川口市",
       "region": "kanto"
     },
     {
       "freqHz": 85600000,
       "band": "FM",
       "name": "FM湘南マジックウエイブ",
+      "siteName": "中郡大磯町",
       "region": "kanto"
     },
     {
       "freqHz": 85700000,
       "band": "FM",
       "name": "FMくらら857",
+      "siteName": "栃木市",
       "region": "kanto"
     },
     {
       "freqHz": 85700000,
       "band": "FM",
       "name": "コマラジ",
+      "siteName": "狛江市",
       "region": "kanto"
     },
     {
       "freqHz": 85800000,
       "band": "FM",
       "name": "FMふくろう",
+      "siteName": "八千代市",
       "region": "kanto"
     },
     {
       "freqHz": 85900000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "万場",
       "region": "kanto"
     },
     {
       "freqHz": 86000000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "三ツ峠",
       "region": "kanto"
     },
     {
       "freqHz": 86100000,
       "band": "FM",
       "name": "マリンFM",
+      "siteName": "横浜市中区",
       "region": "kanto"
     },
     {
       "freqHz": 86300000,
       "band": "FM",
       "name": "エフエム群馬",
+      "siteName": "前橋",
       "region": "kanto"
     },
     {
       "freqHz": 86500000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "足尾",
       "region": "kanto"
     },
     {
       "freqHz": 86600000,
       "band": "FM",
       "name": "エフエム東京",
+      "siteName": "檜原",
       "region": "kanto"
     },
     {
       "freqHz": 86800000,
       "band": "FM",
       "name": "ハローハッピー こしがやエフエム",
+      "siteName": "越谷市",
       "region": "kanto"
     },
     {
       "freqHz": 87000000,
       "band": "FM",
       "name": "横浜エフエム放送",
+      "siteName": "磯子",
       "region": "kanto"
     },
     {
       "freqHz": 87100000,
       "band": "FM",
       "name": "エフエム群馬",
+      "siteName": "三波川",
       "region": "kanto"
     },
     {
       "freqHz": 87300000,
       "band": "FM",
       "name": "REDS WAVE",
+      "siteName": "さいたま市浦和区",
       "region": "kanto"
     },
     {
       "freqHz": 87400000,
       "band": "FM",
       "name": "ベイエフエム",
+      "siteName": "勝浦",
       "region": "kanto"
     },
     {
       "freqHz": 87400000,
       "band": "FM",
       "name": "FMもおか",
+      "siteName": "真岡市",
       "region": "kanto"
     },
     {
       "freqHz": 87400000,
       "band": "FM",
       "name": "ラジオフチューズ",
+      "siteName": "府中市",
       "region": "kanto"
     },
     {
       "freqHz": 87600000,
       "band": "FM",
       "name": "FMクマガヤ",
+      "siteName": "熊谷市",
       "region": "kanto"
     },
     {
       "freqHz": 87600000,
       "band": "FM",
       "name": "渋谷のラジオ",
+      "siteName": "渋谷区",
       "region": "kanto"
     },
     {
       "freqHz": 87900000,
       "band": "FM",
       "name": "FMゆうがお",
+      "siteName": "下野市",
       "region": "kanto"
     },
     {
       "freqHz": 87900000,
       "band": "FM",
       "name": "FMおだわら",
+      "siteName": "小田原市",
       "region": "kanto"
     },
     {
       "freqHz": 88000000,
       "band": "FM",
       "name": "エフエム群馬",
+      "siteName": "万場",
       "region": "kanto"
     },
     {
       "freqHz": 88100000,
       "band": "FM",
       "name": "LuckyFM",
+      "siteName": "高鈴山、宝篋山",
       "region": "kanto"
     },
     {
       "freqHz": 88300000,
       "band": "FM",
-      "name": "J−WAVE",
+      "name": "J－WAVE",
+      "siteName": "港",
       "region": "kanto"
     },
     {
       "freqHz": 88300000,
       "band": "FM",
       "name": "FM DAMONO",
+      "siteName": "足利市",
       "region": "kanto"
     },
     {
       "freqHz": 88500000,
       "band": "FM",
       "name": "FMふっかちゃん",
+      "siteName": "深谷市",
       "region": "kanto"
     },
     {
       "freqHz": 88500000,
       "band": "FM",
       "name": "大江戸放送局",
+      "siteName": "江東区",
       "region": "kanto"
     },
     {
       "freqHz": 88700000,
       "band": "FM",
       "name": "ラジオ川越",
+      "siteName": "川越市",
       "region": "kanto"
     },
     {
       "freqHz": 88900000,
       "band": "FM",
       "name": "FMしながわ",
+      "siteName": "品川区",
       "region": "kanto"
     },
     {
       "freqHz": 89000000,
       "band": "FM",
       "name": "NHK",
+      "siteName": "三波川",
       "region": "kanto"
     },
     {
       "freqHz": 89100000,
       "band": "FM",
       "name": "あいラジ",
+      "siteName": "上尾市",
       "region": "kanto"
     },
     {
       "freqHz": 89200000,
       "band": "FM",
       "name": "SKYWAVE FM",
+      "siteName": "千葉市中央区",
       "region": "kanto"
     },
     {
       "freqHz": 89200000,
       "band": "FM",
       "name": "Hello FM",
+      "siteName": "福生市",
       "region": "kanto"
     },
     {
       "freqHz": 89200000,
       "band": "FM",
       "name": "EBOSHI RADIO STATION",
+      "siteName": "茅ヶ崎市",
       "region": "kanto"
     },
     {
       "freqHz": 89700000,
       "band": "FM",
       "name": "InterFM897",
+      "siteName": "東京・芝",
       "region": "kanto"
     },
     {
@@ -935,12 +1096,14 @@
       "freqHz": 90900000,
       "band": "FM",
       "name": "山梨放送",
+      "siteName": "甲府、三ツ峠、身延",
       "region": "kanto"
     },
     {
       "freqHz": 91100000,
       "band": "FM",
       "name": "栃木放送",
+      "siteName": "足利",
       "region": "kanto"
     },
     {
@@ -953,6 +1116,7 @@
       "freqHz": 92400000,
       "band": "FM",
       "name": "ラジオ日本",
+      "siteName": "横浜",
       "region": "kanto"
     },
     {
@@ -965,24 +1129,28 @@
       "freqHz": 93400000,
       "band": "FM",
       "name": "栃木放送",
+      "siteName": "葛生、今市、塩原",
       "region": "kanto"
     },
     {
       "freqHz": 94100000,
       "band": "FM",
       "name": "栃木放送",
+      "siteName": "宇都宮",
       "region": "kanto"
     },
     {
       "freqHz": 94600000,
       "band": "FM",
       "name": "LuckyFM",
+      "siteName": "加波山",
       "region": "kanto"
     },
     {
       "freqHz": 94900000,
       "band": "FM",
       "name": "FM大師",
+      "siteName": "川崎市川崎区",
       "region": "kanto"
     }
   ],

@@ -58,6 +58,13 @@ final class OptionsPanel: NSView {
         // are already tight in a 228 pt panel.
         scroll.scrollerStyle = .overlay
         scroll.autohidesScrollers = true
+        // A clip view with its origin at the top. Without this a document
+        // shorter than the scroll view sinks to the bottom — AppKit's
+        // coordinates start at the bottom left — which is why the panel sat at
+        // the foot of its column with a hand's width of empty above it, and
+        // why it looked like it was falling out of the window as rows were
+        // added and it grew back up.
+        scroll.contentView = TopClipView()
         scroll.documentView = doc
         addSubview(scroll)
         NSLayoutConstraint.activate([
@@ -82,13 +89,39 @@ final class OptionsPanel: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     private var rx: [String: Any] = [:]
+    /// What the last answer said the panel should be made of. Only the parts
+    /// that decide the rows and their choices — the values themselves change
+    /// constantly and must not cost a rebuild.
+    private var rxShape = ""
+    private static func shape(of j: [String: Any]) -> String {
+        [
+            j["audioEnabled"] == nil ? "-" : "a",
+            (j["audioSink"] as? String) ?? "",
+            j["icecastUrl"] == nil ? "-" : "i",
+            ((j["databases"] as? [String]) ?? []).joined(separator: ","),
+            ((j["regions"] as? [String]) ?? []).joined(separator: ","),
+            ((j["audioDevices"] as? [String]) ?? []).joined(separator: ","),
+        ].joined(separator: "|")
+    }
 
     func refresh() {
         Receiver.options { [weak self] j in self?.adopt(j) }
         Receiver.receiver { [weak self] j in
             guard let self else { return }
             self.rx = j
-            self.updateValues()
+            // Some rows exist only if the endpoint offers them, and some rows'
+            // choices come from it too. Both are decided when the panel is
+            // built, and the panel is built before the first answer arrives —
+            // so without this the conditional rows never appeared at all, and
+            // the region and audio-device rows cycled through the fallback
+            // list of one entry for the whole session.
+            let shape = Self.shape(of: j)
+            if shape != self.rxShape {
+                self.rxShape = shape
+                self.rebuild()
+            } else {
+                self.updateValues()
+            }
         }
     }
 
@@ -104,7 +137,10 @@ final class OptionsPanel: NSView {
     /// Editable rows keep their field so a refresh can update it — but never
     /// while the user is typing in it.
     private var fields: [(name: String, field: NSTextField)] = []
-    private enum Kind { case bool, list([Double], String), text([String]), action }
+    /// `action` carries the endpoint action it runs: there is more than one
+    /// now, and a row that hard-codes the only one there used to be is a row
+    /// that quietly runs the wrong thing when a second arrives.
+    private enum Kind { case bool, list([Double], String), text([String]), action(String) }
 
     private func jpRegions() -> [String] {
         (rx["regions"] as? [String]) ?? ["kanto"]
@@ -340,13 +376,39 @@ final class OptionsPanel: NSView {
         views.append(row("Audio", "rx.audioDevice", .text(audioDevices())))
         views.append(row("Output", "rx.outputMode", .text(["local", "icecast"])))
         views.append(row("SDR++ sync", "rx.autoSyncSdrpp", .bool))
-        views.append(row("SDR++ import", "rx.import", .action))
+        views.append(row("SDR++ import", "rx.import", .action("importSdrpp")))
+        // Only what the endpoint says it can do. The standalone app answers its
+        // own /receiver and has neither an icecast publisher nor the plugin's
+        // station databases behind it, so those rows would be buttons that do
+        // nothing.
+        if rx["audioEnabled"] != nil {
+            views.append(row("Audio on", "rx.audioEnabled", .bool))
+        }
+        if (rx["audioSink"] as? String) == "icecast", rx["icecastUrl"] != nil {
+            // The password is not here on purpose: it stays in the config and
+            // the deck's Property Inspector, not on a loopback endpoint.
+            views.append(editRow("Icecast", "rx.icecastUrl", width: S(128)))
+            views.append(row("Bitrate", "rx.icecastBitrate",
+                             .text(["64k", "96k", "128k", "192k", "256k"])))
+        }
         // The link's address. Changing either dials the new server, so these
         // are typed and applied on Enter rather than cycled by accident.
         // Short names: "Server host" truncates to "Serve" in this column, and a
         // label that loses its last word says less than one that never had it.
         views.append(editRow("Host", "rx.host", width: S(128)))
         views.append(editRow("Port", "rx.port", width: S(64)))
+        // Last, and after the address: these fetch from the network, and a row
+        // that goes and does something belongs below the ones that only say
+        // what the receiver is set to.
+        if let dbs = rx["databases"] as? [String], !dbs.isEmpty {
+            views.append(header("DATABASES"))
+            if dbs.contains("jp") {
+                views.append(row("JP stations", "rx.updateJp", .action("updateJp")))
+            }
+            if dbs.contains("eibi") {
+                views.append(row("EiBi schedule", "rx.updateEibi", .action("updateEibi")))
+            }
+        }
         for v in views {
             stack.addArrangedSubview(v)
             v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -357,7 +419,7 @@ final class OptionsPanel: NSView {
     private func value(for name: String) -> Any? {
         if name.hasPrefix("rx.") {
             let key = String(name.dropFirst(3))
-            if key == "import" { return "run" }
+            if key == "import" || key.hasPrefix("update") { return "run" }
             if key == "outputMode" { return rx["audioSink"] }
             if key == "uiScale" { return localUiScale }
             return rx[key]
@@ -451,8 +513,25 @@ final class OptionsPanel: NSView {
             let cur = (value(for: name) as? String) ?? options[0]
             let i = ((options.firstIndex(of: cur) ?? 0) + 1) % options.count
             send(options[i])
-        case .action:
-            Receiver.receiver(action: "importSdrpp") { [weak self] _ in self?.refresh() }
+        case .action(let what):
+            // Show what it did, briefly, in the row's own value. These take a
+            // network fetch and a file write; a button that goes back to
+            // saying RUN gives no sign it ever ran.
+            if let r = rows.first(where: { $0.name == name }) {
+                r.value.stringValue = "…"
+                r.value.textColor = P.dim
+            }
+            Receiver.receiver(action: what) { [weak self] j in
+                guard let self else { return }
+                if let r = self.rows.first(where: { $0.name == name }) {
+                    let n = (j["count"] as? Int) ?? (j["added"] as? Int)
+                    r.value.stringValue = n.map { "\($0)" } ?? ((j["ok"] as? Bool) == false ? "FAILED" : "OK")
+                    r.value.textColor = (j["ok"] as? Bool) == false ? P.warn : P.accent
+                }
+                // Back to RUN after the result has been read, and the rest of
+                // the panel re-read: a region's names change with the database.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.refresh() }
+            }
         }
     }
 }
@@ -464,6 +543,12 @@ final class OptionsPanel: NSView {
 /// control, and nothing on screen said so — the panel read as a table of
 /// readings, and the only way to find out it was live was to click it. The
 /// pointer changing and the row lifting under it is the whole affordance.
+/// Anchors a short document to the top of its scroll view instead of the
+/// bottom.
+final class TopClipView: NSClipView {
+    override var isFlipped: Bool { true }
+}
+
 final class ClickRow: NSView {
     private let action: () -> Void
     /// The row's own ground — banded or not — so hover can lift it and put it

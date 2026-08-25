@@ -248,6 +248,24 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       // across its Property Inspector; without them here a front-end can drive
       // the radio but not configure it.
       const action = q.get('action');
+      // The station databases the deck's Property Inspector can refresh. A
+      // front-end had no way to reach them at all, so the app could drive the
+      // radio but not keep the names it labels stations with up to date.
+      if (action === 'updateJp' || action === 'updateEibi') {
+        const r = action === 'updateJp'
+          ? await spyService.updateJpStations()
+          : await spyService.updateEibi();
+        if (!r.ok) {
+          log.warn(`[controlServer] ${action} failed: ${r.error}`);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(r));
+          return;
+        }
+        clearPresetsCache();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(r));
+        return;
+      }
       if (action === 'importSdrpp') {
         const r = await importFromSdrpp().catch((e) => {
           log.warn(`[controlServer] importSdrpp failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -301,11 +319,25 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
             if (raw !== 'local' && raw !== 'icecast') { bad(); return; }
             await spyService.updateAudioConfig({ ffmpeg: { mode: raw } });
             break;
+          case 'icecastUrl':
+            // The password is deliberately not settable or readable here. It
+            // lives in the config and in the Property Inspector's masked
+            // field; a loopback endpoint with no auth is not where a
+            // credential should be handed out.
+            await spyService.updateAudioConfig({ ffmpeg: { icecastUrl: raw.trim() } });
+            break;
+          case 'icecastBitrate': {
+            if (!/^\d{2,4}k$/.test(raw)) { bad(); return; }
+            await spyService.updateAudioConfig({ ffmpeg: { bitrate: raw } });
+            break;
+          }
           default: bad(); return;
         }
       }
       const devices = await getAudioOutputDevices().catch(() => []);
       const server = await spyService.getServerConfigPersisted().catch(() => ({ host: '', port: 0 }));
+      const audio = await spyService.getAudioPersistedConfig()
+        .catch(() => ({ audioEnabled: false, icecastUrl: '', bitrate: '128k' }));
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         tuneMode: spyService.getTuneMode(),
@@ -317,6 +349,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         audioSink: spyService.getAudioSink(),
         host: server.host,
         port: server.port,
+        audioEnabled: audio.audioEnabled,
+        icecastUrl: audio.icecastUrl,
+        icecastBitrate: audio.bitrate,
+        // Says the databases are refreshable from here. A front-end shows the
+        // rows only when the endpoint it is talking to can actually run them —
+        // the standalone app answers its own /receiver and has no plugin
+        // databases behind it.
+        databases: ['jp', 'eibi'],
       }));
       return;
     }

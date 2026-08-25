@@ -321,8 +321,19 @@ digit up carries the number into the next decade and the digit for it appears.
 That carry also slides the digits one cell left under a stationary pointer, so
 the next click there lands on the new decade rather than the one just pushed.
 
-The options panel down the right is a column of controls, not a table of
-readings: clicking a row steps its value on. It says so now — the pointer
+The options panel down the right carries what the deck's Property Inspector
+carries: the demod's own settings, the receiver-wide ones, the audio output
+including the icecast URL and bitrate when that is the output, and the two
+station databases with a row each to refresh them. The icecast password is
+deliberately not among them — it stays in the config and the Property
+Inspector's masked field rather than passing through a loopback endpoint with
+no authentication. Rows that the endpoint does not offer are not drawn at all,
+so the standalone app, which answers its own `/receiver` and has neither an
+icecast publisher nor the plugin's databases behind it, shows only what it can
+actually do.
+
+It is a column of controls, not a table of readings: clicking a row steps its
+value on. It says so now — the pointer
 becomes a hand and the row lifts under it. Without that the only way to find
 out the panel was live was to click it and see something change. Host and port
 are typed rather than cycled, in flat wells rather than system bezels, which

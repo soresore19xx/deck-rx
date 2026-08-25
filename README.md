@@ -321,6 +321,13 @@ digit up carries the number into the next decade and the digit for it appears.
 That carry also slides the digits one cell left under a stationary pointer, so
 the next click there lands on the new decade rather than the one just pushed.
 
+The options panel down the right is a column of controls, not a table of
+readings: clicking a row steps its value on. It says so now — the pointer
+becomes a hand and the row lifts under it. Without that the only way to find
+out the panel was live was to click it and see something change. Host and port
+are typed rather than cycled, in flat wells rather than system bezels, which
+had them sitting on the panel as two widgets from a different toolkit.
+
 Zoom and the dB window sit as vertical sliders down the right edge (ZOOM / MAX /
 MIN), since those are the three you ride while watching a waterfall. MAX above
 MIN, because the dB scale they act on runs that way — with them the other way

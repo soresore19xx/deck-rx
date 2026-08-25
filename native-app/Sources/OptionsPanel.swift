@@ -120,11 +120,14 @@ final class OptionsPanel: NSView {
     /// spacing below are what make it read as a heading by position rather than
     /// by being noticed.
     private func header(_ t: String) -> NSView {
-        let l = label(t, mono(11), P.faint)
+        // Brighter than the faint grey it was: a heading that reads as dimmer
+        // than the values under it inverts the hierarchy, and at 11 pt with
+        // letter spacing it was closer to a watermark than a label.
+        let l = label(t, mono(11), P.dim)
         l.attributedStringValue = NSAttributedString(
             string: t,
-            attributes: [.font: mono(11),
-                         .foregroundColor: P.faint,
+            attributes: [.font: mono(11, .medium),
+                         .foregroundColor: P.dim,
                          .kern: 1.4])
         let host = NSView()
         host.translatesAutoresizingMaskIntoConstraints = false
@@ -198,10 +201,7 @@ final class OptionsPanel: NSView {
         // This had been dropped while reverting the per-row rule, so exactly
         // one row in the panel — the last, which goes through editRow — was
         // banded, and the feature looked broken rather than absent.
-        if bandIndex % 2 == 1 {
-            pad.wantsLayer = true
-            pad.layer?.backgroundColor = P.band.cgColor
-        }
+        pad.base = bandIndex % 2 == 1 ? P.band : .clear
         bandIndex += 1
         return pad
     }
@@ -213,8 +213,19 @@ final class OptionsPanel: NSView {
         let f = NSTextField(string: "")
         f.font = mono(13)
         f.alignment = .right
-        f.isBezeled = true
+        // A flat well rather than a system bezel. The bezelled pair sat on the
+        // panel as two floating widgets from a different toolkit, with their
+        // own light ground and rounded shoulders, while every row above them
+        // was flat. Still obviously typeable — it is the only sunken thing in
+        // the column, and the focus ring still lands on it.
+        f.isBezeled = false
+        f.isBordered = false
         f.drawsBackground = true
+        f.backgroundColor = P.sunken
+        f.wantsLayer = true
+        f.layer?.cornerRadius = 3
+        f.layer?.borderWidth = 1
+        f.layer?.borderColor = P.line.cgColor
         f.translatesAutoresizingMaskIntoConstraints = false
         f.widthAnchor.constraint(equalToConstant: width).isActive = true
         f.target = ButtonBox.shared
@@ -447,9 +458,49 @@ final class OptionsPanel: NSView {
 }
 
 /// A row that reports clicks. NSStackView swallows them otherwise.
+/// A row of the options panel: click it and the value steps on.
+///
+/// It used to be a plain view with a mouseDown. Every row in the panel is a
+/// control, and nothing on screen said so — the panel read as a table of
+/// readings, and the only way to find out it was live was to click it. The
+/// pointer changing and the row lifting under it is the whole affordance.
 final class ClickRow: NSView {
     private let action: () -> Void
-    init(action: @escaping () -> Void) { self.action = action; super.init(frame: .zero) }
+    /// The row's own ground — banded or not — so hover can lift it and put it
+    /// back without the panel having to remember which rows were which.
+    var base: NSColor = .clear {
+        didSet { if !hot { layer?.backgroundColor = base.cgColor } }
+    }
+    private var hot = false {
+        didSet {
+            guard hot != oldValue else { return }
+            layer?.backgroundColor = (hot ? ClickRow.hover : base).cgColor
+        }
+    }
+    /// The accent at low alpha, so the lift reads as "this does something"
+    /// rather than as another shade of grey. The panel's ground shows through.
+    private static let hover = NSColor(red: 0.349, green: 0.851, blue: 0.451, alpha: 0.16)
+
+    init(action: @escaping () -> Void) {
+        self.action = action
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
     required init?(coder: NSCoder) { fatalError() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for a in trackingAreas { removeTrackingArea(a) }
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseEnteredAndExited, .activeInKeyWindow,
+                                                 .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with event: NSEvent) { hot = true }
+    override func mouseExited(with event: NSEvent) { hot = false }
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
     override func mouseDown(with event: NSEvent) { action() }
 }

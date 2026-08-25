@@ -117,10 +117,14 @@ final class PresetList: NSView {
         let host = NSView()
         host.translatesAutoresizingMaskIntoConstraints = false
         let c = Self.bandColor(band)
-        let l = label(band, mono(11, .medium), c)
+        // 15 semibold, between the row's 17 pt frequency and its 13 pt name.
+        // At 11 it was smaller than everything it was heading, which is the
+        // wrong way round — a heading has to win against the rows under it.
+        let f = mono(15, .semibold)
+        let l = label(band, f, c)
         l.attributedStringValue = NSAttributedString(
             string: band,
-            attributes: [.font: mono(11, .medium), .foregroundColor: c, .kern: 1.6])
+            attributes: [.font: f, .foregroundColor: c, .kern: 1.6])
         l.translatesAutoresizingMaskIntoConstraints = false
         let rule = NSView()
         rule.wantsLayer = true
@@ -128,7 +132,7 @@ final class PresetList: NSView {
         rule.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(l); host.addSubview(rule)
         NSLayoutConstraint.activate([
-            host.heightAnchor.constraint(equalToConstant: S(22)),
+            host.heightAnchor.constraint(equalToConstant: S(28)),
             l.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: S(10)),
             l.centerYAnchor.constraint(equalTo: host.centerYAnchor, constant: S(2)),
             rule.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: S(8)),

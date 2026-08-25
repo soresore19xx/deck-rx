@@ -2,13 +2,77 @@ import Foundation
 
 #if canImport(UIKit)
 import UIKit
-/// The colour type, per platform. More of these follow when the views are
-/// ported — this is the file they belong in.
 typealias XColor = UIColor
+typealias XView = UIView
+typealias XFont = UIFont
 #else
 import AppKit
 typealias XColor = NSColor
+typealias XView = NSView
+typealias XFont = NSFont
 #endif
+
+/// The handful of drawing calls that are spelled differently on each platform.
+///
+/// Everything else in the views is already CoreGraphics, which is the same on
+/// both — these are the seams, and keeping them in one place is what lets a
+/// view like the spectrum be one file rather than two that drift.
+extension XView {
+    /// UIKit spells this as a method; AppKit as a property.
+    func redraw() {
+        #if canImport(UIKit)
+        setNeedsDisplay()
+        #else
+        needsDisplay = true
+        #endif
+    }
+
+    /// Give the view a backing layer and a ground colour. UIKit views always
+    /// have a layer; AppKit ones have to be asked for one first.
+    func setBacking(_ color: XColor) {
+        #if canImport(UIKit)
+        layer.backgroundColor = color.cgColor
+        #else
+        wantsLayer = true
+        layer?.backgroundColor = color.cgColor
+        #endif
+    }
+
+    /// Device pixels per point, for the one thing that is sized in pixels
+    /// rather than points: the waterfall's bitmap. Sizing it in points let a
+    /// 2x display stretch each pixel over four, and the waterfall alone looked
+    /// soft against crisp text.
+    var pixelScale: CGFloat {
+        #if canImport(UIKit)
+        return window?.screen.scale ?? traitCollection.displayScale
+        #else
+        return window?.backingScaleFactor ?? 1
+        #endif
+    }
+
+    /// The cursor rects need rebuilding. Nothing to do where there is no
+    /// cursor.
+    func invalidateCursors() {
+        #if !canImport(UIKit)
+        window?.invalidateCursorRects(for: self)
+        #endif
+    }
+
+    /// The context a draw(_:) override is drawing into.
+    var currentContext: CGContext? {
+        #if canImport(UIKit)
+        return UIGraphicsGetCurrentContext()
+        #else
+        return NSGraphicsContext.current?.cgContext
+        #endif
+    }
+}
+
+/// A monospaced face at a weight, on either platform. The window is built on
+/// one, and the weights are named the same in both frameworks.
+func xMono(_ size: CGFloat, _ weight: XFont.Weight = .regular) -> XFont {
+    XFont.monospacedSystemFont(ofSize: size, weight: weight)
+}
 
 /// The one place a platform difference is allowed to live.
 ///

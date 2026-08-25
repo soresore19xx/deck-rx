@@ -1,10 +1,14 @@
+#if canImport(UIKit)
+import UIKit
+#else
 import AppKit
+#endif
 
 /// Spectrum + waterfall, drawn from the plugin's live FFT frames.
 ///
 /// Palette follows the design the receiver's LCDs already use: near-black
 /// surfaces, a blue trace, a green centre marker for the tuned frequency.
-final class SpectrumView: NSView {
+final class SpectrumView: XView {
     /// dBFS window. Matches the FFT dial's default floor/ceiling so the same
     /// signal looks the same on the deck and on screen.
     var dbFloor: Float = -160
@@ -17,7 +21,7 @@ final class SpectrumView: NSView {
     /// colours that ever appear and the greens through reds are dead weight.
     /// Anchoring the window on the measured noise floor keeps the whole ramp in
     /// use on any band, at any gain.
-    var wfRangeDb: Float = 55 { didSet { needsDisplay = true } }
+    var wfRangeDb: Float = 55 { didSet { redraw() } }
     private var wfFloorEst: Float = -100
 
     /// Waterfall history depth, asked for in seconds. Frames per row is the
@@ -67,8 +71,8 @@ final class SpectrumView: NSView {
             spectrumFraction = min(0.85, max(0.15, spectrumFraction))
             // ensureFall re-allocates on a size change, so the history is
             // dropped rather than stretched over times it did not happen.
-            needsDisplay = true
-            window?.invalidateCursorRects(for: self)
+            redraw()
+            invalidateCursors()
         }
     }
     /// Called when a drag settles, so the split can be persisted. Not on every
@@ -78,7 +82,7 @@ final class SpectrumView: NSView {
     /// Peak hold, the way SDR++'s "FFT Hold" works: keep the highest value each
     /// bin has reached and decay it slowly, so a brief signal stays visible
     /// long enough to read.
-    var holdEnabled = false { didSet { hold = []; needsDisplay = true } }
+    var holdEnabled = false { didSet { hold = []; redraw() } }
     private var hold: [Float] = []
     private let holdDecayDbPerFrame: Float = 0.35
 
@@ -93,7 +97,7 @@ final class SpectrumView: NSView {
     /// centred slice of it. Zooming is done here rather than on the receiver
     /// because every frame already carries all the bins — asking for a narrower
     /// FFT would cost resolution, which is the opposite of what zooming is for.
-    var zoom: Double = 1 { didSet { hold = []; needsDisplay = true } }
+    var zoom: Double = 1 { didSet { hold = []; redraw() } }
 
     /// The bin window currently on screen, and the frequencies it spans.
     private func visible(_ count: Int) -> (start: Int, end: Int, lo: Double, span: Double) {
@@ -116,8 +120,8 @@ final class SpectrumView: NSView {
     /// all the display has, and they are enough to place the presets: the
     /// panel would otherwise sit blank next to a header that already says
     /// 810 kHz and IQ 456k.
-    var idleCenterHz: Double = 0 { didSet { if bins.isEmpty { needsDisplay = true } } }
-    var idleSpanHz: Double = 0 { didSet { if bins.isEmpty { needsDisplay = true } } }
+    var idleCenterHz: Double = 0 { didSet { if bins.isEmpty { redraw() } } }
+    var idleSpanHz: Double = 0 { didSet { if bins.isEmpty { redraw() } } }
 
     private var bins: [Float] = []
     private var iqRate: UInt32 = 0
@@ -131,12 +135,15 @@ final class SpectrumView: NSView {
     private var fallHeight = 0
     private var fallPixels: [UInt8] = []
 
+    // The drawing works top-down. UIKit's coordinates already do; AppKit's
+    // start at the bottom, so only the Mac needs telling.
+    #if !canImport(UIKit)
     override var isFlipped: Bool { true }
+    #endif
 
-    override init(frame frameRect: NSRect) {
+    override init(frame frameRect: CGRect) {
         super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1).cgColor
+        setBacking(XColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1))
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
@@ -166,7 +173,7 @@ final class SpectrumView: NSView {
             pushWaterfallRow()
             wfAccum = []
         }
-        needsDisplay = true
+        redraw()
     }
 
     /// True while frames are arriving; the view says so rather than showing a
@@ -300,9 +307,9 @@ final class SpectrumView: NSView {
     }
 
     private func axisLabel(_ text: String, at p: CGPoint, size: CGFloat = 13,
-                           color: NSColor = NSColor(white: 0.68, alpha: 1)) {
+                           color: XColor = XColor(white: 0.68, alpha: 1)) {
         NSAttributedString(string: text, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: size, weight: .regular),
+            .font: xMono(size, .regular),
             .foregroundColor: color,
         ]).draw(at: p)
     }
@@ -325,6 +332,11 @@ final class SpectrumView: NSView {
 
     private var draggingSplit = false
 
+    // Pointer-driven, so macOS only. The same split is dragged on iPad, but by
+    // a gesture recogniser the view controller installs — a touch has no hover
+    // and no cursor to change, and pretending otherwise is how a port grows a
+    // second set of rules for the same interaction.
+#if !canImport(UIKit)
     override func resetCursorRects() {
         super.resetCursorRects()
         addCursorRect(railRect(bounds), cursor: .resizeUpDown)
@@ -354,6 +366,7 @@ final class SpectrumView: NSView {
         draggingSplit = false
         onSplitChanged?(spectrumFraction)
     }
+#endif
 
     /// Frequency scale: ruled through the trace, labelled in the strip between
     /// trace and waterfall so both share one x mapping.
@@ -403,7 +416,7 @@ final class SpectrumView: NSView {
         }
         let minorStep = step / Double(sub)
         if plotW / CGFloat(span / minorStep) >= 9 {
-            ctx.setStrokeColor(NSColor(white: 0.030, alpha: 1).cgColor)
+            ctx.setStrokeColor(XColor(white: 0.030, alpha: 1).cgColor)
             ctx.setLineWidth(0.5)
             var mf = (lo / minorStep).rounded(.up) * minorStep
             while mf < lo + span {
@@ -415,7 +428,7 @@ final class SpectrumView: NSView {
         }
 
         var f = (lo / step).rounded(.up) * step
-        ctx.setStrokeColor(NSColor(white: 0.052, alpha: 1).cgColor)
+        ctx.setStrokeColor(XColor(white: 0.052, alpha: 1).cgColor)
         ctx.setLineWidth(0.5)
         while f < lo + span {
             let px = x(forHz: f)
@@ -446,8 +459,8 @@ final class SpectrumView: NSView {
     // label takes the topmost row whose previous label has already ended,
     // so neighbours step down instead of colliding.
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .semibold),
-            .foregroundColor: NSColor.black,
+            .font: xMono(16, .semibold),
+            .foregroundColor: XColor.black,
         ]
         let rowH: CGFloat = 24
         let maxRows = max(1, Int((specH * 0.45) / rowH))
@@ -469,13 +482,13 @@ final class SpectrumView: NSView {
             rowEnds[row] = boxX + boxW
             let y = CGFloat(row) * rowH + 1
 
-            ctx.setStrokeColor(NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.55).cgColor)
+            ctx.setStrokeColor(XColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.55).cgColor)
             ctx.setLineWidth(1)
             ctx.move(to: CGPoint(x: px, y: y + boxH))
             ctx.addLine(to: CGPoint(x: px, y: specH))
             ctx.strokePath()
 
-            ctx.setFillColor(NSColor(red: 0.949, green: 0.808, blue: 0.349, alpha: 0.92).cgColor)
+            ctx.setFillColor(XColor(red: 0.949, green: 0.808, blue: 0.349, alpha: 0.92).cgColor)
             ctx.fill(CGRect(x: boxX, y: y, width: boxW, height: boxH))
             text.draw(at: CGPoint(x: boxX + 5, y: y + 2), withAttributes: attrs)
         }
@@ -483,8 +496,8 @@ final class SpectrumView: NSView {
 
     // MARK: drawing
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+    override func draw(_ dirtyRect: CGRect) {
+        guard let ctx = currentContext else { return }
         let w = bounds.width, h = bounds.height
         let plotX = gutter
         let plotW = max(1, w - gutter)
@@ -492,7 +505,7 @@ final class SpectrumView: NSView {
         let fallTop = specH + axisStrip
         let fallH = max(1, h - fallTop)
 
-        ctx.setFillColor(NSColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1).cgColor)
+        ctx.setFillColor(XColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1).cgColor)
         ctx.fill(bounds)
 
         // Three surfaces rather than one flat field: the trace, the scale rail
@@ -501,9 +514,9 @@ final class SpectrumView: NSView {
         // ended and the waterfall began was left to the eye to work out, and
         // before the first frame there was nothing on screen at all but a
         // column of dB numbers.
-        ctx.setFillColor(NSColor(white: 0.085, alpha: 1).cgColor)
+        ctx.setFillColor(XColor(white: 0.085, alpha: 1).cgColor)
         ctx.fill(CGRect(x: 0, y: specH, width: w, height: axisStrip))
-        ctx.setFillColor(NSColor(white: 0.018, alpha: 1).cgColor)
+        ctx.setFillColor(XColor(white: 0.018, alpha: 1).cgColor)
         ctx.fill(CGRect(x: plotX, y: fallTop, width: plotW, height: fallH))
 
         // The frame: the two horizontal rules that divide those surfaces, and
@@ -512,7 +525,7 @@ final class SpectrumView: NSView {
         // is not doing a frame's job.
         // Half-pixel offsets so a 1 pt rule lands on one physical row instead
         // of straddling two and going soft.
-        ctx.setStrokeColor(NSColor(white: 0.20, alpha: 1).cgColor)
+        ctx.setStrokeColor(XColor(white: 0.20, alpha: 1).cgColor)
         ctx.setLineWidth(1)
         for y in [specH, fallTop] {
             ctx.move(to: CGPoint(x: 0, y: y + 0.5))
@@ -525,7 +538,7 @@ final class SpectrumView: NSView {
         // Grip marks, so the rail reads as something to take hold of. Drawn in
         // the gutter's width of it, which carries no frequency label and is the
         // only part of the rail that is always free.
-        ctx.setStrokeColor(NSColor(white: 0.34, alpha: 1).cgColor)
+        ctx.setStrokeColor(XColor(white: 0.34, alpha: 1).cgColor)
         ctx.setLineWidth(1)
         let gripW: CGFloat = 18
         let gripX = ((gutter - gripW) / 2).rounded()
@@ -541,7 +554,7 @@ final class SpectrumView: NSView {
         // a shape.
         // Rules are a reference, not content: dark enough that the trace and the
         // station labels sit clearly in front of them.
-        ctx.setStrokeColor(NSColor(white: 0.052, alpha: 1).cgColor)
+        ctx.setStrokeColor(XColor(white: 0.052, alpha: 1).cgColor)
         // 0.5 pt, not 1: on a Retina display a 1 pt rule is two physical
         // pixels, which reads as a drawn line rather than a graticule.
         ctx.setLineWidth(0.5)
@@ -588,14 +601,14 @@ final class SpectrumView: NSView {
                 : CGPoint(x: plotX + 8, y: 8)
             axisLabel(bins.isEmpty ? "waiting for the receiver" : "feed stalled",
                       at: noticeAt, size: 15,
-                      color: NSColor(white: 0.66, alpha: 1))
+                      color: XColor(white: 0.66, alpha: 1))
             if bins.isEmpty, span > 0 {
                 // The receiver's frequency and IQ width are known before any
                 // frame is, so the scale and the presets can be drawn now.
                 // What is missing is the trace, and only the trace.
                 drawFrequencyScale(ctx, plotX: plotX, plotW: plotW, specH: specH,
                                    lo: lo, span: span, xOf: x(forHz:))
-                ctx.setStrokeColor(NSColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
+                ctx.setStrokeColor(XColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
                 ctx.setLineWidth(1.6)
                 let cx = x(forHz: tunedHz).rounded()
                 ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
@@ -617,7 +630,7 @@ final class SpectrumView: NSView {
                 // A step brighter than the live ruling: with nothing drawn over
                 // it there is no trace for it to stay behind, and at the live
                 // value it was invisible.
-                ctx.setStrokeColor(NSColor(white: 0.085, alpha: 1).cgColor)
+                ctx.setStrokeColor(XColor(white: 0.085, alpha: 1).cgColor)
                 ctx.setLineWidth(0.5)
                 let cols = 12
                 for i in 1..<cols {
@@ -646,7 +659,7 @@ final class SpectrumView: NSView {
         // stretched each pixel over four, and the waterfall alone looked soft
         // against crisp text and rules. Size it in device pixels instead; the
         // buffer is a few MB either way.
-        let scale = max(1, Int((window?.backingScaleFactor ?? 1).rounded()))
+        let scale = max(1, Int(pixelScale.rounded()))
         ensureFall(width: max(1, Int(plotW) * scale), height: max(1, Int(fallH) * scale))
         if fallWidth > 0, fallHeight > 0 {
             fallPixels.withUnsafeMutableBytes { raw in
@@ -682,7 +695,7 @@ final class SpectrumView: NSView {
             let r = CGRect(x: x(forHz: Double(centerFreq) - half), y: 0,
                            width: max(2, x(forHz: Double(centerFreq) + half) - x(forHz: Double(centerFreq) - half)),
                            height: h)
-            ctx.setFillColor(NSColor(red: 0.85, green: 0.35, blue: 0.30, alpha: 0.16).cgColor)
+            ctx.setFillColor(XColor(red: 0.85, green: 0.35, blue: 0.30, alpha: 0.16).cgColor)
             ctx.fill(r)
         }
 
@@ -701,14 +714,14 @@ final class SpectrumView: NSView {
         ctx.saveGState()
         ctx.addPath(fill); ctx.clip()
         if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                 colors: [NSColor(red: 0.40, green: 0.70, blue: 0.95, alpha: 0.30).cgColor,
-                                          NSColor(red: 0.40, green: 0.70, blue: 0.95, alpha: 0.02).cgColor] as CFArray,
+                                 colors: [XColor(red: 0.40, green: 0.70, blue: 0.95, alpha: 0.30).cgColor,
+                                          XColor(red: 0.40, green: 0.70, blue: 0.95, alpha: 0.02).cgColor] as CFArray,
                                  locations: [0, 1]) {
             ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: specH), options: [])
         }
         ctx.restoreGState()
         ctx.addPath(path)
-        ctx.setStrokeColor(NSColor(red: 0.78, green: 0.90, blue: 1.0, alpha: 1).cgColor)
+        ctx.setStrokeColor(XColor(red: 0.78, green: 0.90, blue: 1.0, alpha: 1).cgColor)
         ctx.setLineWidth(1.2)
         ctx.strokePath()
 
@@ -721,7 +734,7 @@ final class SpectrumView: NSView {
                 if px == 0 { hp.move(to: p) } else { hp.addLine(to: p) }
             }
             ctx.addPath(hp)
-            ctx.setStrokeColor(NSColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.8).cgColor)
+            ctx.setStrokeColor(XColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 0.8).cgColor)
             ctx.setLineWidth(1)
             ctx.strokePath()
         }
@@ -730,7 +743,7 @@ final class SpectrumView: NSView {
         // Red, and the only red on the display: the preset labels and their
         // lines are amber, so "where am I listening" never competes with
         // "what else is here".
-        ctx.setStrokeColor(NSColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
+        ctx.setStrokeColor(XColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
         ctx.setLineWidth(1.6)
         let cx = x(forHz: Double(centerFreq)).rounded()
         ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))

@@ -139,9 +139,20 @@ for f in ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/*.mobileprovi
   [ -f "$f" ] || continue
   appid="$(security cms -D -i "$f" 2>/dev/null \
            | plutil -extract Entitlements.application-identifier raw - 2>/dev/null)"
-  case "$appid" in
-    # TEAMID.com.hogehoge.deckrx.ipad, or a team wildcard that covers it.
-    *".$BUNDLE_ID"|*".\*") PROFILE="$f"; break ;;
+  # The value is TEAMID.<app id>. Strip the team, then take an exact match, or
+  # a wildcard whose prefix this bundle actually sits under: com.hogehoge.*
+  # covers com.hogehoge.deckrx.ipad and com.other.* does not. Matching any
+  # wildcard would sign with a profile the device then refuses, which reads on
+  # the iPad as a corrupt app rather than as the wrong profile.
+  want="${appid#*.}"
+  case "$want" in
+    "$BUNDLE_ID") PROFILE="$f"; break ;;
+    *".*")
+      prefix="${want%\*}"
+      case "$BUNDLE_ID" in
+        "$prefix"*) PROFILE="$f"; break ;;
+      esac
+      ;;
   esac
 done
 if [ -z "$PROFILE" ]; then

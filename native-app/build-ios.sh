@@ -186,10 +186,33 @@ codesign --force --sign "$IDENTITY" --entitlements "$ENT" --timestamp=none "$APP
 echo "signed: $APP"
 
 [ "$DO_INSTALL" = "install" ] || exit 0
-DEVICE="$(xcrun devicectl list devices 2>/dev/null | grep -i 'ipad' | awk '{print $(NF-1)}' | head -1)"
+# The identifier out of the JSON rather than out of the table. The table's
+# columns shift with name length and with whatever devicectl decides to show,
+# so picking a field by position works until the day the iPad is called
+# something else.
+DEVJSON="$(mktemp -t deckrx-devices)"
+xcrun devicectl list devices --json-output "$DEVJSON" >/dev/null 2>&1 || true
+DEVICE="$(python3 - "$DEVJSON" <<'PYEOF'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for dev in d.get("result", {}).get("devices", []):
+    props = dev.get("deviceProperties", {})
+    hw = dev.get("hardwareProperties", {})
+    name = props.get("name", "")
+    if "ipad" in name.lower() or hw.get("deviceType") == "iPad":
+        print(dev.get("identifier", ""))
+        break
+PYEOF
+)"
+rm -f "$DEVJSON"
 if [ -z "$DEVICE" ]; then
-  echo "iPad not visible to devicectl. Connect it (and trust this Mac), then:"
+  echo "No iPad visible to devicectl. Connect it by cable, unlock it and trust"
+  echo "this Mac, then re-run — or install by hand:"
   echo "  xcrun devicectl device install app --device <id> \"$APP\""
   exit 0
 fi
+echo "==> installing on $DEVICE"
 xcrun devicectl device install app --device "$DEVICE" "$APP"

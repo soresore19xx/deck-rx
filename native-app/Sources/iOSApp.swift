@@ -65,8 +65,16 @@ final class RadioViewController: UIViewController {
     private let hostField = UITextField()
     private let connectButton = UIButton(type: .system)
     private let statusLabel = UILabel()
-    private let freqLabel = UILabel()
-    private let unitLabel = UILabel()
+    /// The same views the Mac window draws. Not UIKit copies of them: a second
+    /// spectrum would quietly stop agreeing with the first about what a signal
+    /// looks like, the way a second demodulator would about what one sounds
+    /// like. They are one file each, with the platform seams in Platform.swift.
+    private let spectrum = SpectrumView(frame: .zero)
+    private let freqView = FreqView(frame: .zero)
+    private let sMeter = SignalMeter(frame: .zero)
+    private let nMeter = SignalMeter(frame: .zero)
+    private let presetTable = UITableView(frame: .zero, style: .plain)
+    private var presets: [Receiver.Preset] = []
     private let stationLabel = UILabel()
     private let modeControl = UISegmentedControl(items: MODE_NAMES)
     private let stepLabel = UILabel()
@@ -95,6 +103,15 @@ final class RadioViewController: UIViewController {
         // because it also serves a plugin that may want silence; here, a
         // receiver that has to be told to make sound is just a bug with a
         // control on it.
+        // The receiver's own frames, straight into the display — the same wiring
+        // the standalone Mac app uses.
+        radio.onFrame = { [weak self] frame in
+            DispatchQueue.main.async { self?.spectrum.accept(frame) }
+        }
+        let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
+        spectrum.markers = Receiver.presets().map {
+            ($0.freq, StationLabel.lookup(freqHz: $0.freq, region: region) ?? $0.name)
+        }
         radio.audioEnabled = true
         radio.mode = radio.config.mode
         refresh()
@@ -129,12 +146,6 @@ final class RadioViewController: UIViewController {
         statusLabel.numberOfLines = 2
 
         // Monospaced digits, or every tune shifts the whole readout sideways.
-        freqLabel.font = .monospacedDigitSystemFont(ofSize: 88, weight: .light)
-        freqLabel.textColor = Pal.text
-        freqLabel.adjustsFontSizeToFitWidth = true
-        freqLabel.minimumScaleFactor = 0.4
-        unitLabel.font = .monospacedSystemFont(ofSize: 22, weight: .regular)
-        unitLabel.textColor = Pal.faint
         stationLabel.font = .systemFont(ofSize: 20)
         stationLabel.textColor = Pal.dim
         stationLabel.lineBreakMode = .byTruncatingTail
@@ -159,35 +170,123 @@ final class RadioViewController: UIViewController {
         muteButton.setTitle("Mute", for: .normal)
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
 
-        let freqRow = UIStackView(arrangedSubviews: [freqLabel, unitLabel])
-        freqRow.alignment = .lastBaseline
-        freqRow.spacing = 10
+        freqView.onTune = { [weak self] hz in
+            guard let self else { return }
+            self.radio.setFrequency(UInt32(max(0, hz)))
+            self.refresh()
+        }
+        freqView.translatesAutoresizingMaskIntoConstraints = false
+        freqView.heightAnchor.constraint(equalToConstant: 84).isActive = true
 
-        let stack = UIStackView(arrangedSubviews: [
-            row([hostField, connectButton]),
-            statusLabel,
+        spectrum.translatesAutoresizingMaskIntoConstraints = false
+        // The same scale the Mac reads it on, so a signal that looks strong on
+        // one looks strong on the other.
+        spectrum.dbFloor = Float(radio.config.spectrumDbFloor)
+        spectrum.dbCeil = Float(radio.config.spectrumDbCeil)
+        spectrum.zoom = radio.config.spectrumZoom
+        spectrum.wfTargetSeconds = radio.config.waterfallSeconds
+        spectrum.spectrumFraction = CGFloat(radio.config.spectrumSplit)
+        spectrum.idleCenterHz = radio.config.frequencyHz
+        spectrum.idleSpanHz = radio.config.spectrumSpanHz
+        spectrum.onSplitChanged = { [weak self] f in
+            guard let self else { return }
+            self.radio.config.spectrumSplit = Double(f)
+            self.radio.config.save()
+        }
+        // Drag the rail between trace and waterfall, as on the Mac. A pan
+        // recogniser rather than the view's own mouse handling: a touch has no
+        // hover and no cursor, so the view leaves the gesture to whoever owns
+        // the screen it is on.
+        let split = UIPanGestureRecognizer(target: self, action: #selector(splitDragged(_:)))
+        spectrum.addGestureRecognizer(split)
+
+        for (m, tint) in [(sMeter, Pal.accent), (nMeter, Pal.blue)] {
+            m.tint = tint
+            m.translatesAutoresizingMaskIntoConstraints = false
+            m.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        }
+        sMeter.ticks = [(0, "-100"), (2.0 / 9, "-80"), (4.0 / 9, "-60"),
+                        (6.0 / 9, "-40"), (8.0 / 9, "-20")]
+        nMeter.ticks = [(0, "0"), (0.25, "15"), (0.5, "30"), (0.75, "45"), (1, "60")]
+
+        presetTable.translatesAutoresizingMaskIntoConstraints = false
+        presetTable.dataSource = self
+        presetTable.delegate = self
+        presetTable.backgroundColor = Pal.panel
+        presetTable.separatorStyle = .none
+        presetTable.rowHeight = 34
+        presetTable.register(UITableViewCell.self, forCellReuseIdentifier: "p")
+        presets = Receiver.presets()
+
+        // Left column: what to listen to. Right column: what is being heard.
+        // The iPad is landscape most of the time it is a receiver, and a single
+        // scrolling column would put the spectrum below the fold.
+        let right = UIStackView(arrangedSubviews: [
             stationLabel,
-            freqRow,
+            freqView,
+            row([sLabel("S"), sMeter]),
+            row([sLabel("N"), nMeter]),
+            spectrum,
             tuneRow(),
-            stepLabel,
             modeControl,
             row([muteButton, volumeSlider]),
+            row([hostField, connectButton]),
+            statusLabel,
+            stepLabel,
         ])
-        stack.axis = .vertical
-        stack.spacing = 18
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        right.axis = .vertical
+        right.spacing = 10
+        right.translatesAutoresizingMaskIntoConstraints = false
+        // The spectrum takes what the rest of the column leaves.
+        spectrum.setContentHuggingPriority(.init(1), for: .vertical)
+        spectrum.setContentCompressionResistancePriority(.init(200), for: .vertical)
+        spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
 
-        // readableContentGuide rather than the safe area: a 12.9-inch iPad is
-        // wide enough that a full-width row leaves the controls at opposite
-        // ends of the glass.
-        let g = view.readableContentGuide
+        view.addSubview(presetTable)
+        view.addSubview(right)
+        let g = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
-            stack.leadingAnchor.constraint(equalTo: g.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: g.trailingAnchor),
+            presetTable.topAnchor.constraint(equalTo: g.topAnchor),
+            presetTable.leadingAnchor.constraint(equalTo: g.leadingAnchor),
+            presetTable.bottomAnchor.constraint(equalTo: g.bottomAnchor),
+            presetTable.widthAnchor.constraint(equalToConstant: 300),
+
+            right.topAnchor.constraint(equalTo: g.topAnchor, constant: 8),
+            right.leadingAnchor.constraint(equalTo: presetTable.trailingAnchor, constant: 14),
+            right.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14),
+            right.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -8),
         ])
     }
+
+    /// A one-letter caption in the meter's own rhythm.
+    private func sLabel(_ t: String) -> UILabel {
+        let l = UILabel()
+        l.text = t
+        l.font = xMono(15, .regular)
+        l.textColor = Pal.faint
+        l.setContentHuggingPriority(.required, for: .horizontal)
+        return l
+    }
+
+    @objc private func splitDragged(_ g: UIPanGestureRecognizer) {
+        let p = g.location(in: spectrum)
+        let usable = spectrum.bounds.height - 24
+        guard usable > 0 else { return }
+        // Only a drag that starts on the rail moves it; anywhere else on the
+        // spectrum is not a handle.
+        if g.state == .began {
+            let specH = ((spectrum.bounds.height - 24) * spectrum.spectrumFraction).rounded()
+            draggingSplit = abs(p.y - (specH + 12)) < 26
+        }
+        guard draggingSplit else { return }
+        spectrum.spectrumFraction = (p.y - 12) / usable
+        if g.state == .ended || g.state == .cancelled {
+            draggingSplit = false
+            radio.config.spectrumSplit = Double(spectrum.spectrumFraction)
+            radio.config.save()
+        }
+    }
+    private var draggingSplit = false
 
     private func row(_ views: [UIView]) -> UIStackView {
         let s = UIStackView(arrangedSubviews: views)
@@ -256,18 +355,41 @@ final class RadioViewController: UIViewController {
         refresh()
     }
 
+    // MARK: presets
+
+    /// Grouped by band the way the Mac list is, with the heading as its own
+    /// row: a UITableView section header floats over the rows while scrolling,
+    /// which on a list this short reads as a label that will not sit still.
+    private enum PresetItem { case head(String), station(Receiver.Preset) }
+    private var items: [PresetItem] {
+        var out: [PresetItem] = []
+        var band = ""
+        for p in presets {
+            let b = Receiver.bandName(ofHz: p.freq)
+            if b != band { band = b; out.append(.head(b)) }
+            out.append(.station(p))
+        }
+        return out
+    }
+
     // MARK: state
 
     private func refresh() {
-        let (num, unit) = formatFreq(Double(radio.frequency))
-        freqLabel.text = num
-        unitLabel.text = unit
+        freqView.set(freqHz: Double(radio.frequency))
         // Same call the Mac window makes, region and all: the station database
         // is regional for FM, so a lookup without one names a Tokyo station on
         // an Osaka frequency.
         let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
         stationLabel.text = StationLabel.lookup(freqHz: Double(radio.frequency), region: region) ?? " "
         stepLabel.text = "step \(formatStep(radio.tuneStepHz))"
+        // The same mapping the Mac window uses, so a reading means the same
+        // thing on both: -100..-10 dBFS, and 0..60 dB of signal to noise.
+        let live = radio.isConnected
+        sMeter.value = live ? max(0, min(1, (radio.rssiDbfs + 100) / 90)) : 0
+        nMeter.value = live ? max(0, min(1, radio.snrDb / 60)) : 0
+        spectrum.bandwidthHz = radio.config.bandwidth(for: radio.mode)
+        spectrum.idleCenterHz = Double(radio.frequency)
+        if radio.iqRate > 0 { spectrum.idleSpanHz = Double(radio.iqRate) }
 
         connectButton.setTitle(radio.isConnected ? "Disconnect" : "Connect", for: .normal)
         muteButton.setTitle(radio.muted ? "Unmute" : "Mute", for: .normal)
@@ -296,6 +418,99 @@ final class RadioViewController: UIViewController {
             modeControl.selectedSegmentIndex = i
         } else {
             modeControl.selectedSegmentIndex = UISegmentedControl.noSegment
+        }
+        presetTable.visibleCells.forEach { markCell($0) }
+    }
+
+    /// The row the receiver is actually on, by frequency: it may have been
+    /// moved by the readout or a tune button rather than by picking a preset.
+    private func markCell(_ cell: UITableViewCell) {
+        guard let ip = presetTable.indexPath(for: cell),
+              case .station(let p) = items[ip.row] else { return }
+        let on = abs(p.freq - Double(radio.frequency)) < 1
+        cell.contentView.backgroundColor = on
+            ? Pal.accent.withAlphaComponent(0.18)
+            : (ip.row % 2 == 1 ? Pal.band.withAlphaComponent(0.35) : .clear)
+    }
+}
+
+extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
+    func tableView(_ t: UITableView, numberOfRowsInSection s: Int) -> Int { items.count }
+
+    func tableView(_ t: UITableView, cellForRowAt ip: IndexPath) -> UITableViewCell {
+        let cell = t.dequeueReusableCell(withIdentifier: "p", for: ip)
+        cell.backgroundColor = .clear
+        cell.contentView.subviews.forEach { $0.removeFromSuperview() }
+        switch items[ip.row] {
+        case .head(let band):
+            let l = UILabel()
+            l.text = band
+            l.font = xMono(19, .bold)
+            l.textColor = Self.bandColor(band)
+            l.translatesAutoresizingMaskIntoConstraints = false
+            let rule = UIView()
+            rule.backgroundColor = Self.bandColor(band).withAlphaComponent(0.55)
+            rule.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(rule); cell.contentView.addSubview(l)
+            NSLayoutConstraint.activate([
+                rule.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
+                rule.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
+                rule.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 4),
+                rule.heightAnchor.constraint(equalToConstant: 2),
+                l.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 10),
+                l.topAnchor.constraint(equalTo: rule.bottomAnchor, constant: 2),
+            ])
+            cell.contentView.backgroundColor = .clear
+            cell.selectionStyle = .none
+        case .station(let p):
+            let (num, unit) = formatFreq(p.freq)
+            let f = UILabel(); f.text = num; f.font = xMono(17, .light); f.textColor = Pal.text
+            let u = UILabel(); u.text = unit; u.font = xMono(11); u.textColor = Pal.faint
+            let n = UILabel(); n.text = p.name; n.font = xMono(13); n.textColor = Pal.dim
+            let m = UILabel(); m.text = modeName(p.mode); m.font = xMono(11); m.textColor = Pal.faint
+            n.lineBreakMode = .byTruncatingTail
+            for v in [f, u, n, m] {
+                v.translatesAutoresizingMaskIntoConstraints = false
+                cell.contentView.addSubview(v)
+            }
+            NSLayoutConstraint.activate([
+                f.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 10),
+                f.widthAnchor.constraint(equalToConstant: 78),
+                f.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 1),
+                u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
+                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: 8),
+                n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -6),
+                n.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                m.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -10),
+                m.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            ])
+            cell.selectionStyle = .default
+        }
+        markCell(cell)
+        return cell
+    }
+
+    func tableView(_ t: UITableView, didSelectRowAt ip: IndexPath) {
+        t.deselectRow(at: ip, animated: true)
+        guard case .station(let p) = items[ip.row] else { return }
+        // Mode first: landing on an FM frequency still demodulating AM is
+        // silence, not a station.
+        radio.mode = p.mode
+        radio.config.mode = p.mode
+        radio.setFrequency(UInt32(p.freq))
+        radio.config.frequencyHz = p.freq
+        radio.config.save()
+        refresh()
+    }
+
+    /// One colour per band, as the Mac list uses.
+    static func bandColor(_ band: String) -> UIColor {
+        switch band {
+        case "MW": return UIColor(red: 0.878, green: 0.639, blue: 0.290, alpha: 1)
+        case "SW": return UIColor(red: 0.435, green: 0.659, blue: 0.863, alpha: 1)
+        case "FM": return UIColor(red: 0.498, green: 0.796, blue: 0.561, alpha: 1)
+        default:   return Pal.faint
         }
     }
 }

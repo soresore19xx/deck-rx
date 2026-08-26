@@ -1,4 +1,8 @@
+#if canImport(UIKit)
+import UIKit
+#else
 import AppKit
+#endif
 
 /// The frequency readout, tunable digit by digit.
 ///
@@ -10,7 +14,7 @@ import AppKit
 /// The decade of each digit is derived from the displayed text, so it stays
 /// correct across the unit switches the readout does (kHz below 30 MHz, MHz
 /// above it) without a second source of truth.
-final class FreqView: NSView {
+final class FreqView: XView {
     /// Called with the frequency to tune to, in Hz.
     var onTune: ((Double) -> Void)?
 
@@ -26,17 +30,22 @@ final class FreqView: NSView {
     private var hoverIndex: Int?
     private var hoverUp = true
 
-    private let digitFont = NSFont.monospacedSystemFont(ofSize: 72, weight: .bold)
-    private let unitFont = NSFont.monospacedSystemFont(ofSize: 26, weight: .medium)
+    private let digitFont = xMono(72, .bold)
+    private let unitFont = xMono(26, .medium)
 
+    // Top-down, which UIKit does natively and AppKit has to be told.
+    #if !canImport(UIKit)
     override var isFlipped: Bool { true }
+    #endif
 
-    override init(frame frameRect: NSRect) {
+    override init(frame frameRect: CGRect) {
         super.init(frame: frameRect)
-        let area = NSTrackingArea(rect: .zero,
+#if !canImport(UIKit)
+                let area = NSTrackingArea(rect: .zero,
                                   options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
                                   owner: self, userInfo: nil)
         addTrackingArea(area)
+#endif
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -47,21 +56,35 @@ final class FreqView: NSView {
     /// laid out on top of the readout. `set(freqHz:)` re-measures, but it
     /// returns early when the frequency has not moved, so a receiver that came
     /// up on its stored frequency and stayed there never got a second chance.
-    override func setFrameSize(_ newSize: NSSize) {
+#if canImport(UIKit)
+    /// Same job as the AppKit override below: the digit size comes from the
+    /// view's height, so the intrinsic width is only right once the height is.
+    private var lastHeight: CGFloat = 0
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if bounds.height != lastHeight {
+            lastHeight = bounds.height
+            invalidateIntrinsicContentSize()
+            redraw()
+        }
+    }
+#else
+    override func setFrameSize(_ newSize: CGSize) {
         let changed = newSize.height != frame.size.height
         super.setFrameSize(newSize)
         if changed {
             invalidateIntrinsicContentSize()
-            needsDisplay = true
+            redraw()
         }
     }
+#endif
 
     func set(freqHz: Double) {
         guard freqHz != self.freqHz else { return }
         self.freqHz = freqHz
         (text, weights) = Self.render(freqHz)
         invalidateIntrinsicContentSize()
-        needsDisplay = true
+        redraw()
     }
 
     /// Grouped in threes: 000.954.000, labelled kHz. Every decade from 100 MHz down
@@ -146,15 +169,15 @@ final class FreqView: NSView {
         return digits + 12 + unitW + 8
     }
 
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: contentWidth, height: DH * 1.2)
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: contentWidth, height: DH * 1.2)
     }
 
     /// The cell under the pointer, with its decade. The weight travels with the
     /// cell rather than being looked up by index: `cells()` no longer runs
     /// one-to-one with `weights` now that it starts at the first significant
     /// character, and an index into the wrong array tunes the wrong decade.
-    private func hit(_ point: NSPoint) -> (index: Int, weight: Double)? {
+    private func hit(_ point: CGPoint) -> (index: Int, weight: Double)? {
         for (i, c) in cells().enumerated() where c.weight > 0 {
             if point.x >= c.x && point.x < c.x + c.w { return (i, c.weight) }
         }
@@ -163,13 +186,36 @@ final class FreqView: NSView {
 
     // MARK: interaction
 
+#if canImport(UIKit)
+    /// Tap the upper half of a digit to step that decade up, the lower half to
+    /// step it down. The Mac hovers to show which digit is under the pointer;
+    /// a finger has no hover, and the digit it is on is the one it is covering.
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let t = touches.first, freqHz > 0 else { return }
+        let p = t.location(in: self)
+        guard let h = hit(p) else { return }
+        let delta = (p.y < bounds.height / 2 ? 1.0 : -1.0) * h.weight
+        hoverIndex = h.index
+        hoverUp = p.y < bounds.height / 2
+        redraw()
+        onTune?(max(0, freqHz + delta))
+    }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        hoverIndex = nil
+        redraw()
+    }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        hoverIndex = nil
+        redraw()
+    }
+#else
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         let i = hit(p)?.index
         let up = p.y < bounds.height / 2
-        if i != hoverIndex || up != hoverUp { hoverIndex = i; hoverUp = up; needsDisplay = true }
+        if i != hoverIndex || up != hoverUp { hoverIndex = i; hoverUp = up; redraw() }
     }
-    override func mouseExited(with event: NSEvent) { hoverIndex = nil; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { hoverIndex = nil; redraw() }
 
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
@@ -187,16 +233,17 @@ final class FreqView: NSView {
         guard dir != 0 else { return }
         onTune?(max(0, freqHz + dir * h.weight))
     }
+#endif
 
     // MARK: drawing
 
-    private let litColor = NSColor.white
+    private let litColor = XColor.white
     /// The unlit segments of a digit that is shown. Faint enough to read as the
     /// face of the display rather than as a value.
-    private let offColor = NSColor(white: 0.11, alpha: 1)
+    private let offColor = XColor(white: 0.11, alpha: 1)
 
     /// One segment: a bar with its far corners cut, as the plugin draws them.
-    private func segment(_ ctx: CGContext, _ r: CGRect, _ color: NSColor) {
+    private func segment(_ ctx: CGContext, _ r: CGRect, _ color: XColor) {
         let c = min(r.width, r.height) / 2
         ctx.beginPath()
         ctx.move(to: CGPoint(x: r.minX, y: r.minY))
@@ -223,17 +270,17 @@ final class FreqView: NSView {
         ]
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+    override func draw(_ dirtyRect: CGRect) {
+        guard let ctx = currentContext else { return }
         let oy = (bounds.height - DH) / 2
         // Everything above the first significant digit was dropped by cells(),
         // so what is left is all value and all lit.
         let list = cells()
 
         for (i, cell) in list.enumerated() {
-            let onColor: NSColor = litColor
+            let onColor: XColor = litColor
             if hoverIndex == i {
-                ctx.setFillColor(NSColor(red: 0.349, green: 0.851, blue: 0.451, alpha: 0.18).cgColor)
+                ctx.setFillColor(XColor(red: 0.349, green: 0.851, blue: 0.451, alpha: 0.18).cgColor)
                 ctx.fill(CGRect(x: cell.x - CG / 2, y: hoverUp ? 0 : bounds.height / 2,
                                 width: cell.w + CG, height: bounds.height / 2))
             }
@@ -251,6 +298,6 @@ final class FreqView: NSView {
         let endX = (list.last.map { $0.x + $0.w } ?? 0) + 12
         (Self.unit as NSString).draw(at: CGPoint(x: endX, y: oy + DH - unitFont.pointSize * 1.15),
                                 withAttributes: [.font: unitFont,
-                                                 .foregroundColor: NSColor(white: 0.72, alpha: 1)])
+                                                 .foregroundColor: XColor(white: 0.72, alpha: 1)])
     }
 }

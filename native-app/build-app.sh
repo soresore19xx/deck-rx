@@ -154,7 +154,7 @@ DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
 # front-end could not read the scale it was saved at, nor change it.
 SHARED="Sources/main.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
         Sources/SpectrumView.swift Sources/OptionsPanel.swift Sources/FreqView.swift \
-        Sources/Platform.swift Sources/RadioConfig.swift"
+        Sources/Platform.swift Sources/RadioConfig.swift Sources/SignalMeter.swift"
 RECEIVER="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
           Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
           Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \

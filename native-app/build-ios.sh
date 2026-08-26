@@ -23,7 +23,8 @@ SRC="Sources/Platform.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
      Sources/iOSApp.swift Sources/LocalRadio.swift Sources/SpyClient.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
-     Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift"
+     Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift \
+     Sources/SpectrumView.swift Sources/FreqView.swift Sources/SignalMeter.swift"
 
 case "$TARGET" in
   sim)    SDK=iphonesimulator; TRIPLE="arm64-apple-ios$DEPLOY_TARGET-simulator"; PLATFORM=iPhoneSimulator ;;

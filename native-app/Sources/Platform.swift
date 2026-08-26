@@ -149,6 +149,8 @@ enum Pal {
     static let dim    = XColor(red: 0.765, green: 0.788, blue: 0.816, alpha: 1) // #C3C9D0
     static let faint  = XColor(red: 0.596, green: 0.627, blue: 0.659, alpha: 1) // #98A0A8
     static let accent = XColor(red: 0.349, green: 0.851, blue: 0.451, alpha: 1) // #59D973
+    static let line   = XColor(red: 0.149, green: 0.157, blue: 0.176, alpha: 1) // #26282D
+    static let band   = XColor(red: 0.208, green: 0.220, blue: 0.251, alpha: 1) // #353840
     static let blue   = XColor(red: 0.400, green: 0.702, blue: 0.949, alpha: 1) // #66B3F2
     static let warn   = XColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 1) // #F2BF59
 }

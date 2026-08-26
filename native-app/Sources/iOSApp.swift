@@ -75,6 +75,11 @@ final class RadioViewController: UIViewController {
     private let nMeter = SignalMeter(frame: .zero)
     private let presetTable = UITableView(frame: .zero, style: .plain)
     private var presets: [Receiver.Preset] = []
+    private var displaySliders: [Int: UISlider] = [:]
+    private var displaySaveTimer: Timer?
+    private let zoomReadout = UILabel(), timeReadout = UILabel()
+    private let ceilReadout = UILabel(), floorReadout = UILabel()
+    private let optionsButton = UIButton(type: .system)
     private let stationLabel = UILabel()
     private let modeControl = UISegmentedControl(items: MODE_NAMES)
     private let stepLabel = UILabel()
@@ -135,6 +140,15 @@ final class RadioViewController: UIViewController {
         hostField.autocapitalizationType = .none
         hostField.autocorrectionType = .no
         hostField.keyboardType = .URL
+        // Return connects and puts the keyboard away, which is the whole
+        // reason the field is being typed into.
+        optionsButton.setTitle("Options", for: .normal)
+        optionsButton.titleLabel?.font = xMono(15, .medium)
+        optionsButton.setContentHuggingPriority(.required, for: .horizontal)
+        optionsButton.addTarget(self, action: #selector(showOptions), for: .touchUpInside)
+
+        hostField.returnKeyType = .go
+        hostField.addTarget(self, action: #selector(hostEntered), for: .editingDidEndOnExit)
         hostField.clearButtonMode = .whileEditing
 
         connectButton.setTitle("Connect", for: .normal)
@@ -250,10 +264,12 @@ final class RadioViewController: UIViewController {
         let right = UIStackView(arrangedSubviews: [
             header,
             spectrum,
+            displayRow(),
+            bandRow(),
             tuneRow(),
             modeControl,
             row([muteButton, volumeSlider]),
-            row([hostField, connectButton]),
+            row([hostField, connectButton, optionsButton]),
             statusLabel,
             stepLabel,
         ])
@@ -277,8 +293,17 @@ final class RadioViewController: UIViewController {
             right.topAnchor.constraint(equalTo: g.topAnchor, constant: 8),
             right.leadingAnchor.constraint(equalTo: presetTable.trailingAnchor, constant: 14),
             right.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14),
-            right.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -8),
         ])
+        // Two bottoms: normally the safe area, but never under the keyboard.
+        // The host field is the last row of the column, so typing an address
+        // put the keyboard straight over the characters being typed. The
+        // spectrum has the loosest hugging in the column, so it is what gives
+        // up the height while the keyboard is there, and takes it back after.
+        let restBottom = right.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -8)
+        restBottom.priority = .defaultHigh
+        restBottom.isActive = true
+        right.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,
+                                      constant: -8).isActive = true
     }
 
     /// A one-letter caption in the meter's own rhythm.
@@ -311,6 +336,106 @@ final class RadioViewController: UIViewController {
     }
     private var draggingSplit = false
 
+    /// The bands worth a button, from the same table the Mac uses. Landing on
+    /// a station inside the band beats landing on its edge, so a preset in
+    /// range wins — the same rule as Receiver.jump, done locally because there
+    /// is no control endpoint here to ask.
+    private func bandRow() -> UIStackView {
+        let s = row([])
+        s.distribution = .fillEqually
+        for (i, b) in Receiver.bands.enumerated() {
+            let btn = UIButton(type: .system)
+            btn.setTitle(b.name, for: .normal)
+            btn.titleLabel?.font = xMono(15, .medium)
+            btn.backgroundColor = Pal.panel
+            btn.layer.cornerRadius = 8
+            btn.heightAnchor.constraint(equalToConstant: 40).isActive = true
+            btn.tag = i
+            btn.addTarget(self, action: #selector(bandTapped(_:)), for: .touchUpInside)
+            s.addArrangedSubview(btn)
+        }
+        return s
+    }
+
+    @objc private func bandTapped(_ sender: UIButton) {
+        let b = Receiver.bands[sender.tag]
+        let target = presets.first { $0.freq >= b.lo && $0.freq <= b.hi }
+        radio.mode = target?.mode ?? b.mode
+        radio.config.mode = radio.mode
+        radio.setFrequency(UInt32(target?.freq ?? b.lo))
+        radio.config.frequencyHz = Double(radio.frequency)
+        radio.config.save()
+        refresh()
+    }
+
+    /// Zoom, the dB window and the waterfall depth — the rail down the right of
+    /// the Mac window. Horizontal here: the iPad has width to spare and no
+    /// height to give a vertical rail.
+    private func displayRow() -> UIStackView {
+        func slide(_ caption: String, _ lo: Float, _ hi: Float, _ v: Float,
+                   _ tag: Int, _ readout: UILabel) -> UIStackView {
+            let s = UISlider()
+            s.minimumValue = lo; s.maximumValue = hi; s.value = v
+            s.tag = tag
+            s.isContinuous = true
+            s.addTarget(self, action: #selector(displayChanged(_:)), for: .valueChanged)
+            displaySliders[tag] = s
+            let c = UILabel()
+            c.text = caption; c.font = xMono(11); c.textColor = Pal.faint
+            c.setContentHuggingPriority(.required, for: .horizontal)
+            readout.font = xMono(11); readout.textColor = Pal.dim
+            readout.setContentHuggingPriority(.required, for: .horizontal)
+            let r = row([c, s, readout])
+            r.spacing = 6
+            return r
+        }
+        let c = radio.config
+        let top = row([
+            slide("ZOOM", 0, 5, Float(max(0, min(5, log2(c.spectrumZoom)))), 0, zoomReadout),
+            slide("TIME", Float(log(5.0)), Float(log(600.0)),
+                  Float(log(max(5, min(600, c.waterfallSeconds)))), 1, timeReadout),
+        ])
+        let bottom = row([
+            slide("MAX", -60, 0, Float(c.spectrumDbCeil), 2, ceilReadout),
+            slide("MIN", -160, -60, Float(c.spectrumDbFloor), 3, floorReadout),
+        ])
+        let v = UIStackView(arrangedSubviews: [top, bottom])
+        v.axis = .vertical
+        v.spacing = 4
+        syncDisplayReadouts()
+        return v
+    }
+
+    @objc private func displayChanged(_ sender: UISlider) {
+        switch sender.tag {
+        case 0: spectrum.zoom = pow(2, Double(sender.value))
+        case 1: spectrum.wfTargetSeconds = exp(Double(sender.value))
+        case 2: spectrum.dbCeil = Float(max(Double(sender.value), Double(spectrum.dbFloor) + 10))
+        default: spectrum.dbFloor = Float(min(Double(sender.value), Double(spectrum.dbCeil) - 10))
+        }
+        syncDisplayReadouts()
+        // A beat after the last move, not on every one: the sliders are
+        // continuous so the trace follows the drag.
+        displaySaveTimer?.invalidate()
+        displaySaveTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.radio.config.spectrumZoom = self.spectrum.zoom
+            self.radio.config.waterfallSeconds = self.spectrum.wfTargetSeconds
+            self.radio.config.spectrumDbCeil = Double(self.spectrum.dbCeil)
+            self.radio.config.spectrumDbFloor = Double(self.spectrum.dbFloor)
+            self.radio.config.save()
+        }
+    }
+
+    private func syncDisplayReadouts() {
+        zoomReadout.text = String(format: "%.0f×", spectrum.zoom)
+        let secs = spectrum.wfTargetSeconds
+        timeReadout.text = secs < 60 ? String(format: "%.0fs", secs)
+                                     : String(format: "%.0fm", secs / 60)
+        ceilReadout.text = String(format: "%.0f", spectrum.dbCeil)
+        floorReadout.text = String(format: "%.0f", spectrum.dbFloor)
+    }
+
     private func row(_ views: [UIView]) -> UIStackView {
         let s = UIStackView(arrangedSubviews: views)
         s.axis = .horizontal
@@ -340,6 +465,18 @@ final class RadioViewController: UIViewController {
     }
 
     // MARK: actions
+
+    @objc private func hostEntered() { connectNow() }
+
+    /// The demod's settings, in a sheet rather than a permanent column. The
+    /// Mac has the width to keep them on screen; an iPad held in landscape has
+    /// the width spent on the spectrum, and these are set once and left.
+    @objc private func showOptions() {
+        let vc = OptionsViewController(radio: radio) { [weak self] in self?.refresh() }
+        let nav = UINavigationController(rootViewController: vc)
+        nav.modalPresentationStyle = .formSheet
+        present(nav, animated: true)
+    }
 
     @objc private func toggleConnection() {
         guard !radio.isConnected else { radio.disconnect(); return }
@@ -537,4 +674,150 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
         }
     }
 }
+
+
+/// The receiver's settings, as the Mac's options panel has them: a row per
+/// setting, tapped to step its value on.
+///
+/// It drives `radio.config` directly. The Mac's panel talks to a control
+/// endpoint because it may be a front-end onto the plugin's receiver; here the
+/// app *is* the receiver, and config's didSet already reconfigures the
+/// demodulators.
+final class OptionsViewController: UITableViewController {
+    private let radio: LocalRadio
+    private let onChange: () -> Void
+
+    private enum Kind {
+        case bool(get: () -> Bool, set: (Bool) -> Void)
+        case list(values: [Double], unit: String, get: () -> Double, set: (Double) -> Void)
+        case text(options: [String], get: () -> String, set: (String) -> Void)
+    }
+    private struct Row { let title: String; let kind: Kind }
+    private struct Section { let name: String; let rows: [Row] }
+    private var sections: [Section] = []
+
+    init(radio: LocalRadio, onChange: @escaping () -> Void) {
+        self.radio = radio
+        self.onChange = onChange
+        super.init(style: .insetGrouped)
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Options"
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .done, target: self, action: #selector(done))
+        tableView.backgroundColor = Pal.bg
+        build()
+    }
+    @objc private func done() { dismiss(animated: true) }
+
+    /// Rows for the live mode only — an AM receiver has no de-emphasis and an
+    /// FM one has no carrier AGC, and showing both with half of them inert is
+    /// worse than showing what applies.
+    private func build() {
+        let r = radio
+        var demod: Section
+        switch r.mode {
+        case 0, 1:
+            demod = Section(name: "FM OPTIONS", rows: [
+                Row(title: "Bandwidth", kind: .list(values: [90_000, 100_000, 110_000, 150_000, 200_000],
+                    unit: "kHz", get: { r.config.fmBandwidthHz }, set: { r.config.fmBandwidthHz = $0 })),
+                Row(title: "De-emphasis", kind: .text(options: ["off", "50us", "75us"],
+                    get: { r.config.fmDeemphasis }, set: { r.config.fmDeemphasis = $0 })),
+                Row(title: "Stereo", kind: .bool(get: { r.config.fmStereo }, set: { r.config.fmStereo = $0 })),
+                Row(title: "IFNR", kind: .bool(get: { r.config.fmIfnr }, set: { r.config.fmIfnr = $0 })),
+                Row(title: "Audio HPF", kind: .bool(get: { r.config.fmHighPass }, set: { r.config.fmHighPass = $0 })),
+                Row(title: "Audio LPF", kind: .bool(get: { r.config.fmLowPass }, set: { r.config.fmLowPass = $0 })),
+            ])
+        case 2:
+            demod = Section(name: "AM OPTIONS", rows: [
+                Row(title: "Bandwidth", kind: .list(values: [4_000, 6_000, 9_000, 12_000],
+                    unit: "kHz", get: { r.config.amBandwidthHz }, set: { r.config.amBandwidthHz = $0 })),
+                Row(title: "Sync detect", kind: .bool(get: { r.config.amSync }, set: { r.config.amSync = $0 })),
+                Row(title: "Carrier AGC", kind: .bool(get: { r.config.amCarrierAgc }, set: { r.config.amCarrierAgc = $0 })),
+                Row(title: "AGC attack", kind: .list(values: [5, 10, 20, 50, 100, 200], unit: "",
+                    get: { r.config.amAgcAttack }, set: { r.config.amAgcAttack = $0 })),
+                Row(title: "AGC decay", kind: .list(values: [1, 2, 5, 8, 12, 20], unit: "",
+                    get: { r.config.amAgcDecay }, set: { r.config.amAgcDecay = $0 })),
+            ])
+        default:
+            demod = Section(name: "SSB / CW OPTIONS", rows: [
+                Row(title: "Bandwidth", kind: .list(values: [500, 1_000, 1_800, 2_400, 3_000], unit: "Hz",
+                    get: { r.config.ssbBandwidthHz }, set: { r.config.ssbBandwidthHz = $0 })),
+                Row(title: "BFO pitch", kind: .list(values: [400, 500, 600, 700, 800, 1_000], unit: "Hz",
+                    get: { r.config.cwBfoHz }, set: { r.config.cwBfoHz = $0 })),
+            ])
+        }
+        sections = [
+            demod,
+            Section(name: "RF", rows: [
+                Row(title: "Gain", kind: .list(values: [0, 1, 2, 3, 4, 5, 6, 7, 8], unit: "",
+                    get: { Double(r.config.gain) }, set: { r.config.gain = UInt32(max(0, $0)) })),
+                Row(title: "IQ NR", kind: .bool(get: { r.iqNrEnabled }, set: { r.iqNrEnabled = $0 })),
+                Row(title: "Levelling", kind: .bool(get: { r.levelingEnabled }, set: { r.levelingEnabled = $0 })),
+            ]),
+            Section(name: "RECEIVER", rows: [
+                Row(title: "Tune mode", kind: .text(options: ["preset", "vfo"],
+                    get: { r.config.tuneMode }, set: { r.config.tuneMode = $0 })),
+                Row(title: "JP region", kind: .text(options: StationLabel.Region.allCases.map(\.rawValue),
+                    get: { r.config.jpRegion }, set: { r.config.jpRegion = $0 })),
+                Row(title: "Connect at start", kind: .bool(get: { r.config.autoDirect },
+                    set: { r.config.autoDirect = $0 })),
+            ]),
+        ]
+        tableView.reloadData()
+    }
+
+    override func numberOfSections(in t: UITableView) -> Int { sections.count }
+    override func tableView(_ t: UITableView, titleForHeaderInSection s: Int) -> String? { sections[s].name }
+    override func tableView(_ t: UITableView, numberOfRowsInSection s: Int) -> Int { sections[s].rows.count }
+
+    override func tableView(_ t: UITableView, cellForRowAt ip: IndexPath) -> UITableViewCell {
+        let row = sections[ip.section].rows[ip.row]
+        let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
+        cell.textLabel?.text = row.title
+        cell.textLabel?.font = xMono(15)
+        cell.detailTextLabel?.font = xMono(15, .medium)
+        cell.backgroundColor = Pal.panel
+        cell.textLabel?.textColor = Pal.dim
+        switch row.kind {
+        case .bool(let get, _):
+            cell.detailTextLabel?.text = get() ? "ON" : "OFF"
+            cell.detailTextLabel?.textColor = get() ? Pal.accent : Pal.faint
+        case .list(_, let unit, let get, _):
+            let v = get()
+            cell.detailTextLabel?.text = unit == "kHz" ? String(format: "%g kHz", v / 1000)
+                                       : unit.isEmpty ? String(format: "%g", v)
+                                       : String(format: "%g %@", v, unit)
+            cell.detailTextLabel?.textColor = Pal.text
+        case .text(_, let get, _):
+            cell.detailTextLabel?.text = get()
+            cell.detailTextLabel?.textColor = Pal.text
+        }
+        return cell
+    }
+
+    /// Tap steps the value on and wraps, as the Mac panel does.
+    override func tableView(_ t: UITableView, didSelectRowAt ip: IndexPath) {
+        t.deselectRow(at: ip, animated: true)
+        switch sections[ip.section].rows[ip.row].kind {
+        case .bool(let get, let set):
+            set(!get())
+        case .list(let values, _, let get, let set):
+            let cur = get()
+            set(values.first { $0 > cur + 0.001 } ?? values[0])
+        case .text(let options, let get, let set):
+            let i = ((options.firstIndex(of: get()) ?? 0) + 1) % options.count
+            set(options[i])
+        }
+        radio.config.save()
+        // The mode's own section may have changed shape; rebuild rather than
+        // reload one row.
+        build()
+        onChange()
+    }
+}
+
 #endif

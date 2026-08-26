@@ -40,6 +40,7 @@ final class FreqView: XView {
 
     override init(frame frameRect: CGRect) {
         super.init(frame: frameRect)
+        configureCustomDrawing()
 #if !canImport(UIKit)
                 let area = NSTrackingArea(rect: .zero,
                                   options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],

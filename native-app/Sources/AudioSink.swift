@@ -34,6 +34,13 @@ final class AudioSink {
 
     var volume: Double = 0.9
     var muted = false
+    /// The gain the last sample actually left with. A buffer ramps from here
+    /// to the current volume rather than starting at it: read once per buffer
+    /// and applied flat, a change lands as a step at the buffer boundary, and
+    /// dragging a slider is one step per buffer — a run of clicks, which is
+    /// what a volume control is never supposed to make. Starts at silence so
+    /// the first buffer after a start fades in instead of popping.
+    private var appliedGain: Float = 0
 
     /// Capacity is rounded to an even number of samples so a stereo frame
     /// never straddles the wrap.
@@ -216,6 +223,8 @@ final class AudioSink {
         if let s = source { engine.detach(s); source = nil }
         sourceRate = 0
         lock.lock(); writeIndex = 0; readIndex = 0; lock.unlock()
+        // Fade in again from silence on the next buffer, as at a cold start.
+        appliedGain = 0
     }
 
     /// Queues demodulated samples. Drops the oldest rather than blocking when
@@ -223,14 +232,22 @@ final class AudioSink {
     /// here would stall the network thread that feeds it.
     func write(_ samples: [Float]) {
         guard !samples.isEmpty, engine.isRunning else { return }
-        let gain = Float(muted ? 0 : min(max(volume, 0), 1))
+        let target = Float(muted ? 0 : min(max(volume, 0), 1))
+        // Spread the change across the buffer. At the rates this runs at a
+        // buffer is tens of milliseconds, so even a full-scale move arrives as
+        // a fast fade rather than an edge — and muting stops popping too.
+        let start = appliedGain
+        let step = (target - start) / Float(samples.count)
+        var gain = start
         lock.lock()
         var w = writeIndex
         for s in samples {
             ring[w] = s * gain
+            gain += step
             w += 1
             if w == capacity { w = 0 }
         }
+        appliedGain = target
         writeIndex = w
         // If the writer has lapped the reader, the reader's position is now
         // meaningless; put it a whole buffer behind so it reads fresh samples

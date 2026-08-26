@@ -143,6 +143,7 @@ final class SpectrumView: XView {
 
     override init(frame frameRect: CGRect) {
         super.init(frame: frameRect)
+        configureCustomDrawing()
         setBacking(XColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1))
     }
     required init?(coder: NSCoder) { fatalError("not used") }

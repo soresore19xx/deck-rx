@@ -33,6 +33,12 @@ final class SignalMeter: XView {
     /// Tick positions, 0-1 across the bar, with what to write under them.
     var ticks: [(at: Double, label: String)] = []
 
+    override init(frame frameRect: CGRect) {
+        super.init(frame: frameRect)
+        configureCustomDrawing()
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
     private let barH: CGFloat = 12
     override var intrinsicContentSize: CGSize { CGSize(width: XView.noIntrinsicMetric, height: 30) }
 

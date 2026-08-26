@@ -27,6 +27,21 @@ extension XView {
         #endif
     }
 
+    /// Tell UIKit that this view draws itself and must be asked again when it
+    /// changes size.
+    ///
+    /// A UIView defaults to `.scaleToFill`, which on a bounds change stretches
+    /// the last drawing rather than calling draw(_:) — so a readout whose width
+    /// follows its digit count came back with the previous frequency still
+    /// under the new one. AppKit redraws on resize already, so this is a UIKit
+    /// line, not a difference in what the views do.
+    func configureCustomDrawing() {
+        #if canImport(UIKit)
+        contentMode = .redraw
+        clearsContextBeforeDrawing = true
+        #endif
+    }
+
     /// Give the view a backing layer and a ground colour. UIKit views always
     /// have a layer; AppKit ones have to be asked for one first.
     func setBacking(_ color: XColor) {

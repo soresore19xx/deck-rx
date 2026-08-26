@@ -176,7 +176,14 @@ final class RadioViewController: UIViewController {
             self.refresh()
         }
         freqView.translatesAutoresizingMaskIntoConstraints = false
-        freqView.heightAnchor.constraint(equalToConstant: 84).isActive = true
+        // The digit size comes from the height, and the width follows from it.
+        // At 84 the readout ran most of the way across a landscape column and
+        // left the meters beside it looking like an afterthought; the iPad is
+        // held landscape, so the header has to share the width rather than let
+        // one thing take it.
+        freqView.heightAnchor.constraint(equalToConstant: 62).isActive = true
+        freqView.setContentHuggingPriority(.required, for: .horizontal)
+        freqView.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         spectrum.translatesAutoresizingMaskIntoConstraints = false
         // The same scale the Mac reads it on, so a signal that looks strong on
@@ -221,11 +228,27 @@ final class RadioViewController: UIViewController {
         // Left column: what to listen to. Right column: what is being heard.
         // The iPad is landscape most of the time it is a receiver, and a single
         // scrolling column would put the spectrum below the fold.
-        let right = UIStackView(arrangedSubviews: [
-            stationLabel,
-            freqView,
+        // Header as a row, the way the Mac window has it: what is tuned on the
+        // left, how well it is coming in on the right. Stacked, the readout and
+        // the two meters ate a third of a landscape screen between them.
+        let tuned = UIStackView(arrangedSubviews: [stationLabel, freqView])
+        tuned.axis = .vertical
+        tuned.alignment = .leading
+        tuned.spacing = 2
+        let meters = UIStackView(arrangedSubviews: [
             row([sLabel("S"), sMeter]),
             row([sLabel("N"), nMeter]),
+        ])
+        meters.axis = .vertical
+        meters.spacing = 6
+        let header = UIStackView(arrangedSubviews: [tuned, meters])
+        header.axis = .horizontal
+        header.alignment = .center
+        header.spacing = 20
+        tuned.setContentHuggingPriority(.required, for: .horizontal)
+
+        let right = UIStackView(arrangedSubviews: [
+            header,
             spectrum,
             tuneRow(),
             modeControl,

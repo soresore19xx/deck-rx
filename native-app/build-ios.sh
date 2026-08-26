@@ -72,9 +72,12 @@ cat > "$APP/Info.plist" <<PLIST
 	<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
 	<key>UILaunchScreen</key><dict/>
 	<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+	<!-- Landscape only. This is a receiver front panel: a preset list beside a
+	     spectrum beside its controls is a wide arrangement, and the portrait
+	     layout was a compromise nobody asked for — the iPad is held landscape
+	     when it is being a radio. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

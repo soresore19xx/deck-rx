@@ -378,6 +378,12 @@ final class RadioViewController: UIViewController {
             s.minimumValue = lo; s.maximumValue = hi; s.value = v
             s.tag = tag
             s.isContinuous = true
+            // A slider has no width of its own. Left to a stack that sizes by
+            // intrinsic content it collapses to nothing and the caption and
+            // readout close up around it — which is what put four captions and
+            // four thumbs in a heap across the band buttons.
+            s.setContentHuggingPriority(.init(1), for: .horizontal)
+            s.setContentCompressionResistancePriority(.init(200), for: .horizontal)
             s.addTarget(self, action: #selector(displayChanged(_:)), for: .valueChanged)
             displaySliders[tag] = s
             let c = UILabel()
@@ -399,6 +405,9 @@ final class RadioViewController: UIViewController {
             slide("MAX", -60, 0, Float(c.spectrumDbCeil), 2, ceilReadout),
             slide("MIN", -160, -60, Float(c.spectrumDbFloor), 3, floorReadout),
         ])
+        // Half the width each, rather than whatever their contents ask for.
+        top.distribution = .fillEqually
+        bottom.distribution = .fillEqually
         let v = UIStackView(arrangedSubviews: [top, bottom])
         v.axis = .vertical
         v.spacing = 4

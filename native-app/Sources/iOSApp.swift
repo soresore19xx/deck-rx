@@ -78,7 +78,8 @@ final class RadioViewController: UIViewController {
     private var displaySliders: [Int: UISlider] = [:]
     private var displaySaveTimer: Timer?
     private let zoomReadout = UILabel(), timeReadout = UILabel()
-    private let ceilReadout = UILabel(), floorReadout = UILabel()
+    private let ceilRail = VerticalSliderHost(caption: "MAX")
+    private let floorRail = VerticalSliderHost(caption: "MIN")
     private let optionsButton = UIButton(type: .system)
     private let stationLabel = UILabel()
     private let modeControl = UISegmentedControl(items: MODE_NAMES)
@@ -261,9 +262,32 @@ final class RadioViewController: UIViewController {
         header.spacing = 20
         tuned.setContentHuggingPriority(.required, for: .horizontal)
 
+        // MAX above MIN beside the trace, because that is how the dB scale down
+        // its left runs. Horizontal, the pair moved against the numbers they
+        // set — the same reason the Mac window puts them on a vertical rail.
+        for (h, tag) in [(ceilRail, 2), (floorRail, 3)] {
+            h.translatesAutoresizingMaskIntoConstraints = false
+            h.widthAnchor.constraint(equalToConstant: 52).isActive = true
+            h.slider.tag = tag
+            h.slider.isContinuous = true
+            h.slider.addTarget(self, action: #selector(displayChanged(_:)), for: .valueChanged)
+            displaySliders[tag] = h.slider
+        }
+        ceilRail.slider.minimumValue = -60;  ceilRail.slider.maximumValue = 0
+        ceilRail.slider.value = Float(radio.config.spectrumDbCeil)
+        floorRail.slider.minimumValue = -160; floorRail.slider.maximumValue = -60
+        floorRail.slider.value = Float(radio.config.spectrumDbFloor)
+        let rail = UIStackView(arrangedSubviews: [ceilRail, floorRail])
+        rail.axis = .vertical
+        rail.distribution = .fillEqually
+        rail.spacing = 4
+        let plot = UIStackView(arrangedSubviews: [spectrum, rail])
+        plot.axis = .horizontal
+        plot.spacing = 6
+
         let right = UIStackView(arrangedSubviews: [
             header,
-            spectrum,
+            plot,
             displayRow(),
             bandRow(),
             tuneRow(),
@@ -401,18 +425,10 @@ final class RadioViewController: UIViewController {
             slide("TIME", Float(log(5.0)), Float(log(600.0)),
                   Float(log(max(5, min(600, c.waterfallSeconds)))), 1, timeReadout),
         ])
-        let bottom = row([
-            slide("MAX", -60, 0, Float(c.spectrumDbCeil), 2, ceilReadout),
-            slide("MIN", -160, -60, Float(c.spectrumDbFloor), 3, floorReadout),
-        ])
         // Half the width each, rather than whatever their contents ask for.
         top.distribution = .fillEqually
-        bottom.distribution = .fillEqually
-        let v = UIStackView(arrangedSubviews: [top, bottom])
-        v.axis = .vertical
-        v.spacing = 4
         syncDisplayReadouts()
-        return v
+        return top
     }
 
     @objc private func displayChanged(_ sender: UISlider) {
@@ -441,8 +457,8 @@ final class RadioViewController: UIViewController {
         let secs = spectrum.wfTargetSeconds
         timeReadout.text = secs < 60 ? String(format: "%.0fs", secs)
                                      : String(format: "%.0fm", secs / 60)
-        ceilReadout.text = String(format: "%.0f", spectrum.dbCeil)
-        floorReadout.text = String(format: "%.0f", spectrum.dbFloor)
+        ceilRail.setReadout(String(format: "%.0f", spectrum.dbCeil))
+        floorRail.setReadout(String(format: "%.0f", spectrum.dbFloor))
     }
 
     private func row(_ views: [UIView]) -> UIStackView {
@@ -684,6 +700,49 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
     }
 }
 
+
+/// A UISlider stood on end.
+///
+/// UIKit has no vertical slider, and a rotation transform and Auto Layout do
+/// not mix — the constraint system sizes the untransformed frame and then the
+/// rotation throws it somewhere else. So the host takes the space through
+/// constraints and places the slider inside it by hand.
+final class VerticalSliderHost: UIView {
+    let slider = UISlider()
+    private let caption = UILabel()
+    private let readout = UILabel()
+
+    init(caption text: String) {
+        super.init(frame: .zero)
+        caption.text = text
+        caption.font = xMono(11)
+        caption.textColor = Pal.faint
+        caption.textAlignment = .center
+        readout.font = xMono(11)
+        readout.textColor = Pal.dim
+        readout.textAlignment = .center
+        for v in [slider, caption, readout] { addSubview(v) }
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func setReadout(_ t: String) { readout.text = t }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let capH: CGFloat = 14
+        caption.frame = CGRect(x: 0, y: 0, width: bounds.width, height: capH)
+        readout.frame = CGRect(x: 0, y: bounds.height - capH, width: bounds.width, height: capH)
+        let track = bounds.height - capH * 2 - 8
+        // Reset before measuring: a transform already applied would otherwise
+        // be composed with the new one on every layout pass.
+        slider.transform = .identity
+        slider.frame = CGRect(x: 0, y: 0, width: max(40, track), height: 30)
+        // Negative, so the low end is at the bottom — the way a dB scale reads,
+        // and the way the rail on the Mac window is arranged.
+        slider.transform = CGAffineTransform(rotationAngle: -.pi / 2)
+        slider.center = CGPoint(x: bounds.midX, y: bounds.midY)
+    }
+}
 
 /// The receiver's settings, as the Mac's options panel has them: a row per
 /// setting, tapped to step its value on.

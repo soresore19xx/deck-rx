@@ -32,6 +32,15 @@ final class AudioSink {
     /// description of the sound.
     private(set) var underruns: Int = 0
 
+    /// Output stays silent until this many frames are banked. Reading from a
+    /// ring that has just started filling means the very first jitter empties
+    /// it, and every refill after that starts from empty again — audible as
+    /// the audio breaking up every few seconds while the numbers say the
+    /// stream is fine. A fifth of a second is below the threshold where a
+    /// tuning action feels delayed.
+    private var priming = true
+    private var primeFrames = 0
+
     var volume: Double = 0.9
     var muted = false
     /// The gain the last sample actually left with. A buffer ramps from here
@@ -99,7 +108,12 @@ final class AudioSink {
         #endif
     }
 
-    init(capacity: Int = 96_000) {
+    /// Default sized for the rate this actually runs at: 114 kHz stereo is
+    /// 228 000 samples a second, so the old 96 000 was 0.42 s of cushion —
+    /// less than a single Wi-Fi retransmission burst. The plugin rides out
+    /// stalls of 250-630 ms without dropping anything (README, "Reader-stall
+    /// absorb"), and this is the equivalent room: about 1.1 s.
+    init(capacity: Int = 262_144) {
         self.capacity = capacity - (capacity % 2)
         ring = UnsafeMutablePointer<Float>.allocate(capacity: capacity)
         ring.initialize(repeating: 0, count: capacity)
@@ -173,6 +187,8 @@ final class AudioSink {
         try configureSession()
         #endif
 
+        primeFrames = Int(rate * 0.2)
+        priming = true
         guard let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: ch) else { return }
         let node = AVAudioSourceNode(format: fmt) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
@@ -192,6 +208,20 @@ final class AudioSink {
             let w = self.writeIndex
             var available = w - r
             if available < 0 { available += self.capacity }
+            // Silence while priming, and not counted as a drop: nothing has
+            // been lost, the buffer is simply still filling.
+            if self.priming {
+                if available / chans >= self.primeFrames {
+                    self.priming = false
+                } else {
+                    for c in 0..<min(chans, abl.count) {
+                        if let out = abl[c].mData?.assumingMemoryBound(to: Float.self) {
+                            for i in 0..<n { out[i] = 0 }
+                        }
+                    }
+                    return noErr
+                }
+            }
             let takeFrames = min(n, available / chans)
             for c in 0..<min(chans, abl.count) {
                 guard let out = abl[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
@@ -204,7 +234,12 @@ final class AudioSink {
                 }
                 for i in takeFrames..<n { out[i] = 0 }
             }
-            if takeFrames < n { self.underruns += n - takeFrames }
+            if takeFrames < n {
+                self.underruns += n - takeFrames
+                // Ran dry: refill before reading again, instead of scraping
+                // the bottom of the ring buffer by buffer for the next second.
+                self.priming = true
+            }
             r += takeFrames * chans
             while r >= self.capacity { r -= self.capacity }
             self.readIndex = r
@@ -258,7 +293,10 @@ final class AudioSink {
             // Land on a frame boundary, or a stereo read would swap L and R
             // from here on.
             let chans = Int(channels)
-            var back = capacity / 2
+            // A fifth of a second of audio, not half the ring: with a ring this
+            // size, half of it would put the listener most of a second behind
+            // the tuning knob for the rest of the session.
+            var back = min(capacity / 2, Int(sourceRate * 0.2) * chans)
             back -= back % chans
             var r = w - back
             if r < 0 { r += capacity }

@@ -550,6 +550,15 @@ What the window carries:
   a mode change, so an AM receiver is never offered de-emphasis
 - the app is landscape: the layout spends its width on the spectrum
 
+The output buffer is sized for the rate this actually runs at — 114 kHz stereo
+is 228 000 samples a second — and holds about 1.1 s, which is the room the
+plugin's own reader-stall absorb has. It also primes: playback waits for a fifth
+of a second to bank before it starts reading, and re-primes after a dry run
+rather than scraping the bottom of the ring buffer by buffer. Starting to read
+from a ring that is still filling means the first jitter empties it and every
+refill after that starts from empty, which is heard as audio that breaks up
+every few seconds while every other number says the stream is healthy.
+
 The status line carries two numbers worth reading when the audio breaks up:
 `drops` counts samples the output asked for and the ring did not have, and
 `gap` is the longest pause between two IQ packets in the last ten seconds.

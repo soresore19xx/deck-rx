@@ -51,7 +51,7 @@ Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / 
 | Output loudness leveling | ✅ Single output stage (`src/audioLeveling.ts`) applied to the final PCM before the sink, so it covers **both** the naudiodon and icecast paths. **(1)** Static per-band makeup gains (`MODE_MAKEUP`, overridable per host via `cfg.audioMakeup`, e.g. `{"1": 8}` to bring WFM down) lift each demod mode to a common loudness — WFM/NFM/SSB are raw fixed-gain, AM/CW are demod-AGC'd to different setpoints, so without this the bands jump in level and deck-rx is much quieter than other apps. This is the **default** leveller: fixed per-band gain, **no dynamic motion / no pumping**. **(2)** An adaptive output AGC is **opt-in** (`cfg.audioLeveling: true`, default off) for also tracking within-band signal-strength changes — off by default because its dynamic level-riding is audible. **(3)** A soft-knee tanh limiter is an instantaneous peak ceiling so the static gain can run hot near full-scale without hard-clip distortion (peak-only, no breathing). `cfg.audioGain` (default `1.0`, clamped `0.1..4`) is a master trim on top of the makeup; the Volume dial (0–100%) attenuates further. Independent of RF / demod gain. Unit-tested in `test/audioLeveling.test.ts`. |
 | External knob control | ✅ loopback HTTP endpoint on `127.0.0.1:8771` (`src/controlServer.ts`) so a hardware knob can tune, ride volume, mute, power and step presets on the receiver alongside the Stream Deck+ dials. Frequency stepping goes through the same `nextFreqForTicks()` the Tune dial uses and preset stepping through the same `nextPresetSlot()`, so the knob honours the active tune step, the device's receivable bands and the dial's preset-skipping rules. Driven today by `knobctl` (BRIMFORD two-tier knob). See [External knob control](#external-knob-control-http). |
 | Native receiver app | ✅ `native-app/` builds two bundles from one source tree. `Deck RX.app` is a front-end over the plugin's receiver — preset table, live spectrum + waterfall, station / frequency / mode readout, S/N meters and a transport row — and the focus target a Stream Deck profile binds to, so the deck switches profile when the app comes to the front. `Deck RX Solo.app` is the same window with a receiver of its own. |
-| iPadOS receiver | ✅ `native-app/build-ios.sh` builds the same sources for iPad. The display is not a UIKit rewrite: `SpectrumView`, `FreqView` and `SignalMeter` are one file each, with the platform seams — view and font types, how a redraw is asked for, the drawing context, pointer versus touch — in `Platform.swift`. Preset list grouped by band, seven-segment readout tuned by tapping a digit, live spectrum and waterfall with station labels, S/N meters, tune, mode, volume. Verified receiving in the simulator against the SpyServer on the LAN. Needs a development certificate to reach a device; the script says what is missing and how. |
+| iPadOS receiver | ✅ `native-app/build-ios.sh` builds the same sources for iPad, and the tablet receives on its own: SpyServer client, demodulators and audio all run there. The display is not a UIKit rewrite: `SpectrumView`, `FreqView` and `SignalMeter` are one file each, with the platform seams — view and font types, how a redraw is asked for, the drawing context, pointer versus touch — in `Platform.swift`. Spectrum and waterfall with station labels and a draggable split, seven-segment readout tuned by tapping a digit, preset list grouped by band, band jump, tune steps, mode, volume, S/N meters, a display rail (zoom, waterfall depth, dB ceiling and floor) and an options sheet holding the live demod's own settings. Installing on a device needs a development certificate and a provisioning profile; the script says what is missing and how. See [iPadOS receiver](#ipados-receiver). |
 | Standalone receiver | ✅ `Deck RX Solo.app` connects to SpyServer itself and needs no plugin, no Node and no native modules: SpyServer client, all six demods with FM stereo, audio, station names, presets, SDR++ import and the control endpoint are all in the app. Universal binary, macOS 12+ — verified on a 2015 Intel MacBook Air. Copy the `.app` and clear its quarantine attribute. See [Standalone receiver](#standalone-receiver-deck-rx-solo). |
 | Headless receiver | ✅ `bin/headless.js` runs the whole signal path — SpyServer client, demodulator, audio chain, control endpoint, status feed — with no Stream Deck involved. The core logs through `src/log.ts` instead of the SDK, so the plugin and the headless process share every module. Run it with the Node the native modules were built against. |
 | Spectrum feed | ✅ binary FFT frames over a Unix socket (`/tmp/deck-rx-spectrum.sock`, `src/spectrumFeed.ts`) for a native front-end. Computes nothing while nobody is connected, and drops frames for a reader that falls behind rather than queueing them. See [Spectrum feed](#spectrum-feed-native-front-end). |
@@ -225,7 +225,7 @@ without their 200×100 px and four-panel limits.
 native-app/build-app.sh          # both bundles
 native-app/build-app.sh front    # /Applications/Deck RX.app only
 native-app/build-app.sh solo     # /Applications/Deck RX Solo.app only
-native-app/run-tests.sh          # 56 assertions over the receiver
+native-app/run-tests.sh          # 80 assertions over the receiver
 ```
 
 Two bundles, one source tree, separated by a `STANDALONE` compile flag:
@@ -511,6 +511,59 @@ matters, and halving it costs FM quality — the plugin raised its own default
 from 228 to 456 kHz because far-adjacent stations aliased into the audible
 baseband. AM does not care, so `iqDecimation: 2` is a real option on a slow
 machine used for medium wave and not on one used for FM.
+
+## iPadOS receiver
+
+The iPad build is a receiver, not a remote view of the Mac one: it opens its
+own connection to the SpyServer, demodulates on the tablet and plays through
+`AVAudioSession`.
+
+```sh
+native-app/build-ios.sh sim install    # simulator, no signing needed
+native-app/build-ios.sh device         # signed, installed over USB
+```
+
+It compiles from the same `Sources/` tree as the Mac app. `main.swift` and
+`AppServer.swift` are the only files left out — the first is the AppKit window,
+the second is the control endpoint the plugin owns, which an iPad has nothing
+to answer on. `iOSApp.swift` is the UIKit host: scene delegate, layout, preset
+table and options sheet. The drawing views are shared rather than reimplemented,
+so a fix to the spectrum lands on both platforms and cannot drift between them.
+
+What the window carries:
+
+- spectrum and waterfall with station labels, the split between them dragged
+  with a pan gesture (`spectrumSplit`, same key the Mac app persists)
+- the seven-segment readout, tuned by tapping a digit, with the station name
+  above it and the S and N meters beside it
+- the preset list grouped by band, with the row the receiver is actually on
+  marked by frequency rather than by what was last picked
+- band jump, and coarse/fine tune buttons that ride on the mode's own tune step
+  (`config.step(for:)`), so AM moves in 9 kHz and FM in 100 kHz
+- a display rail: zoom and waterfall depth as sliders, the dB ceiling and floor
+  as vertical rails beside the trace, MAX above MIN to match the axis
+- an options sheet with the live demod's own settings, RF gain, IQ NR,
+  levelling, tune mode, JP region and connect-at-start — the sheet rebuilds on
+  a mode change, so an AM receiver is never offered de-emphasis
+- the app is landscape: the layout spends its width on the spectrum
+
+Still Mac-only, and deliberately so unless asked for: the JST/UTC clock, the
+display scale, SDR++ import and sync, icecast publishing, output device
+selection, and the RAW and DSB modes (six segments are what fits).
+
+**First run** connects to `127.0.0.1:5555`, the same default the shared
+`RadioConfig` carries — there is no plugin config on an iPad to seed a real
+address from. Type `host:port` into the field and it is persisted before the
+connect is attempted, so a refused address survives to the next launch.
+
+**Signing.** The bundle is built by plain `swiftc`, so Xcode's automatic signing
+never runs: the provisioning profile is made by hand in the developer portal
+(device UDID → App ID → an iOS App Development profile), downloaded, and picked
+up by bundle id. The device needs Developer Mode on (iPadOS 16+) and a pairing
+`devicectl` agrees with. If `security find-identity -v -p codesigning` reports
+no identities while a valid certificate is installed, the WWDR intermediate is
+the usual reason — the G1 that shipped with older keychains expired in 2023 and
+the current G3 has to be added alongside it.
 
 ## Documentation
 

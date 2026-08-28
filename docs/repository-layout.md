@@ -28,8 +28,11 @@
 │   ├── Sources/main.swift          # Window: presets / spectrum / transport
 │   ├── Sources/Receiver.swift      # Status feed reads + control endpoint writes
 │   ├── Sources/SpectrumFeed.swift  # Reads the plugin's spectrum socket
-│   ├── Sources/SpectrumView.swift  # Spectrum + waterfall drawing
-│   └── build-app.sh                # swiftc + bundle -> /Applications/Deck RX.app
+│   ├── Sources/SpectrumView.swift  # Spectrum + waterfall drawing (both platforms)
+│   ├── Sources/Platform.swift      # AppKit / UIKit seams (view, font, redraw, paths)
+│   ├── Sources/iOSApp.swift        # iPad host: scene, layout, preset table, options sheet
+│   ├── build-app.sh                # swiftc + bundle -> /Applications/Deck RX.app
+│   └── build-ios.sh                # swiftc + sign -> iPad bundle (sim | device)
 └── com.hogehoge.deck-rx.sdPlugin/
     ├── manifest.json
     ├── layouts/                    # Encoder LCD layouts

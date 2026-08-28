@@ -498,6 +498,32 @@ Thread.sleep(forTimeInterval: 2.5)
 check("disconnect stops the retries", rc.lastError == errAfterStop,
       "error moved to \(rc.lastError ?? "nil")")
 
+section("the reader tracks the ring depth instead of drifting off it")
+// The sender's clock and the device's differ by tens of ppm. With a fixed
+// ratio the ring can only fill until it overflows or empty until it underruns;
+// this loop is what holds it at the target depth instead.
+check("a shallow ring slows the reader down",
+      AudioSink.trackedRate(fillFrames: 100, target: 1000, current: 1) < 1)
+check("a deep ring speeds it up",
+      AudioSink.trackedRate(fillFrames: 5000, target: 1000, current: 1) > 1)
+check("at the target it does not move",
+      near(AudioSink.trackedRate(fillFrames: 1000, target: 1000, current: 1), 1, 1e-12))
+// Approached, not jumped to: a ratio that steps is heard as a pitch waver.
+check("one step is small",
+      AudioSink.trackedRate(fillFrames: 1_000_000, target: 1000, current: 1) < 1.0002)
+var tracked = 1.0
+for _ in 0..<1000 {
+    tracked = AudioSink.trackedRate(fillFrames: 1_000_000, target: 1000, current: tracked)
+}
+check("and converges inside the 0.4% cap", tracked > 1.0035 && tracked <= 1.0041,
+      "settled at \(tracked)")
+var starved = 1.0
+for _ in 0..<1000 {
+    starved = AudioSink.trackedRate(fillFrames: 0, target: 1000, current: starved)
+}
+check("the same cap holds on the empty side", starved < 0.9965 && starved >= 0.9959,
+      "settled at \(starved)")
+
 section("audio sink accepts the channel counts the modes need")
 let sink = AudioSink()
 check("mono starts", (try? sink.start(sourceRate: 9500, channels: 1)) != nil)

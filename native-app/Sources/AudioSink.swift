@@ -41,6 +41,35 @@ final class AudioSink {
     private var priming = true
     private var primeFrames = 0
 
+    /// Fractional position inside the current frame, and how fast the reader
+    /// walks the ring. 1.0 is "one input frame per output frame".
+    private var readFrac: Double = 0
+    private var rate: Double = 1
+
+    /// How fast to read, given how full the ring is.
+    ///
+    /// The sender's clock (the receiver's crystal, by way of the server) and
+    /// this device's audio clock are independent and drift apart by tens of
+    /// parts per million. With a fixed conversion ratio that difference has
+    /// nowhere to go: the ring fills until it overflows, or empties until it
+    /// underruns, and the only question is which. The plugin answers it with
+    /// libsamplerate, trimming the resampling ratio to hold its queue at a
+    /// set depth. This is the same loop, one level down — the ring is read a
+    /// hair faster when it is fuller than the target and a hair slower when it
+    /// is emptier, which is what keeps latency at the target instead of
+    /// wandering between the prime depth and the ring's size.
+    ///
+    /// The correction is capped at 0.4%, two orders of magnitude more than the
+    /// drift it exists to cancel, and it is approached slowly: a ratio that
+    /// jumps is heard as a pitch waver, where 0.4% held steady is under three
+    /// cents and inaudible.
+    static func trackedRate(fillFrames: Int, target: Int, current: Double) -> Double {
+        guard target > 0 else { return 1 }
+        let err = Double(fillFrames - target) / Double(target)
+        let wanted = 1 + max(-0.004, min(0.004, err * 0.05))
+        return current + 0.02 * (wanted - current)
+    }
+
     var volume: Double = 0.9
     var muted = false
     /// The gain the last sample actually left with. A buffer ramps from here
@@ -189,6 +218,8 @@ final class AudioSink {
 
         primeFrames = Int(rate * 0.2)
         priming = true
+        readFrac = 0
+        self.rate = 1
         guard let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: ch) else { return }
         let node = AVAudioSourceNode(format: fmt) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
@@ -222,27 +253,54 @@ final class AudioSink {
                     return noErr
                 }
             }
-            let takeFrames = min(n, available / chans)
-            for c in 0..<min(chans, abl.count) {
-                guard let out = abl[c].mData?.assumingMemoryBound(to: Float.self) else { continue }
-                var idx = r + c
-                if idx >= self.capacity { idx -= self.capacity }
-                for i in 0..<takeFrames {
-                    out[i] = self.ring[idx]
+            var availFrames = available / chans
+            self.rate = Self.trackedRate(fillFrames: availFrames,
+                                         target: self.primeFrames,
+                                         current: self.rate)
+            // Channel pointers taken once. Non-interleaved output is one buffer
+            // per channel, and there are only ever one or two of them, so this
+            // costs no allocation on a realtime thread.
+            let out0 = abl.count > 0 ? abl[0].mData?.assumingMemoryBound(to: Float.self) : nil
+            let out1 = chans > 1 && abl.count > 1
+                ? abl[1].mData?.assumingMemoryBound(to: Float.self) : nil
+            var idx = r
+            var frac = self.readFrac
+            var produced = 0
+            // Two frames of headroom: interpolation reads the next one as well.
+            while produced < n && availFrames >= 2 {
+                let f = Float(frac)
+                var i0 = idx
+                if i0 >= self.capacity { i0 -= self.capacity }
+                var i1 = i0 + chans
+                if i1 >= self.capacity { i1 -= self.capacity }
+                if let o = out0 { o[produced] = self.ring[i0] * (1 - f) + self.ring[i1] * f }
+                if let o = out1 {
+                    var j0 = i0 + 1, j1 = i1 + 1
+                    if j0 >= self.capacity { j0 -= self.capacity }
+                    if j1 >= self.capacity { j1 -= self.capacity }
+                    o[produced] = self.ring[j0] * (1 - f) + self.ring[j1] * f
+                }
+                produced += 1
+                frac += self.rate
+                while frac >= 1 {
+                    frac -= 1
                     idx += chans
                     if idx >= self.capacity { idx -= self.capacity }
+                    availFrames -= 1
                 }
-                for i in takeFrames..<n { out[i] = 0 }
             }
-            if takeFrames < n {
-                self.underruns += n - takeFrames
+            if let o = out0 { for i in produced..<n { o[i] = 0 } }
+            if let o = out1 { for i in produced..<n { o[i] = 0 } }
+            if produced < n {
+                self.underruns += n - produced
                 // Ran dry: refill before reading again, instead of scraping
                 // the bottom of the ring buffer by buffer for the next second.
                 self.priming = true
+                self.rate = 1
+                frac = 0
             }
-            r += takeFrames * chans
-            while r >= self.capacity { r -= self.capacity }
-            self.readIndex = r
+            self.readFrac = frac
+            self.readIndex = idx
             return noErr
         }
         source = node
@@ -254,6 +312,8 @@ final class AudioSink {
     }
 
     func stop() {
+        readFrac = 0
+        rate = 1
         if engine.isRunning { engine.stop() }
         if let s = source { engine.detach(s); source = nil }
         sourceRate = 0

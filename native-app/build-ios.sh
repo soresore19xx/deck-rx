@@ -48,6 +48,23 @@ for f in jp-stations.json eibi.txt callsigns.json presets.json; do
   else echo "WARN: $f missing - no station names for it"; fi
 done
 
+# The icon. A bare swiftc build has no asset catalogue, so the PNGs go in the
+# bundle root and Info.plist names them: iOS still resolves that older form, and
+# it needs no actool. Without any of it the home screen shows a black tile.
+RSVG="$(command -v rsvg-convert || true)"
+ICON_SVG="$HERE/icon-ios.svg"
+if [ -n "$RSVG" ] && [ -f "$ICON_SVG" ]; then
+  echo "==> rendering icons ..."
+  for spec in 40:AppIcon20x20@2x 58:AppIcon29x29@2x 80:AppIcon40x40@2x \
+              120:AppIcon60x60@2x 152:AppIcon76x76@2x 167:AppIcon83.5x83.5@2x \
+              1024:AppIcon1024; do
+    px="${spec%%:*}"; name="${spec##*:}"
+    "$RSVG" -w "$px" -h "$px" "$ICON_SVG" -o "$APP/$name.png" || echo "WARN: icon $name failed"
+  done
+else
+  echo "WARN: rsvg-convert or icon-ios.svg missing - the app will show a black icon"
+fi
+
 # UILaunchScreen is not decoration: without it iPadOS runs the app in
 # compatibility mode, letterboxed into a phone-sized rectangle.
 # NSLocalNetworkUsageDescription is what makes a connection to a SpyServer on
@@ -71,6 +88,37 @@ cat > "$APP/Info.plist" <<PLIST
 	<key>MinimumOSVersion</key><string>$DEPLOY_TARGET</string>
 	<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
 	<key>UILaunchScreen</key><dict/>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>AppIcon20x20</string>
+				<string>AppIcon29x29</string>
+				<string>AppIcon40x40</string>
+				<string>AppIcon60x60</string>
+				<string>AppIcon76x76</string>
+				<string>AppIcon83.5x83.5</string>
+			</array>
+			<key>UIPrerenderedIcon</key><false/>
+		</dict>
+	</dict>
+	<key>CFBundleIcons~ipad</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>AppIcon20x20</string>
+				<string>AppIcon29x29</string>
+				<string>AppIcon40x40</string>
+				<string>AppIcon76x76</string>
+				<string>AppIcon83.5x83.5</string>
+			</array>
+			<key>UIPrerenderedIcon</key><false/>
+		</dict>
+	</dict>
 	<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
 	<!-- Landscape only. This is a receiver front panel: a preset list beside a
 	     spectrum beside its controls is a wide arrangement, and the portrait

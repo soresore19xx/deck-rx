@@ -1,0 +1,38 @@
+<!--
+  === Claude origin ===
+  Created/placed by Anthropic Claude Code at: 2026-08-28-213000
+  Icon source for the iPadOS bundle. Same dipole as icon-solo.svg — the iPad
+  build is the standalone receiver, so it wears the standalone face — but the
+  pale-blue plate runs edge to edge instead of sitting on a black square: iOS
+  masks the corners itself, and a plate inside a plate reads as a sticker on a
+  black tile at the size a home screen actually shows.
+  The elements bow rather than run dead straight (2026-08-29): a wire dipole
+  sags between its insulators, and the ruler-straight version read as a drawing
+  of a line instead of an antenna.
+  ====================
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144">
+  <defs>
+    <linearGradient id="g" x1="0.18" y1="0.05" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#dcecfb"/>
+      <stop offset="0.55" stop-color="#9cc6ec"/>
+      <stop offset="1" stop-color="#5c8fbe"/>
+    </linearGradient>
+  </defs>
+  <rect width="144" height="144" fill="url(#g)"/>
+
+  <line x1="20" y1="57" x2="31" y2="57" stroke="#2f4f6b" stroke-width="2.5" stroke-dasharray="3,2"/>
+  <line x1="113" y1="57" x2="124" y2="57" stroke="#2f4f6b" stroke-width="2.5" stroke-dasharray="3,2"/>
+
+  <path d="M35,57 Q50,66 66,60" fill="none" stroke="#0a0a0a" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M78,60 Q94,66 109,57" fill="none" stroke="#0a0a0a" stroke-width="3.5" stroke-linecap="round"/>
+
+  <ellipse cx="34" cy="57" rx="2.6" ry="4.5" fill="#1a1a1a" stroke="#0a0a0a" stroke-width="1"/>
+  <ellipse cx="110" cy="57" rx="2.6" ry="4.5" fill="#1a1a1a" stroke="#0a0a0a" stroke-width="1"/>
+
+  <rect x="66" y="50" width="12" height="22" rx="2.4" fill="#f2f8ff" stroke="#0a0a0a" stroke-width="1.5"/>
+  <line x1="66" y1="61" x2="78" y2="61" stroke="#0a0a0a" stroke-width="0.7" opacity="0.5"/>
+  <line x1="72" y1="72" x2="72" y2="90" stroke="#0a0a0a" stroke-width="2.5"/>
+  <line x1="72" y1="90" x2="72" y2="108" stroke="#0a0a0a" stroke-width="4.5"/>
+  <circle cx="72" cy="110" r="2.8" fill="#0a0a0a"/>
+</svg>

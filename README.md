@@ -538,14 +538,24 @@ What the window carries:
   above it and the S and N meters beside it
 - the preset list grouped by band, with the row the receiver is actually on
   marked by frequency rather than by what was last picked
-- band jump, and coarse/fine tune buttons that ride on the mode's own tune step
-  (`config.step(for:)`), so AM moves in 9 kHz and FM in 100 kHz
+- band jump, and coarse/fine tune buttons that ride on the mode's own tune step.
+  The step follows the raster the band is channelised on, filed under the
+  plugin's own key (`"2:mw"`, `"2:sw"`, `"2:vhf"` for AM, the mode number for
+  everything else): FM 100 kHz, NFM 12.5 kHz, AM 9 kHz on medium wave and 5 kHz
+  on short wave, SSB 1 kHz, CW 100 Hz
 - a display rail: zoom and waterfall depth as sliders, the dB ceiling and floor
   as vertical rails beside the trace, MAX above MIN to match the axis
 - an options sheet with the live demod's own settings, RF gain, IQ NR,
   levelling, tune mode, JP region and connect-at-start — the sheet rebuilds on
   a mode change, so an AM receiver is never offered de-emphasis
 - the app is landscape: the layout spends its width on the spectrum
+
+The status line carries two numbers worth reading when the audio breaks up:
+`drops` counts samples the output asked for and the ring did not have, and
+`gap` is the longest pause between two IQ packets in the last ten seconds.
+Together they separate the two causes — a large gap means the samples were late
+(network or server), a small gap with drops climbing means they arrived on time
+and the tablet could not keep up.
 
 **The signal path is the plugin's, parameter for parameter.** The Swift port had
 acquired settings of its own, and each one cost audio quality: an audio

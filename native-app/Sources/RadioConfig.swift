@@ -87,8 +87,47 @@ struct RadioConfig: Codable, Equatable {
         }
     }
 
-    func step(for mode: Int) -> Double {
-        tuneStepByMode[String(mode)] ?? tuneStepHz
+    /// The band a step is filed under. AM is split because 9 kHz is the medium
+    /// wave raster and 5 kHz the short-wave one; everything else has one raster
+    /// per mode. spyService.ts:196.
+    static func stepBand(ofHz hz: Double) -> String {
+        if hz < 1_800_000 { return "mw" }      // long and medium wave
+        if hz < 30_000_000 { return "sw" }     // the rest of HF
+        return "vhf"
+    }
+
+    /// The key a remembered step is filed under — the plugin's own shape, so
+    /// the two config files stay readable by each other. spyService.ts:233.
+    static func stepKey(mode: Int, hz: Double) -> String {
+        mode == 2 ? "2:\(stepBand(ofHz: hz))" : String(mode)
+    }
+
+    /// The step a band is channelised on, for when nothing has been chosen.
+    /// spyService.ts:218. Japanese FM sits on a 100 kHz raster; tuning it in
+    /// 9 kHz — which is what a bare `tuneStepHz` gave every mode here — takes
+    /// eleven presses to reach the next station.
+    static func defaultStep(mode: Int, hz: Double) -> Double? {
+        switch mode {
+        case 1: return 100_000                                       // WFM
+        case 0: return 12_500                                        // NFM
+        case 2: return stepBand(ofHz: hz) == "sw" ? 5_000 : 9_000    // AM
+        case 4, 6: return 1_000                                      // USB / LSB
+        case 5: return 100                                           // CW
+        default: return nil
+        }
+    }
+
+    /// What was last chosen for this mode and band, or the band's own raster,
+    /// or the current step. spyService.ts:1070.
+    func step(for mode: Int, hz: Double) -> Double {
+        let key = Self.stepKey(mode: mode, hz: hz)
+        if let v = tuneStepByMode[key], v > 0 { return v }
+        // A config written before AM was split by band carries a bare "2".
+        // That value was chosen on medium wave, which is where the old default
+        // sat, so it belongs to that band.
+        if key == "2:mw", let v = tuneStepByMode["2"], v > 0 { return v }
+        if let d = Self.defaultStep(mode: mode, hz: hz) { return d }
+        return tuneStepHz
     }
 
     /// 0 NFM and 1 WFM are the FM family; 3 DSB rides the FM path too, as it

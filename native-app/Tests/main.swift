@@ -338,8 +338,15 @@ let enc = JSONEncoder()
 let dec = JSONDecoder()
 if let data = try? enc.encode(c), let back = try? dec.decode(RadioConfig.self, from: data) {
     check("host survives", back.host == c.host)
-    check("per-mode step survives", back.step(for: WFM) == 100_000)
-    check("step falls back to the global one", back.step(for: CW) == back.tuneStepHz)
+    check("per-mode step survives", back.step(for: WFM, hz: 80_000_000) == 100_000)
+    // AM is filed by band: the bare "2" a pre-split config carries belongs to
+    // medium wave, and short wave falls through to its own 5 kHz raster.
+    check("a bare AM step is read as medium wave",
+          back.step(for: AM, hz: 954_000) == 9_000)
+    check("short wave AM takes the band's raster",
+          back.step(for: AM, hz: 6_055_000) == 5_000)
+    check("a mode with nothing stored takes the band raster, not the global step",
+          back.step(for: CW, hz: 7_000_000) == 100)
 } else {
     check("config encodes and decodes", false, "encode or decode threw")
 }

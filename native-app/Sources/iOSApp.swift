@@ -618,11 +618,16 @@ final class RadioViewController: UIViewController {
             // keep up" and "the output stopped asking": one climbs while the
             // audio breaks up, the other stays flat. Without it, choppy audio
             // is a description rather than a measurement.
+            // Drops alone cannot say why. The packet gap beside them can: a
+            // large gap means the IQ was late (network or server), a small one
+            // with drops climbing means it arrived and this end fell behind.
             let drops = radio.audioUnderruns
+            let tail = drops > 0
+                ? String(format: "  drops %d  gap %.0fms", drops, radio.maxPacketGapMs)
+                : String(format: "  gap %.0fms", radio.maxPacketGapMs)
             setText(statusLabel, String(format: "connected  %@  RSSI %.0f dBFS  SNR %.0f dB  %.0f kHz audio%@",
                                       modeName(radio.mode), radio.rssiDbfs, radio.snrDb,
-                                      radio.audioRate / 1000,
-                                      drops > 0 ? String(format: "  drops %d", drops) : ""))
+                                      radio.audioRate / 1000, tail))
         } else {
             statusLabel.textColor = Pal.faint
             setText(statusLabel, "not connected")

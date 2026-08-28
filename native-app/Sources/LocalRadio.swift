@@ -25,6 +25,17 @@ final class LocalRadio {
     private var muteUntil = Date.distantPast
     /// The pending gain apply, so a run of taps becomes one apply.
     private var gainApply: DispatchWorkItem?
+
+    /// Longest gap between two IQ packets in the last ten seconds, in ms.
+    ///
+    /// This is what separates the two causes of an output underrun. IQ arrives
+    /// continuously while the stream runs, so a large gap means the samples
+    /// were late — the network or the server. A small gap with drops climbing
+    /// means they arrived on time and this end could not keep up. Without it,
+    /// "the audio breaks up" is a description that fits both.
+    private(set) var maxPacketGapMs: Double = 0
+    private var lastPacketAt = Date.distantPast
+    private var gapWindowStart = Date.distantPast
     private let iqnr = IqNr()
     /// Persisted settings. The app owns this; the plugin's config seeds it on a
     /// first run and is never written back to.
@@ -130,7 +141,17 @@ final class LocalRadio {
 
     /// Tune step for tick-based control. Follows the mode so a knob click
     /// means the same thing it does on the deck.
-    var tuneStepHz: Double { config.step(for: mode) }
+    var tuneStepHz: Double { config.step(for: mode, hz: Double(frequency)) }
+
+    /// Remember the step against the band it was chosen in, the way the plugin
+    /// does on a band crossing (spyService.ts:1091), so moving away and back
+    /// returns the step the user set there.
+    func setTuneStep(_ hz: Double) {
+        guard hz > 0 else { return }
+        config.tuneStepByMode[RadioConfig.stepKey(mode: mode, hz: Double(frequency))] = hz
+        config.tuneStepHz = hz
+        config.save()
+    }
     private(set) var frequency: UInt32 = 1_134_000
     private(set) var iqRate: UInt32 = 0
     var iqRateHz: UInt32 { iqRate }
@@ -496,6 +517,20 @@ final class LocalRadio {
 
     private func absorb(_ pkt: SpyClient.IQPacket) {
         guard pkt.format == .int16 else { return }   // we asked for int16
+        // Measured on arrival, before the queue: the point is when the bytes
+        // reached this process, not when it got round to them.
+        let now = Date()
+        if lastPacketAt != .distantPast {
+            let gap = now.timeIntervalSince(lastPacketAt) * 1000
+            if gap > maxPacketGapMs { maxPacketGapMs = gap }
+        }
+        lastPacketAt = now
+        // A rolling ten-second window, so the number describes now rather than
+        // the worst moment since the app started.
+        if now.timeIntervalSince(gapWindowStart) > 10 {
+            gapWindowStart = now
+            maxPacketGapMs = 0
+        }
         queue.async {
             // Demodulate per packet, not per display frame: audio has to be
             // continuous, and the frame timer deliberately skips samples.

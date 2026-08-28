@@ -191,25 +191,28 @@ section("demod routing sends each mode to the right detector")
 let rate = 456_000.0
 let wideIQ = makeIQ(rate: rate, count: 45_600, deviationHz: 50_000,
                     mpx: { sin(2 * .pi * 440 * $0) })
-let audioDec = 4 * 12
+// The plugin's own config: audioDecimate 4 over a 456 kHz IQ rate = 114 kHz.
+let audioDec = 4
 let audioRate = rate / Double(audioDec)
 
 /// Filter settings must match whatever the caller's config yields, or a
 /// comparison against LocalRadio measures the settings rather than the routing.
 func demodOutput(mode: Int, iq: Data,
                  ifCutoff: Double = 75_000, tau: Double = 75e-6) -> [Float] {
+    let dec = audioDec
+    let aRate = audioRate
     let d = Demods()
     d.setWfmAudioBand(iqRate: rate)
     d.setWfmIfBandwidth(iqRate: rate, cutoffHz: ifCutoff)
-    d.setDeemphasis(audioRate: audioRate, tau: tau)
-    d.setupSSB(iqRate: rate, audioRate: audioRate)
+    d.setDeemphasis(audioRate: aRate, tau: tau)
+    d.setupSSB(iqRate: rate, audioRate: aRate)
     d.setupCW(iqRate: rate)
     switch mode {
-    case NFM: return d.processFM(int16IQ: iq, decimate: audioDec)
-    case WFM: return d.processWFM(int16IQ: iq, decimate: audioDec)
-    case USB: return d.processSSB(int16IQ: iq, decimate: audioDec, upperSideband: true)
-    case LSB: return d.processSSB(int16IQ: iq, decimate: audioDec, upperSideband: false)
-    case CW:  return d.processCW(int16IQ: iq, decimate: audioDec)
+    case NFM: return d.processFM(int16IQ: iq, decimate: dec)
+    case WFM: return d.processWFM(int16IQ: iq, decimate: dec)
+    case USB: return d.processSSB(int16IQ: iq, decimate: dec, upperSideband: true)
+    case LSB: return d.processSSB(int16IQ: iq, decimate: dec, upperSideband: false)
+    case CW:  return d.processCW(int16IQ: iq, decimate: dec)
     default:  return []
     }
 }
@@ -243,6 +246,49 @@ for (m, name) in [(NFM, "NFM"), (WFM, "WFM"), (USB, "USB"), (LSB, "LSB"), (CW, "
     check("mode \(m) routes to \(name)", same,
           "radio rms \(rms(viaRadio)) vs \(name) rms \(rms(direct))")
 }
+
+section("FM audio comes back at the frequency it went in at")
+// The bug this catches: FM ran at the AM audio rate (9.5 kHz) while its
+// anti-alias filter sat at 15 kHz, so everything above 4.75 kHz folded back
+// down. A 6 kHz tone — where a sibilant keeps its energy — came out at
+// 3.5 kHz, and speech sounded like it had a lisp.
+//
+// Goertzel rather than an FFT: two frequencies are all this asks about.
+func tonePower(_ x: [Float], rate: Double, hz: Double) -> Double {
+    guard rate > 0, !x.isEmpty else { return 0 }
+    let k = 2 * cos(2 * Double.pi * hz / rate)
+    var s1 = 0.0, s2 = 0.0
+    for v in x {
+        let s0 = Double(v) + k * s1 - s2
+        s2 = s1; s1 = s0
+    }
+    return abs(s1 * s1 + s2 * s2 - k * s1 * s2)
+}
+
+let toneHz = 6_000.0
+let toneIQ = makeIQ(rate: rate, count: 91_200, deviationHz: 20_000, noise: 0,
+                    mpx: { sin(2 * .pi * toneHz * $0) })
+var toneCfg = RadioConfig()
+toneCfg.fmStereo = false
+toneCfg.audioDecimate = 4
+let toneRadio = LocalRadio()
+toneRadio.config = toneCfg
+toneRadio.mode = WFM
+// The head carries the IF filter and the de-emphasis settling into the answer.
+// Kept short enough that the old, lower rate still leaves samples to measure —
+// a regression has to fail on the tone being in the wrong place, not on an
+// empty array.
+let toneOut = Array(toneRadio.demodulateForTesting(toneIQ, iqRate: UInt32(rate)).dropFirst(800))
+let toneRate = toneRadio.audioRate
+check("the audio rate leaves Nyquist above the 15 kHz anti-alias filter",
+      toneRate / 2 > 15_000, "audio rate \(toneRate)")
+check("the decimation is the plugin's, with no extra factor",
+      toneRadio.audioDecimate == toneCfg.audioDecimate,
+      "\(toneRadio.audioDecimate) vs \(toneCfg.audioDecimate)")
+let atTone = tonePower(toneOut, rate: toneRate, hz: toneHz)
+let atMirror = tonePower(toneOut, rate: toneRate, hz: 3_500)
+check("a 6 kHz tone is at 6 kHz, not folded to 3.5 kHz", atTone > atMirror * 10,
+      "6 kHz \(atTone) vs 3.5 kHz \(atMirror)")
 
 section("AM detects an amplitude-modulated carrier")
 let amIQ = makeIQ(rate: rate, count: 45_600, carrierOffsetHz: 2_000,

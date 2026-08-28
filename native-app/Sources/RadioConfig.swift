@@ -75,7 +75,17 @@ struct RadioConfig: Codable, Equatable {
     var autoAudio = false
 
     /// Seconds of tau for the de-emphasis IIR.
-    var deemphasisTau: Double { fmDeemphasis == "50us" ? 50e-6 : 75e-6 }
+    /// Zero when the setting is "off", as the plugin has it
+    /// (spyService.ts:855) — the sheet offers off / 50us / 75us and "off" has
+    /// to mean off. This used to fall through to 75 µs for anything that was
+    /// not "50us", so the option could not be turned off at all.
+    var deemphasisTau: Double {
+        switch fmDeemphasis {
+        case "50us": return 50e-6
+        case "75us": return 75e-6
+        default:     return 0
+        }
+    }
 
     func step(for mode: Int) -> Double {
         tuneStepByMode[String(mode)] ?? tuneStepHz

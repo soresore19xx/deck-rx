@@ -18,11 +18,18 @@ final class LocalRadio {
     private let other = Demods()
     private let sink = AudioSink()
     private let leveler = OutputLeveler()
+    /// Output is silenced until this instant. The plugin keeps the same window
+    /// (spyService.ts:362) and opens it around anything that steps the signal —
+    /// a gain change, a retune, a mode change — because the step itself is
+    /// louder than the programme. Nothing here had it.
+    private var muteUntil = Date.distantPast
+    /// The pending gain apply, so a run of taps becomes one apply.
+    private var gainApply: DispatchWorkItem?
     private let iqnr = IqNr()
     /// Persisted settings. The app owns this; the plugin's config seeds it on a
     /// first run and is never written back to.
     var config = RadioConfig.load() {
-        didSet { queue.async { self.configureDemods() } }
+        didSet { applyConfig(changedFrom: oldValue) }
     }
     private let queue = DispatchQueue(label: "deck-rx.localradio")
 
@@ -55,12 +62,18 @@ final class LocalRadio {
     /// the reason far-adjacent FM stations stopped aliasing into baseband.
     var decimationOffset: UInt32 { config.iqDecimation }
     var gain: UInt32 { config.gain }
-    /// Audio decimation from the IQ rate. 456 kHz / 48 = 9.5 kHz, which is
-    /// enough for a 9 kHz AM channel and cheap to filter.
-    /// IQ rate over this is the audio rate. The plugin's own default is 4,
-    /// which at 456 kHz gives 114 kHz — deliberately high, because the FM
-    /// stereo subcarrier lives at 38 kHz and has to survive the decimation.
-    var audioDecimate: Int { config.audioDecimate * 12 }
+    /// Audio decimation from the IQ rate; the audio rate is the IQ rate over
+    /// this. Exactly what the plugin does — `Math.max(1, cfg.audioDecimate)`,
+    /// spyService.ts:1206 — and nothing else.
+    ///
+    /// This used to be `config.audioDecimate * 12`, a factor that exists in no
+    /// other implementation. With the plugin's own config (audioDecimate 4,
+    /// iqDecimation 1) it turned a 114 kHz audio rate into 9.5 kHz, whose
+    /// Nyquist is 4.75 kHz — below the 15 kHz the anti-alias filter in front of
+    /// the decimator is set to. Measured: a 6 kHz tone came out at 3.5 kHz.
+    /// That is what made sibilants sound wrong, and it was invented here.
+    var audioDecimate: Int { max(1, config.audioDecimate) }
+
     var bandwidthHz: Double { config.bandwidth(for: mode) }
     /// Demod mode. The numbering is not ours to choose: SDR++ assigns it, the
     /// plugin follows it, and it travels inside every preset and bookmark —
@@ -73,6 +86,11 @@ final class LocalRadio {
             guard mode != oldValue else { return }
             config.mode = mode
             config.save()
+            // spyService.ts:1135 and :1168. Crossing the AM boundary changes
+            // the gain the server is holding as well as the detector, and that
+            // transient is the loudest in the system.
+            let crossesAM = (mode == 2) != (oldValue == 2)
+            muteUntil = max(muteUntil, Date().addingTimeInterval(crossesAM ? 0.25 : 0.1))
             queue.async {
                 self.configureDemods()
                 self.applyNrMode()
@@ -226,6 +244,9 @@ final class LocalRadio {
 
     func disconnect() {
         wantConnection = false
+        // Asked for, so there is nothing to report. Any error still in flight
+        // describes the connection we are closing on purpose.
+        lastError = nil
         reconnectTimer?.cancel(); reconnectTimer = nil
         sink.stop()
         client.stopStreaming()
@@ -251,6 +272,11 @@ final class LocalRadio {
         config.frequencyHz = Double(hz)
         config.save()
         guard isConnected else { return }
+        // spyService.ts:789. `resetForRetune()` zeroes the AM DC and carrier
+        // AGC, which then needs 150-200 ms to re-converge on the new station's
+        // level; the FM modes settle in half that. Without the window the
+        // residual level step is audible as a click on every retune.
+        muteUntil = max(muteUntil, Date().addingTimeInterval(mode == 2 ? 0.2 : 0.1))
         client.setFrequency(hz)
         am.resetForRetune()
         other.resetForRetune()
@@ -284,8 +310,11 @@ final class LocalRadio {
         lastError = nil
         reconnectDelay = 1        // a good connection earns a fast first retry
         reconnectTimer?.cancel(); reconnectTimer = nil
-        audioRate = Double(iqRate) / Double(max(1, audioDecimate))
         configureDemods()
+        // spyService.ts:1265 — covers the device's own start-up pop and the
+        // demodulator's first samples (atan2 on a near-zero previous I/Q, AM's
+        // DC settling).
+        muteUntil = max(muteUntil, Date().addingTimeInterval(0.5))
         if audioEnabled { restartAudio() }
         startFrameTimer()
         DispatchQueue.main.async { self.onState?() }
@@ -297,7 +326,11 @@ final class LocalRadio {
     /// run on any change, and doing it in one place is what keeps the AM and
     /// non-AM paths from drifting into different ideas of the same rate.
     private func configureDemods() {
-        guard iqRate > 0, audioRate > 0 else { return }
+        guard iqRate > 0 else { return }
+        // Derived here rather than at the call sites: it follows the mode as
+        // well as the IQ rate, and a mode change that did not recompute it
+        // left the FM detectors running at the rate AM had asked for.
+        audioRate = Double(iqRate) / Double(max(1, audioDecimate))
         let iq = Double(iqRate)
         am.reset()
         am.setBandwidth(audioRate: audioRate, bandwidthHz: config.amBandwidthHz, iqRate: iq)
@@ -310,15 +343,94 @@ final class LocalRadio {
         other.setDeemphasis(audioRate: audioRate, tau: config.deemphasisTau)
         other.setupSSB(iqRate: iq, audioRate: audioRate)
         other.setupCW(iqRate: iq)
-        other.setAudioFilters(rate: audioRate, lowPassHz: 0, highPassHz: 0)
-        other.setStereoAudioFilters(rate: audioRate, lowPassHz: 0, highPassHz: 0)
+        // The plugin's own values (spyService.ts:862): the low pass is 15 kHz
+        // when asked for and 0.45 of the audio rate when not — never off — and
+        // the high pass is 30 Hz or nothing. Both were hard-coded to zero here,
+        // so "Audio LPF" and "Audio HPF" in the options sheet did nothing at
+        // all and the audio kept whatever the decimator handed over.
+        let lpf = config.fmLowPass ? 15_000 : audioRate * 0.45
+        let hpf = config.fmHighPass ? 30.0 : 0
+        other.setAudioFilters(rate: audioRate, lowPassHz: lpf, highPassHz: hpf)
+        other.setStereoAudioFilters(rate: audioRate, lowPassHz: lpf, highPassHz: hpf)
         applyNrMode()
     }
+
+    /// Samples the output asked for and the ring did not have. The honest
+    /// measure of "the audio breaks up": it climbs only when the producer is
+    /// behind, so a flat count during choppy audio points at the output side
+    /// instead.
+    var audioUnderruns: Int { sink.underruns }
 
     /// WFM is the only stereo mode, so the sink's channel count follows it.
     var isStereoMode: Bool { mode == 1 && config.fmStereo }
     var stereoLocked: Bool { other.stereoLocked }
     var pilotMetric: Double { other.pilotMetric }
+
+    /// Push `config` into the running receiver.
+    ///
+    /// Called from `config`'s own `didSet`, so it does not matter who wrote the
+    /// setting — the iPad's options sheet, the control server, or a restore.
+    /// Rebuilding the filters was already happening; the two things that were
+    /// not are the reason the panel looked inert:
+    ///
+    /// - **RF gain lives on the server.** It is not a filter here, so nothing
+    ///   was rebuilt and nothing was sent. The control had no effect at all.
+    /// - **Stereo changes the shape of the audio graph.** Turning it off makes
+    ///   the demodulator produce one channel while the sink is still wired for
+    ///   two, so a mono signal is read as interleaved stereo — which is what
+    ///   "the audio breaks when I turn stereo off" was.
+    ///
+    /// `previous` skips the parts that did not move. Passing nil applies
+    /// everything, for a caller who changed something outside `config`.
+    func applyConfig(changedFrom previous: RadioConfig? = nil) {
+        if let p = previous, p == config { return }
+        let gainChanged = previous.map { $0.gain != config.gain } ?? true
+        let graphChanged = previous.map {
+            $0.fmStereo != config.fmStereo || $0.audioDecimate != config.audioDecimate
+        } ?? true
+        queue.async {
+            self.configureDemods()
+            if gainChanged { self.sendGain() }
+            if graphChanged, self.audioEnabled { self.restartAudio() }
+        }
+    }
+
+    /// The gain settings the server holds, resent at the value config now says.
+    /// Same pair and the same derivation as the connect sequence, so a gain
+    /// changed while running lands where a gain chosen before connecting does.
+    /// The plugin's `setGainInternal` (spyService.ts:722), step for step.
+    ///
+    /// Sending the two settings is only part of it. Changing the gain is an
+    /// amplitude step on the IQ followed by the server's own AGC settling, and
+    /// the demodulator's running state then describes a signal that no longer
+    /// exists. Without the mute a pop punches through; without the full reset
+    /// the detectors take their own time to catch up — which is what "the gain
+    /// does nothing" sounds like. The debounce groups a run of taps into one
+    /// apply, and `reset()` clears state without touching the coefficients.
+    private func sendGain() {
+        guard isConnected, deviceInfo != nil else { return }
+        muteUntil = max(muteUntil, Date().addingTimeInterval(0.2))
+        am.reset()
+        other.reset()
+        gainApply?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isConnected, let info = self.deviceInfo else { return }
+            let decStage = self.decimationOffset + info.minIQDecimation
+            let g = min(self.gain, info.maxGainIndex)
+            let digital = computeDigitalGain(deviceType: info.deviceType, deviceGain: g,
+                                             decimationStage: decStage,
+                                             maxGainIndex: info.maxGainIndex)
+            // Re-muted and reset around the apply itself, so the transient is
+            // covered even after the debounce window has elapsed.
+            self.muteUntil = max(self.muteUntil, Date().addingTimeInterval(0.15))
+            self.am.reset()
+            self.other.reset()
+            self.client.setSetting(.gain, g)
+            self.client.setSetting(.iqDigitalGain, digital)
+        }
+        gainApply = work
+        queue.asyncAfter(deadline: .now() + 0.08, execute: work)
+    }
 
     private func applyNrMode() {
         iqnr.reset()
@@ -336,7 +448,6 @@ final class LocalRadio {
         // gave a different count on consecutive runs.
         queue.sync {
             iqRate = rate
-            audioRate = Double(rate) / Double(max(1, audioDecimate))
             configureDemods()
             return demodulate(body)
         }
@@ -392,6 +503,10 @@ final class LocalRadio {
                 var pcm = self.demodulate(pkt.body)
                 if !pcm.isEmpty {
                     self.level(&pcm)
+                    // spyService.ts:1418 — silence while the window is open.
+                    if Date() < self.muteUntil {
+                        for i in 0..<pcm.count { pcm[i] = 0 }
+                    }
                     self.sink.write(pcm)
                 }
             }

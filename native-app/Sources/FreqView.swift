@@ -163,11 +163,20 @@ final class FreqView: XView {
         return out
     }
 
+    /// The width *any* frequency needs, not the width this one needs.
+    ///
+    /// The leading zeros are dropped from the drawing but not from the
+    /// measurement. Measured from `cells()`, the readout shrank whenever the
+    /// significant digits started further in — so a jump from 90.5 MHz to
+    /// 954 kHz re-laid out the whole header, and on iOS the digits from the
+    /// wider layout were left on screen underneath the new ones. A readout
+    /// that changes width as it is read is also a readout that drags the
+    /// meters beside it around.
     private var contentWidth: CGFloat {
-        let last = cells().last
-        let digits: CGFloat = last.map { $0.x + $0.w } ?? 0
+        var cx: CGFloat = 0
+        for c in text { cx += ((c == ".") ? DOT : DW) + CG }
         let unitW: CGFloat = (Self.unit as NSString).size(withAttributes: [.font: unitFont]).width
-        return digits + 12 + unitW + 8
+        return cx + 12 + unitW + 8
     }
 
     override var intrinsicContentSize: CGSize {
@@ -273,6 +282,15 @@ final class FreqView: XView {
 
     override func draw(_ dirtyRect: CGRect) {
         guard let ctx = currentContext else { return }
+        // Paint the ground first rather than trusting the host to have cleared
+        // it. On iOS the readout was drawing over its own previous frame: the
+        // digits start at the first significant one, so a jump between bands
+        // moves every cell sideways, and the old set stayed underneath the new
+        // one — "79.500.000" written twice, a few points apart, with two unit
+        // labels. Filling bounds costs one rectangle and makes the view
+        // responsible for its own background instead of the window's.
+        ctx.setFillColor(Pal.bg.cgColor)
+        ctx.fill(bounds)
         let oy = (bounds.height - DH) / 2
         // Everything above the first significant digit was dropped by cells(),
         // so what is left is all value and all lit.

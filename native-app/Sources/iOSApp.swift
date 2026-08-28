@@ -84,7 +84,6 @@ final class RadioViewController: UIViewController {
     private let stationLabel = UILabel()
     private let modeControl = UISegmentedControl(items: MODE_NAMES)
     private let stepLabel = UILabel()
-    private let volumeSlider = UISlider()
     private let muteButton = UIButton(type: .system)
     private var refreshTimer: Timer?
 
@@ -114,11 +113,13 @@ final class RadioViewController: UIViewController {
         radio.onFrame = { [weak self] frame in
             DispatchQueue.main.async { self?.spectrum.accept(frame) }
         }
-        let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
-        spectrum.markers = Receiver.presets().map {
-            ($0.freq, StationLabel.lookup(freqHz: $0.freq, region: region) ?? $0.name)
-        }
+        rebuildMarkers()
         radio.audioEnabled = true
+        // No slider here: the iPad's own volume buttons are the volume
+        // control, so the app hands the mixer full scale and gets out of the
+        // way. Two attenuators in series only cost headroom and confuse which
+        // one is turned down.
+        radio.volume = 1
         radio.mode = radio.config.mode
         refresh()
 
@@ -176,12 +177,6 @@ final class RadioViewController: UIViewController {
         stepLabel.textColor = Pal.faint
         stepLabel.textAlignment = .center
 
-        volumeSlider.minimumValue = 0
-        volumeSlider.maximumValue = 1
-        volumeSlider.value = Float(radio.volume)
-        volumeSlider.minimumTrackTintColor = Pal.accent
-        volumeSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
-
         muteButton.setTitle("Mute", for: .normal)
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
 
@@ -226,7 +221,18 @@ final class RadioViewController: UIViewController {
             m.tint = tint
             m.translatesAutoresizingMaskIntoConstraints = false
             m.heightAnchor.constraint(equalToConstant: 30).isActive = true
+            // A definite width, as the Mac window gives them. Left to take
+            // whatever the station name does not, the meters were re-measured
+            // on every refresh and their scale moved under the reading.
+            let wide = m.widthAnchor.constraint(equalToConstant: 360)
+            wide.priority = .defaultHigh
+            wide.isActive = true
+            m.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
         }
+        // The name is what gives way when the header is tight, not the meters
+        // and not the readout.
+        stationLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        stationLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         sMeter.ticks = [(0, "-100"), (2.0 / 9, "-80"), (4.0 / 9, "-60"),
                         (6.0 / 9, "-40"), (8.0 / 9, "-20")]
         nMeter.ticks = [(0, "0"), (0.25, "15"), (0.5, "30"), (0.75, "45"), (1, "60")]
@@ -292,7 +298,7 @@ final class RadioViewController: UIViewController {
             bandRow(),
             tuneRow(),
             modeControl,
-            row([muteButton, volumeSlider]),
+            muteButton,
             row([hostField, connectButton, optionsButton]),
             statusLabel,
             stepLabel,
@@ -496,8 +502,21 @@ final class RadioViewController: UIViewController {
     /// The demod's settings, in a sheet rather than a permanent column. The
     /// Mac has the width to keep them on screen; an iPad held in landscape has
     /// the width spent on the spectrum, and these are set once and left.
+    /// The names written along the spectrum. Rebuilt rather than set once: the
+    /// FM database is regional, so changing JP region in the options has to
+    /// re-label the trace as well as the readout.
+    private func rebuildMarkers() {
+        let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
+        spectrum.markers = Receiver.presets().map {
+            ($0.freq, StationLabel.lookup(freqHz: $0.freq, region: region) ?? $0.name)
+        }
+    }
+
     @objc private func showOptions() {
-        let vc = OptionsViewController(radio: radio) { [weak self] in self?.refresh() }
+        let vc = OptionsViewController(radio: radio) { [weak self] in
+            self?.rebuildMarkers()
+            self?.refresh()
+        }
         let nav = UINavigationController(rootViewController: vc)
         nav.modalPresentationStyle = .formSheet
         present(nav, animated: true)
@@ -533,8 +552,6 @@ final class RadioViewController: UIViewController {
         refresh()
     }
 
-    @objc private func volumeChanged() { radio.volume = Double(volumeSlider.value) }
-
     @objc private func toggleMute() {
         radio.muted.toggle()
         refresh()
@@ -565,8 +582,13 @@ final class RadioViewController: UIViewController {
         // is regional for FM, so a lookup without one names a Tokyo station on
         // an Osaka frequency.
         let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
-        stationLabel.text = StationLabel.lookup(freqHz: Double(radio.frequency), region: region) ?? " "
-        stepLabel.text = "step \(formatStep(radio.tuneStepHz))"
+        // Written only when it changes. Assigning a label's text invalidates
+        // its intrinsic size even when the string is identical, and at the
+        // 4 Hz this runs at that re-laid out the header continuously: the
+        // meters and the readout were measured again between every pair of
+        // frames, so their contents appeared to shift on each bar update.
+        setText(stationLabel, StationLabel.lookup(freqHz: Double(radio.frequency), region: region) ?? " ")
+        setText(stepLabel, "step \(formatStep(radio.tuneStepHz))")
         // The same mapping the Mac window uses, so a reading means the same
         // thing on both: -100..-10 dBFS, and 0..60 dB of signal to noise.
         let live = radio.isConnected
@@ -576,27 +598,34 @@ final class RadioViewController: UIViewController {
         spectrum.idleCenterHz = Double(radio.frequency)
         if radio.iqRate > 0 { spectrum.idleSpanHz = Double(radio.iqRate) }
 
-        connectButton.setTitle(radio.isConnected ? "Disconnect" : "Connect", for: .normal)
-        muteButton.setTitle(radio.muted ? "Unmute" : "Mute", for: .normal)
+        setTitle(connectButton, radio.isConnected ? "Disconnect" : "Connect")
+        setTitle(muteButton, radio.muted ? "Unmute" : "Mute")
         muteButton.tintColor = radio.muted ? Pal.warn : Pal.blue
 
         if let err = radio.lastError, !radio.isConnected {
             statusLabel.textColor = Pal.warn
-            statusLabel.text = err
+            setText(statusLabel, err)
         } else if radio.isConnected && !radio.canControl {
             // The server hands control to one client. Without saying so, the
             // tune buttons look broken rather than refused — setFrequency
             // deliberately drops the call instead of showing a frequency
             // nothing is receiving.
             statusLabel.textColor = Pal.warn
-            statusLabel.text = "connected, but another client holds control of the receiver"
+            setText(statusLabel, "connected, but another client holds control of the receiver")
         } else if radio.isConnected {
             statusLabel.textColor = Pal.accent
-            statusLabel.text = String(format: "connected  %@  RSSI %.0f dBFS  SNR %.0f dB",
-                                      modeName(radio.mode), radio.rssiDbfs, radio.snrDb)
+            // The drop count is the difference between "the producer cannot
+            // keep up" and "the output stopped asking": one climbs while the
+            // audio breaks up, the other stays flat. Without it, choppy audio
+            // is a description rather than a measurement.
+            let drops = radio.audioUnderruns
+            setText(statusLabel, String(format: "connected  %@  RSSI %.0f dBFS  SNR %.0f dB  %.0f kHz audio%@",
+                                      modeName(radio.mode), radio.rssiDbfs, radio.snrDb,
+                                      radio.audioRate / 1000,
+                                      drops > 0 ? String(format: "  drops %d", drops) : ""))
         } else {
             statusLabel.textColor = Pal.faint
-            statusLabel.text = "not connected"
+            setText(statusLabel, "not connected")
         }
 
         if let i = Self.shownModes.firstIndex(of: radio.mode) {
@@ -605,6 +634,14 @@ final class RadioViewController: UIViewController {
             modeControl.selectedSegmentIndex = UISegmentedControl.noSegment
         }
         presetTable.visibleCells.forEach { markCell($0) }
+    }
+
+    /// Assign only on a change. See the note in `refresh()`.
+    private func setText(_ l: UILabel, _ t: String) {
+        if l.text != t { l.text = t }
+    }
+    private func setTitle(_ b: UIButton, _ t: String) {
+        if b.title(for: .normal) != t { b.setTitle(t, for: .normal) }
     }
 
     /// The row the receiver is actually on, by frequency: it may have been
@@ -880,6 +917,8 @@ final class OptionsViewController: UITableViewController {
             let i = ((options.firstIndex(of: get()) ?? 0) + 1) % options.count
             set(options[i])
         }
+        // Saving is not applying — but applying is now `config`'s own job, so
+        // writing the value above is enough. See LocalRadio.applyConfig.
         radio.config.save()
         // The mode's own section may have changed shape; rebuild rather than
         // reload one row.

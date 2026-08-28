@@ -179,7 +179,7 @@ final class SpyClient {
                 self.stopWatchdog()
                 self.conn = nil
                 if settled {
-                    self.onError?(e)
+                    if !self.intentionalClose { self.onError?(e) }
                     if !self.intentionalClose { self.onDisconnect?() }
                 } else {
                     settle(.failure(e))
@@ -259,7 +259,11 @@ final class SpyClient {
         out.appendLE(UInt32(body.count))
         out.append(body)
         c.send(content: out, completion: .contentProcessed { [weak self] e in
-            if let e { self?.onError?(e) }
+            // A send that fails because we just closed the socket ourselves is
+            // not news. `disconnect()` sends stopStreaming and then closes, so
+            // without this the Disconnect button reported its own tidy-up as
+            // "The operation couldn't be completed".
+            if let e, let self, !self.intentionalClose { self.onError?(e) }
         })
     }
 
@@ -274,7 +278,7 @@ final class SpyClient {
                 self.drain()
             }
             if let error {
-                self.onError?(error)
+                if !self.intentionalClose { self.onError?(error) }
                 return
             }
             if isComplete {

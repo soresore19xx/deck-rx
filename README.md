@@ -554,10 +554,20 @@ The output buffer is sized for the rate this actually runs at — 114 kHz stereo
 is 228 000 samples a second — and holds about 1.1 s, which is the room the
 plugin's own reader-stall absorb has. It also primes: playback waits for a fifth
 of a second to bank before it starts reading, and re-primes after a dry run
-rather than scraping the bottom of the ring buffer by buffer. Starting to read
-from a ring that is still filling means the first jitter empties it and every
-refill after that starts from empty, which is heard as audio that breaks up
-every few seconds while every other number says the stream is healthy.
+rather than scraping the bottom of the ring buffer by buffer.
+
+**The reader tracks the ring's depth.** The sender's clock (the receiver's
+crystal, by way of the server) and the device's audio clock are independent and
+drift apart by tens of ppm; with a fixed conversion ratio that difference has
+nowhere to go, so the ring fills until it overflows or empties until it
+underruns. The plugin answers this with libsamplerate, trimming the resampling
+ratio to hold its queue at a set depth. `AudioSink` runs the same loop one level
+down: it walks the ring at a fractional rate with linear interpolation, reading
+a hair faster when the ring is deeper than the target and a hair slower when it
+is shallower (`AudioSink.trackedRate`). The correction is capped at 0.4% — two
+orders of magnitude more than the drift it cancels, and under three cents of
+pitch, approached slowly so there is no waver to hear. Latency therefore stays
+at the prime depth instead of wandering between it and the size of the ring.
 
 The status line carries two numbers worth reading when the audio breaks up:
 `drops` counts samples the output asked for and the ring did not have, and

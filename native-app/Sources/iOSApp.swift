@@ -951,7 +951,10 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
         case .station(let p):
             let (num, unit) = formatFreq(p.freq)
             let f = UILabel(); f.text = num; f.font = xMono(S(17), .light); f.textColor = Pal.text
-            let u = UILabel(); u.text = unit; u.font = xMono(S(11)); u.textColor = Pal.faint
+            // The unit reads as part of the number, so it is set as part of it:
+            // same face, same size, same colour, and close enough to belong to
+            // it. Small and grey, it read as an annotation on the row instead.
+            let u = UILabel(); u.text = unit; u.font = xMono(S(17), .light); u.textColor = Pal.text
             // Proportional, alone in the row: a name is words, and fixed pitch
             // buys nothing for words while costing them a third of their width.
             // The frequency beside it stays monospaced, which is what keeps the
@@ -960,23 +963,34 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
             n.textColor = Pal.dim
             let m = UILabel(); m.text = modeName(p.mode); m.font = xMono(S(11)); m.textColor = Pal.faint
             n.lineBreakMode = .byTruncatingTail
+            // Neither half of the reading gives up any of its width.
+            for v in [f, u] {
+                v.setContentHuggingPriority(.required, for: .horizontal)
+                v.setContentCompressionResistancePriority(.required, for: .horizontal)
+            }
             for v in [f, u, n, m] {
                 v.translatesAutoresizingMaskIntoConstraints = false
                 cell.contentView.addSubview(v)
             }
+            // The names still line up: a column the row aims at, and gives up
+            // only when the reading beside it is too long to leave room —
+            // "100.10 MHz" is wider than "594.0 kHz" by half a name.
+            let nameColumn = n.leadingAnchor.constraint(
+                equalTo: cell.contentView.leadingAnchor, constant: S(92))
+            nameColumn.priority = .defaultHigh
             NSLayoutConstraint.activate([
                 f.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: S(8)),
-                // Wide enough for the longest reading the formatter produces —
-                // six monospaced digits, "100.10" — and no wider. The column is
-                // fixed so the names line up; it was fixed a dozen points past
-                // anything that could be written in it.
-                f.widthAnchor.constraint(equalToConstant: S(66)),
                 f.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 1),
+                // The number is sized by its own digits rather than by a column
+                // wide enough for the longest of them, so the unit sits against
+                // it on every row instead of across a gap that changed with the
+                // digit count.
+                u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: S(2)),
                 u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
-                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: S(5)),
+                n.leadingAnchor.constraint(greaterThanOrEqualTo: u.trailingAnchor, constant: S(6)),
                 n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -S(4)),
                 n.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                nameColumn,
                 m.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -S(8)),
                 m.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
             ])

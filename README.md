@@ -618,7 +618,8 @@ What the window carries:
 - spectrum and waterfall with station labels, the split between them dragged
   with a pan gesture (`spectrumSplit`, same key the Mac app persists)
 - the seven-segment readout, tuned by tapping a digit, with the station name
-  above it and the S and N meters beside it
+  above it, the bandwidth and tune step under it, and the S and N meters beside
+  it — the same block the Mac window's header carries, in the same order
 - the preset list grouped by band, with the row the receiver is actually on
   marked by frequency rather than by what was last picked. **Add** files the
   tuned frequency under the name the station database gives it, falling back to

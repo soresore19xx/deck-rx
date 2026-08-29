@@ -91,6 +91,7 @@ final class RadioViewController: UIViewController {
     private var bandButtons: [UIButton] = []
     private var modeButtons: [UIButton] = []
     private let stepLabel = UILabel()
+    private let bwLabel = UILabel()
     private let muteButton = UIButton(type: .system)
     private var refreshTimer: Timer?
     /// The packet gap as it stood when the drop count last moved. A live gap
@@ -182,9 +183,14 @@ final class RadioViewController: UIViewController {
         stationLabel.textColor = Pal.dim
         stationLabel.lineBreakMode = .byTruncatingTail
 
-        stepLabel.font = xMono(S(13))
-        stepLabel.textColor = Pal.faint
-        stepLabel.textAlignment = .center
+        // Under the readout with the bandwidth, where the Mac window keeps
+        // them (main.swift's `detail` row). Alone across the foot of the
+        // column, the step was a caption with nothing to caption.
+        for l in [stepLabel, bwLabel] {
+            l.font = xMono(S(13))
+            l.textColor = Pal.dim
+            l.setContentHuggingPriority(.required, for: .horizontal)
+        }
 
         muteButton.setTitle("Mute", for: .normal)
         muteButton.titleLabel?.font = xMono(S(15), .medium)
@@ -284,7 +290,9 @@ final class RadioViewController: UIViewController {
         // Header as a row, the way the Mac window has it: what is tuned on the
         // left, how well it is coming in on the right. Stacked, the readout and
         // the two meters ate a third of a landscape screen between them.
-        let tuned = UIStackView(arrangedSubviews: [stationLabel, freqView])
+        let detail = row([caption("BW"), bwLabel, caption("STEP"), stepLabel])
+        detail.spacing = S(6)
+        let tuned = UIStackView(arrangedSubviews: [stationLabel, freqView, detail])
         tuned.axis = .vertical
         tuned.alignment = .leading
         tuned.spacing = S(2)
@@ -334,7 +342,6 @@ final class RadioViewController: UIViewController {
             muteButton,
             row([hostField, connectButton, optionsButton]),
             statusLabel,
-            stepLabel,
         ])
         right.axis = .vertical
         right.spacing = S(10)
@@ -439,6 +446,17 @@ final class RadioViewController: UIViewController {
     }
 
     /// A one-letter caption in the meter's own rhythm.
+    /// A caption for the value beside it: smaller and dimmer than what it
+    /// names, so the pair reads as one thing.
+    private func caption(_ t: String) -> UILabel {
+        let l = UILabel()
+        l.text = t
+        l.font = xMono(S(11))
+        l.textColor = Pal.faint
+        l.setContentHuggingPriority(.required, for: .horizontal)
+        return l
+    }
+
     private func sLabel(_ t: String) -> UILabel {
         let l = UILabel()
         l.text = t
@@ -849,7 +867,8 @@ final class RadioViewController: UIViewController {
         // meters and the readout were measured again between every pair of
         // frames, so their contents appeared to shift on each bar update.
         setText(stationLabel, StationLabel.lookup(freqHz: shownHz, region: region) ?? " ")
-        setText(stepLabel, "step \(formatStep(radio.tuneStepHz))")
+        setText(stepLabel, formatStep(radio.tuneStepHz))
+        setText(bwLabel, formatStep(radio.config.bandwidth(for: radio.mode)))
         // The same mapping the Mac window uses, so a reading means the same
         // thing on both: -100..-10 dBFS, and 0..60 dB of signal to noise.
         let live = radio.isConnected

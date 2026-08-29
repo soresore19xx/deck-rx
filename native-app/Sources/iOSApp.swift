@@ -381,7 +381,8 @@ final class RadioViewController: UIViewController {
         view.addSubview(right)
         let g = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            presetBar.topAnchor.constraint(equalTo: g.topAnchor, constant: S(4)),
+            // And they start on the same line as well.
+            presetBar.topAnchor.constraint(equalTo: g.topAnchor, constant: S(8)),
             presetBar.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: S(8)),
             presetBar.widthAnchor.constraint(equalToConstant: S(284)),
             presetTable.topAnchor.constraint(equalTo: presetBar.bottomAnchor, constant: S(4)),
@@ -398,7 +399,10 @@ final class RadioViewController: UIViewController {
         // put the keyboard straight over the characters being typed. The
         // spectrum has the loosest hugging in the column, so it is what gives
         // up the height while the keyboard is there, and takes it back after.
-        let restBottom = right.bottomAnchor.constraint(equalTo: g.bottomAnchor, constant: -8)
+        // Flush with the preset table's own bottom, not eight points shy of it:
+        // two columns ending on different lines reads as one of them having
+        // been pushed up.
+        let restBottom = right.bottomAnchor.constraint(equalTo: g.bottomAnchor)
         restBottom.priority = .defaultHigh
         restBottom.isActive = true
         right.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,

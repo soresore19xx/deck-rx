@@ -86,6 +86,12 @@ final class RadioViewController: UIViewController {
     private let stepLabel = UILabel()
     private let muteButton = UIButton(type: .system)
     private var refreshTimer: Timer?
+    /// The packet gap as it stood when the drop count last moved. A live gap
+    /// says what the network is doing now; this says what it was doing at the
+    /// moment the audio actually broke, which is the one that answers "was it
+    /// the network or this end".
+    private var lastDrops = 0
+    private var gapAtDrop: Double = 0
 
     /// The modes worth a segment on a receiver this size. RAW and DSB exist in
     /// the mode list but are not what anyone reaches for on an iPad, and eight
@@ -622,8 +628,13 @@ final class RadioViewController: UIViewController {
             // large gap means the IQ was late (network or server), a small one
             // with drops climbing means it arrived and this end fell behind.
             let drops = radio.audioUnderruns
+            if drops > lastDrops {
+                gapAtDrop = radio.maxPacketGapMs
+                lastDrops = drops
+            }
             let tail = drops > 0
-                ? String(format: "  drops %d  gap %.0fms", drops, radio.maxPacketGapMs)
+                ? String(format: "  drops %d (gap was %.0fms)  gap %.0fms",
+                         drops, gapAtDrop, radio.maxPacketGapMs)
                 : String(format: "  gap %.0fms", radio.maxPacketGapMs)
             setText(statusLabel, String(format: "connected  %@  RSSI %.0f dBFS  SNR %.0f dB  %.0f kHz audio%@",
                                       modeName(radio.mode), radio.rssiDbfs, radio.snrDb,

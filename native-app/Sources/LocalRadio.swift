@@ -393,9 +393,14 @@ final class LocalRadio {
     /// allows. Clamped to what the device can tune to, so dragging off the end
     /// of the band stops there instead of asking the server for a frequency it
     /// would refuse without a word.
-    func panDeviceCenter(byHz deltaHz: Double) {
-        guard canControl, isConnected, iqRate > 0, deltaHz != 0 else { return }
-        var center = Double(deviceCenterHz) + deltaHz
+    /// `persist` is false for the steps of a drag. A pan issues these several
+    /// times a second, and encoding and atomically rewriting the settings file
+    /// on each one — then rebuilding every filter through `config`'s didSet —
+    /// is work the gesture does not need. The frequency that matters is the one
+    /// it ends on, and that call persists.
+    func setDeviceCenter(_ hz: Double, persist: Bool = true) {
+        guard canControl, isConnected, iqRate > 0 else { return }
+        var center = hz
         if let info = deviceInfo, info.maxFrequency > info.minFrequency {
             center = min(max(center, Double(info.minFrequency)), Double(info.maxFrequency))
         }
@@ -407,8 +412,10 @@ final class LocalRadio {
         deviceCenterHz = UInt32(center)
         if listen != frequency {
             frequency = listen
-            config.frequencyHz = Double(listen)
-            config.save()
+            if persist {
+                config.frequencyHz = Double(listen)
+                config.save()
+            }
         }
         // The stream is about to describe a different piece of band, so the
         // detectors are as stale as they are after any retune.

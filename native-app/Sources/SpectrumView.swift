@@ -121,6 +121,18 @@ final class SpectrumView: XView {
     private(set) var visibleLoHz: Double = 0
     private(set) var visibleSpanHz: Double = 0
 
+    /// How far a finger has dragged the band sideways, in points, while it is
+    /// still down. The window slides under the data rather than the data under
+    /// the window: everything drawn from a frequency moves because the window
+    /// moved, and the trace and the waterfall — drawn from bin columns — are
+    /// translated to match. The receiver has not moved until the gesture ends.
+    var panPixels: CGFloat = 0 { didSet { if panPixels != oldValue { redraw() } } }
+
+    /// The width a frequency span is drawn across. The gutter down the left
+    /// carries the dB scale and belongs to no frequency, so a caller turning a
+    /// drag into hertz needs this rather than the view's own width.
+    var plotWidth: CGFloat { max(0, bounds.width - gutter) }
+
     /// The frequency under a point, or nil outside the trace. The gutter on the
     /// left carries the dB scale and belongs to no frequency.
     func frequency(atX x: CGFloat) -> Double? {
@@ -130,12 +142,11 @@ final class SpectrumView: XView {
         return visibleLoHz + visibleSpanHz * f
     }
 
-    /// Where a touch says the receiver is about to go, drawn while the finger
-    /// is still down. The gesture does not retune until it lifts — a retune is
-    /// a round trip and a demodulator reset — so without a mark of its own the
-    /// display says nothing at all while the user is choosing, and the only
-    /// feedback is the jump at the end.
-    var scrubHz: Double? { didSet { if scrubHz != oldValue { redraw() } } }
+    /// Where a touch says the receiver would go, drawn while the finger is
+    /// still down. A tap is over before anything could be drawn for it, so
+    /// without a mark taken from the touch itself the only feedback is the jump
+    /// at the end, and the tap cannot be aimed.
+    var aimHz: Double? { didSet { if aimHz != oldValue { redraw() } } }
     private let axisStrip: CGFloat = 24
 
     /// Where the receiver is and how wide its IQ window is, from the status
@@ -337,13 +348,12 @@ final class SpectrumView: XView {
                 UInt8(lo.1.2 + (hi.1.2 - lo.1.2) * k))
     }
 
-    /// The pending cursor. Dashed and white against the tuned marker's solid
-    /// red, so a glance says which line is the receiver and which is the
-    /// proposal. The reading goes in the top of the waterfall well: the trace's
+    /// The aim mark. Dashed and white against the tuned marker's solid red, so
+    /// a glance says which line is the receiver and which is the proposal. The reading goes in the top of the waterfall well: the trace's
     /// own top corner is where the station labels stack.
-    private func drawScrub(_ ctx: CGContext, xOf: (Double) -> CGFloat,
+    private func drawAim(_ ctx: CGContext, xOf: (Double) -> CGFloat,
                            h: CGFloat, fallTop: CGFloat) {
-        guard let hz = scrubHz else { return }
+        guard let hz = aimHz else { return }
         let x = xOf(hz).rounded() + 0.5
         ctx.saveGState()
         ctx.setStrokeColor(XColor(white: 0.95, alpha: 0.92).cgColor)
@@ -629,19 +639,23 @@ final class SpectrumView: XView {
         // a trace.
         let liveWin = bins.isEmpty ? nil : visible(bins.count)
         let span: Double
-        let lo: Double
+        let rawLo: Double
         /// The frequency to mark as tuned. Frames carry it; before they do,
         /// the status feed does.
         let tunedHz: Double
         if let w = liveWin {
             span = w.span
-            lo = w.lo
+            rawLo = w.lo
             tunedHz = vfoHz > 0 ? vfoHz : Double(centerFreq)
         } else {
             span = idleSpanHz > 0 ? idleSpanHz / max(1, zoom) : 0
-            lo = idleCenterHz - span / 2
+            rawLo = idleCenterHz - span / 2
             tunedHz = idleCenterHz
         }
+        // The pending pan, as a frequency. Applied to the window, so the scale,
+        // the station labels and the marker all follow it for free.
+        let panHz = plotW > 0 && span > 0 ? Double(panPixels / plotW) * span : 0
+        let lo = rawLo - panHz
         visibleLoHz = lo
         visibleSpanHz = span
         func x(forHz hz: Double) -> CGFloat {
@@ -672,7 +686,7 @@ final class SpectrumView: XView {
                 ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
                 ctx.strokePath()
                 drawStationLabels(ctx, specH: specH, lo: lo, span: span, xOf: x(forHz:))
-                drawScrub(ctx, xOf: x(forHz:), h: h, fallTop: fallTop)
+                drawAim(ctx, xOf: x(forHz:), h: h, fallTop: fallTop)
                 return
             }
             if bins.isEmpty {
@@ -742,7 +756,12 @@ final class SpectrumView: XView {
                     // Pixel-for-pixel at this point, so any smoothing is loss
                     // with no upside.
                     ctx.interpolationQuality = .none
-                    ctx.draw(img, in: CGRect(x: plotX, y: 0, width: plotW, height: fallH))
+                    // Each row was captured at the frequencies it was captured
+                    // at, so a pan carries the history with it. Clipped, or it
+                    // would slide over the dB gutter.
+                    ctx.clip(to: CGRect(x: plotX, y: 0, width: plotW, height: fallH))
+                    ctx.draw(img, in: CGRect(x: plotX + panPixels, y: 0,
+                                             width: plotW, height: fallH))
                     ctx.restoreGState()
                 }
             }
@@ -758,7 +777,11 @@ final class SpectrumView: XView {
             ctx.fill(r)
         }
 
-        // trace + fill
+        // trace + fill. Drawn from bin columns rather than from frequencies,
+        // so the pan is applied here as a translation instead.
+        ctx.saveGState()
+        ctx.clip(to: CGRect(x: plotX, y: 0, width: plotW, height: h))
+        ctx.translateBy(x: panPixels, y: 0)
         let path = CGMutablePath()
         let traceCols = columns(from: bins, win.start, win.end, max(1, Int(plotW)))
         for px in 0..<Int(plotW) {
@@ -797,6 +820,7 @@ final class SpectrumView: XView {
             ctx.setLineWidth(1)
             ctx.strokePath()
         }
+        ctx.restoreGState()
 
         // Tuned marker, full height so it ties trace and waterfall together.
         // Red, and the only red on the display: the preset labels and their
@@ -809,7 +833,7 @@ final class SpectrumView: XView {
         ctx.strokePath()
 
         drawStationLabels(ctx, specH: specH, lo: lo, span: span, xOf: x(forHz:))
-        drawScrub(ctx, xOf: x(forHz:), h: h, fallTop: fallTop)
+        drawAim(ctx, xOf: x(forHz:), h: h, fallTop: fallTop)
     }
 
 }

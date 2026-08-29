@@ -521,6 +521,18 @@ the trace carries on without a gap. And the red marker is no longer the middle
 of the panel: `SpectrumView.vfoHz` puts it and the passband highlight where the
 demodulator is, leaving the frame's own centre to the window.
 
+**Panning** is the other half, and the one thing tuning inside the window
+cannot do: it moves the window itself. Dragging the spectrum slides the trace
+and the waterfall with the finger — the history belongs to the frequencies it
+was captured at, so carrying it along is the honest picture, and the band
+beyond what has been received is simply blank until the device gets there. One
+retune goes out on release. What is being listened to does not change unless
+the pan would leave the demodulator outside the window, in which case it is
+dragged along at the edge, as SDR++ drags its VFO. The centre is clamped to
+what the device says it can tune to, so a drag off the end of the band stops at
+the end of the band rather than asking the server for a frequency it would
+refuse without a word.
+
 ### Sharing the receiver
 
 SpyServer takes several clients at once and gives control to the first only. A
@@ -576,21 +588,22 @@ What the window carries:
   the frequency itself; **Edit** turns on swipe-to-delete; a long press on a row
   opens name, frequency and mode. Edits go to the app's own `presets.json` — the
   iPad has its own copy, not the plugin's
-- **the spectrum tunes.** A tap lands on the frequency under the finger; a
-  drag draws a dashed cursor where it would land and retunes once, on release.
-  Nothing is sent while the finger is down: a retune is a round trip, a
-  demodulator reset and a mute window, and the display re-centres on whatever
-  it lands on — so retuning as the finger moved pulled the mapping the finger
-  was reading out from under it, and a finger held still walked the receiver
-  away by its offset from centre once per retune. The landing frequency is
-  snapped to the band's own raster, the same `config.step(for:)` the tune
-  buttons ride: a pixel of an unzoomed 456 kHz window is half a kilohertz, so
-  without the snap 954 kHz was not reachable by touch at all. The rail between
-  the trace and the waterfall stays a drag handle for the split, so one gesture
-  serves both by where it starts. The seven-segment readout and the station name
-  follow the finger while it is down, so the frequency being chosen is legible
-  before it is committed, and the window itself holds still: the receiver moves
-  inside it rather than under it (see
+- **the spectrum tunes, and it pans.** A tap lands on the frequency under the
+  finger; a drag carries the band sideways and moves the window there on
+  release. The split between them is what the finger does, not where it is:
+  drag moves the view, tap moves the receiver, which is how SDR++ divides the
+  same two jobs. The rail between the trace and the waterfall stays a drag
+  handle for the split.
+
+  Touching down marks where a tap would land with a dashed cursor, and the
+  seven-segment readout and the station name follow it, so the frequency being
+  chosen is legible before it is taken — a tap is over too quickly to draw
+  anything for, so the mark comes from the touch rather than from the tap.
+  Moving turns the gesture into a pan and the mark goes with it. The landing
+  frequency is snapped to the band's own raster, the same `config.step(for:)`
+  the tune buttons ride: a pixel of an unzoomed 456 kHz window is half a
+  kilohertz, so without the snap 954 kHz was not reachable by touch at all.
+  Within the window nothing moves but the marker (see
   [Tuning inside the window](#tuning-inside-the-window))
 - band jump, and coarse/fine tune buttons that ride on the mode's own tune step.
   The step follows the raster the band is channelised on, filed under the

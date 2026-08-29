@@ -135,10 +135,17 @@ async function applyOption(name: string, raw: string, asBool: boolean, asNum: nu
     case 'ssb.bfo':       if (num === null) return false; await spyService.setSSBOption('bfoPitchHz', num); return true;
     // One gain control, routed to whichever the live mode uses: the receiver
     // keeps AM and FM gain apart, and a front-end should not have to know.
+    //
+    // The split is AM against everything else, which is the one the audio path
+    // itself makes (spyService.ts:1214 picks amGain only for mode 2, and the
+    // post-demod scale for SSB and CW rides fmGain). Testing for `mode 0 or 1`
+    // instead sent a gain set while listening to SSB or CW into amGain — a
+    // number those modes never read, so the control did nothing and the value
+    // it moved belonged to a mode the user was not in.
     case 'gain': {
       if (num === null) return false;
-      const m = spyService.getDemodMode();
-      if (m === 1 || m === 0) await spyService.setFmGain(num); else await spyService.setAmGain(num);
+      if (spyService.getDemodMode() === 2) await spyService.setAmGain(num);
+      else await spyService.setFmGain(num);
       return true;
     }
     default: return false;

@@ -69,6 +69,15 @@ final class AMDemod {
     private static let maxOutput: Double = 160_000
     private static let lookAheadSamples = 256
 
+    /// Per-sample IIR factors for the carrier AGC. The plugin holds these in
+    /// SDR++'s units — an attack "rate" of 1..200 and a decay of 1..20 — and
+    /// converts with alpha = rate / audioRate at apply time (spyService.ts:947).
+    /// They were hard-coded here as 50/57000 and 5/57000: not settable, so the
+    /// two AGC rows in the options sheet did nothing, and pinned to 57 kHz, so
+    /// the real time constant moved whenever the audio rate did.
+    var agcAttack: Double = 50.0 / 57_000
+    var agcDecay: Double = 5.0 / 57_000
+
     // Per-stage Q for a true 16th-order Butterworth: Q_k = 1/(2 sin((2k-1)pi/32)).
     private static let q8: [Double] = [0.5024193, 0.5226258, 0.5669004, 0.6471488,
                                        0.7881546, 1.0606777, 1.7224471, 5.1011487]
@@ -124,7 +133,11 @@ final class AMDemod {
 
     /// Second-order PLL for synchronous detection, critically damped.
     /// `rate` is the rate at which samples are fed, i.e. the decimated one.
-    func configureSync(rate: Double, loopBandwidthHz: Double = 100) {
+    /// 150 Hz, as the plugin sets it (demodulator.ts:544). It was raised there
+    /// from 80 Hz precisely so the retune mute window could be halved to
+    /// 200 ms — the value this port already uses. At 100 Hz the loop pulls in
+    /// slower than the window that is covering it.
+    func configureSync(rate: Double, loopBandwidthHz: Double = 150) {
         let wn = 2 * Double.pi * loopBandwidthHz / rate
         syncAlpha = 2 * 0.707 * wn
         syncBeta = wn * wn
@@ -183,7 +196,7 @@ final class AMDemod {
         // Per-sample IIR factors. SDR++ expresses these as a rate in Hz over
         // the sample rate; 50 and 5 at 57 kHz are the plugin's defaults and
         // the numbers the AM path was tuned with.
-        let atk = 50.0 / 57000.0, dcy = 5.0 / 57000.0
+        let atk = agcAttack, dcy = agcDecay
         let invAtk = 1 - atk, invDec = 1 - dcy
 
         var out = [Float](repeating: 0, count: outSamples)

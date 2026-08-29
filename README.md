@@ -537,7 +537,16 @@ What the window carries:
 - the seven-segment readout, tuned by tapping a digit, with the station name
   above it and the S and N meters beside it
 - the preset list grouped by band, with the row the receiver is actually on
-  marked by frequency rather than by what was last picked
+  marked by frequency rather than by what was last picked. **Add** files the
+  tuned frequency under the name the station database gives it, falling back to
+  the frequency itself; **Edit** turns on swipe-to-delete; a long press on a row
+  opens name, frequency and mode. Edits go to the app's own `presets.json` — the
+  iPad has its own copy, not the plugin's
+- **the spectrum tunes.** A tap lands on the frequency under the finger and a
+  drag follows it, with the server told at most every 60 ms while the finger
+  moves and always once on release. The rail between the trace and the
+  waterfall stays a drag handle for the split, so one gesture serves both by
+  where it starts
 - band jump, and coarse/fine tune buttons that ride on the mode's own tune step.
   The step follows the raster the band is channelised on, filed under the
   plugin's own key (`"2:mw"`, `"2:sw"`, `"2:vhf"` for AM, the mode number for

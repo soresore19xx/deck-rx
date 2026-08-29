@@ -69,6 +69,66 @@ enum PresetStore {
         return nil
     }
 
+    /// The list a new bookmark goes into: the one that already holds the most,
+    /// or a new one if the store is empty. Picking the busiest rather than
+    /// making a second list keeps an imported set and the user's own additions
+    /// in one place, which is where the preset list reads them from anyway.
+    static func defaultListName(_ lists: [String: [String: Entry]]) -> String {
+        lists.max(by: { $0.value.count < $1.value.count })?.key ?? "deck-rx"
+    }
+
+    /// Add or replace a bookmark by name. Returns the name actually used: a
+    /// second station on the same name would silently overwrite the first, so
+    /// a suffix is added instead.
+    @discardableResult
+    static func add(name: String, frequency: Double, mode: Int,
+                    bandwidth: Double, path: String? = nil) throws -> String {
+        var lists = load(path: path)
+        let key = defaultListName(lists)
+        var list = lists[key] ?? [:]
+        var unique = name.isEmpty ? String(format: "%.0f kHz", frequency / 1000) : name
+        if list[unique] != nil {
+            var n = 2
+            while list["\(unique) (\(n))"] != nil { n += 1 }
+            unique = "\(unique) (\(n))"
+        }
+        list[unique] = Entry(frequency: frequency, bandwidth: bandwidth, mode: mode)
+        lists[key] = list
+        try save(lists, path: path)
+        return unique
+    }
+
+    /// Remove by name, from whichever list holds it.
+    static func remove(name: String, path: String? = nil) throws {
+        var lists = load(path: path)
+        for (key, var list) in lists where list[name] != nil {
+            list.removeValue(forKey: name)
+            lists[key] = list
+        }
+        try save(lists, path: path)
+    }
+
+    /// Rename and/or re-point a bookmark. The name is the key, so a rename is a
+    /// remove and an insert; doing both here keeps it one write.
+    static func update(oldName: String, name: String, frequency: Double, mode: Int,
+                       bandwidth: Double, path: String? = nil) throws {
+        var lists = load(path: path)
+        var done = false
+        for (key, var list) in lists where list[oldName] != nil {
+            list.removeValue(forKey: oldName)
+            list[name] = Entry(frequency: frequency, bandwidth: bandwidth, mode: mode)
+            lists[key] = list
+            done = true
+        }
+        if !done {
+            let key = defaultListName(lists)
+            var list = lists[key] ?? [:]
+            list[name] = Entry(frequency: frequency, bandwidth: bandwidth, mode: mode)
+            lists[key] = list
+        }
+        try save(lists, path: path)
+    }
+
     static func save(_ lists: [String: [String: Entry]], path: String? = nil) throws {
         var root: [String: Any] = [:]
         var out: [String: Any] = [:]

@@ -503,7 +503,7 @@ final class MainView: NSView {
 #endif
             Receiver.spectrum(fft: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
         }
-        fpsPop.addItems(withTitles: ["5", "10", "15", "20", "30", "60"])
+        fpsPop.addItems(withTitles: ["5", "10", "16", "24", "30", "60"])
         fpsPop.font = mono(16)
         fpsPop.target = ButtonBox.shared
         fpsPop.action = #selector(ButtonBox.fire(_:))

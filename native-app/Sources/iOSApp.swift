@@ -267,7 +267,8 @@ final class RadioViewController: UIViewController {
             UILongPressGestureRecognizer(target: self, action: #selector(presetLongPressed(_:))))
         presetTable.backgroundColor = Pal.panel
         presetTable.separatorStyle = .none
-        presetTable.rowHeight = S(34)
+        // A fallback only; heightForRowAt gives the two kinds of row their own.
+        presetTable.rowHeight = S(28)
         presetTable.register(UITableViewCell.self, forCellReuseIdentifier: "p")
         presets = Receiver.presets()
 
@@ -343,7 +344,14 @@ final class RadioViewController: UIViewController {
         spectrum.setContentCompressionResistancePriority(.init(200), for: .vertical)
         spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: S(220)).isActive = true
 
-        let presetBar = row([addPresetButton, UIView(), editPresetsButton])
+        let presetTitle = UILabel()
+        presetTitle.text = "PRESET"
+        presetTitle.font = xMono(S(15), .bold)
+        presetTitle.textColor = Pal.faint
+        presetTitle.setContentHuggingPriority(.required, for: .horizontal)
+        // In the bar rather than on a line of its own: a heading that cost a
+        // row's height would undo the tightening below it.
+        let presetBar = row([presetTitle, UIView(), addPresetButton, editPresetsButton])
         presetBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(presetBar)
         view.addSubview(presetTable)
@@ -1000,6 +1008,15 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
         }
         markCell(cell)
         return cell
+    }
+
+    /// A station is one line of text and needs the height of one. The band
+    /// headings carry a rule above a 19-point name and do not fit in that, so
+    /// they are measured separately rather than everything being sized for the
+    /// tallest thing in the list.
+    func tableView(_ t: UITableView, heightForRowAt ip: IndexPath) -> CGFloat {
+        if case .head = items[ip.row] { return S(32) }
+        return S(26)
     }
 
     /// Only stations can be deleted; the band headings are not rows anyone put

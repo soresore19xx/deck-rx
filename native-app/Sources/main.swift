@@ -975,6 +975,9 @@ final class MainView: NSView {
         nNum.stringValue = live ? String(format: "%.0f dB", s.snrDb) : "—"
 
         currentFreqHz = s.freqHz
+        // Where the demodulator is, which is the middle of the window only
+        // until something tunes inside it.
+        spectrum.vfoHz = s.freqHz
         spectrum.bandwidthHz = s.bandwidthHz
         // Where the receiver is and how wide its window is, so the spectrum can
         // place the presets before the first frame arrives. The header already

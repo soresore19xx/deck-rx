@@ -144,6 +144,13 @@ final class SpectrumView: XView {
     /// panel would otherwise sit blank next to a header that already says
     /// 810 kHz and IQ 456k.
     var idleCenterHz: Double = 0 { didSet { if bins.isEmpty { redraw() } } }
+
+    /// Where the receiver is listening, when that is not the middle of the
+    /// window. A frame carries the *device's* centre; the demodulator can sit
+    /// at an offset from it, and the marker and the passband belong on the
+    /// demodulator. 0 means "the centre", which is what a front-end onto the
+    /// plugin reports and what a receiver tuned by moving the device does.
+    var vfoHz: Double = 0 { didSet { if vfoHz != oldValue { redraw() } } }
     var idleSpanHz: Double = 0 { didSet { if bins.isEmpty { redraw() } } }
 
     private var bins: [Float] = []
@@ -629,7 +636,7 @@ final class SpectrumView: XView {
         if let w = liveWin {
             span = w.span
             lo = w.lo
-            tunedHz = Double(centerFreq)
+            tunedHz = vfoHz > 0 ? vfoHz : Double(centerFreq)
         } else {
             span = idleSpanHz > 0 ? idleSpanHz / max(1, zoom) : 0
             lo = idleCenterHz - span / 2
@@ -744,8 +751,8 @@ final class SpectrumView: XView {
         // passband, before the trace so the trace stays readable on top of it
         if bandwidthHz > 0, span > 0 {
             let half = bandwidthHz / 2
-            let r = CGRect(x: x(forHz: Double(centerFreq) - half), y: 0,
-                           width: max(2, x(forHz: Double(centerFreq) + half) - x(forHz: Double(centerFreq) - half)),
+            let r = CGRect(x: x(forHz: tunedHz - half), y: 0,
+                           width: max(2, x(forHz: tunedHz + half) - x(forHz: tunedHz - half)),
                            height: h)
             ctx.setFillColor(XColor(red: 0.85, green: 0.35, blue: 0.30, alpha: 0.16).cgColor)
             ctx.fill(r)
@@ -797,7 +804,7 @@ final class SpectrumView: XView {
         // "what else is here".
         ctx.setStrokeColor(XColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
         ctx.setLineWidth(1.6)
-        let cx = x(forHz: Double(centerFreq)).rounded()
+        let cx = x(forHz: tunedHz).rounded()
         ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
         ctx.strokePath()
 

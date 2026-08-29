@@ -119,6 +119,11 @@ final class LocalRadio {
             // transient is the loudest in the system.
             let crossesAM = (mode == 2) != (oldValue == 2)
             muteUntil = max(muteUntil, Date().addingTimeInterval(crossesAM ? 0.25 : 0.1))
+            // A wider passband may no longer fit where the narrow one did —
+            // AM at +180 kHz has room that WFM does not. Re-tuning to where we
+            // already are recentres the device when that happens, and does
+            // nothing when it does not.
+            if abs(vfoOffsetHz) > maxVfoOffsetHz { setFrequency(frequency) }
             queue.async {
                 self.configureDemods()
                 // Crossing the boundary changes which of the two gain indices
@@ -176,6 +181,37 @@ final class LocalRadio {
         config.save()
     }
     private(set) var frequency: UInt32 = 1_134_000
+
+    /// Where the *device* is tuned, which stops being the same thing as
+    /// `frequency` as soon as the demodulator moves inside the window. Keeping
+    /// the device still is the whole point: the spectrum is drawn around this,
+    /// so a tune that moves it makes the display jump, and a display that jumps
+    /// on every tune cannot be aimed with.
+    private(set) var deviceCenterHz: UInt32 = 1_134_000
+    /// The demodulator's offset from that centre, in Hz. Zero on the Mac unless
+    /// something tunes inside the window, and the signal path is bit-identical
+    /// to before while it is zero.
+    private(set) var vfoOffsetHz: Double = 0
+    private var shifter = IQShift()
+
+    /// How far from the centre the demodulator may sit.
+    ///
+    /// The decimated stream is not flat to its own edges — the server's
+    /// half-band chain rolls off before them — so the outer 8% at each end is
+    /// left alone, and the passband has to fit inside what is left. On an
+    /// Airspy HF+ at 456 kHz that is ±187 kHz for a 9 kHz AM channel and
+    /// ±116 kHz for a 150 kHz FM one. Past it the device retunes and the
+    /// window moves once, which is what moving it is for.
+    var maxVfoOffsetHz: Double { max(0, Double(iqRate) * 0.42 - bandwidthHz / 2) }
+
+    /// Where a target leaves the demodulator, or nil when the device has to
+    /// move to reach it. Pure, so the policy can be tested without a receiver:
+    /// it is the difference between "the display holds still" and "the display
+    /// jumps", and getting it wrong is invisible until someone is aiming.
+    static func vfoOffset(target: Double, center: Double, maxOffset: Double) -> Double? {
+        let offset = target - center
+        return abs(offset) <= maxOffset ? offset : nil
+    }
     private(set) var iqRate: UInt32 = 0
     var iqRateHz: UInt32 { iqRate }
     private var seq: UInt32 = 0
@@ -203,6 +239,8 @@ final class LocalRadio {
         let host = host ?? config.host
         let port = port ?? UInt16(clamping: config.port)
         frequency = freq ?? UInt32(max(0, config.frequencyHz))
+        deviceCenterHz = frequency
+        vfoOffsetHz = 0
         sink.volume = config.volume
         sink.muted = config.muted
         leveler.config.enabled = config.levelingEnabled
@@ -239,6 +277,9 @@ final class LocalRadio {
             // a frequency the receiver is not on.
             if !sync.canControl, sync.iqCenterFreq > 0, self.frequency != sync.iqCenterFreq {
                 self.frequency = sync.iqCenterFreq
+                // Someone else's centre, so there is no offset to hold either.
+                self.deviceCenterHz = sync.iqCenterFreq
+                self.setVfo(0)
             }
             if was != sync.canControl { DispatchQueue.main.async { self.onState?() } }
         }
@@ -315,24 +356,51 @@ final class LocalRadio {
         frequency = hz
         config.frequencyHz = Double(hz)
         config.save()
-        guard isConnected else { return }
+        guard isConnected else { deviceCenterHz = hz; setVfo(0); return }
         // spyService.ts:789. `resetForRetune()` zeroes the AM DC and carrier
         // AGC, which then needs 150-200 ms to re-converge on the new station's
         // level; the FM modes settle in half that. Without the window the
         // residual level step is audible as a click on every retune.
         muteUntil = max(muteUntil, Date().addingTimeInterval(mode == 2 ? 0.2 : 0.1))
-        client.setFrequency(hz)
         am.resetForRetune()
         other.resetForRetune()
+        // Inside the window the device does not move — only the demodulator's
+        // offset from the centre does. No round trip, no re-centred spectrum,
+        // and the IQ already in hand still describes the same piece of band, so
+        // it is kept and the trace carries on without a gap.
+        if iqRate > 0, let offset = Self.vfoOffset(target: Double(hz),
+                                                   center: Double(deviceCenterHz),
+                                                   maxOffset: maxVfoOffsetHz) {
+            setVfo(offset)
+            return
+        }
+        deviceCenterHz = hz
+        setVfo(0)
+        client.setFrequency(hz)
         // The bins are about to describe a different part of the spectrum; the
         // old ones are not a smaller version of the new ones.
         auxQueue.async { self.iq.removeAll(keepingCapacity: true) }
+    }
+
+    /// The offset, and the mixer that carries it. On the audio queue, which is
+    /// where the shifter is read.
+    private func setVfo(_ offset: Double) {
+        vfoOffsetHz = offset
+        queue.async { self.applyVfo() }
+    }
+
+    private func applyVfo() {
+        shifter.setShift(hz: -vfoOffsetHz, sampleRate: Double(iqRate))
     }
 
     // MARK: start-up
 
     private func start(with info: SpyClient.DeviceInfo) {
         deviceInfo = info
+        // A new stream is centred on where we are listening; any offset the
+        // last one ended on belongs to a window that no longer exists.
+        deviceCenterHz = frequency
+        vfoOffsetHz = 0
         let decStage = decimationOffset + info.minIQDecimation
         iqRate = UInt32(Double(info.maxSampleRate) / Double(1 << decStage))
         let g = min(gain, info.maxGainIndex)
@@ -344,7 +412,7 @@ final class LocalRadio {
         // settings sent after streaming starts, so the order is not cosmetic.
         client.setSetting(.iqFormat, SpyClient.IQFormat.int16.rawValue)
         client.setSetting(.iqDecimation, decStage)
-        client.setSetting(.iqFrequency, frequency)
+        client.setSetting(.iqFrequency, deviceCenterHz)
         client.setSetting(.streamingMode, SpyClient.streamModeIQOnly)
         client.setSetting(.gain, g)
         client.setSetting(.iqDigitalGain, digital)
@@ -400,6 +468,11 @@ final class LocalRadio {
         other.setAudioFilters(rate: audioRate, lowPassHz: lpf, highPassHz: hpf)
         other.setStereoAudioFilters(rate: audioRate, lowPassHz: lpf, highPassHz: hpf)
         applyNrMode()
+        // The mixer's increment is a fraction of the sample rate, so it is
+        // re-derived wherever that rate is settled. An offset set before the
+        // first DeviceInfo would otherwise run at the wrong speed for the rest
+        // of the session.
+        applyVfo()
     }
 
     /// Samples the output asked for and the ring did not have. The honest
@@ -506,7 +579,12 @@ final class LocalRadio {
         // NR runs on the IQ before the demodulator, which is where the FMIF
         // tracking filter belongs — after detection the noise is already mixed
         // into the audio.
-        let body = iqNrEnabled ? iqnr.process(rawBody) : rawBody
+        // Before the noise reduction as well as the detectors: after it, the
+        // buffer means what it would have meant had the device been tuned to
+        // the demodulator's own frequency, and nothing below has to know that
+        // the device is somewhere else.
+        let centred = shifter.isIdentity ? rawBody : shifter.process(rawBody)
+        let body = iqNrEnabled ? iqnr.process(centred) : centred
         // The gain index as a ratio of the device's maximum, which is what the
         // plugin scales the demodulators with (spyService.ts:1349). AM detects
         // an amplitude, so the RF gain reaches its audio on its own; every
@@ -678,7 +756,7 @@ final class LocalRadio {
         // one FFT frame's peak-over-median and it flickers with the modulation.
         snrDb = snrDb * 0.9 + max(0, peak - median) * 0.1
         let frame = SpectrumFeed.Frame(bins: bins, iqRate: iqRate,
-                                       centerFreq: frequency, seq: seq)
+                                       centerFreq: deviceCenterHz, seq: seq)
         DispatchQueue.main.async { self.onFrame?(frame) }
     }
 }

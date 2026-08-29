@@ -489,6 +489,38 @@ and in the standalone app whenever the plugin held the port.
 
 An 11-inch MacBook Air is 1366 × 768, so `compact` is what fits it.
 
+### Tuning inside the window
+
+A tune used to move the device's own centre frequency, always. The IQ window is
+drawn around that centre, so every tune re-centred the display — the spectrum
+jumped, and the peak that was aimed at ended up in the middle of a redrawn
+panel. That is fine for a dial and useless for a finger: aiming needs the
+picture to hold still.
+
+The device now stays where it is while the demodulator moves inside the window,
+which is what SDR++ calls a VFO. `IQShift` (`Demods.swift`) is a
+phase-continuous complex mixer that brings the wanted frequency to the centre
+of the buffer before anything else sees it, so the noise reduction, the IF
+filters and the detectors all receive exactly what they would have received had
+the device been tuned there. It runs before the noise reduction as well as the
+demodulators, and it is bypassed entirely — same buffer, same bytes — while the
+offset is zero, which is every case that existed before.
+
+How far the demodulator may sit from the centre is
+`iqRate * 0.42 - bandwidth / 2`: the decimated stream is not flat to its own
+edges, so the outer 8% at each end is left alone, and the passband has to fit
+in what is left. On an Airspy HF+ at 456 kHz that is ±187 kHz for a 9 kHz AM
+channel — about twenty medium-wave channels either way — and ±116 kHz for a
+150 kHz FM one. Past that the device retunes and the window moves once, which
+is what moving it is for. A mode change that widens the passband past the
+current offset recentres for the same reason.
+
+Two other things follow. A tune inside the window is not a round trip, so it
+does not wait on the server and does not throw away the IQ already in hand —
+the trace carries on without a gap. And the red marker is no longer the middle
+of the panel: `SpectrumView.vfoHz` puts it and the passband highlight where the
+demodulator is, leaving the frame's own centre to the window.
+
 ### Sharing the receiver
 
 SpyServer takes several clients at once and gives control to the first only. A
@@ -555,7 +587,11 @@ What the window carries:
   buttons ride: a pixel of an unzoomed 456 kHz window is half a kilohertz, so
   without the snap 954 kHz was not reachable by touch at all. The rail between
   the trace and the waterfall stays a drag handle for the split, so one gesture
-  serves both by where it starts
+  serves both by where it starts. The seven-segment readout and the station name
+  follow the finger while it is down, so the frequency being chosen is legible
+  before it is committed, and the window itself holds still: the receiver moves
+  inside it rather than under it (see
+  [Tuning inside the window](#tuning-inside-the-window))
 - band jump, and coarse/fine tune buttons that ride on the mode's own tune step.
   The step follows the raster the band is channelised on, filed under the
   plugin's own key (`"2:mw"`, `"2:sw"`, `"2:vhf"` for AM, the mode number for

@@ -470,6 +470,52 @@ check("FM asks for the FM index", gr.gain == 7)
 gr.mode = USB
 check("SSB rides the FM index, as the demodulators do", gr.gain == 7)
 
+section("the demodulator can sit inside the window")
+// Tuning by moving the device re-centres the window on every tune, and a
+// display that jumps cannot be aimed with. Moving the window's contents
+// instead keeps the device — and the spectrum — still. A tone 10 kHz above
+// the centre, brought down by 10 kHz, has to come out at DC: every sample at
+// the same phase, so the vector sum is the whole run rather than a circle
+// that cancels itself.
+let vfoRate = 96_000.0, vfoToneHz = 10_000.0, vfoToneAmp = 12000.0
+let vfoToneN = 4096
+var vfoToneData = Data(count: vfoToneN * 4)
+vfoToneData.withUnsafeMutableBytes { (b: UnsafeMutableRawBufferPointer) in
+    for i in 0..<vfoToneN {
+        let ph = 2 * Double.pi * vfoToneHz * Double(i) / vfoRate
+        b.storeBytes(of: Int16((cos(ph) * vfoToneAmp).rounded()).littleEndian,
+                     toByteOffset: i * 4, as: Int16.self)
+        b.storeBytes(of: Int16((sin(ph) * vfoToneAmp).rounded()).littleEndian,
+                     toByteOffset: i * 4 + 2, as: Int16.self)
+    }
+}
+var sh = IQShift()
+let untouched = sh.process(vfoToneData)
+check("no offset leaves the buffer exactly as it was", sh.isIdentity && untouched == vfoToneData)
+sh.setShift(hz: -vfoToneHz, sampleRate: vfoRate)
+let shifted = sh.process(vfoToneData)
+var sumI = 0.0, sumQ = 0.0, magSum = 0.0
+shifted.withUnsafeBytes { (b: UnsafeRawBufferPointer) in
+    for i in 0..<vfoToneN {
+        let I = Double(b.loadUnaligned(fromByteOffset: i * 4, as: Int16.self).littleEndian)
+        let Q = Double(b.loadUnaligned(fromByteOffset: i * 4 + 2, as: Int16.self).littleEndian)
+        sumI += I; sumQ += Q
+        magSum += (I * I + Q * Q).squareRoot()
+    }
+}
+check("a tone brought onto the centre stops rotating",
+      (sumI * sumI + sumQ * sumQ).squareRoot() > magSum * 0.999,
+      "sum \((sumI * sumI + sumQ * sumQ).squareRoot()) of \(magSum)")
+check("and keeps the amplitude it arrived with", near(magSum / Double(vfoToneN), vfoToneAmp, 2))
+
+// Where a target leaves the demodulator, or nil when the device has to move.
+check("a target inside the window moves the demodulator, not the device",
+      LocalRadio.vfoOffset(target: 954_000, center: 1_134_000, maxOffset: 187_000) == -180_000)
+check("one outside it moves the device",
+      LocalRadio.vfoOffset(target: 594_000, center: 1_134_000, maxOffset: 187_000) == nil)
+check("the edge itself counts as inside",
+      LocalRadio.vfoOffset(target: 1_321_000, center: 1_134_000, maxOffset: 187_000) == 187_000)
+
 section("soft limiter")
 check("linear under the knee", near(AudioLeveling.softLimit(1000), 1000, 1e-9))
 check("never exceeds the ceiling", AudioLeveling.softLimit(1e9) <= AudioLeveling.int16Max)

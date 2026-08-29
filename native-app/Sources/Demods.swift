@@ -1,5 +1,68 @@
 import Foundation
 
+/// A complex mixer, phase-continuous across buffers.
+///
+/// The receiver tunes by moving the device's own centre frequency, so every
+/// retune re-centres the IQ window — and the spectrum drawn from it. Moving the
+/// window's *contents* instead lets the demodulator sit anywhere inside it
+/// while the device, and the display, stay where they are. That is what SDR++
+/// calls the VFO: one device centre, a demodulator at an offset from it.
+///
+/// int16 in, int16 out, so every demodulator below takes the buffer it already
+/// takes and none of them needs to know. The invariant is that after the shift
+/// the buffer means exactly what it would have meant had the device been tuned
+/// to the demodulator's own frequency — which is why this runs before the noise
+/// reduction as well as before the detectors.
+///
+/// A rotation preserves magnitude, and a magnitude can be √2 times either
+/// component, so a sample within 3 dB of full scale can saturate on the way
+/// out. The server's own digital gain is computed to keep the IQ well below
+/// that; the clamp is here so that the failure, if it ever comes, is a clipped
+/// sample rather than a wrapped one.
+struct IQShift {
+    private var phase: Double = 0
+    private var inc: Double = 0
+
+    /// How far to move the window's contents, at the rate they arrive at. A
+    /// demodulator sitting `offset` above the centre wants the contents brought
+    /// down by that much, so the caller passes `-offset`.
+    mutating func setShift(hz: Double, sampleRate: Double) {
+        inc = sampleRate > 0 ? 2 * Double.pi * hz / sampleRate : 0
+    }
+
+    /// Nothing to do — the demodulator is on the device's own centre. The
+    /// common case, and the one that has to cost nothing and change nothing.
+    var isIdentity: Bool { inc == 0 }
+
+    mutating func process(_ iq: Data) -> Data {
+        guard inc != 0 else { return iq }
+        let n = iq.count / 4
+        guard n > 0 else { return iq }
+        var out = Data(count: n * 4)
+        var p = phase
+        let step = inc
+        iq.withUnsafeBytes { (src: UnsafeRawBufferPointer) in
+            out.withUnsafeMutableBytes { (dst: UnsafeMutableRawBufferPointer) in
+                guard let s = src.baseAddress, let d = dst.baseAddress else { return }
+                for i in 0..<n {
+                    let o = i * 4
+                    let I = Double(s.loadUnaligned(fromByteOffset: o, as: Int16.self).littleEndian)
+                    let Q = Double(s.loadUnaligned(fromByteOffset: o + 2, as: Int16.self).littleEndian)
+                    let c = cos(p), sn = sin(p)
+                    p += step
+                    if p > Double.pi { p -= 2 * Double.pi } else if p < -Double.pi { p += 2 * Double.pi }
+                    let ri = Int16(min(max((I * c - Q * sn).rounded(), -32767), 32767))
+                    let rq = Int16(min(max((I * sn + Q * c).rounded(), -32767), 32767))
+                    d.storeBytes(of: ri.littleEndian, toByteOffset: o, as: Int16.self)
+                    d.storeBytes(of: rq.littleEndian, toByteOffset: o + 2, as: Int16.self)
+                }
+            }
+        }
+        phase = p
+        return out
+    }
+}
+
 /// Complex windowed-sinc FIR low-pass: the same real tap set applied to I and
 /// Q in lock-step. Linear phase, Blackman window (~-74 dB stopband).
 ///

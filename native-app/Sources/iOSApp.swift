@@ -433,13 +433,35 @@ final class RadioViewController: UIViewController {
         case .ended:
             scrubbing = false
             spectrum.scrubHz = nil
-            if let hz { tuneTo(hz) }
+            scrubPreviewHz = nil
+            if let hz { tuneTo(hz) } else { refresh() }
         case .cancelled, .failed:
             scrubbing = false
             spectrum.scrubHz = nil
+            scrubPreviewHz = nil
+            refresh()
         default:
+            // Only when the channel under the finger actually changes. The
+            // snap means most touch events land on the one before, and a
+            // station lookup at touch rate is work nobody asked for.
+            guard spectrum.scrubHz != hz else { return }
             spectrum.scrubHz = hz
+            scrubPreviewHz = hz
+            if let hz { showFreq(hz) }
         }
+    }
+    /// What the readout shows while a finger is down, so the digits and the
+    /// station name follow it instead of standing at the old frequency until
+    /// the gesture is over. `refresh()` reads it too, or the 4 Hz tick would
+    /// put the receiver's own frequency straight back.
+    private var scrubPreviewHz: Double?
+
+    /// The readout alone. The meters and the status line describe the signal
+    /// coming in, which is still the old one until the finger lifts.
+    private func showFreq(_ hz: Double) {
+        freqView.set(freqHz: hz)
+        let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
+        setText(stationLabel, StationLabel.lookup(freqHz: hz, region: region) ?? " ")
     }
 
     private func tuneTo(_ hz: Double) {
@@ -693,7 +715,10 @@ final class RadioViewController: UIViewController {
     // MARK: state
 
     private func refresh() {
-        freqView.set(freqHz: Double(radio.frequency))
+        // The pending frequency while a finger is on the spectrum; the
+        // receiver's own the rest of the time.
+        let shownHz = scrubPreviewHz ?? Double(radio.frequency)
+        freqView.set(freqHz: shownHz)
         // Same call the Mac window makes, region and all: the station database
         // is regional for FM, so a lookup without one names a Tokyo station on
         // an Osaka frequency.
@@ -703,7 +728,7 @@ final class RadioViewController: UIViewController {
         // 4 Hz this runs at that re-laid out the header continuously: the
         // meters and the readout were measured again between every pair of
         // frames, so their contents appeared to shift on each bar update.
-        setText(stationLabel, StationLabel.lookup(freqHz: Double(radio.frequency), region: region) ?? " ")
+        setText(stationLabel, StationLabel.lookup(freqHz: shownHz, region: region) ?? " ")
         setText(stepLabel, "step \(formatStep(radio.tuneStepHz))")
         // The same mapping the Mac window uses, so a reading means the same
         // thing on both: -100..-10 dBFS, and 0..60 dB of signal to noise.
@@ -711,7 +736,10 @@ final class RadioViewController: UIViewController {
         sMeter.value = live ? max(0, min(1, (radio.rssiDbfs + 100) / 90)) : 0
         nMeter.value = live ? max(0, min(1, radio.snrDb / 60)) : 0
         spectrum.bandwidthHz = radio.config.bandwidth(for: radio.mode)
-        spectrum.idleCenterHz = Double(radio.frequency)
+        // The window is drawn around the device; the marker sits where the
+        // demodulator is, which is not the same place once it moves inside it.
+        spectrum.idleCenterHz = Double(radio.deviceCenterHz)
+        spectrum.vfoHz = Double(radio.frequency)
         if radio.iqRate > 0 { spectrum.idleSpanHz = Double(radio.iqRate) }
 
         setTitle(connectButton, radio.isConnected ? "Disconnect" : "Connect")

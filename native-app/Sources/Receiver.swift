@@ -405,6 +405,19 @@ func modeName(_ m: Int) -> String { m >= 0 && m < MODE_NAMES.count ? MODE_NAMES[
 /// MHz above 30 MHz, whole kHz on shortwave and medium wave, one decimal below
 /// 1 MHz. Inventing a different rule here is how "1.242 MHz" ends up facing a
 /// user who thinks in "1242 kHz".
+/// The nearest frequency on a raster.
+///
+/// Broadcast bands are channelised — 9 kHz on Japanese medium wave, 100 kHz on
+/// its FM — and a display maps a whole IQ window onto a few hundred points, so
+/// a frequency read off a touch sits between channels by construction. Shared
+/// rather than written at the call site, for the reason `src/tuneMath.ts` is
+/// shared on the plugin side: everything that lands on a frequency has to
+/// agree about where the channels are.
+func snapToStep(_ hz: Double, step: Double) -> Double {
+    guard step > 0 else { return max(0, hz.rounded()) }
+    return max(0, (hz / step).rounded() * step)
+}
+
 /// Short human form for a step or bandwidth: 10 Hz, 9 kHz, 1 MHz.
 func formatStep(_ hz: Double) -> String {
     if hz >= 1_000_000 { return String(format: "%g MHz", hz / 1_000_000) }

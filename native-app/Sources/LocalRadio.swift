@@ -79,7 +79,17 @@ final class LocalRadio {
     /// 1 puts an Airspy HF+ at about 456 kHz, which is the plugin's default and
     /// the reason far-adjacent FM stations stopped aliasing into baseband.
     var decimationOffset: UInt32 { config.iqDecimation }
-    var gain: UInt32 { config.gain }
+    /// The device's own ceiling, and the gain index in force for each demod
+    /// family. Resolved the way the plugin resolves it (spyService.ts:469-472):
+    /// the stored index when there is one, the device's maximum when there is
+    /// not, clamped to that maximum either way. 8 stands in until the first
+    /// DeviceInfo arrives — the ceiling both options panels are built around.
+    var maxGainIndex: UInt32 { deviceInfo?.maxGainIndex ?? 8 }
+    var amGainIndex: UInt32 { min(config.amGain ?? maxGainIndex, maxGainIndex) }
+    var fmGainIndex: UInt32 { min(config.fmGain ?? maxGainIndex, maxGainIndex) }
+    /// What the server is told to use. AM is the split, exactly as
+    /// spyService.ts:1214 draws it — every other mode takes the FM value.
+    var gain: UInt32 { mode == 2 ? amGainIndex : fmGainIndex }
     /// Audio decimation from the IQ rate; the audio rate is the IQ rate over
     /// this. Exactly what the plugin does — `Math.max(1, cfg.audioDecimate)`,
     /// spyService.ts:1206 — and nothing else.
@@ -111,6 +121,12 @@ final class LocalRadio {
             muteUntil = max(muteUntil, Date().addingTimeInterval(crossesAM ? 0.25 : 0.1))
             queue.async {
                 self.configureDemods()
+                // Crossing the boundary changes which of the two gain indices
+                // is in force, so the server has to be told
+                // (spyService.ts:1164). Without this the AM value stayed on
+                // the device through an FM session and back. On the queue, as
+                // applyConfig sends it: it resets both demodulators.
+                if crossesAM { self.sendGain() }
                 self.applyNrMode()
                 // Channel count is a property of the graph, so a mode change
                 // that crosses mono/stereo has to rebuild it.
@@ -415,7 +431,9 @@ final class LocalRadio {
     /// everything, for a caller who changed something outside `config`.
     func applyConfig(changedFrom previous: RadioConfig? = nil) {
         if let p = previous, p == config { return }
-        let gainChanged = previous.map { $0.gain != config.gain } ?? true
+        let gainChanged = previous.map {
+            $0.amGain != config.amGain || $0.fmGain != config.fmGain
+        } ?? true
         let graphChanged = previous.map {
             $0.fmStereo != config.fmStereo || $0.audioDecimate != config.audioDecimate
         } ?? true
@@ -489,17 +507,33 @@ final class LocalRadio {
         // tracking filter belongs — after detection the noise is already mixed
         // into the audio.
         let body = iqNrEnabled ? iqnr.process(rawBody) : rawBody
-        let g = Double(gain) / 10.0
+        // The gain index as a ratio of the device's maximum, which is what the
+        // plugin scales the demodulators with (spyService.ts:1349). AM detects
+        // an amplitude, so the RF gain reaches its audio on its own; every
+        // other mode here detects an angle and is amplitude-invariant, so the
+        // RF gain moves the RSSI and nothing else. Carrying the ratio into the
+        // demodulator's own output gain is what makes the Gain row an
+        // attenuator for them — 8/8 full, 0/8 silent — instead of an inert
+        // control. This was the whole of "FM gain does nothing".
+        let maxG = Double(maxGainIndex)
+        let fmScale = maxG > 0 ? Double(fmGainIndex) / maxG : 1
+        let amScale = maxG > 0 ? Double(amGainIndex) / maxG : 1
         switch mode {
-        case 0:  return other.processFM(int16IQ: body, decimate: audioDecimate)
+        case 0:  return other.processFM(int16IQ: body, decimate: audioDecimate,
+                                        gain: 6000 * fmScale)
         case 1, 3:
                  return config.fmStereo && mode == 1
-                    ? other.processWFMStereo(int16IQ: body, decimate: audioDecimate)
-                    : other.processWFM(int16IQ: body, decimate: audioDecimate)
-        case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: true)
-        case 6:  return other.processSSB(int16IQ: body, decimate: audioDecimate, upperSideband: false)
-        case 5:  return other.processCW(int16IQ: body, decimate: audioDecimate)
-        default: return am.process(int16IQ: body, decimate: audioDecimate, gainScale: g)
+                    ? other.processWFMStereo(int16IQ: body, decimate: audioDecimate,
+                                             gain: 2000 * fmScale)
+                    : other.processWFM(int16IQ: body, decimate: audioDecimate,
+                                       gain: 3000 * fmScale)
+        case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
+                                         upperSideband: true, gain: 48000 * fmScale)
+        case 6:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
+                                         upperSideband: false, gain: 48000 * fmScale)
+        case 5:  return other.processCW(int16IQ: body, decimate: audioDecimate,
+                                        gain: 96000 * fmScale)
+        default: return am.process(int16IQ: body, decimate: audioDecimate, gainScale: amScale)
         }
     }
 

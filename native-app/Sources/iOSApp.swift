@@ -69,19 +69,23 @@ final class RadioViewController: UIViewController {
     /// spectrum would quietly stop agreeing with the first about what a signal
     /// looks like, the way a second demodulator would about what one sounds
     /// like. They are one file each, with the platform seams in Platform.swift.
-    private let spectrum = SpectrumView(frame: .zero)
-    private let freqView = FreqView(frame: .zero)
-    private let sMeter = SignalMeter(frame: .zero)
-    private let nMeter = SignalMeter(frame: .zero)
-    private let presetTable = UITableView(frame: .zero, style: .plain)
+    /// `var`, not `let`: a scale change rebuilds the layout, and a height or
+    /// a width put on a view with `constraint(equalToConstant:)` belongs to
+    /// that view — it survives being taken out of the hierarchy, so the only
+    /// way not to stack a second set of constants on the first is a new view.
+    private var spectrum = SpectrumView(frame: .zero)
+    private var freqView = FreqView(frame: .zero)
+    private var sMeter = SignalMeter(frame: .zero)
+    private var nMeter = SignalMeter(frame: .zero)
+    private var presetTable = UITableView(frame: .zero, style: .plain)
     private let addPresetButton = UIButton(type: .system)
     private let editPresetsButton = UIButton(type: .system)
     private var presets: [Receiver.Preset] = []
     private var displaySliders: [Int: UISlider] = [:]
     private var displaySaveTimer: Timer?
     private let zoomReadout = UILabel(), timeReadout = UILabel()
-    private let ceilRail = VerticalSliderHost(caption: "MAX")
-    private let floorRail = VerticalSliderHost(caption: "MIN")
+    private var ceilRail = VerticalSliderHost(caption: "MAX")
+    private var floorRail = VerticalSliderHost(caption: "MIN")
     private let optionsButton = UIButton(type: .system)
     private let stationLabel = UILabel()
     private let modeControl = UISegmentedControl(items: MODE_NAMES)
@@ -102,6 +106,9 @@ final class RadioViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Before anything is built: every constant and font size below is baked
+        // in at construction, the way the Mac window bakes them (main.swift:1192).
+        UI.scale = UI.from(radio.config.uiScale)
         view.backgroundColor = Pal.bg
         buildUI()
 
@@ -146,14 +153,14 @@ final class RadioViewController: UIViewController {
         hostField.borderStyle = .roundedRect
         hostField.backgroundColor = Pal.sunken
         hostField.textColor = Pal.text
-        hostField.font = .monospacedSystemFont(ofSize: 17, weight: .regular)
+        hostField.font = xMono(S(17))
         hostField.autocapitalizationType = .none
         hostField.autocorrectionType = .no
         hostField.keyboardType = .URL
         // Return connects and puts the keyboard away, which is the whole
         // reason the field is being typed into.
         optionsButton.setTitle("Options", for: .normal)
-        optionsButton.titleLabel?.font = xMono(15, .medium)
+        optionsButton.titleLabel?.font = xMono(S(15), .medium)
         optionsButton.setContentHuggingPriority(.required, for: .horizontal)
         optionsButton.addTarget(self, action: #selector(showOptions), for: .touchUpInside)
 
@@ -162,15 +169,15 @@ final class RadioViewController: UIViewController {
         hostField.clearButtonMode = .whileEditing
 
         connectButton.setTitle("Connect", for: .normal)
-        connectButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        connectButton.titleLabel?.font = .systemFont(ofSize: S(17), weight: .semibold)
         connectButton.addTarget(self, action: #selector(toggleConnection), for: .touchUpInside)
 
-        statusLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        statusLabel.font = xMono(S(13))
         statusLabel.textColor = Pal.faint
         statusLabel.numberOfLines = 2
 
         // Monospaced digits, or every tune shifts the whole readout sideways.
-        stationLabel.font = .systemFont(ofSize: 20)
+        stationLabel.font = .systemFont(ofSize: S(20))
         stationLabel.textColor = Pal.dim
         stationLabel.lineBreakMode = .byTruncatingTail
 
@@ -181,7 +188,7 @@ final class RadioViewController: UIViewController {
         modeControl.selectedSegmentTintColor = Pal.rule
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
 
-        stepLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        stepLabel.font = xMono(S(13))
         stepLabel.textColor = Pal.faint
         stepLabel.textAlignment = .center
 
@@ -199,7 +206,7 @@ final class RadioViewController: UIViewController {
         // left the meters beside it looking like an afterthought; the iPad is
         // held landscape, so the header has to share the width rather than let
         // one thing take it.
-        freqView.heightAnchor.constraint(equalToConstant: 62).isActive = true
+        freqView.heightAnchor.constraint(equalToConstant: S(62)).isActive = true
         freqView.setContentHuggingPriority(.required, for: .horizontal)
         freqView.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -230,14 +237,14 @@ final class RadioViewController: UIViewController {
         for (m, tint) in [(sMeter, Pal.accent), (nMeter, Pal.blue)] {
             m.tint = tint
             m.translatesAutoresizingMaskIntoConstraints = false
-            m.heightAnchor.constraint(equalToConstant: 30).isActive = true
+            m.heightAnchor.constraint(equalToConstant: S(30)).isActive = true
             // A definite width, as the Mac window gives them. Left to take
             // whatever the station name does not, the meters were re-measured
             // on every refresh and their scale moved under the reading.
-            let wide = m.widthAnchor.constraint(equalToConstant: 360)
+            let wide = m.widthAnchor.constraint(equalToConstant: S(360))
             wide.priority = .defaultHigh
             wide.isActive = true
-            m.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+            m.widthAnchor.constraint(greaterThanOrEqualToConstant: S(160)).isActive = true
         }
         // The name is what gives way when the header is tight, not the meters
         // and not the readout.
@@ -254,15 +261,15 @@ final class RadioViewController: UIViewController {
             UILongPressGestureRecognizer(target: self, action: #selector(presetLongPressed(_:))))
         presetTable.backgroundColor = Pal.panel
         presetTable.separatorStyle = .none
-        presetTable.rowHeight = 34
+        presetTable.rowHeight = S(34)
         presetTable.register(UITableViewCell.self, forCellReuseIdentifier: "p")
         presets = Receiver.presets()
 
         addPresetButton.setTitle("+ Add", for: .normal)
-        addPresetButton.titleLabel?.font = xMono(15, .medium)
+        addPresetButton.titleLabel?.font = xMono(S(15), .medium)
         addPresetButton.addTarget(self, action: #selector(addCurrentAsPreset), for: .touchUpInside)
         editPresetsButton.setTitle("Edit", for: .normal)
-        editPresetsButton.titleLabel?.font = xMono(15)
+        editPresetsButton.titleLabel?.font = xMono(S(15))
         editPresetsButton.addTarget(self, action: #selector(togglePresetEditing), for: .touchUpInside)
 
         // Left column: what to listen to. Right column: what is being heard.
@@ -274,17 +281,17 @@ final class RadioViewController: UIViewController {
         let tuned = UIStackView(arrangedSubviews: [stationLabel, freqView])
         tuned.axis = .vertical
         tuned.alignment = .leading
-        tuned.spacing = 2
+        tuned.spacing = S(2)
         let meters = UIStackView(arrangedSubviews: [
             row([sLabel("S"), sMeter]),
             row([sLabel("N"), nMeter]),
         ])
         meters.axis = .vertical
-        meters.spacing = 6
+        meters.spacing = S(6)
         let header = UIStackView(arrangedSubviews: [tuned, meters])
         header.axis = .horizontal
         header.alignment = .center
-        header.spacing = 20
+        header.spacing = S(20)
         tuned.setContentHuggingPriority(.required, for: .horizontal)
 
         // MAX above MIN beside the trace, because that is how the dB scale down
@@ -292,7 +299,7 @@ final class RadioViewController: UIViewController {
         // set — the same reason the Mac window puts them on a vertical rail.
         for (h, tag) in [(ceilRail, 2), (floorRail, 3)] {
             h.translatesAutoresizingMaskIntoConstraints = false
-            h.widthAnchor.constraint(equalToConstant: 52).isActive = true
+            h.widthAnchor.constraint(equalToConstant: S(52)).isActive = true
             h.slider.tag = tag
             h.slider.isContinuous = true
             h.slider.addTarget(self, action: #selector(displayChanged(_:)), for: .valueChanged)
@@ -305,10 +312,10 @@ final class RadioViewController: UIViewController {
         let rail = UIStackView(arrangedSubviews: [ceilRail, floorRail])
         rail.axis = .vertical
         rail.distribution = .fillEqually
-        rail.spacing = 4
+        rail.spacing = S(4)
         let plot = UIStackView(arrangedSubviews: [spectrum, rail])
         plot.axis = .horizontal
-        plot.spacing = 6
+        plot.spacing = S(6)
 
         let right = UIStackView(arrangedSubviews: [
             header,
@@ -323,12 +330,12 @@ final class RadioViewController: UIViewController {
             stepLabel,
         ])
         right.axis = .vertical
-        right.spacing = 10
+        right.spacing = S(10)
         right.translatesAutoresizingMaskIntoConstraints = false
         // The spectrum takes what the rest of the column leaves.
         spectrum.setContentHuggingPriority(.init(1), for: .vertical)
         spectrum.setContentCompressionResistancePriority(.init(200), for: .vertical)
-        spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: S(220)).isActive = true
 
         let presetBar = row([addPresetButton, UIView(), editPresetsButton])
         presetBar.translatesAutoresizingMaskIntoConstraints = false
@@ -337,17 +344,17 @@ final class RadioViewController: UIViewController {
         view.addSubview(right)
         let g = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            presetBar.topAnchor.constraint(equalTo: g.topAnchor, constant: 4),
-            presetBar.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 8),
-            presetBar.widthAnchor.constraint(equalToConstant: 284),
-            presetTable.topAnchor.constraint(equalTo: presetBar.bottomAnchor, constant: 4),
+            presetBar.topAnchor.constraint(equalTo: g.topAnchor, constant: S(4)),
+            presetBar.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: S(8)),
+            presetBar.widthAnchor.constraint(equalToConstant: S(284)),
+            presetTable.topAnchor.constraint(equalTo: presetBar.bottomAnchor, constant: S(4)),
             presetTable.leadingAnchor.constraint(equalTo: g.leadingAnchor),
             presetTable.bottomAnchor.constraint(equalTo: g.bottomAnchor),
-            presetTable.widthAnchor.constraint(equalToConstant: 300),
+            presetTable.widthAnchor.constraint(equalToConstant: S(300)),
 
-            right.topAnchor.constraint(equalTo: g.topAnchor, constant: 8),
-            right.leadingAnchor.constraint(equalTo: presetTable.trailingAnchor, constant: 14),
-            right.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14),
+            right.topAnchor.constraint(equalTo: g.topAnchor, constant: S(8)),
+            right.leadingAnchor.constraint(equalTo: presetTable.trailingAnchor, constant: S(14)),
+            right.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -S(14)),
         ])
         // Two bottoms: normally the safe area, but never under the keyboard.
         // The host field is the last row of the column, so typing an address
@@ -365,7 +372,7 @@ final class RadioViewController: UIViewController {
     private func sLabel(_ t: String) -> UILabel {
         let l = UILabel()
         l.text = t
-        l.font = xMono(15, .regular)
+        l.font = xMono(S(15), .regular)
         l.textColor = Pal.faint
         l.setContentHuggingPriority(.required, for: .horizontal)
         return l
@@ -384,7 +391,7 @@ final class RadioViewController: UIViewController {
             scrubbing = !draggingSplit && spectrum.frequency(atX: p.x) != nil
         }
         if scrubbing {
-            scrubTo(p.x, ended: g.state == .ended || g.state == .cancelled)
+            scrub(p.x, state: g.state)
             return
         }
         guard draggingSplit else { return }
@@ -397,20 +404,46 @@ final class RadioViewController: UIViewController {
     }
     private var draggingSplit = false
     private var scrubbing = false
-    private var lastScrubAt = Date.distantPast
 
-    /// A tap lands on the frequency under the finger; a drag follows it. The
-    /// server is told at most every 60 ms while the finger moves — a retune is
-    /// a round trip and a demodulator reset, and issuing one per touch event
-    /// would spend the whole gesture catching up — and always once on release,
-    /// so where the finger stops is where the receiver ends up.
-    private func scrubTo(_ x: CGFloat, ended: Bool) {
-        guard let hz = spectrum.frequency(atX: x) else { return }
-        let now = Date()
-        guard ended || now.timeIntervalSince(lastScrubAt) > 0.06 else { return }
-        lastScrubAt = now
+    /// The frequency under a point, as one the receiver could actually be on.
+    ///
+    /// Snapped to the band's own raster — the same `config.step(for:)` the tune
+    /// buttons ride, so the spectrum lands where +1 would. Unzoomed, an Airspy
+    /// HF+ window is 456 kHz across perhaps 900 points: a pixel is half a
+    /// kilohertz, no finger is worth better than three of them, and a broadcast
+    /// band has nothing between its channels anyway. Without the snap, tuning
+    /// by touch could not reach 954 kHz at all.
+    private func scrubFreq(atX x: CGFloat) -> Double? {
+        guard let hz = spectrum.frequency(atX: x) else { return nil }
+        return snapToStep(hz, step: radio.tuneStepHz)
+    }
+
+    /// A drag proposes; releasing it tunes.
+    ///
+    /// Nothing is sent to the receiver while the finger is down. A retune is a
+    /// round trip, a demodulator reset and a mute window, and the display
+    /// re-centres on whatever it lands on — so tuning as the finger moved put
+    /// the mapping the finger was reading under the finger's own feet: holding
+    /// still walked the receiver away at the offset from centre, once per
+    /// retune. The dashed cursor says where it will go instead, and the window
+    /// stays where it was until the gesture is finished with it.
+    private func scrub(_ x: CGFloat, state: UIGestureRecognizer.State) {
+        let hz = scrubFreq(atX: x)
+        switch state {
+        case .ended:
+            scrubbing = false
+            spectrum.scrubHz = nil
+            if let hz { tuneTo(hz) }
+        case .cancelled, .failed:
+            scrubbing = false
+            spectrum.scrubHz = nil
+        default:
+            spectrum.scrubHz = hz
+        }
+    }
+
+    private func tuneTo(_ hz: Double) {
         radio.setFrequency(UInt32(max(0, hz.rounded())))
-        if ended { scrubbing = false }
         refresh()
     }
 
@@ -418,7 +451,8 @@ final class RadioViewController: UIViewController {
     /// and ended with no change in between, and the frequency under the finger
     /// is the one that was asked for.
     @objc private func spectrumTapped(_ g: UITapGestureRecognizer) {
-        scrubTo(g.location(in: spectrum).x, ended: true)
+        guard let hz = scrubFreq(atX: g.location(in: spectrum).x) else { return }
+        tuneTo(hz)
     }
 
     /// The bands worth a button, from the same table the Mac uses. Landing on
@@ -431,10 +465,10 @@ final class RadioViewController: UIViewController {
         for (i, b) in Receiver.bands.enumerated() {
             let btn = UIButton(type: .system)
             btn.setTitle(b.name, for: .normal)
-            btn.titleLabel?.font = xMono(15, .medium)
+            btn.titleLabel?.font = xMono(S(15), .medium)
             btn.backgroundColor = Pal.panel
             btn.layer.cornerRadius = 8
-            btn.heightAnchor.constraint(equalToConstant: 40).isActive = true
+            btn.heightAnchor.constraint(equalToConstant: S(40)).isActive = true
             btn.tag = i
             btn.addTarget(self, action: #selector(bandTapped(_:)), for: .touchUpInside)
             s.addArrangedSubview(btn)
@@ -472,12 +506,12 @@ final class RadioViewController: UIViewController {
             s.addTarget(self, action: #selector(displayChanged(_:)), for: .valueChanged)
             displaySliders[tag] = s
             let c = UILabel()
-            c.text = caption; c.font = xMono(11); c.textColor = Pal.faint
+            c.text = caption; c.font = xMono(S(11)); c.textColor = Pal.faint
             c.setContentHuggingPriority(.required, for: .horizontal)
-            readout.font = xMono(11); readout.textColor = Pal.dim
+            readout.font = xMono(S(11)); readout.textColor = Pal.dim
             readout.setContentHuggingPriority(.required, for: .horizontal)
             let r = row([c, s, readout])
-            r.spacing = 6
+            r.spacing = S(6)
             return r
         }
         let c = radio.config
@@ -525,7 +559,7 @@ final class RadioViewController: UIViewController {
     private func row(_ views: [UIView]) -> UIStackView {
         let s = UIStackView(arrangedSubviews: views)
         s.axis = .horizontal
-        s.spacing = 12
+        s.spacing = S(12)
         s.alignment = .center
         return s
     }
@@ -539,10 +573,10 @@ final class RadioViewController: UIViewController {
         for ticks in [-100, -10, -1, 1, 10, 100] {
             let b = UIButton(type: .system)
             b.setTitle(ticks > 0 ? "+\(ticks)" : "\(ticks)", for: .normal)
-            b.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 20, weight: .medium)
+            b.titleLabel?.font = .monospacedDigitSystemFont(ofSize: S(20), weight: .medium)
             b.backgroundColor = Pal.panel
             b.layer.cornerRadius = 10
-            b.heightAnchor.constraint(equalToConstant: 56).isActive = true
+            b.heightAnchor.constraint(equalToConstant: S(56)).isActive = true
             b.tag = ticks
             b.addTarget(self, action: #selector(tuneTapped(_:)), for: .touchUpInside)
             s.addArrangedSubview(b)
@@ -567,8 +601,35 @@ final class RadioViewController: UIViewController {
         }
     }
 
+    /// Swaps in a freshly built layout at the scale the options sheet just
+    /// picked, and does nothing at all when it did not move. The Mac window
+    /// answers a scale change the same way and for the same reason
+    /// (main.swift's `rebuildForScale`): a relaunch is a poor answer to a
+    /// three-way picker.
+    ///
+    /// The waterfall's history does not survive — it is a bitmap sized to the
+    /// old panel, and there is no honest way to rescale one. Everything else is
+    /// read back from the receiver on the next tick.
+    private func rebuildForScale() {
+        let wanted = UI.from(radio.config.uiScale)
+        guard wanted != UI.scale else { return }
+        UI.scale = wanted
+        view.subviews.forEach { $0.removeFromSuperview() }
+        displaySliders.removeAll()
+        spectrum = SpectrumView(frame: .zero)
+        freqView = FreqView(frame: .zero)
+        sMeter = SignalMeter(frame: .zero)
+        nMeter = SignalMeter(frame: .zero)
+        presetTable = UITableView(frame: .zero, style: .plain)
+        ceilRail = VerticalSliderHost(caption: "MAX")
+        floorRail = VerticalSliderHost(caption: "MIN")
+        buildUI()
+        rebuildMarkers()
+    }
+
     @objc private func showOptions() {
         let vc = OptionsViewController(radio: radio) { [weak self] in
+            self?.rebuildForScale()
             self?.rebuildMarkers()
             self?.refresh()
         }
@@ -786,7 +847,7 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
         case .head(let band):
             let l = UILabel()
             l.text = band
-            l.font = xMono(19, .bold)
+            l.font = xMono(S(19), .bold)
             l.textColor = Self.bandColor(band)
             l.translatesAutoresizingMaskIntoConstraints = false
             let rule = UIView()
@@ -805,10 +866,10 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
             cell.selectionStyle = .none
         case .station(let p):
             let (num, unit) = formatFreq(p.freq)
-            let f = UILabel(); f.text = num; f.font = xMono(17, .light); f.textColor = Pal.text
-            let u = UILabel(); u.text = unit; u.font = xMono(11); u.textColor = Pal.faint
-            let n = UILabel(); n.text = p.name; n.font = xMono(13); n.textColor = Pal.dim
-            let m = UILabel(); m.text = modeName(p.mode); m.font = xMono(11); m.textColor = Pal.faint
+            let f = UILabel(); f.text = num; f.font = xMono(S(17), .light); f.textColor = Pal.text
+            let u = UILabel(); u.text = unit; u.font = xMono(S(11)); u.textColor = Pal.faint
+            let n = UILabel(); n.text = p.name; n.font = xMono(S(13)); n.textColor = Pal.dim
+            let m = UILabel(); m.text = modeName(p.mode); m.font = xMono(S(11)); m.textColor = Pal.faint
             n.lineBreakMode = .byTruncatingTail
             for v in [f, u, n, m] {
                 v.translatesAutoresizingMaskIntoConstraints = false
@@ -816,7 +877,7 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
             }
             NSLayoutConstraint.activate([
                 f.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 10),
-                f.widthAnchor.constraint(equalToConstant: 78),
+                f.widthAnchor.constraint(equalToConstant: S(78)),
                 f.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
                 u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 1),
                 u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
@@ -885,10 +946,10 @@ final class VerticalSliderHost: UIView {
     init(caption text: String) {
         super.init(frame: .zero)
         caption.text = text
-        caption.font = xMono(11)
+        caption.font = xMono(S(11))
         caption.textColor = Pal.faint
         caption.textAlignment = .center
-        readout.font = xMono(11)
+        readout.font = xMono(S(11))
         readout.textColor = Pal.dim
         readout.textAlignment = .center
         for v in [slider, caption, readout] { addSubview(v) }
@@ -899,14 +960,14 @@ final class VerticalSliderHost: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let capH: CGFloat = 14
+        let capH: CGFloat = S(14)
         caption.frame = CGRect(x: 0, y: 0, width: bounds.width, height: capH)
         readout.frame = CGRect(x: 0, y: bounds.height - capH, width: bounds.width, height: capH)
         let track = bounds.height - capH * 2 - 8
         // Reset before measuring: a transform already applied would otherwise
         // be composed with the new one on every layout pass.
         slider.transform = .identity
-        slider.frame = CGRect(x: 0, y: 0, width: max(40, track), height: 30)
+        slider.frame = CGRect(x: 0, y: 0, width: max(S(40), track), height: S(30))
         // Negative, so the low end is at the bottom — the way a dB scale reads,
         // and the way the rail on the Mac window is arranged.
         slider.transform = CGAffineTransform(rotationAngle: -.pi / 2)
@@ -991,8 +1052,18 @@ final class OptionsViewController: UITableViewController {
         sections = [
             demod,
             Section(name: "RF", rows: [
+                // One row, on whichever of the two gain indices the live
+                // mode uses: AM keeps its own so it can be pulled down against
+                // a strong medium-wave neighbour, and everything else shares
+                // the other (spyService.ts:1214). Shown resolved, so a value
+                // never set here reads as the device maximum it is running at
+                // rather than as a blank.
                 Row(title: "Gain", kind: .list(values: [0, 1, 2, 3, 4, 5, 6, 7, 8], unit: "",
-                    get: { Double(r.config.gain) }, set: { r.config.gain = UInt32(max(0, $0)) })),
+                    get: { Double(r.gain) },
+                    set: { v in
+                        let g = UInt32(max(0, v))
+                        if r.mode == 2 { r.config.amGain = g } else { r.config.fmGain = g }
+                    })),
                 Row(title: "IQ NR", kind: .bool(get: { r.iqNrEnabled }, set: { r.iqNrEnabled = $0 })),
                 Row(title: "Levelling", kind: .bool(get: { r.levelingEnabled }, set: { r.levelingEnabled = $0 })),
             ]),
@@ -1003,6 +1074,10 @@ final class OptionsViewController: UITableViewController {
                     get: { r.config.jpRegion }, set: { r.config.jpRegion = $0 })),
                 Row(title: "Connect at start", kind: .bool(get: { r.config.autoDirect },
                     set: { r.config.autoDirect = $0 })),
+                // Same three names and the same file the Mac window reads, so
+                // one machine's setting is not another's mystery.
+                Row(title: "UI scale", kind: .text(options: UI.names,
+                    get: { r.config.uiScale }, set: { r.config.uiScale = $0 })),
             ]),
         ]
         tableView.reloadData()

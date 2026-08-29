@@ -129,6 +129,13 @@ final class SpectrumView: XView {
         let f = Double(min(max(0, (x - gutter) / plotW), 1))
         return visibleLoHz + visibleSpanHz * f
     }
+
+    /// Where a touch says the receiver is about to go, drawn while the finger
+    /// is still down. The gesture does not retune until it lifts — a retune is
+    /// a round trip and a demodulator reset — so without a mark of its own the
+    /// display says nothing at all while the user is choosing, and the only
+    /// feedback is the jump at the end.
+    var scrubHz: Double? { didSet { if scrubHz != oldValue { redraw() } } }
     private let axisStrip: CGFloat = 24
 
     /// Where the receiver is and how wide its IQ window is, from the status
@@ -321,6 +328,31 @@ final class SpectrumView: XView {
         return (UInt8(lo.1.0 + (hi.1.0 - lo.1.0) * k),
                 UInt8(lo.1.1 + (hi.1.1 - lo.1.1) * k),
                 UInt8(lo.1.2 + (hi.1.2 - lo.1.2) * k))
+    }
+
+    /// The pending cursor. Dashed and white against the tuned marker's solid
+    /// red, so a glance says which line is the receiver and which is the
+    /// proposal. The reading goes in the top of the waterfall well: the trace's
+    /// own top corner is where the station labels stack.
+    private func drawScrub(_ ctx: CGContext, xOf: (Double) -> CGFloat,
+                           h: CGFloat, fallTop: CGFloat) {
+        guard let hz = scrubHz else { return }
+        let x = xOf(hz).rounded() + 0.5
+        ctx.saveGState()
+        ctx.setStrokeColor(XColor(white: 0.95, alpha: 0.92).cgColor)
+        ctx.setLineWidth(1)
+        ctx.setLineDash(phase: 0, lengths: [5, 4])
+        ctx.move(to: CGPoint(x: x, y: 0))
+        ctx.addLine(to: CGPoint(x: x, y: h))
+        ctx.strokePath()
+        ctx.restoreGState()
+        let text = axisFreq(hz)
+        // Flipped to the left of the line near the right edge, so the reading
+        // never runs off the panel it belongs to.
+        let wide = CGFloat(text.count) * 8 + 8
+        let tx = x + wide > bounds.width ? x - wide : x + 5
+        axisLabel(text, at: CGPoint(x: tx, y: fallTop + 4),
+                  color: XColor(white: 0.95, alpha: 0.95))
     }
 
     private func axisLabel(_ text: String, at p: CGPoint, size: CGFloat = 13,
@@ -633,6 +665,7 @@ final class SpectrumView: XView {
                 ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
                 ctx.strokePath()
                 drawStationLabels(ctx, specH: specH, lo: lo, span: span, xOf: x(forHz:))
+                drawScrub(ctx, xOf: x(forHz:), h: h, fallTop: fallTop)
                 return
             }
             if bins.isEmpty {
@@ -769,6 +802,7 @@ final class SpectrumView: XView {
         ctx.strokePath()
 
         drawStationLabels(ctx, specH: specH, lo: lo, span: span, xOf: x(forHz:))
+        drawScrub(ctx, xOf: x(forHz:), h: h, fallTop: fallTop)
     }
 
 }

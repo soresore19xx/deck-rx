@@ -291,12 +291,13 @@ final class AppServer {
             "am": ["bandwidth": c.amBandwidthHz, "carrierAgc": c.amCarrierAgc,
                    "agcAttack": c.amAgcAttack, "agcDecay": c.amAgcDecay, "sync": c.amSync],
             "ssb": ["bandwidthHz": c.ssbBandwidthHz, "bfoPitchHz": c.cwBfoHz],
-            // One gain here, reported under both keys: the plugin keeps a
-            // separate AM and FM gain because its dial does. This receiver has
-            // one, and claiming two would let the panel show a value that
-            // nothing reads.
-            "gain": ["am": Int(c.gain), "fm": Int(c.gain),
-                     "max": Int(radio.deviceInfo?.maxGainIndex ?? 8)],
+            // Two, as the plugin has them (spyService.ts:107): AM wants the
+            // gain pulled down to dodge IMD from a strong medium-wave
+            // neighbour, FM wants all of it. Reported resolved rather than as
+            // stored, so a value the receiver has never been given reads as
+            // the device maximum it is actually running at.
+            "gain": ["am": Int(radio.amGainIndex), "fm": Int(radio.fmGainIndex),
+                     "max": Int(radio.maxGainIndex)],
         ])
     }
 
@@ -350,7 +351,13 @@ final class AppServer {
         case "am.sync":        c.amSync = b
         case "ssb.bandwidth", "ssb.bandwidthHz": c.ssbBandwidthHz = n
         case "ssb.bfo", "ssb.bfoPitchHz":        c.cwBfoHz = n
-        case "gain":           c.gain = UInt32(max(0, min(n, 64)))
+        // One control, routed to the value the live mode actually uses — which
+        // is the AM/non-AM split the demodulator itself makes
+        // (spyService.ts:1214), not the narrower `mode 0 or 1` test the
+        // plugin's own control server writes through. Under that test a gain
+        // set while listening to SSB edited a number SSB never reads.
+        case "gain":           let v = UInt32(max(0, min(n, 64)))
+                               if radio.mode == 2 { c.amGain = v } else { c.fmGain = v }
         default: return false
         }
         c.save()

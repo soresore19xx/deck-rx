@@ -5,7 +5,14 @@ struct RadioConfig: Codable, Equatable {
     var port = 5555
     var frequencyHz: Double = 1_134_000
     var mode = 2
-    var gain: UInt32 = 5
+    /// RF gain index, kept per demod family the way the plugin keeps it
+    /// (spyService.ts:107). AM is usually pulled down to dodge IMD from a
+    /// strong medium-wave neighbour while FM wants all of it, and one number
+    /// cannot be both. nil means "never chosen here", which resolves to the
+    /// device's own maxGainIndex — what the plugin seeds them with on the first
+    /// DeviceInfo (spyService.ts:469).
+    var amGain: UInt32?
+    var fmGain: UInt32?
     var volume: Double = 0.9
     var muted = false
     /// Offset from the device's MinimumIQDecimation, SDR++'s srId.
@@ -144,6 +151,10 @@ struct RadioConfig: Codable, Equatable {
     /// property already carries its default.
     init() {}
 
+    /// The single `gain` this file carried before AM and FM were told apart.
+    /// Not a property any more, so the synthesised keys no longer name it.
+    private enum LegacyKeys: String, CodingKey { case gain }
+
     /// Decoded key by key, each falling back to its default.
     ///
     /// The synthesised initialiser treats a missing key as an error, so adding
@@ -158,7 +169,13 @@ struct RadioConfig: Codable, Equatable {
         port = (try? c.decodeIfPresent(Int.self, forKey: .port)) .flatMap { $0 } ?? d.port
         frequencyHz = (try? c.decodeIfPresent(Double.self, forKey: .frequencyHz)) .flatMap { $0 } ?? d.frequencyHz
         mode = (try? c.decodeIfPresent(Int.self, forKey: .mode)) .flatMap { $0 } ?? d.mode
-        gain = (try? c.decodeIfPresent(UInt32.self, forKey: .gain)) .flatMap { $0 } ?? d.gain
+        // A file written before AM and FM were told apart carries one `gain`.
+        // It belongs to AM: that is the mode it would have been lowered in.
+        // Same migration as spyService.ts:626.
+        let legacyGain: UInt32? = (try? decoder.container(keyedBy: LegacyKeys.self))
+            .flatMap { (try? $0.decodeIfPresent(UInt32.self, forKey: .gain)) ?? nil }
+        amGain = (try? c.decodeIfPresent(UInt32.self, forKey: .amGain)) .flatMap { $0 } ?? legacyGain
+        fmGain = (try? c.decodeIfPresent(UInt32.self, forKey: .fmGain)) .flatMap { $0 }
         volume = (try? c.decodeIfPresent(Double.self, forKey: .volume)) .flatMap { $0 } ?? d.volume
         muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) .flatMap { $0 } ?? d.muted
         iqDecimation = (try? c.decodeIfPresent(UInt32.self, forKey: .iqDecimation)) .flatMap { $0 } ?? d.iqDecimation
@@ -231,7 +248,9 @@ struct RadioConfig: Codable, Equatable {
         if let v = j["port"] as? Int, v > 0 { c.port = v }
         if let v = j["lastFrequency"] as? Double, v > 0 { c.frequencyHz = v }
         if let v = j["demodMode"] as? Int { c.mode = v }
-        if let v = j["amGain"] as? Int { c.gain = UInt32(max(0, v)) }
+        if let v = j["gain"] as? Int { c.amGain = UInt32(max(0, v)) }   // pre-split files
+        if let v = j["amGain"] as? Int { c.amGain = UInt32(max(0, v)) }
+        if let v = j["fmGain"] as? Int { c.fmGain = UInt32(max(0, v)) }
         if let v = j["volume"] as? Double { c.volume = v }
         if let v = j["muted"] as? Bool { c.muted = v }
         if let v = j["iqDecimation"] as? Int { c.iqDecimation = UInt32(max(0, v)) }

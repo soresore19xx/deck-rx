@@ -426,6 +426,50 @@ if let baseline = try? enc.encode(RadioConfig()),
 // And an outright broken file must not take the app down with it.
 check("garbage does not decode", (try? dec.decode(RadioConfig.self, from: Data("not json".utf8))) == nil)
 
+section("a touch lands on the band's own raster")
+// One pixel of an unzoomed 456 kHz window is half a kilohertz, so a frequency
+// read off a finger is between channels every time. 954 kHz is the case that
+// proves it: a receiver that cannot snap to the 9 kHz raster cannot reach it.
+check("medium wave lands on the 9 kHz raster", snapToStep(956_120, step: 9_000) == 954_000)
+check("FM lands on the 100 kHz raster", snapToStep(82_461_000, step: 100_000) == 82_500_000)
+check("it rounds, not truncates", snapToStep(80_049_000, step: 100_000) == 80_000_000)
+check("short wave takes its own 5 kHz raster", snapToStep(6_053_400, step: 5_000) == 6_055_000)
+check("no step means no snap", snapToStep(6_053_400, step: 0) == 6_053_400)
+check("never below zero", snapToStep(-1, step: 9_000) == 0)
+
+section("AM and FM keep their own RF gain")
+// FM detects an angle, so the server-side gain moves the RSSI and nothing
+// else; the plugin carries the index into the demodulator's output gain
+// instead (spyService.ts:1349). Two values, because AM wants it pulled down
+// against a strong medium-wave neighbour and FM wants all of it.
+var g = RadioConfig()
+g.amGain = 3
+if let data = try? enc.encode(g), let back = try? dec.decode(RadioConfig.self, from: data) {
+    check("a chosen AM gain survives", back.amGain == 3)
+    check("an unset FM gain stays unset", back.fmGain == nil)
+}
+// A file written before the split carries one `gain`, chosen in AM.
+if let old = try? dec.decode(RadioConfig.self, from: Data(#"{"gain":4}"#.utf8)) {
+    check("a pre-split gain migrates to AM", old.amGain == 4)
+    check("and leaves FM to the device maximum", old.fmGain == nil)
+} else {
+    check("a pre-split config decodes", false)
+}
+let gr = LocalRadio()
+gr.config.amGain = nil; gr.config.fmGain = nil
+check("an unset gain resolves to the device maximum",
+      gr.amGainIndex == gr.maxGainIndex && gr.fmGainIndex == gr.maxGainIndex,
+      "am \(gr.amGainIndex) fm \(gr.fmGainIndex) max \(gr.maxGainIndex)")
+gr.config.amGain = 99
+check("and is clamped to it", gr.amGainIndex == gr.maxGainIndex)
+gr.config.amGain = 2; gr.config.fmGain = 7
+gr.mode = AM
+check("AM asks for the AM index", gr.gain == 2)
+gr.mode = WFM
+check("FM asks for the FM index", gr.gain == 7)
+gr.mode = USB
+check("SSB rides the FM index, as the demodulators do", gr.gain == 7)
+
 section("soft limiter")
 check("linear under the knee", near(AudioLeveling.softLimit(1000), 1000, 1e-9))
 check("never exceeds the ceiling", AudioLeveling.softLimit(1e9) <= AudioLeveling.int16Max)

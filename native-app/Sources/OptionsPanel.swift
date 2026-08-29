@@ -428,7 +428,11 @@ final class OptionsPanel: NSView {
         if parts.count == 1 {
             if name == "gain" {
                 guard let g = live["gain"] as? [String: Any] else { return nil }
-                return (mode == 0 || mode == 1) ? g["fm"] : g["am"]
+                // The split the demodulators make: AM has its own gain, and
+                // everything else — FM, SSB, CW — rides the other one
+                // (spyService.ts:1214). Reading it as "0 or 1 is FM" showed
+                // the AM number while listening to SSB.
+                return mode == 2 ? g["am"] : g["fm"]
             }
             return live[name]
         }

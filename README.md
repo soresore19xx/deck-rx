@@ -399,7 +399,9 @@ the radio but not configure it is half a front-end.
 The mode-specific block swaps with the demod: FM gets
 bandwidth, de-emphasis, stereo, IFNR and the audio filters; AM gets bandwidth,
 sync detection and the carrier AGC; SSB/CW get bandwidth and BFO pitch; all of
-them get RF gain. Clicking a row advances it. Values are never cached here —
+them get RF gain. One Gain row, on whichever of the two stored indices the live
+mode uses — AM has its own, everything else shares the other, which is the
+split the demodulators themselves make. Clicking a row advances it. Values are never cached here —
 the panel redraws from what the receiver reports, so a change made on the deck
 shows up in the window.
 
@@ -542,11 +544,18 @@ What the window carries:
   the frequency itself; **Edit** turns on swipe-to-delete; a long press on a row
   opens name, frequency and mode. Edits go to the app's own `presets.json` — the
   iPad has its own copy, not the plugin's
-- **the spectrum tunes.** A tap lands on the frequency under the finger and a
-  drag follows it, with the server told at most every 60 ms while the finger
-  moves and always once on release. The rail between the trace and the
-  waterfall stays a drag handle for the split, so one gesture serves both by
-  where it starts
+- **the spectrum tunes.** A tap lands on the frequency under the finger; a
+  drag draws a dashed cursor where it would land and retunes once, on release.
+  Nothing is sent while the finger is down: a retune is a round trip, a
+  demodulator reset and a mute window, and the display re-centres on whatever
+  it lands on — so retuning as the finger moved pulled the mapping the finger
+  was reading out from under it, and a finger held still walked the receiver
+  away by its offset from centre once per retune. The landing frequency is
+  snapped to the band's own raster, the same `config.step(for:)` the tune
+  buttons ride: a pixel of an unzoomed 456 kHz window is half a kilohertz, so
+  without the snap 954 kHz was not reachable by touch at all. The rail between
+  the trace and the waterfall stays a drag handle for the split, so one gesture
+  serves both by where it starts
 - band jump, and coarse/fine tune buttons that ride on the mode's own tune step.
   The step follows the raster the band is channelised on, filed under the
   plugin's own key (`"2:mw"`, `"2:sw"`, `"2:vhf"` for AM, the mode number for
@@ -555,8 +564,12 @@ What the window carries:
 - a display rail: zoom and waterfall depth as sliders, the dB ceiling and floor
   as vertical rails beside the trace, MAX above MIN to match the axis
 - an options sheet with the live demod's own settings, RF gain, IQ NR,
-  levelling, tune mode, JP region and connect-at-start — the sheet rebuilds on
-  a mode change, so an AM receiver is never offered de-emphasis
+  levelling, tune mode, JP region, connect-at-start and the UI scale — the
+  sheet rebuilds on a mode change, so an AM receiver is never offered
+  de-emphasis. `uiScale` is the same `min` / `middle` / `max` the Mac window
+  reads, out of the same file, and applies in place: the layout is rebuilt at
+  the new scale with the receiver still running (the waterfall's history
+  restarts, its bitmap being sized to the old panel)
 - the app is landscape: the layout spends its width on the spectrum
 
 The output buffer is sized for the rate this actually runs at — 114 kHz stereo
@@ -621,15 +634,27 @@ AGC set points and look-ahead, the IQ noise reduction's bins and window, the
 FFT's window and its frame-to-frame EWMA, the soft limiter's knee, the per-mode
 makeup — matches value for value.
 
+A later one again: the RF gain index never reached the demodulators. FM, SSB
+and CW detect an angle, not an amplitude, so the server-side gain moves the
+RSSI and leaves the audio where it was — the plugin carries the index into the
+demodulator's own output gain for exactly that reason (`8/8` full scale, `0/8`
+silent, spyService.ts:1349), and without it the Gain row was inert in every
+mode but AM. AM's own scale was `gain / 10` against the plugin's
+`amGain / maxGainIndex`, so it topped out at 0.8. And the app kept **one** gain
+where the plugin keeps two — AM pulled down against a strong medium-wave
+neighbour, FM wanting all of it — so a `fmGain` in the config file was read and
+discarded. There are two now, migrating a pre-split `gain` into the AM one, and
+the row shows whichever the live mode uses.
+
 When something sounds different between the two, the difference is a bug in
 this one.
 
 There is no volume control in the app: the iPad's own buttons are the volume,
 and a second attenuator in series only costs headroom.
 
-Still Mac-only, and deliberately so unless asked for: the JST/UTC clock, the
-display scale, SDR++ import and sync, icecast publishing, output device
-selection, and the RAW and DSB modes (six segments are what fits).
+Still Mac-only, and deliberately so unless asked for: the JST/UTC clock, SDR++
+import and sync, icecast publishing, output device selection, and the RAW and
+DSB modes (six segments are what fits).
 
 **First run** connects to `127.0.0.1:5555`, the same default the shared
 `RadioConfig` carries — there is no plugin config on an iPad to seed a real

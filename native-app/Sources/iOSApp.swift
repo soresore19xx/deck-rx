@@ -88,7 +88,8 @@ final class RadioViewController: UIViewController {
     private var floorRail = VerticalSliderHost(caption: "MIN")
     private let optionsButton = UIButton(type: .system)
     private let stationLabel = UILabel()
-    private let modeControl = UISegmentedControl(items: MODE_NAMES)
+    private var bandButtons: [UIButton] = []
+    private var modeButtons: [UIButton] = []
     private let stepLabel = UILabel()
     private let muteButton = UIButton(type: .system)
     private var refreshTimer: Timer?
@@ -181,18 +182,16 @@ final class RadioViewController: UIViewController {
         stationLabel.textColor = Pal.dim
         stationLabel.lineBreakMode = .byTruncatingTail
 
-        modeControl.removeAllSegments()
-        for (i, m) in Self.shownModes.enumerated() {
-            modeControl.insertSegment(withTitle: MODE_NAMES[m], at: i, animated: false)
-        }
-        modeControl.selectedSegmentTintColor = Pal.rule
-        modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
-
         stepLabel.font = xMono(S(13))
         stepLabel.textColor = Pal.faint
         stepLabel.textAlignment = .center
 
         muteButton.setTitle("Mute", for: .normal)
+        muteButton.titleLabel?.font = xMono(S(15), .medium)
+        muteButton.setTitleColor(Pal.dim, for: .normal)
+        muteButton.backgroundColor = Pal.panel
+        muteButton.layer.cornerRadius = 0
+        muteButton.heightAnchor.constraint(equalToConstant: S(40)).isActive = true
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
 
         freqView.onTune = { [weak self] hz in
@@ -331,7 +330,7 @@ final class RadioViewController: UIViewController {
             displayRow(),
             bandRow(),
             tuneRow(),
-            modeControl,
+            modeRow(),
             muteButton,
             row([hostField, connectButton, optionsButton]),
             statusLabel,
@@ -381,6 +380,30 @@ final class RadioViewController: UIViewController {
         restBottom.isActive = true
         right.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,
                                       constant: -8).isActive = true
+    }
+
+    /// A key, not a pill. Square corners and the panel's own ground, which is
+    /// the language the readouts and rules around it already speak.
+    private func padButton(_ title: String, font: XFont, height: CGFloat) -> UIButton {
+        let b = UIButton(type: .system)
+        b.setTitle(title, for: .normal)
+        b.titleLabel?.font = font
+        b.setTitleColor(Pal.dim, for: .normal)
+        b.backgroundColor = Pal.panel
+        b.layer.cornerRadius = 0
+        b.heightAnchor.constraint(equalToConstant: height).isActive = true
+        return b
+    }
+
+    /// Lit or not. A key that is the receiver's current band, mode or mute
+    /// state inverts rather than tinting its text: on a panel this dark a
+    /// coloured word is not a state, it is a word. Assigned only on a change —
+    /// see the note in `refresh()`.
+    private func light(_ b: UIButton, _ on: Bool, _ tint: XColor = Pal.accent) {
+        let bg = on ? tint : Pal.panel
+        guard b.backgroundColor != bg else { return }
+        b.backgroundColor = bg
+        b.setTitleColor(on ? Pal.bg : Pal.dim, for: .normal)
     }
 
     /// A fader cap instead of a bead.
@@ -570,16 +593,12 @@ final class RadioViewController: UIViewController {
     private func bandRow() -> UIStackView {
         let s = row([])
         s.distribution = .fillEqually
-        for (i, b) in Receiver.bands.enumerated() {
-            let btn = UIButton(type: .system)
-            btn.setTitle(b.name, for: .normal)
-            btn.titleLabel?.font = xMono(S(15), .medium)
-            btn.backgroundColor = Pal.panel
-            btn.layer.cornerRadius = 8
-            btn.heightAnchor.constraint(equalToConstant: S(40)).isActive = true
+        bandButtons = Receiver.bands.enumerated().map { i, b in
+            let btn = padButton(b.name, font: xMono(S(15), .medium), height: S(40))
             btn.tag = i
             btn.addTarget(self, action: #selector(bandTapped(_:)), for: .touchUpInside)
             s.addArrangedSubview(btn)
+            return btn
         }
         return s
     }
@@ -680,12 +699,10 @@ final class RadioViewController: UIViewController {
         let s = row([])
         s.distribution = .fillEqually
         for ticks in [-100, -10, -1, 1, 10, 100] {
-            let b = UIButton(type: .system)
-            b.setTitle(ticks > 0 ? "+\(ticks)" : "\(ticks)", for: .normal)
-            b.titleLabel?.font = .monospacedDigitSystemFont(ofSize: S(20), weight: .medium)
-            b.backgroundColor = Pal.panel
-            b.layer.cornerRadius = 10
-            b.heightAnchor.constraint(equalToConstant: S(56)).isActive = true
+            // Momentary, so never lit: there is no state for a step to be in.
+            let b = padButton(ticks > 0 ? "+\(ticks)" : "\(ticks)",
+                              font: .monospacedDigitSystemFont(ofSize: S(20), weight: .medium),
+                              height: S(56))
             b.tag = ticks
             b.addTarget(self, action: #selector(tuneTapped(_:)), for: .touchUpInside)
             s.addArrangedSubview(b)
@@ -768,10 +785,24 @@ final class RadioViewController: UIViewController {
 
     @objc private func tuneTapped(_ sender: UIButton) { radio.tune(ticks: sender.tag) }
 
-    @objc private func modeChanged() {
-        let i = modeControl.selectedSegmentIndex
-        guard i >= 0, i < Self.shownModes.count else { return }
-        radio.mode = Self.shownModes[i]
+    /// Keys rather than a segmented control, so the row reads like the band
+    /// row above it and the live mode is lit rather than outlined in a shade of
+    /// grey.
+    private func modeRow() -> UIStackView {
+        let s = row([])
+        s.distribution = .fillEqually
+        modeButtons = Self.shownModes.map { m in
+            let b = padButton(MODE_NAMES[m], font: xMono(S(15), .medium), height: S(40))
+            b.tag = m
+            b.addTarget(self, action: #selector(modeTapped(_:)), for: .touchUpInside)
+            s.addArrangedSubview(b)
+            return b
+        }
+        return s
+    }
+
+    @objc private func modeTapped(_ sender: UIButton) {
+        radio.mode = sender.tag
         radio.config.mode = radio.mode
         radio.config.save()
         refresh()
@@ -833,7 +864,14 @@ final class RadioViewController: UIViewController {
 
         setTitle(connectButton, radio.isConnected ? "Disconnect" : "Connect")
         setTitle(muteButton, radio.muted ? "Unmute" : "Mute")
-        muteButton.tintColor = radio.muted ? Pal.warn : Pal.blue
+        light(muteButton, radio.muted, Pal.warn)
+        // The band the receiver is in, and the mode it is in, lit.
+        let atHz = Double(radio.frequency)
+        for b in bandButtons {
+            let band = Receiver.bands[b.tag]
+            light(b, atHz >= band.lo && atHz <= band.hi)
+        }
+        for b in modeButtons { light(b, b.tag == radio.mode) }
 
         if let err = radio.lastError, !radio.isConnected {
             statusLabel.textColor = Pal.warn
@@ -871,11 +909,6 @@ final class RadioViewController: UIViewController {
             setText(statusLabel, "not connected")
         }
 
-        if let i = Self.shownModes.firstIndex(of: radio.mode) {
-            modeControl.selectedSegmentIndex = i
-        } else {
-            modeControl.selectedSegmentIndex = UISegmentedControl.noSegment
-        }
         presetTable.visibleCells.forEach { markCell($0) }
     }
 

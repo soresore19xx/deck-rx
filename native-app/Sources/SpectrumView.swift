@@ -622,23 +622,22 @@ final class SpectrumView: XView {
         ctx.setFillColor(XColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1).cgColor)
         ctx.fill(bounds)
 
-        // A hairline round each of the two panels. Half a point — one physical
-        // pixel on a retina screen — because at a full point an outline sits
-        // heavier than the graticule it contains, and the point of it is to say
-        // where each panel ends, not to draw attention to itself.
+        // One hairline round the whole display, the way SDR++ frames its own:
+        // the trace, the scale rail and the waterfall are one instrument, and a
+        // frame round each of them left two outlines floating either side of
+        // the rail with nothing to say why. The rules that already divide the
+        // three are the divisions; this is the edge.
         //
-        // On the way out rather than here: the waterfall's bitmap fills its
-        // rect exactly and the trace runs to its edges, so anything drawn now
-        // would be painted over. Inset by a quarter point so the stroke lands
-        // inside the view instead of straddling its edge and losing half of
-        // itself to the clip.
+        // Half a point — one physical pixel on a retina screen — because at a
+        // full point an outline sits heavier than the graticule it contains.
+        // Stroked on the way out, since the waterfall's bitmap fills its rect
+        // exactly and would paint over it, and inset a quarter point so the
+        // line lands inside the view instead of straddling its edge and losing
+        // half of itself to the clip.
         defer {
             ctx.setStrokeColor(XColor(white: 0.30, alpha: 1).cgColor)
             ctx.setLineWidth(0.5)
-            for panel in [CGRect(x: plotX, y: 0, width: plotW, height: specH),
-                          CGRect(x: plotX, y: fallTop, width: plotW, height: fallH)] {
-                ctx.stroke(panel.insetBy(dx: 0.25, dy: 0.25))
-            }
+            ctx.stroke(bounds.insetBy(dx: 0.25, dy: 0.25))
         }
 
         // Three surfaces rather than one flat field: the trace, the scale rail

@@ -382,6 +382,45 @@ final class LocalRadio {
         auxQueue.async { self.iq.removeAll(keepingCapacity: true) }
     }
 
+    /// Slide the window sideways without changing what is being listened to,
+    /// as far as that is possible.
+    ///
+    /// This is the one thing tuning inside the window cannot do: it moves the
+    /// window itself, so it is a device retune and the display does move — that
+    /// being the point of the gesture. The demodulator has to stay inside the
+    /// window, so a pan that would leave it behind drags it along at the edge,
+    /// which is what SDR++ does with its VFO and the only thing the hardware
+    /// allows. Clamped to what the device can tune to, so dragging off the end
+    /// of the band stops there instead of asking the server for a frequency it
+    /// would refuse without a word.
+    func panDeviceCenter(byHz deltaHz: Double) {
+        guard canControl, isConnected, iqRate > 0, deltaHz != 0 else { return }
+        var center = Double(deviceCenterHz) + deltaHz
+        if let info = deviceInfo, info.maxFrequency > info.minFrequency {
+            center = min(max(center, Double(info.minFrequency)), Double(info.maxFrequency))
+        }
+        center = max(0, center.rounded())
+        guard UInt32(center) != deviceCenterHz else { return }
+        let limit = maxVfoOffsetHz
+        let listen = UInt32(max(0, min(max(Double(frequency), center - limit),
+                                       center + limit).rounded()))
+        deviceCenterHz = UInt32(center)
+        if listen != frequency {
+            frequency = listen
+            config.frequencyHz = Double(listen)
+            config.save()
+        }
+        // The stream is about to describe a different piece of band, so the
+        // detectors are as stale as they are after any retune.
+        muteUntil = max(muteUntil, Date().addingTimeInterval(mode == 2 ? 0.2 : 0.1))
+        am.resetForRetune()
+        other.resetForRetune()
+        setVfo(Double(frequency) - center)
+        client.setFrequency(deviceCenterHz)
+        auxQueue.async { self.iq.removeAll(keepingCapacity: true) }
+        DispatchQueue.main.async { self.onState?() }
+    }
+
     /// The offset, and the mixer that carries it. On the audio queue, which is
     /// where the shifter is read.
     private func setVfo(_ offset: Double) {

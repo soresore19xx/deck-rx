@@ -233,6 +233,12 @@ final class RadioViewController: UIViewController {
         spectrum.addGestureRecognizer(split)
         spectrum.addGestureRecognizer(UITapGestureRecognizer(target: self,
                                                              action: #selector(spectrumTapped(_:))))
+        // Touch-down, so a tap can be aimed before it is taken. It watches the
+        // same touch the other two do, which needs the delegate below.
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(spectrumTouched(_:)))
+        press.minimumPressDuration = 0
+        press.delegate = self
+        spectrum.addGestureRecognizer(press)
 
         for (m, tint) in [(sMeter, Pal.accent), (nMeter, Pal.blue)] {
             m.tint = tint
@@ -380,7 +386,7 @@ final class RadioViewController: UIViewController {
 
     /// One gesture, two jobs, decided by where the finger lands. The rail
     /// between the trace and the waterfall is a handle; everywhere else is the
-    /// band, and dragging across it tunes.
+    /// band, and dragging it carries the band sideways.
     @objc private func splitDragged(_ g: UIPanGestureRecognizer) {
         let p = g.location(in: spectrum)
         let usable = spectrum.bounds.height - 24
@@ -388,10 +394,12 @@ final class RadioViewController: UIViewController {
         if g.state == .began {
             let specH = ((spectrum.bounds.height - 24) * spectrum.spectrumFraction).rounded()
             draggingSplit = abs(p.y - (specH + 12)) < 26
-            scrubbing = !draggingSplit && spectrum.frequency(atX: p.x) != nil
+            panning = !draggingSplit
+            // The aim mark belongs to a tap, and this has stopped being one.
+            clearAim()
         }
-        if scrubbing {
-            scrub(p.x, state: g.state)
+        if panning {
+            pan(g)
             return
         }
         guard draggingSplit else { return }
@@ -403,7 +411,7 @@ final class RadioViewController: UIViewController {
         }
     }
     private var draggingSplit = false
-    private var scrubbing = false
+    private var panning = false
 
     /// The frequency under a point, as one the receiver could actually be on.
     ///
@@ -413,48 +421,70 @@ final class RadioViewController: UIViewController {
     /// kilohertz, no finger is worth better than three of them, and a broadcast
     /// band has nothing between its channels anyway. Without the snap, tuning
     /// by touch could not reach 954 kHz at all.
-    private func scrubFreq(atX x: CGFloat) -> Double? {
+    private func aimFreq(atX x: CGFloat) -> Double? {
         guard let hz = spectrum.frequency(atX: x) else { return nil }
         return snapToStep(hz, step: radio.tuneStepHz)
     }
 
-    /// A drag proposes; releasing it tunes.
+    /// Drag the band sideways.
     ///
-    /// Nothing is sent to the receiver while the finger is down. A retune is a
-    /// round trip, a demodulator reset and a mute window, and the display
-    /// re-centres on whatever it lands on — so tuning as the finger moved put
-    /// the mapping the finger was reading under the finger's own feet: holding
-    /// still walked the receiver away at the offset from centre, once per
-    /// retune. The dashed cursor says where it will go instead, and the window
-    /// stays where it was until the gesture is finished with it.
-    private func scrub(_ x: CGFloat, state: UIGestureRecognizer.State) {
-        let hz = scrubFreq(atX: x)
-        switch state {
+    /// Nothing is sent while the finger is down: the view slides and the
+    /// receiver stays where it is, and one retune goes out on release. A pan is
+    /// a device retune by definition — it moves the window itself, which is the
+    /// one thing tuning inside the window cannot do — so it costs a round trip
+    /// and a restarted trace, and doing that per touch event would spend the
+    /// gesture catching up.
+    private func pan(_ g: UIPanGestureRecognizer) {
+        let dx = g.translation(in: spectrum).x
+        switch g.state {
         case .ended:
-            scrubbing = false
-            spectrum.scrubHz = nil
-            scrubPreviewHz = nil
-            if let hz { tuneTo(hz) } else { refresh() }
+            panning = false
+            spectrum.panPixels = 0
+            commitPan(dx)
         case .cancelled, .failed:
-            scrubbing = false
-            spectrum.scrubHz = nil
-            scrubPreviewHz = nil
-            refresh()
+            panning = false
+            spectrum.panPixels = 0
         default:
-            // Only when the channel under the finger actually changes. The
-            // snap means most touch events land on the one before, and a
-            // station lookup at touch rate is work nobody asked for.
-            guard spectrum.scrubHz != hz else { return }
-            spectrum.scrubHz = hz
-            scrubPreviewHz = hz
-            if let hz { showFreq(hz) }
+            spectrum.panPixels = dx
         }
     }
-    /// What the readout shows while a finger is down, so the digits and the
-    /// station name follow it instead of standing at the old frequency until
-    /// the gesture is over. `refresh()` reads it too, or the 4 Hz tick would
-    /// put the receiver's own frequency straight back.
-    private var scrubPreviewHz: Double?
+
+    /// The finger carries the band with it: dragging right brings lower
+    /// frequencies into view, so the window moves down by what the drag covered.
+    private func commitPan(_ dx: CGFloat) {
+        let w = spectrum.plotWidth
+        guard w > 0, spectrum.visibleSpanHz > 0, dx != 0 else { return }
+        radio.panDeviceCenter(byHz: -Double(dx / w) * spectrum.visibleSpanHz)
+        refresh()
+    }
+
+    /// Where a tap would land, marked from the moment the finger touches down.
+    ///
+    /// A tap is over before anything could be drawn for it, so the mark comes
+    /// from the touch rather than from the tap recogniser — a press with no
+    /// minimum duration, recognised alongside the other two. Moving turns the
+    /// gesture into a pan and the mark goes away with it.
+    @objc private func spectrumTouched(_ g: UILongPressGestureRecognizer) {
+        switch g.state {
+        case .began, .changed:
+            guard !panning, !draggingSplit,
+                  let hz = aimFreq(atX: g.location(in: spectrum).x) else { clearAim(); return }
+            // Only when the channel under the finger actually changes. The snap
+            // means most touch events land on the one before, and a station
+            // lookup at touch rate is work nobody asked for.
+            guard spectrum.aimHz != hz else { return }
+            spectrum.aimHz = hz
+            showFreq(hz)
+        default:
+            clearAim()
+        }
+    }
+
+    private func clearAim() {
+        guard spectrum.aimHz != nil else { return }
+        spectrum.aimHz = nil
+        refresh()
+    }
 
     /// The readout alone. The meters and the status line describe the signal
     /// coming in, which is still the old one until the finger lifts.
@@ -473,7 +503,8 @@ final class RadioViewController: UIViewController {
     /// and ended with no change in between, and the frequency under the finger
     /// is the one that was asked for.
     @objc private func spectrumTapped(_ g: UITapGestureRecognizer) {
-        guard let hz = scrubFreq(atX: g.location(in: spectrum).x) else { return }
+        guard let hz = aimFreq(atX: g.location(in: spectrum).x) else { return }
+        clearAim()
         tuneTo(hz)
     }
 
@@ -717,7 +748,9 @@ final class RadioViewController: UIViewController {
     private func refresh() {
         // The pending frequency while a finger is on the spectrum; the
         // receiver's own the rest of the time.
-        let shownHz = scrubPreviewHz ?? Double(radio.frequency)
+        // The mark under a resting finger, so the digits and the station name
+        // say where a tap would go; the receiver's own frequency otherwise.
+        let shownHz = spectrum.aimHz ?? Double(radio.frequency)
         freqView.set(freqHz: shownHz)
         // Same call the Mac window makes, region and all: the station database
         // is regional for FM, so a lookup without one names a Tokyo station on
@@ -861,6 +894,15 @@ final class RadioViewController: UIViewController {
         cell.contentView.backgroundColor = on
             ? Pal.accent.withAlphaComponent(0.18)
             : (ip.row % 2 == 1 ? Pal.band.withAlphaComponent(0.35) : .clear)
+    }
+}
+
+extension RadioViewController: UIGestureRecognizerDelegate {
+    /// The aim mark watches the same touch the pan and the tap do rather than
+    /// competing with them for it.
+    func gestureRecognizer(_ g: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
     }
 }
 

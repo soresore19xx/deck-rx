@@ -229,10 +229,11 @@ final class RadioViewController: UIViewController {
         // that changes: the state is the icon, and the key no longer has to be
         // wide enough for the longer of two words it might be showing.
         styleAsKey(muteButton, font: xMono(S(15), .medium), height: S(40))
-        muteButton.tintColor = Pal.accent
+        muteButton.tintColor = Pal.bg
         muteButton.setPreferredSymbolConfiguration(
             UIImage.SymbolConfiguration(pointSize: S(17), weight: .medium), forImageIn: .normal)
         muteButton.setImage(Self.speaker(muted: false), for: .normal)
+        face(muteButton, Self.mix(Pal.accent, Self.keyGround, 0.6))
         muteButton.widthAnchor.constraint(equalToConstant: S(72)).isActive = true
         muteButton.setContentHuggingPriority(.required, for: .horizontal)
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
@@ -606,6 +607,26 @@ final class RadioViewController: UIViewController {
                 self?.refresh()
             }
         })
+    }
+
+    /// The audio key is coloured in both of its states — green while the sound
+    /// is on, amber while it is not — where every other key is the panel's own
+    /// grey until it is the one selected.
+    ///
+    /// It is not a selection among others: BAND and MODE keys answer "which of
+    /// these", and the unlit ones are the answers not chosen. This one answers
+    /// "is there sound", and both of its answers are worth a colour. A grey key
+    /// with a speaker on it says nothing about which.
+    ///
+    /// Deeper than a lit band key, too (0.6 of the tint against 0.38): that one
+    /// sits in a row of six and only has to stand out from its neighbours,
+    /// while this one stands alone in a box of its own.
+    private func lightAudio(_ muted: Bool) {
+        guard muteButton.isSelected != muted else { return }
+        muteButton.isSelected = muted
+        muteButton.setImage(Self.speaker(muted: muted), for: .normal)
+        muteButton.tintColor = Pal.bg
+        face(muteButton, Self.mix(muted ? Pal.warn : Pal.accent, Self.keyGround, 0.6))
     }
 
     private static func speaker(muted: Bool) -> UIImage? {
@@ -1065,14 +1086,7 @@ final class RadioViewController: UIViewController {
         setTitle(connectButton, radio.isConnected ? "Disconnect" : "Connect")
         // Before `light`, which is what carries the state: only the change
         // gets the work, as everywhere else in here.
-        if muteButton.isSelected != radio.muted {
-            muteButton.setImage(Self.speaker(muted: radio.muted), for: .normal)
-            // Green while the sound is on, dark on the amber ground when it is
-            // not — the same inversion the lit keys make, rather than a white
-            // glyph that says the same thing in both states.
-            muteButton.tintColor = radio.muted ? Pal.bg : Pal.accent
-        }
-        light(muteButton, radio.muted, Pal.warn)
+        lightAudio(radio.muted)
         // The band the receiver is in, and the mode it is in, lit.
         let atHz = Double(radio.frequency)
         for b in bandButtons {

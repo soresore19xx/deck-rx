@@ -420,6 +420,20 @@ final class SpectrumView: XView {
                   color: XColor(white: 0.95, alpha: 0.95))
     }
 
+    /// A coordinate on the centre of a device pixel.
+    ///
+    /// A half-point rule is one physical pixel on a retina screen — but only if
+    /// it lands on one. Drawn at an arbitrary coordinate it is antialiased
+    /// across two, and two half-lit pixels read as a wider and softer line than
+    /// one lit pixel does. The graticule is placed at frequencies and at
+    /// decibels, not at pixels, so every line of it was landing wherever it
+    /// fell; this is why the ruling looked heavier than the half point it is
+    /// drawn at.
+    private func pixelCentre(_ v: CGFloat) -> CGFloat {
+        let p = 1 / max(1, pixelScale)
+        return (v / p).rounded() * p + p / 2
+    }
+
     private func axisLabel(_ text: String, at p: CGPoint, size: CGFloat = 13,
                            color: XColor = XColor(white: 0.68, alpha: 1)) {
         NSAttributedString(string: text, attributes: [
@@ -534,7 +548,7 @@ final class SpectrumView: XView {
             ctx.setLineWidth(0.5)
             var mf = (lo / minorStep).rounded(.up) * minorStep
             while mf < lo + span {
-                let px = x(forHz: mf)
+                let px = pixelCentre(x(forHz: mf))
                 ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
                 mf += minorStep
             }
@@ -545,7 +559,7 @@ final class SpectrumView: XView {
         ctx.setStrokeColor(XColor(white: 0.052, alpha: 1).cgColor)
         ctx.setLineWidth(0.5)
         while f < lo + span {
-            let px = x(forHz: f)
+            let px = pixelCentre(x(forHz: f))
             ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
             let text = axisFreq(f)
             axisLabel(text, at: CGPoint(x: px - CGFloat(text.count) * 3.9, y: specH + 4))
@@ -692,7 +706,7 @@ final class SpectrumView: XView {
         ctx.setLineWidth(0.5)
         var db = (Double(dbCeil) / 10).rounded(.down) * 10
         while db >= Double(dbFloor) {
-            let y = specH - norm(Float(db)) * specH
+            let y = pixelCentre(specH - norm(Float(db)) * specH)
             ctx.move(to: CGPoint(x: plotX, y: y)); ctx.addLine(to: CGPoint(x: w, y: y))
             axisLabel(String(format: "%.0f", db), at: CGPoint(x: 8, y: y - 9))
             db -= 10
@@ -748,7 +762,7 @@ final class SpectrumView: XView {
                 drawFrequencyScale(ctx, plotX: plotX, plotW: plotW, specH: specH,
                                    lo: lo, span: span, xOf: x(forHz:))
                 ctx.setStrokeColor(XColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
-                ctx.setLineWidth(1.6)
+                ctx.setLineWidth(1)
                 let cx = x(forHz: tunedHz).rounded()
                 ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
                 ctx.strokePath()
@@ -774,7 +788,7 @@ final class SpectrumView: XView {
                 ctx.setLineWidth(0.5)
                 let cols = 12
                 for i in 1..<cols {
-                    let px = (plotX + plotW * CGFloat(i) / CGFloat(cols)).rounded() + 0.5
+                    let px = pixelCentre(plotX + plotW * CGFloat(i) / CGFloat(cols))
                     ctx.move(to: CGPoint(x: px, y: 0))
                     ctx.addLine(to: CGPoint(x: px, y: specH))
                     ctx.move(to: CGPoint(x: px, y: fallTop))
@@ -893,8 +907,11 @@ final class SpectrumView: XView {
         // Red, and the only red on the display: the preset labels and their
         // lines are amber, so "where am I listening" never competes with
         // "what else is here".
+        // A point, not the 1.6 it was: on a point boundary that is two crisp
+        // physical pixels, where 1.6 was two lit ones with a half-lit pixel
+        // either side of them.
         ctx.setStrokeColor(XColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
-        ctx.setLineWidth(1.6)
+        ctx.setLineWidth(1)
         let cx = x(forHz: tunedHz).rounded()
         ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
         ctx.strokePath()

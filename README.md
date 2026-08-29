@@ -467,6 +467,15 @@ hand-edited file. The station databases ship inside the bundle and seed
 `spectrumSplit` is the fraction of the spectrum panel given to the trace,
 dragged on the rail rather than typed.
 
+`spectrumFftSize`, `spectrumFps` and `spectrumSmooth` are the transform itself
+— how big, how often, and how much frame-to-frame averaging (a divisor: 1 is
+off, larger is slower). The Mac's toolbar has written all three since it had
+one; they simply had nowhere to live, so every launch started at the defaults
+again. The framerate now also restarts the frame timer when it changes: the
+period is read when the timer is scheduled, so the RATE dropdown did nothing
+until the next connection. The iPad's options sheet carries the two that get
+ridden, framerate and smoothing.
+
 `uiScale` picks `min`, `middle` or `max` — fonts and every fixed dimension
 scale together, since scaling only the text leaves the panels their full width.
 The frequency readout and the station line above it take a further reduction on
@@ -488,6 +497,23 @@ and in the standalone app whenever the plugin held the port.
 | min | 1139 × 620 |
 
 An 11-inch MacBook Air is 1366 × 768, so `compact` is what fits it.
+
+### The display is drawn where the ear is
+
+The transform was always taken over the newest IQ in hand, while the sound
+being heard left the demodulator a ring's depth ago — so a signal appeared on
+the waterfall about a fifth of a second before it could be heard, and rather
+longer than that on Bluetooth headphones. The two are now drawn together: the
+frame is transformed over samples as old as the audio latency
+(`AudioSink.latencySeconds` — the ring's depth, plus the session's own output
+latency on iOS), and the IQ buffer keeps enough history to reach back that far.
+
+The delay is eased in rather than taken from the instantaneous depth: the ring
+breathes around its target, and a display whose time axis jittered with it
+would be worse than one that is honestly early. It is clamped to what is
+actually in the buffer, so after a retune the display starts live and slides
+back to the ear's own delay as the buffer refills, and it is zero when there is
+no audio to be late for.
 
 ### Tuning inside the window
 
@@ -624,7 +650,8 @@ What the window carries:
 - a display rail: zoom and waterfall depth as sliders, the dB ceiling and floor
   as vertical rails beside the trace, MAX above MIN to match the axis
 - an options sheet with the live demod's own settings, RF gain, IQ NR,
-  levelling, tune mode, JP region, connect-at-start and the UI scale — the
+  levelling, the spectrum's framerate and smoothing, tune mode, JP region,
+  connect-at-start and the UI scale — the
   sheet rebuilds on a mode change, so an AM receiver is never offered
   de-emphasis. `uiScale` is the same `min` / `middle` / `max` the Mac window
   reads, out of the same file, and applies in place: the layout is rebuilt at

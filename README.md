@@ -595,8 +595,25 @@ filter — a 6 kHz tone came back at 3.5 kHz, which is what wrecked sibilants);
 audio filters hard-coded off instead of following `fmLowPass` / `fmHighPass`;
 de-emphasis with no "off" branch; and no output mute window at all, where the
 plugin opens one around every gain change, retune and mode change so the
-amplitude step is not heard. Those are gone. When something sounds different
-between the two, the difference is a bug in this one.
+amplitude step is not heard. Those are gone.
+
+A later sweep, comparing the two implementations parameter by parameter rather
+than symptom by symptom, found six more: the AM sync PLL ran a 100 Hz loop where
+the plugin runs 150 Hz (which is what lets the retune mute window be 200 ms
+rather than 400); the AM carrier AGC's attack and decay were hard-coded, so the
+two rows for them in the options sheet did nothing, and were pinned to 57 kHz,
+so the real time constant moved with the audio rate; the attack default was 20
+against the plugin's 50; RSSI was smoothed at 0.8/0.2 instead of 0.9/0.1 and did
+not subtract the gain the server reports in each packet header, so it read the
+receiver's amplification as signal; and SNR was not smoothed at all. Everything
+else — every filter cutoff and Q, the stereo PLL and its phase-detector LPF, the
+IF filter's clamps and transition width, the demodulator gains, the AM and CW
+AGC set points and look-ahead, the IQ noise reduction's bins and window, the
+FFT's window and its frame-to-frame EWMA, the soft limiter's knee, the per-mode
+makeup — matches value for value.
+
+When something sounds different between the two, the difference is a bug in
+this one.
 
 There is no volume control in the app: the iPad's own buttons are the volume,
 and a second attenuator in series only costs headroom.

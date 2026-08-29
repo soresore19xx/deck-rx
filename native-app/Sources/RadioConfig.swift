@@ -27,7 +27,10 @@ struct RadioConfig: Codable, Equatable {
     var fmDeemphasis = "75us"
     var fmHighPass = false
     var fmLowPass = false
-    var amAgcAttack: Double = 20
+    /// SDR++'s slider units, as the plugin stores them: attack 1..200, decay
+    /// 1..20, converted to a per-sample alpha at apply time. 50 and 5 are
+    /// DEFAULT_AM_OPTIONS (spyService.ts:76).
+    var amAgcAttack: Double = 50
     var amAgcDecay: Double = 5
     var ssbBandwidthHz: Double = 2400
     var cwBfoHz: Double = 700

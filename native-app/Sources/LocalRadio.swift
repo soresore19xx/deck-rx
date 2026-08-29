@@ -363,6 +363,9 @@ final class LocalRadio {
         am.reset()
         am.setBandwidth(audioRate: audioRate, bandwidthHz: config.amBandwidthHz, iqRate: iq)
         am.configureSync(rate: audioRate)
+        // rate -> per-sample alpha at the live audio rate (spyService.ts:947).
+        am.agcAttack = max(0, min(1, config.amAgcAttack / audioRate))
+        am.agcDecay = max(0, min(1, config.amAgcDecay / audioRate))
         am.agcEnabled = config.amCarrierAgc
         am.syncEnabled = config.amSync
         other.reset()
@@ -557,7 +560,7 @@ final class LocalRadio {
         // and the trim below is a memmove, and the audio behind them would wait
         // for both.
         auxQueue.async {
-            self.measure(pkt.body)
+            self.measure(pkt.body, gainDb: pkt.gainDb)
             self.iq.append(pkt.body)
             // Keep a little more than one transform's worth. Unbounded growth
             // here is how a receiver quietly turns into a memory leak.
@@ -572,7 +575,7 @@ final class LocalRadio {
     /// bin of the last spectrum frame. Median rather than mean for the floor —
     /// a strong carrier drags a mean upward and would report its own presence
     /// as a worse noise floor.
-    private func measure(_ body: Data) {
+    private func measure(_ body: Data, gainDb: UInt16) {
         let n = body.count / 4
         guard n > 0 else { return }
         var sumSq = 0.0
@@ -586,7 +589,12 @@ final class LocalRadio {
         }
         let meanP = sumSq / Double(n)
         let db = meanP > 1 ? 10 * log10(meanP / (32767.0 * 32767.0)) : -120
-        rssiDbfs = rssiDbfs * 0.8 + db * 0.2
+        // The server reports the gain it applied in the packet header, and the
+        // plugin backs it out (spyService.ts:1313) so the reading describes the
+        // signal rather than the receiver's own amplification. Same smoothing
+        // as there, 0.9/0.1: at 0.8/0.2 the needle chased the modulation.
+        let corrected = db - Double(gainDb)
+        rssiDbfs = rssiDbfs * 0.9 + corrected * 0.1
     }
 
     /// Preset stepping, shared with the control endpoint. Returns the frequency
@@ -632,7 +640,9 @@ final class LocalRadio {
         let sorted = bins.sorted()
         let median = Double(sorted[sorted.count / 2])
         let peak = Double(sorted[sorted.count - 1])
-        snrDb = max(0, peak - median)
+        // Smoothed like the plugin's (spyService.ts:1321). Unsmoothed, this is
+        // one FFT frame's peak-over-median and it flickers with the modulation.
+        snrDb = snrDb * 0.9 + max(0, peak - median) * 0.1
         let frame = SpectrumFeed.Frame(bins: bins, iqRate: iqRate,
                                        centerFreq: frequency, seq: seq)
         DispatchQueue.main.async { self.onFrame?(frame) }

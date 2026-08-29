@@ -63,6 +63,7 @@ final class RadioViewController: UIViewController {
     private let radio = LocalRadio()
 
     private let hostField = UITextField()
+    private let portField = UITextField()
     private let connectButton = UIButton(type: .system)
     private let statusLabel = UILabel()
     /// The same views the Mac window draws. Not UIKit copies of them: a second
@@ -150,15 +151,32 @@ final class RadioViewController: UIViewController {
     // MARK: layout
 
     private func buildUI() {
-        hostField.text = "\(radio.config.host):\(radio.config.port)"
-        hostField.placeholder = "host:port"
-        hostField.borderStyle = .roundedRect
-        hostField.backgroundColor = Pal.sunken
-        hostField.textColor = Pal.text
-        hostField.font = xMono(S(17))
-        hostField.autocapitalizationType = .none
-        hostField.autocorrectionType = .no
+        // Two boxes, because they are two things: an address is typed once and
+        // a port almost never, and one field holding "host:port" made the pair
+        // a format to obey rather than a pair of values. Sized for what goes in
+        // them — the address box took every point the row had left, which on a
+        // landscape iPad is most of it.
+        hostField.text = radio.config.host
+        hostField.placeholder = "host"
+        portField.text = String(radio.config.port)
+        portField.placeholder = "port"
+        for f in [hostField, portField] {
+            f.borderStyle = .roundedRect
+            f.backgroundColor = Pal.sunken
+            f.textColor = Pal.text
+            f.font = xMono(S(17))
+            f.autocapitalizationType = .none
+            f.autocorrectionType = .no
+            f.returnKeyType = .go
+            f.clearButtonMode = .whileEditing
+            f.addTarget(self, action: #selector(hostEntered), for: .editingDidEndOnExit)
+            f.setContentHuggingPriority(.required, for: .horizontal)
+        }
         hostField.keyboardType = .URL
+        hostField.widthAnchor.constraint(equalToConstant: S(190)).isActive = true
+        // No return key on a number pad, so this one is committed by Connect.
+        portField.keyboardType = .numberPad
+        portField.widthAnchor.constraint(equalToConstant: S(74)).isActive = true
         // Return connects and puts the keyboard away, which is the whole
         // reason the field is being typed into.
         optionsButton.setTitle("Options", for: .normal)
@@ -166,12 +184,9 @@ final class RadioViewController: UIViewController {
         optionsButton.setContentHuggingPriority(.required, for: .horizontal)
         optionsButton.addTarget(self, action: #selector(showOptions), for: .touchUpInside)
 
-        hostField.returnKeyType = .go
-        hostField.addTarget(self, action: #selector(hostEntered), for: .editingDidEndOnExit)
-        hostField.clearButtonMode = .whileEditing
-
         connectButton.setTitle("Connect", for: .normal)
         connectButton.titleLabel?.font = .systemFont(ofSize: S(17), weight: .semibold)
+        connectButton.setContentHuggingPriority(.required, for: .horizontal)
         connectButton.addTarget(self, action: #selector(toggleConnection), for: .touchUpInside)
 
         statusLabel.font = xMono(S(13))
@@ -194,6 +209,8 @@ final class RadioViewController: UIViewController {
 
         muteButton.setTitle("Mute", for: .normal)
         muteButton.titleLabel?.font = xMono(S(15), .medium)
+        muteButton.widthAnchor.constraint(equalToConstant: S(110)).isActive = true
+        muteButton.setContentHuggingPriority(.required, for: .horizontal)
         muteButton.setTitleColor(Pal.text, for: .normal)
         muteButton.backgroundColor = Self.keyGround
         muteButton.layer.cornerRadius = 0
@@ -339,8 +356,11 @@ final class RadioViewController: UIViewController {
             bandRow(),
             tuneRow(),
             modeRow(),
-            muteButton,
-            row([hostField, connectButton, optionsButton]),
+            // One row for the things that are pressed rather than read. Mute
+            // had a row of its own and filled it end to end, which is a lot of
+            // key for one word — and a row of its own is height the trace could
+            // have had.
+            row([muteButton, hostField, portField, connectButton, optionsButton, UIView()]),
             statusLabel,
         ])
         right.axis = .vertical
@@ -793,16 +813,28 @@ final class RadioViewController: UIViewController {
     }
 
     private func connectNow() {
-        let parts = (hostField.text ?? "").split(separator: ":", maxSplits: 1)
-        let host = parts.first.map(String.init) ?? radio.config.host
-        let port = parts.count > 1 ? UInt16(parts[1]) : UInt16(clamping: radio.config.port)
+        // "host:port" pasted into the address box still works: the two boxes
+        // are there to be typed into, not a format to be obeyed.
+        var host = (hostField.text ?? "").trimmingCharacters(in: .whitespaces)
+        var port = UInt16(portField.text ?? "")
+        if let colon = host.firstIndex(of: ":") {
+            port = UInt16(host[host.index(after: colon)...]) ?? port
+            host = String(host[..<colon])
+        }
+        if host.isEmpty { host = radio.config.host }
+        if port == nil { port = UInt16(clamping: radio.config.port) }
         // Persisted before connecting, not after: a server that refuses the
         // connection is still the one to try again on the next launch, and
         // retyping an address after every failure is its own punishment.
         radio.config.host = host
         if let p = port { radio.config.port = Int(p) }
         radio.config.save()
+        // Written back, so the boxes show what was actually used rather than
+        // what was typed at them.
+        hostField.text = radio.config.host
+        portField.text = String(radio.config.port)
         hostField.resignFirstResponder()
+        portField.resignFirstResponder()
         radio.connect(host: host, port: port)
     }
 

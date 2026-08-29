@@ -216,7 +216,10 @@ final class AudioSink {
         try configureSession()
         #endif
 
-        primeFrames = Int(rate * 0.2)
+        // 0.12 s. The depth only has to cover jitter now that trackedRate
+        // cancels the drift, and this is what the user hears as the delay
+        // between turning the dial and the audio following.
+        primeFrames = Int(rate * 0.12)
         priming = true
         readFrac = 0
         self.rate = 1
@@ -356,7 +359,7 @@ final class AudioSink {
             // A fifth of a second of audio, not half the ring: with a ring this
             // size, half of it would put the listener most of a second behind
             // the tuning knob for the rest of the session.
-            var back = min(capacity / 2, Int(sourceRate * 0.2) * chans)
+            var back = min(capacity / 2, Int(sourceRate * 0.12) * chans)
             back -= back % chans
             var r = w - back
             if r < 0 { r += capacity }

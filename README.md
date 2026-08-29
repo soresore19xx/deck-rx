@@ -552,9 +552,11 @@ What the window carries:
 
 The output buffer is sized for the rate this actually runs at — 114 kHz stereo
 is 228 000 samples a second — and holds about 1.1 s, which is the room the
-plugin's own reader-stall absorb has. It also primes: playback waits for a fifth
-of a second to bank before it starts reading, and re-primes after a dry run
-rather than scraping the bottom of the ring buffer by buffer.
+plugin's own reader-stall absorb has. It also primes: playback banks 0.12 s
+before it starts reading, and re-primes after a dry run rather than scraping the
+bottom of the ring buffer by buffer. That depth is what the listener feels as
+the delay between turning the dial and the audio following, and it only has to
+cover jitter — the drift is cancelled separately, below.
 
 **The reader tracks the ring's depth.** The sender's clock (the receiver's
 crystal, by way of the server) and the device's audio clock are independent and
@@ -572,9 +574,18 @@ at the prime depth instead of wandering between it and the size of the ring.
 The status line carries two numbers worth reading when the audio breaks up:
 `drops` counts samples the output asked for and the ring did not have, and
 `gap` is the longest pause between two IQ packets in the last ten seconds.
-Together they separate the two causes — a large gap means the samples were late
-(network or server), a small gap with drops climbing means they arrived on time
-and the tablet could not keep up.
+`drops` also carries the gap as it stood when the count last moved, which is
+the one that matters: a live gap says what the network is doing now, that one
+says what it was doing when the audio actually broke. Together they separate the
+two causes — a large gap means the samples were late (network or server), a
+small one means they arrived on time and this end could not keep up.
+
+Audio and display run on separate queues. The RMS pass behind the meters walks
+every sample of every packet and the FFT's ring is trimmed with a memmove;
+both used to sit on the audio queue, so each packet paid for them before the
+next could be demodulated, and the 30 Hz transform could land between a packet
+and its audio. Only the audio has a deadline, and only it runs at
+`.userInitiated`.
 
 **The signal path is the plugin's, parameter for parameter.** The Swift port had
 acquired settings of its own, and each one cost audio quality: an audio

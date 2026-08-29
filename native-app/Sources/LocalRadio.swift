@@ -42,7 +42,14 @@ final class LocalRadio {
     var config = RadioConfig.load() {
         didSet { applyConfig(changedFrom: oldValue) }
     }
-    private let queue = DispatchQueue(label: "deck-rx.localradio")
+    /// Audio only, and at a priority that says so. Demodulating a packet and
+    /// handing it to the sink is the one thing here with a deadline.
+    private let queue = DispatchQueue(label: "deck-rx.localradio", qos: .userInitiated)
+    /// The spectrum and the meters. Both were on the audio queue, which meant
+    /// every packet paid for a 456 kHz RMS pass and a `Data` head-removal
+    /// before the next one could be demodulated, and the 30 Hz FFT could land
+    /// between a packet and its audio. None of that has a deadline; audio does.
+    private let auxQueue = DispatchQueue(label: "deck-rx.localradio.display", qos: .utility)
 
     private(set) var isConnected = false
     /// Signal meters, measured from the IQ the demodulator just saw. dBFS
@@ -65,7 +72,7 @@ final class LocalRadio {
     var onState: (() -> Void)?
 
     // Settings the caller drives.
-    var fftSize = 4096 { didSet { queue.async { self.fft = FFTPipeline(self.fftSize) } } }
+    var fftSize = 4096 { didSet { auxQueue.async { self.fft = FFTPipeline(self.fftSize) } } }
     var fps = 30
     var smoothingFactor: Float = 30
     /// Offset from the device's MinimumIQDecimation, matching SDR++'s srId.
@@ -203,7 +210,7 @@ final class LocalRadio {
         // The error is NOT cleared here. Each retry used to blank it, so a
         // receiver that had been failing for an hour showed nothing at all
         // between attempts. It clears when a connection actually succeeds.
-        queue.async { self.fft = FFTPipeline(self.fftSize) }
+        auxQueue.async { self.fft = FFTPipeline(self.fftSize) }
 
         client.onDeviceInfo = { [weak self] info in self?.start(with: info) }
         client.onIQ = { [weak self] pkt in self?.absorb(pkt) }
@@ -303,7 +310,7 @@ final class LocalRadio {
         other.resetForRetune()
         // The bins are about to describe a different part of the spectrum; the
         // old ones are not a smaller version of the new ones.
-        queue.async { self.iq.removeAll(keepingCapacity: true) }
+        auxQueue.async { self.iq.removeAll(keepingCapacity: true) }
     }
 
     // MARK: start-up
@@ -545,6 +552,11 @@ final class LocalRadio {
                     self.sink.write(pcm)
                 }
             }
+        }
+        // Not on the audio queue: the RMS pass walks every sample in the packet
+        // and the trim below is a memmove, and the audio behind them would wait
+        // for both.
+        auxQueue.async {
             self.measure(pkt.body)
             self.iq.append(pkt.body)
             // Keep a little more than one transform's worth. Unbounded growth
@@ -598,7 +610,7 @@ final class LocalRadio {
 
     private func startFrameTimer() {
         stopFrameTimer()
-        let t = DispatchSource.makeTimerSource(queue: queue)
+        let t = DispatchSource.makeTimerSource(queue: auxQueue)
         let period = 1.0 / Double(max(1, fps))
         t.schedule(deadline: .now() + period, repeating: period, leeway: .milliseconds(2))
         t.setEventHandler { [weak self] in self?.buildFrame() }

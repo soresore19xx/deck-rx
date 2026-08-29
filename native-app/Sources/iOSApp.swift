@@ -208,13 +208,9 @@ final class RadioViewController: UIViewController {
         }
 
         muteButton.setTitle("Mute", for: .normal)
-        muteButton.titleLabel?.font = xMono(S(15), .medium)
+        styleAsKey(muteButton, font: xMono(S(15), .medium), height: S(40))
         muteButton.widthAnchor.constraint(equalToConstant: S(110)).isActive = true
         muteButton.setContentHuggingPriority(.required, for: .horizontal)
-        muteButton.setTitleColor(Pal.text, for: .normal)
-        muteButton.backgroundColor = Self.keyGround
-        muteButton.layer.cornerRadius = 0
-        muteButton.heightAnchor.constraint(equalToConstant: S(40)).isActive = true
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
 
         freqView.onTune = { [weak self] hz in
@@ -356,11 +352,7 @@ final class RadioViewController: UIViewController {
             bandRow(),
             tuneRow(),
             modeRow(),
-            // One row for the things that are pressed rather than read. Mute
-            // had a row of its own and filled it end to end, which is a lot of
-            // key for one word — and a row of its own is height the trace could
-            // have had.
-            row([muteButton, hostField, portField, connectButton, optionsButton, UIView()]),
+            row([hostField, portField, connectButton, optionsButton, UIView()]),
             statusLabel,
         ])
         right.axis = .vertical
@@ -414,28 +406,86 @@ final class RadioViewController: UIViewController {
     /// shape you have to go looking for rather than one you reach for.
     private static let keyGround = Pal.band
 
-    /// A key, not a pill. Square corners, in the language the readouts and
-    /// rules around it already speak.
+    /// A colour a shade up or down. Additive rather than multiplicative, so a
+    /// dark ground moves as far as a light one — the bevel has to read at
+    /// #353840, where a percentage of very little is very little.
+    private static func shade(_ c: XColor, _ d: CGFloat) -> XColor {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        func k(_ v: CGFloat) -> CGFloat { min(1, max(0, v + d)) }
+        return XColor(red: k(r), green: k(g), blue: k(b), alpha: a)
+    }
+
+    /// `t` of `a` over `b`. A lit key takes a fraction of the accent rather
+    /// than the whole of it: a 40-point key filled with #59D973 is a traffic
+    /// light, not a state.
+    private static func mix(_ a: XColor, _ b: XColor, _ t: CGFloat) -> XColor {
+        var ra: CGFloat = 0, ga: CGFloat = 0, ba: CGFloat = 0, aa: CGFloat = 1
+        var rb: CGFloat = 0, gb: CGFloat = 0, bb: CGFloat = 0, ab: CGFloat = 1
+        a.getRed(&ra, green: &ga, blue: &ba, alpha: &aa)
+        b.getRed(&rb, green: &gb, blue: &bb, alpha: &ab)
+        return XColor(red: ra * t + rb * (1 - t), green: ga * t + gb * (1 - t),
+                      blue: ba * t + bb * (1 - t), alpha: 1)
+    }
+
+    /// The face of a key: a vertical gradient, lighter at the top, as a panel
+    /// lit from above. Stretched from three points by twelve, so the button
+    /// resizes it and nothing has to lay a gradient layer out by hand. Pressed,
+    /// the gradient runs the other way — the key goes in.
+    private func keyFace(_ ground: XColor, pressed: Bool = false) -> UIImage {
+        let size = CGSize(width: 3, height: 12)
+        let top = Self.shade(ground, pressed ? -0.05 : 0.06)
+        let bottom = Self.shade(ground, pressed ? 0.04 : -0.05)
+        let img = UIGraphicsImageRenderer(size: size).image { ctx in
+            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: [top.cgColor, bottom.cgColor] as CFArray,
+                                        locations: [0, 1]) else { return }
+            ctx.cgContext.drawLinearGradient(grad, start: .zero,
+                                             end: CGPoint(x: 0, y: size.height), options: [])
+        }
+        return img.resizableImage(withCapInsets: .zero, resizingMode: .stretch)
+    }
+
+    /// A key, not a pill: square corners, a bevel, and a shadow that puts it
+    /// above the panel rather than on it.
+    private func styleAsKey(_ b: UIButton, font: XFont, height: CGFloat) {
+        b.titleLabel?.font = font
+        b.setTitleColor(Pal.text, for: .normal)
+        b.backgroundColor = .clear
+        b.layer.cornerRadius = 0
+        b.layer.shadowColor = XColor.black.cgColor
+        b.layer.shadowOpacity = 0.5
+        b.layer.shadowRadius = S(2)
+        b.layer.shadowOffset = CGSize(width: 0, height: S(2))
+        b.heightAnchor.constraint(equalToConstant: height).isActive = true
+        face(b, Self.keyGround)
+    }
+
     private func padButton(_ title: String, font: XFont, height: CGFloat) -> UIButton {
         let b = UIButton(type: .system)
         b.setTitle(title, for: .normal)
-        b.titleLabel?.font = font
-        b.setTitleColor(Pal.text, for: .normal)
-        b.backgroundColor = Self.keyGround
-        b.layer.cornerRadius = 0
-        b.heightAnchor.constraint(equalToConstant: height).isActive = true
+        styleAsKey(b, font: font, height: height)
         return b
     }
 
-    /// Lit or not. A key that is the receiver's current band, mode or mute
-    /// state inverts rather than tinting its text: on a panel this dark a
-    /// coloured word is not a state, it is a word. Assigned only on a change —
-    /// see the note in `refresh()`.
+    /// Every state at once, so a key that is both lit and held still looks like
+    /// a key that is held.
+    private func face(_ b: UIButton, _ ground: XColor) {
+        let up = keyFace(ground), down = keyFace(ground, pressed: true)
+        b.setBackgroundImage(up, for: .normal)
+        b.setBackgroundImage(up, for: .selected)
+        b.setBackgroundImage(down, for: .highlighted)
+        b.setBackgroundImage(down, for: [.highlighted, .selected])
+    }
+
+    /// Lit or not. The receiver's current band, mode and mute state each light
+    /// their own key — a fraction of the accent worked into the key's ground,
+    /// not the accent itself. `isSelected` carries the state so the work is
+    /// done on a change rather than four times a second; nothing else reads it.
     private func light(_ b: UIButton, _ on: Bool, _ tint: XColor = Pal.accent) {
-        let bg = on ? tint : Self.keyGround
-        guard b.backgroundColor != bg else { return }
-        b.backgroundColor = bg
-        b.setTitleColor(on ? Pal.bg : Pal.text, for: .normal)
+        guard b.isSelected != on else { return }
+        b.isSelected = on
+        face(b, on ? Self.mix(tint, Self.keyGround, 0.38) : Self.keyGround)
     }
 
     /// A fader cap instead of a bead.
@@ -844,16 +894,19 @@ final class RadioViewController: UIViewController {
     /// row above it and the live mode is lit rather than outlined in a shade of
     /// grey.
     private func modeRow() -> UIStackView {
-        let s = row([])
-        s.distribution = .fillEqually
+        let keys = row([])
+        keys.distribution = .fillEqually
         modeButtons = Self.shownModes.map { m in
             let b = padButton(MODE_NAMES[m], font: xMono(S(15), .medium), height: S(40))
             b.tag = m
             b.addTarget(self, action: #selector(modeTapped(_:)), for: .touchUpInside)
-            s.addArrangedSubview(b)
+            keys.addArrangedSubview(b)
             return b
         }
-        return s
+        // Mute at the end of the row it belongs with — what is being listened
+        // to — past a gap, because it is not a seventh mode. Beside the address
+        // field it read as part of connecting, which it is not.
+        return row([keys, muteButton])
     }
 
     @objc private func modeTapped(_ sender: UIButton) {

@@ -750,8 +750,11 @@ DSB modes (six segments are what fits).
 
 **First run** connects to `127.0.0.1:5555`, the same default the shared
 `RadioConfig` carries — there is no plugin config on an iPad to seed a real
-address from. Type `host:port` into the field and it is persisted before the
-connect is attempted, so a refused address survives to the next launch.
+address from. Address and port are two boxes, because they are two things: an
+address is typed once and a port almost never. Both are persisted before the
+connect is attempted, so a refused address survives to the next launch, and
+`host:port` pasted into the address box is still split correctly — the pair is
+there to be typed into, not a format to be obeyed.
 
 **The icon** is rendered from `native-app/icon-ios.svg` at build time and named
 in `Info.plist`. A bare `swiftc` build has no asset catalogue, so the PNGs sit in

@@ -209,9 +209,15 @@ final class RadioViewController: UIViewController {
         }
         stepLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        muteButton.setTitle("Mute", for: .normal)
+        // A speaker with or without a slash through it, rather than a word
+        // that changes: the state is the icon, and the key no longer has to be
+        // wide enough for the longer of two words it might be showing.
         styleAsKey(muteButton, font: xMono(S(15), .medium), height: S(40))
-        muteButton.widthAnchor.constraint(equalToConstant: S(110)).isActive = true
+        muteButton.tintColor = Pal.text
+        muteButton.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: S(17), weight: .medium), forImageIn: .normal)
+        muteButton.setImage(Self.speaker(muted: false), for: .normal)
+        muteButton.widthAnchor.constraint(equalToConstant: S(72)).isActive = true
         muteButton.setContentHuggingPriority(.required, for: .horizontal)
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
 
@@ -457,6 +463,7 @@ final class RadioViewController: UIViewController {
                                              end: CGPoint(x: 0, y: size.height), options: [])
         }
         return img.resizableImage(withCapInsets: .zero, resizingMode: .stretch)
+            .withRenderingMode(.alwaysOriginal)
     }
 
     /// A key, not a pill: square corners, a bevel, and a shadow that puts it
@@ -562,6 +569,10 @@ final class RadioViewController: UIViewController {
             stack.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -S(5)),
         ])
         return box
+    }
+
+    private static func speaker(muted: Bool) -> UIImage? {
+        UIImage(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
     }
 
     /// A caption for the value beside it: smaller and dimmer than what it
@@ -1015,7 +1026,11 @@ final class RadioViewController: UIViewController {
         if radio.iqRate > 0 { spectrum.idleSpanHz = Double(radio.iqRate) }
 
         setTitle(connectButton, radio.isConnected ? "Disconnect" : "Connect")
-        setTitle(muteButton, radio.muted ? "Unmute" : "Mute")
+        // Before `light`, which is what carries the state: only the change
+        // gets the work, as everywhere else in here.
+        if muteButton.isSelected != radio.muted {
+            muteButton.setImage(Self.speaker(muted: radio.muted), for: .normal)
+        }
         light(muteButton, radio.muted, Pal.warn)
         // The band the receiver is in, and the mode it is in, lit.
         let atHz = Double(radio.frequency)

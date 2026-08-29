@@ -121,12 +121,16 @@ final class SpectrumView: XView {
     private(set) var visibleLoHz: Double = 0
     private(set) var visibleSpanHz: Double = 0
 
-    /// How far a finger has dragged the band sideways, in points, while it is
-    /// still down. The window slides under the data rather than the data under
-    /// the window: everything drawn from a frequency moves because the window
-    /// moved, and the trace and the waterfall — drawn from bin columns — are
-    /// translated to match. The receiver has not moved until the gesture ends.
-    var panPixels: CGFloat = 0 { didSet { if panPixels != oldValue { redraw() } } }
+    /// The window the user is looking at, when that is not the receiver's own.
+    /// 0 means "wherever the receiver is", which is the resting state.
+    ///
+    /// A dragged spectrum moves at the speed of the finger; the receiver
+    /// follows a few times a second, because each step of it is a retune. Both
+    /// are true at once during a drag, so the view is held in absolute
+    /// frequency rather than as an offset in points: the data is translated by
+    /// whatever is left between the two, and that difference closes on its own
+    /// as the receiver arrives. Cleared in `accept` once it has.
+    var viewCenterHz: Double = 0 { didSet { if viewCenterHz != oldValue { redraw() } } }
 
     /// The width a frequency span is drawn across. The gutter down the left
     /// carries the dB scale and belongs to no frequency, so a caller turning a
@@ -195,8 +199,25 @@ final class SpectrumView: XView {
             if hold.count != bins.count { hold = bins }
             for i in 0..<bins.count { hold[i] = max(bins[i], hold[i] - holdDecayDbPerFrame) }
         }
+        // The receiver moving does not move what was already measured: every
+        // row drawn before it belongs to the frequencies it was measured at, so
+        // the bitmap slides to keep them there. Without this a pan leaves the
+        // whole history lying about where its signals were.
+        if centerFreq != 0, frame.centerFreq != centerFreq, iqRate > 0, fallWidth > 0 {
+            let hzPerColumn = Double(iqRate) / max(1, zoom) / Double(fallWidth)
+            if hzPerColumn > 0 {
+                shiftWaterfall(byColumns: Int(((Double(frame.centerFreq) - Double(centerFreq))
+                                               / hzPerColumn).rounded()))
+            }
+        }
         iqRate = frame.iqRate
         centerFreq = frame.centerFreq
+        // The view stops overriding the window once the receiver has reached
+        // it. Compared against the frame rather than against what was asked
+        // for, so a centre the device clamped still resolves.
+        if viewCenterHz > 0, UInt32(max(0, viewCenterHz.rounded())) == frame.centerFreq {
+            viewCenterHz = 0
+        }
         let now = Date()
         if let prev = lastFrameAt {
             let dt = now.timeIntervalSince(prev)
@@ -277,6 +298,33 @@ final class SpectrumView: XView {
         guard width > 0, height > 0, width != fallWidth || height != fallHeight else { return }
         fallWidth = width; fallHeight = height
         fallPixels = [UInt8](repeating: 0, count: width * height * 4)
+    }
+
+    /// Slide the history sideways by whole columns. Positive means the window
+    /// moved up in frequency, so the picture moves left by that much and the
+    /// vacated edge is left empty — nothing has been measured there yet.
+    private func shiftWaterfall(byColumns cols: Int) {
+        guard cols != 0, fallWidth > 0, fallHeight > 0,
+              fallPixels.count >= fallWidth * fallHeight * 4 else { return }
+        if abs(cols) >= fallWidth {
+            for i in 0..<fallPixels.count { fallPixels[i] = 0 }
+            return
+        }
+        let rowBytes = fallWidth * 4
+        let move = abs(cols) * 4
+        fallPixels.withUnsafeMutableBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            for r in 0..<fallHeight {
+                let row = base.advanced(by: r * rowBytes)
+                if cols > 0 {
+                    memmove(row, row.advanced(by: move), rowBytes - move)
+                    memset(row.advanced(by: rowBytes - move), 0, move)
+                } else {
+                    memmove(row.advanced(by: move), row, rowBytes - move)
+                    memset(row, 0, move)
+                }
+            }
+        }
     }
 
     private func pushWaterfallRow() {
@@ -652,10 +700,11 @@ final class SpectrumView: XView {
             rawLo = idleCenterHz - span / 2
             tunedHz = idleCenterHz
         }
-        // The pending pan, as a frequency. Applied to the window, so the scale,
+        // The window on screen, and how far the data has to move to stay under
+        // the frequencies it belongs to. Applied to the window, so the scale,
         // the station labels and the marker all follow it for free.
-        let panHz = plotW > 0 && span > 0 ? Double(panPixels / plotW) * span : 0
-        let lo = rawLo - panHz
+        let lo = viewCenterHz > 0 ? viewCenterHz - span / 2 : rawLo
+        let panPixels: CGFloat = span > 0 ? CGFloat((rawLo - lo) / span) * plotW : 0
         visibleLoHz = lo
         visibleSpanHz = span
         func x(forHz hz: Double) -> CGFloat {

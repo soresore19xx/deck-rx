@@ -395,6 +395,8 @@ final class RadioViewController: UIViewController {
             let specH = ((spectrum.bounds.height - 24) * spectrum.spectrumFraction).rounded()
             draggingSplit = abs(p.y - (specH + 12)) < 26
             panning = !draggingSplit
+            panFromHz = Double(radio.deviceCenterHz)
+            lastPanRetune = .distantPast
             // The aim mark belongs to a tap, and this has stopped being one.
             clearAim()
         }
@@ -435,28 +437,40 @@ final class RadioViewController: UIViewController {
     /// and a restarted trace, and doing that per touch event would spend the
     /// gesture catching up.
     private func pan(_ g: UIPanGestureRecognizer) {
-        let dx = g.translation(in: spectrum).x
+        let w = spectrum.plotWidth, span = spectrum.visibleSpanHz
+        guard w > 0, span > 0, panFromHz > 0 else { return }
+        // The finger carries the band with it: dragging right brings lower
+        // frequencies into view, so the window moves down by what the drag
+        // covered. Absolute rather than incremental, so the view stays glued to
+        // the finger no matter how the receiver is doing at keeping up.
+        let target = max(0, panFromHz - Double(g.translation(in: spectrum).x / w) * span)
+        spectrum.viewCenterHz = target
         switch g.state {
         case .ended:
             panning = false
-            spectrum.panPixels = 0
-            commitPan(dx)
+            radio.setDeviceCenter(target)
+            // Held at where the receiver was actually left — a centre it
+            // clamped is still the one the view has to settle on. The view
+            // clears it once a frame arrives from there.
+            spectrum.viewCenterHz = Double(radio.deviceCenterHz)
+            refresh()
         case .cancelled, .failed:
             panning = false
-            spectrum.panPixels = 0
+            spectrum.viewCenterHz = 0
         default:
-            spectrum.panPixels = dx
+            // The hardware follows too, or the band being dragged into stays
+            // blank until the finger lifts and the drag is a picture of
+            // nothing. Not per touch event, though: every one of these is a
+            // round trip, a demodulator reset and a restarted transform.
+            guard Date().timeIntervalSince(lastPanRetune) > 0.15 else { return }
+            lastPanRetune = Date()
+            radio.setDeviceCenter(target, persist: false)
         }
     }
-
-    /// The finger carries the band with it: dragging right brings lower
-    /// frequencies into view, so the window moves down by what the drag covered.
-    private func commitPan(_ dx: CGFloat) {
-        let w = spectrum.plotWidth
-        guard w > 0, spectrum.visibleSpanHz > 0, dx != 0 else { return }
-        radio.panDeviceCenter(byHz: -Double(dx / w) * spectrum.visibleSpanHz)
-        refresh()
-    }
+    /// Where the window was when the finger went down, and when the receiver
+    /// was last asked to follow it.
+    private var panFromHz: Double = 0
+    private var lastPanRetune = Date.distantPast
 
     /// Where a tap would land, marked from the moment the finger touches down.
     ///

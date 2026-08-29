@@ -523,15 +523,26 @@ demodulator is, leaving the frame's own centre to the window.
 
 **Panning** is the other half, and the one thing tuning inside the window
 cannot do: it moves the window itself. Dragging the spectrum slides the trace
-and the waterfall with the finger — the history belongs to the frequencies it
-was captured at, so carrying it along is the honest picture, and the band
-beyond what has been received is simply blank until the device gets there. One
-retune goes out on release. What is being listened to does not change unless
-the pan would leave the demodulator outside the window, in which case it is
-dragged along at the edge, as SDR++ drags its VFO. The centre is clamped to
-what the device says it can tune to, so a drag off the end of the band stops at
-the end of the band rather than asking the server for a frequency it would
-refuse without a word.
+and the waterfall with the finger, and the receiver follows about six times a
+second — not per touch event, since each step is a round trip, a demodulator
+reset and a restarted transform, but often enough that the band being dragged
+into fills in as it arrives rather than staying blank until the finger lifts.
+
+Two things make that work. The view is held in absolute frequency
+(`SpectrumView.viewCenterHz`) rather than as an offset in points, so the picture
+moves at the speed of the finger while the receiver moves at its own, and the
+difference between them closes on its own as each retune lands. And the
+waterfall's bitmap is shifted by the same amount the centre moved, so a row
+measured before the pan still sits under the frequencies it was measured at
+— without that, every row drawn before a retune is a lie about where its
+signals were, and a pan smears the history sideways.
+
+What is being listened to does not change unless the pan would leave the
+demodulator outside the window, in which case it is dragged along at the edge,
+as SDR++ drags its VFO. The centre is clamped to what the device says it can
+tune to, so a drag off the end of the band stops there rather than asking the
+server for a frequency it would refuse without a word. The steps of a drag do
+not rewrite the settings file; the one the gesture ends on does.
 
 ### Sharing the receiver
 
@@ -589,8 +600,8 @@ What the window carries:
   opens name, frequency and mode. Edits go to the app's own `presets.json` — the
   iPad has its own copy, not the plugin's
 - **the spectrum tunes, and it pans.** A tap lands on the frequency under the
-  finger; a drag carries the band sideways and moves the window there on
-  release. The split between them is what the finger does, not where it is:
+  finger; a drag carries the band sideways, with the receiver following as it
+  goes so the band being dragged into fills in. The split between them is what the finger does, not where it is:
   drag moves the view, tap moves the receiver, which is how SDR++ divides the
   same two jobs. The rail between the trace and the waterfall stays a drag
   handle for the split.

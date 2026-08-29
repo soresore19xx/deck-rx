@@ -1151,6 +1151,16 @@ final class OptionsViewController: UITableViewController {
                 Row(title: "IQ NR", kind: .bool(get: { r.iqNrEnabled }, set: { r.iqNrEnabled = $0 })),
                 Row(title: "Levelling", kind: .bool(get: { r.levelingEnabled }, set: { r.levelingEnabled = $0 })),
             ]),
+            // The transform's own settings, which the Mac keeps in its toolbar.
+            // Framerate and smoothing are what get ridden — a slow trace is
+            // easier to read a weak carrier off, a fast one is easier to tune
+            // by — and both survive a relaunch now that they are in the config.
+            Section(name: "DISPLAY", rows: [
+                Row(title: "Framerate", kind: .list(values: [5, 10, 15, 20, 30, 60], unit: "fps",
+                    get: { Double(r.fps) }, set: { r.fps = Int($0) })),
+                Row(title: "Smoothing", kind: .list(values: [1, 2, 5, 10, 20, 30, 50, 100], unit: "",
+                    get: { Double(r.smoothingFactor) }, set: { r.smoothingFactor = Float($0) })),
+            ]),
             Section(name: "RECEIVER", rows: [
                 Row(title: "Tune mode", kind: .text(options: ["preset", "vfo"],
                     get: { r.config.tuneMode }, set: { r.config.tuneMode = $0 })),

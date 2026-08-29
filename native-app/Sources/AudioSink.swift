@@ -32,6 +32,25 @@ final class AudioSink {
     /// description of the sound.
     private(set) var underruns: Int = 0
 
+    /// How far behind the demodulator the listener is, in seconds.
+    ///
+    /// What the ring holds has been produced and not yet played, so its depth
+    /// is the distance between a signal arriving and the same signal being
+    /// audible. On iOS the session's own output latency is added: over
+    /// Bluetooth that is the larger half of the answer by some way.
+    var latencySeconds: Double {
+        guard sourceRate > 0, channels > 0, engine.isRunning else { return 0 }
+        lock.lock()
+        var used = writeIndex - readIndex
+        lock.unlock()
+        if used < 0 { used += capacity }
+        var secs = Double(used / Int(channels)) / sourceRate
+        #if os(iOS)
+        secs += AVAudioSession.sharedInstance().outputLatency
+        #endif
+        return secs
+    }
+
     /// Output stays silent until this many frames are banked. Reading from a
     /// ring that has just started filling means the very first jitter empties
     /// it, and every refill after that starts from empty again — audible as

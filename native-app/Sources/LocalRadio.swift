@@ -71,10 +71,56 @@ final class LocalRadio {
     var onFrame: ((SpectrumFeed.Frame) -> Void)?
     var onState: (() -> Void)?
 
-    // Settings the caller drives.
-    var fftSize = 4096 { didSet { auxQueue.async { self.fft = FFTPipeline(self.fftSize) } } }
-    var fps = 30
-    var smoothingFactor: Float = 30
+    // Settings the caller drives. All three live in the config: they are
+    // ridden constantly and were rebuilt from scratch on every launch, which is
+    // the same reason the dB window is kept.
+    var fftSize: Int {
+        get { config.spectrumFftSize }
+        set {
+            guard newValue != config.spectrumFftSize else { return }
+            config.spectrumFftSize = newValue
+            config.save()
+            auxQueue.async { self.fft = FFTPipeline(newValue) }
+        }
+    }
+    /// Restarted on a change, or the new rate would not arrive until the next
+    /// connection: the timer's period is read when it is scheduled. That is
+    /// what made the Mac's RATE dropdown look inert.
+    var fps: Int {
+        get { config.spectrumFps }
+        set {
+            let v = max(1, min(120, newValue))
+            guard v != config.spectrumFps else { return }
+            config.spectrumFps = v
+            config.save()
+            // On the queue that owns the timer, so a rate change during a
+            // connect cannot leave two of them running.
+            if isConnected { auxQueue.async { self.startFrameTimer() } }
+        }
+    }
+    /// Frame-to-frame averaging, as a divisor: 1 is off, and larger is slower.
+    var smoothingFactor: Float {
+        get { Float(config.spectrumSmooth) }
+        set {
+            let v = Double(max(0, newValue))
+            guard v != config.spectrumSmooth else { return }
+            config.spectrumSmooth = v
+            config.save()
+        }
+    }
+
+    /// How far behind the live IQ the spectrum is drawn, in seconds.
+    ///
+    /// The sound being heard left the demodulator a ring's depth ago, while the
+    /// transform has always been taken over the newest samples in hand — so a
+    /// signal appeared on the waterfall a fifth of a second before it could be
+    /// heard, and on Bluetooth headphones rather longer. Drawing the instant
+    /// the speaker is playing means transforming samples that old instead.
+    ///
+    /// Smoothed, because the ring's depth breathes around its target and a
+    /// display whose time axis jittered with it would be worse than one that is
+    /// honestly early. Zero when there is no audio to be late for.
+    private(set) var displayDelaySeconds: Double = 0
     /// Offset from the device's MinimumIQDecimation, matching SDR++'s srId.
     /// 1 puts an Airspy HF+ at about 456 kHz, which is the plugin's default and
     /// the reason far-adjacent FM stations stopped aliasing into baseband.
@@ -720,9 +766,13 @@ final class LocalRadio {
         auxQueue.async {
             self.measure(pkt.body, gainDb: pkt.gainDb)
             self.iq.append(pkt.body)
-            // Keep a little more than one transform's worth. Unbounded growth
-            // here is how a receiver quietly turns into a memory leak.
-            let need = self.fftSize * 4 * 2
+            // A transform's worth twice over, plus however far behind the
+            // audio the display is being drawn — 0.2 s at 456 kHz is about
+            // 365 kB, and without it the delayed window would run off the back
+            // of the buffer. Unbounded growth here is how a receiver quietly
+            // turns into a memory leak.
+            let behind = Int(self.displayDelaySeconds * Double(self.iqRate)) * 4
+            let need = self.fftSize * 4 * 2 + max(0, behind)
             if self.iq.count > need {
                 self.iq.removeSubrange(0 ..< (self.iq.count - need))
             }
@@ -790,8 +840,20 @@ final class LocalRadio {
     }
 
     private func buildFrame() {
+        // Where the audio has got to. Tracked here rather than in the trim so
+        // there is one place the number comes from, and eased in so a display
+        // that has just started does not lurch backwards.
+        let target = audioEnabled ? sink.latencySeconds : 0
+        displayDelaySeconds += (target - displayDelaySeconds) * 0.1
+        // Clamped to what is actually in hand: after a retune the buffer starts
+        // empty, so the display begins live and slides back to the ear's own
+        // delay as it refills, rather than showing nothing for a fifth of a
+        // second.
+        let behind = min(max(0, Int(displayDelaySeconds * Double(iqRate)) * 4),
+                         max(0, iq.count - fftSize * 4))
         guard let fft, iq.count >= fftSize * 4,
-              let bins = fft.process(int16IQ: iq, smoothingFactor: smoothingFactor) else { return }
+              let bins = fft.process(int16IQ: behind > 0 ? iq.prefix(iq.count - behind) : iq,
+                                     smoothingFactor: smoothingFactor) else { return }
         seq &+= 1
         // SNR from the frame we just built: peak over median. Free here, and
         // it saves a second FFT purely for the meter.

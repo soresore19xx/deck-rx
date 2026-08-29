@@ -67,6 +67,13 @@ struct RadioConfig: Codable, Equatable {
     var spectrumDbFloor: Double = -160
     var spectrumDbCeil: Double = -1
     var spectrumZoom: Double = 1
+    /// The transform itself: how big, how often, and how much frame-to-frame
+    /// averaging (a divisor — 1 is off, larger is slower). The Mac's toolbar
+    /// has written these since it had one; they simply had nowhere to live, so
+    /// every launch started at the defaults again.
+    var spectrumFftSize = 4096
+    var spectrumFps = 30
+    var spectrumSmooth: Double = 30
     var waterfallSeconds: Double = 45
     /// The IQ width the receiver last reported. Kept so the display can place
     /// the presets on a scale at startup, before any frame — and even with the
@@ -203,6 +210,9 @@ struct RadioConfig: Codable, Equatable {
         spectrumDbFloor = (try? c.decodeIfPresent(Double.self, forKey: .spectrumDbFloor)) .flatMap { $0 } ?? d.spectrumDbFloor
         spectrumDbCeil = (try? c.decodeIfPresent(Double.self, forKey: .spectrumDbCeil)) .flatMap { $0 } ?? d.spectrumDbCeil
         spectrumZoom = (try? c.decodeIfPresent(Double.self, forKey: .spectrumZoom)) .flatMap { $0 } ?? d.spectrumZoom
+        spectrumFftSize = (try? c.decodeIfPresent(Int.self, forKey: .spectrumFftSize)) .flatMap { $0 } ?? d.spectrumFftSize
+        spectrumFps = (try? c.decodeIfPresent(Int.self, forKey: .spectrumFps)) .flatMap { $0 } ?? d.spectrumFps
+        spectrumSmooth = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSmooth)) .flatMap { $0 } ?? d.spectrumSmooth
         waterfallSeconds = (try? c.decodeIfPresent(Double.self, forKey: .waterfallSeconds)) .flatMap { $0 } ?? d.waterfallSeconds
         spectrumSpanHz = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSpanHz)) .flatMap { $0 } ?? d.spectrumSpanHz
         audioDecimate = (try? c.decodeIfPresent(Int.self, forKey: .audioDecimate)) .flatMap { $0 } ?? d.audioDecimate

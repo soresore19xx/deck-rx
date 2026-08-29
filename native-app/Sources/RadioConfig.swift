@@ -134,6 +134,21 @@ struct RadioConfig: Codable, Equatable {
         }
     }
 
+    /// The steps worth offering in a mode, so a picker never lists a raster the
+    /// band has no use for: WFM never wants 100 Hz and CW never wants 1 MHz.
+    /// spyService.ts:181-185 and :237, value for value.
+    static func stepValues(for mode: Int) -> [Double] {
+        switch mode {
+        case 1:    return [10_000, 25_000, 50_000, 100_000, 200_000, 500_000, 1_000_000]
+        case 0:    return [1_000, 5_000, 9_000, 10_000, 12_500, 25_000, 50_000, 100_000]
+        case 2:    return [100, 1_000, 5_000, 9_000, 10_000, 25_000]
+        case 4, 6: return [50, 100, 500, 1_000, 5_000, 10_000]
+        case 5:    return [10, 50, 100, 500, 1_000]
+        default:   return [10, 50, 100, 500, 1_000, 5_000, 9_000, 10_000, 12_500,
+                           25_000, 50_000, 100_000, 200_000, 500_000, 1_000_000]
+        }
+    }
+
     /// What was last chosen for this mode and band, or the band's own raster,
     /// or the current step. spyService.ts:1070.
     func step(for mode: Int, hz: Double) -> Double {

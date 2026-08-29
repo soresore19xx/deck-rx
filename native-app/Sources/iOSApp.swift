@@ -1158,7 +1158,7 @@ final class OptionsViewController: UITableViewController {
             Section(name: "DISPLAY", rows: [
                 Row(title: "Framerate", kind: .list(values: [5, 10, 16, 24, 30, 60], unit: "fps",
                     get: { Double(r.fps) }, set: { r.fps = Int($0) })),
-                Row(title: "Smoothing", kind: .list(values: [1, 2, 5, 10, 20, 30, 50, 100], unit: "",
+                Row(title: "Smoothing", kind: .list(values: [2, 5, 10, 20, 24, 30, 50, 60], unit: "",
                     get: { Double(r.smoothingFactor) }, set: { r.smoothingFactor = Float($0) })),
             ]),
             Section(name: "RECEIVER", rows: [

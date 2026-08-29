@@ -207,6 +207,7 @@ final class RadioViewController: UIViewController {
             l.textColor = Pal.dim
             l.setContentHuggingPriority(.required, for: .horizontal)
         }
+        stepLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         muteButton.setTitle("Mute", for: .normal)
         styleAsKey(muteButton, font: xMono(S(15), .medium), height: S(40))
@@ -304,7 +305,7 @@ final class RadioViewController: UIViewController {
         // Header as a row, the way the Mac window has it: what is tuned on the
         // left, how well it is coming in on the right. Stacked, the readout and
         // the two meters ate a third of a landscape screen between them.
-        let detail = row([caption("BW"), bwLabel, caption("STEP"), stepLabel])
+        let detail = row([caption("BW"), bwLabel])
         detail.spacing = S(6)
         let tuned = UIStackView(arrangedSubviews: [stationLabel, freqView, detail])
         tuned.axis = .vertical
@@ -351,7 +352,11 @@ final class RadioViewController: UIViewController {
             plot,
             boxed("DISPLAY", displayRow()),
             boxed("BAND", bandRow()),
-            boxed("TUNE", tuneRow()),
+            // The keys are multiples of the step, and nothing said so: -100 on
+            // medium wave is 900 kHz and on FM it is 10 MHz. The step goes in
+            // the box with them, where it is the unit of what is beside it,
+            // rather than under the readout where it was a number on its own.
+            boxed("TUNE", row([tuneRow(), stepLabel])),
             // Two groups on one row: mute is not a seventh mode, and a box that
             // says MODE around it would say so.
             row([boxed("MODE", modeKeys()), boxed("AUDIO", muteButton)]),
@@ -995,7 +1000,7 @@ final class RadioViewController: UIViewController {
         // meters and the readout were measured again between every pair of
         // frames, so their contents appeared to shift on each bar update.
         setText(stationLabel, StationLabel.lookup(freqHz: shownHz, region: region) ?? " ")
-        setText(stepLabel, formatStep(radio.tuneStepHz))
+        setText(stepLabel, "\u{00D7} " + formatStep(radio.tuneStepHz))
         setText(bwLabel, formatStep(radio.config.bandwidth(for: radio.mode)))
         // The same mapping the Mac window uses, so a reading means the same
         // thing on both: -100..-10 dBFS, and 0..60 dB of signal to noise.

@@ -538,7 +538,9 @@ final class RadioViewController: UIViewController {
         let box = UIView()
         box.backgroundColor = Pal.panel
         box.layer.borderWidth = 1
-        box.layer.borderColor = Pal.line.cgColor
+        // #454952 against the #17181C it encloses: at the line colour the frame
+        // was a shade of the fill and the group did not read as enclosed.
+        box.layer.borderColor = Pal.rule.cgColor
         let cap = caption(title)
         cap.widthAnchor.constraint(equalToConstant: S(52)).isActive = true
         let stack = row([cap, content])
@@ -558,8 +560,11 @@ final class RadioViewController: UIViewController {
     private func caption(_ t: String) -> UILabel {
         let l = UILabel()
         l.text = t
-        l.font = xMono(S(11))
-        l.textColor = Pal.faint
+        // Medium at 11 points, and a step brighter than faint: small type
+        // needs the contrast that large type can do without, and a legend
+        // nobody can read is decoration.
+        l.font = xMono(S(11), .medium)
+        l.textColor = Pal.dim
         l.setContentHuggingPriority(.required, for: .horizontal)
         return l
     }

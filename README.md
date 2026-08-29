@@ -650,10 +650,14 @@ What the window carries:
 - a display rail: zoom and waterfall depth as sliders, the dB ceiling and floor
   as vertical rails beside the trace, MAX above MIN to match the axis
 - an options sheet with the live demod's own settings, RF gain, IQ NR,
-  levelling, the spectrum's framerate and smoothing, tune mode, JP region,
-  connect-at-start and the UI scale — the
+  levelling, the spectrum's framerate (5 / 10 / 16 / 24 / 30 / 60 fps) and
+  smoothing, tune mode, JP region, connect-at-start and the UI scale — the
   sheet rebuilds on a mode change, so an AM receiver is never offered
-  de-emphasis. `uiScale` is the same `min` / `middle` / `max` the Mac window
+  de-emphasis. Every row with more than two values is a pull-down carrying its
+  whole list with the current one checked: the rows used to step and wrap the
+  way the Mac panel's do, which is fine for three options and tedious for
+  eight, and never says what the eight are. Booleans still toggle on a tap, and
+  their rows are the only ones that still offer themselves to one. `uiScale` is the same `min` / `middle` / `max` the Mac window
   reads, out of the same file, and applies in place: the layout is rebuilt at
   the new scale with the receiver still running (the waterfall's history
   restarts, its bitmap being sized to the old panel)

@@ -194,8 +194,8 @@ final class RadioViewController: UIViewController {
 
         muteButton.setTitle("Mute", for: .normal)
         muteButton.titleLabel?.font = xMono(S(15), .medium)
-        muteButton.setTitleColor(Pal.dim, for: .normal)
-        muteButton.backgroundColor = Pal.panel
+        muteButton.setTitleColor(Pal.text, for: .normal)
+        muteButton.backgroundColor = Self.keyGround
         muteButton.layer.cornerRadius = 0
         muteButton.heightAnchor.constraint(equalToConstant: S(40)).isActive = true
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
@@ -389,14 +389,19 @@ final class RadioViewController: UIViewController {
                                       constant: -8).isActive = true
     }
 
-    /// A key, not a pill. Square corners and the panel's own ground, which is
-    /// the language the readouts and rules around it already speak.
+    /// The key's own ground. A clear step up from the panel behind it (#353840
+    /// against #17181C on a #121316 page): at the panel's own colour a key is a
+    /// shape you have to go looking for rather than one you reach for.
+    private static let keyGround = Pal.band
+
+    /// A key, not a pill. Square corners, in the language the readouts and
+    /// rules around it already speak.
     private func padButton(_ title: String, font: XFont, height: CGFloat) -> UIButton {
         let b = UIButton(type: .system)
         b.setTitle(title, for: .normal)
         b.titleLabel?.font = font
-        b.setTitleColor(Pal.dim, for: .normal)
-        b.backgroundColor = Pal.panel
+        b.setTitleColor(Pal.text, for: .normal)
+        b.backgroundColor = Self.keyGround
         b.layer.cornerRadius = 0
         b.heightAnchor.constraint(equalToConstant: height).isActive = true
         return b
@@ -407,10 +412,10 @@ final class RadioViewController: UIViewController {
     /// coloured word is not a state, it is a word. Assigned only on a change —
     /// see the note in `refresh()`.
     private func light(_ b: UIButton, _ on: Bool, _ tint: XColor = Pal.accent) {
-        let bg = on ? tint : Pal.panel
+        let bg = on ? tint : Self.keyGround
         guard b.backgroundColor != bg else { return }
         b.backgroundColor = bg
-        b.setTitleColor(on ? Pal.bg : Pal.dim, for: .normal)
+        b.setTitleColor(on ? Pal.bg : Pal.text, for: .normal)
     }
 
     /// A fader cap instead of a bead.

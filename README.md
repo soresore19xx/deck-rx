@@ -643,6 +643,11 @@ What the window carries:
   kilohertz, so without the snap 954 kHz was not reachable by touch at all.
   Within the window nothing moves but the marker (see
   [Tuning inside the window](#tuning-inside-the-window))
+- the controls in named, framed groups — DISPLAY, BAND, TUNE, MODE, AUDIO,
+  SERVER — the way a panel is silkscreened. The name sits inside the frame at
+  the leading edge rather than on a line of its own, all the names take the same
+  width so every group's controls start at the same place, and the keys are
+  raised on the recess the frame encloses
 - band jump, and coarse/fine tune buttons that ride on the mode's own tune step.
   The step follows the raster the band is channelised on, filed under the
   plugin's own key (`"2:mw"`, `"2:sw"`, `"2:vhf"` for AM, the mode number for

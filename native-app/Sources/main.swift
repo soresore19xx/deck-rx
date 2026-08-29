@@ -1267,6 +1267,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // on its own, it only has to notice a change made from the deck.
             tick += 1
             if tick % 4 == 0 { self.view.options.refresh() }
+            // The station names were fetched once, at startup, and a request
+            // that found nobody home left the trace unlabelled for the life of
+            // the window — which is what happens when the app comes up while
+            // the plugin is restarting. Asked for again, every eight seconds,
+            // until there is an answer.
+            if tick % 32 == 0, self.view.spectrum.markers.isEmpty {
+                Receiver.stations { [weak self] list in
+                    guard let self, !list.isEmpty else { return }
+                    self.view.spectrum.markers = list
+                    self.view.spectrum.needsDisplay = true
+                }
+            }
             // Depth in seconds moves with the measured frame rate and with the
             // window height, so it is refreshed rather than set once.
             self.view.syncWaterfallSpan()

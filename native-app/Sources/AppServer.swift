@@ -328,7 +328,13 @@ final class AppServer {
                 ["freq": p.freq,
                  "name": StationLabel.lookup(freqHz: p.freq, region: region) ?? p.name]
             }
-        return json(["stations": list])
+        // A bare array, which is the shape the plugin's endpoint answers in and
+        // the only shape `Receiver.stations` parses. Wrapped in an object, the
+        // parse failed silently and the standalone build drew a spectrum with
+        // no station names on it at all.
+        guard let d = try? JSONSerialization.data(withJSONObject: list, options: [.sortedKeys]),
+              let out = String(data: d, encoding: .utf8) else { return "[]" }
+        return out
     }
 
     /// Returns false for a name it does not know, so the caller answers 400

@@ -180,7 +180,8 @@ final class RadioViewController: UIViewController {
         // Return connects and puts the keyboard away, which is the whole
         // reason the field is being typed into.
         optionsButton.setTitle("Options", for: .normal)
-        optionsButton.titleLabel?.font = xMono(S(15), .medium)
+        styleAsKey(optionsButton, font: xMono(S(15), .medium), height: S(40))
+        optionsButton.widthAnchor.constraint(equalToConstant: S(110)).isActive = true
         optionsButton.setContentHuggingPriority(.required, for: .horizontal)
         optionsButton.addTarget(self, action: #selector(showOptions), for: .touchUpInside)
 
@@ -348,11 +349,14 @@ final class RadioViewController: UIViewController {
         let right = UIStackView(arrangedSubviews: [
             header,
             plot,
-            displayRow(),
-            bandRow(),
-            tuneRow(),
-            modeRow(),
-            row([hostField, portField, connectButton, optionsButton, UIView()]),
+            boxed("DISPLAY", displayRow()),
+            boxed("BAND", bandRow()),
+            boxed("TUNE", tuneRow()),
+            // Two groups on one row: mute is not a seventh mode, and a box that
+            // says MODE around it would say so.
+            row([boxed("MODE", modeKeys()), boxed("AUDIO", muteButton)]),
+            row([boxed("SERVER", row([hostField, portField, connectButton])),
+                 optionsButton, UIView()]),
             statusLabel,
         ])
         right.axis = .vertical
@@ -521,6 +525,34 @@ final class RadioViewController: UIViewController {
     }
 
     /// A one-letter caption in the meter's own rhythm.
+    /// A group of controls, framed and named — a panel's silkscreen.
+    ///
+    /// The name sits inside the frame at the leading edge rather than on a line
+    /// above it: a caption of its own costs a line, and this column spends its
+    /// height on the trace. All the captions take the same width, so every
+    /// group's controls start at the same place down the column.
+    ///
+    /// The frame is filled with the panel colour the keys used to sit on, which
+    /// leaves them raised on a recess rather than floating on the page.
+    private func boxed(_ title: String, _ content: UIView) -> UIView {
+        let box = UIView()
+        box.backgroundColor = Pal.panel
+        box.layer.borderWidth = 1
+        box.layer.borderColor = Pal.line.cgColor
+        let cap = caption(title)
+        cap.widthAnchor.constraint(equalToConstant: S(52)).isActive = true
+        let stack = row([cap, content])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: S(8)),
+            stack.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -S(8)),
+            stack.topAnchor.constraint(equalTo: box.topAnchor, constant: S(5)),
+            stack.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -S(5)),
+        ])
+        return box
+    }
+
     /// A caption for the value beside it: smaller and dimmer than what it
     /// names, so the pair reads as one thing.
     private func caption(_ t: String) -> UILabel {
@@ -893,7 +925,7 @@ final class RadioViewController: UIViewController {
     /// Keys rather than a segmented control, so the row reads like the band
     /// row above it and the live mode is lit rather than outlined in a shade of
     /// grey.
-    private func modeRow() -> UIStackView {
+    private func modeKeys() -> UIStackView {
         let keys = row([])
         keys.distribution = .fillEqually
         modeButtons = Self.shownModes.map { m in
@@ -903,10 +935,7 @@ final class RadioViewController: UIViewController {
             keys.addArrangedSubview(b)
             return b
         }
-        // Mute at the end of the row it belongs with — what is being listened
-        // to — past a gap, because it is not a seventh mode. Beside the address
-        // field it read as part of connecting, which it is not.
-        return row([keys, muteButton])
+        return keys
     }
 
     @objc private func modeTapped(_ sender: UIButton) {

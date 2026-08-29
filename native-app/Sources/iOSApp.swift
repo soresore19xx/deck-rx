@@ -229,7 +229,7 @@ final class RadioViewController: UIViewController {
         // that changes: the state is the icon, and the key no longer has to be
         // wide enough for the longer of two words it might be showing.
         styleAsKey(muteButton, font: xMono(S(15), .medium), height: S(40))
-        muteButton.tintColor = Pal.text
+        muteButton.tintColor = Pal.accent
         muteButton.setPreferredSymbolConfiguration(
             UIImage.SymbolConfiguration(pointSize: S(17), weight: .medium), forImageIn: .normal)
         muteButton.setImage(Self.speaker(muted: false), for: .normal)
@@ -1067,6 +1067,10 @@ final class RadioViewController: UIViewController {
         // gets the work, as everywhere else in here.
         if muteButton.isSelected != radio.muted {
             muteButton.setImage(Self.speaker(muted: radio.muted), for: .normal)
+            // Green while the sound is on, dark on the amber ground when it is
+            // not — the same inversion the lit keys make, rather than a white
+            // glyph that says the same thing in both states.
+            muteButton.tintColor = radio.muted ? Pal.bg : Pal.accent
         }
         light(muteButton, radio.muted, Pal.warn)
         // The band the receiver is in, and the mode it is in, lit.

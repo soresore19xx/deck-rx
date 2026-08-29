@@ -972,25 +972,27 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
                 v.translatesAutoresizingMaskIntoConstraints = false
                 cell.contentView.addSubview(v)
             }
-            // The names still line up: a column the row aims at, and gives up
-            // only when the reading beside it is too long to leave room —
-            // "100.10 MHz" is wider than "594.0 kHz" by half a name.
-            let nameColumn = n.leadingAnchor.constraint(
-                equalTo: cell.contentView.leadingAnchor, constant: S(92))
-            nameColumn.priority = .defaultHigh
+            // The unit is a column, not a follower. Tight against the number
+            // it would be ragged down the list — the digit count changes from
+            // row to row and the eye reads that as a wobble, which is worse
+            // than the air a short reading leaves behind. Everything after it
+            // lines up for free, the unit being three characters either way.
+            //
+            // Given up only for a reading too wide to leave room: "100.10"
+            // takes the column's whole width, and pushing is better than
+            // overlapping.
+            let unitColumn = u.leadingAnchor.constraint(
+                equalTo: cell.contentView.leadingAnchor, constant: S(72))
+            unitColumn.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
                 f.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: S(8)),
                 f.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                // The number is sized by its own digits rather than by a column
-                // wide enough for the longest of them, so the unit sits against
-                // it on every row instead of across a gap that changed with the
-                // digit count.
-                u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: S(2)),
+                unitColumn,
+                u.leadingAnchor.constraint(greaterThanOrEqualTo: f.trailingAnchor, constant: S(2)),
                 u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
-                n.leadingAnchor.constraint(greaterThanOrEqualTo: u.trailingAnchor, constant: S(6)),
+                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: S(6)),
                 n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -S(4)),
                 n.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                nameColumn,
                 m.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -S(8)),
                 m.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
             ])

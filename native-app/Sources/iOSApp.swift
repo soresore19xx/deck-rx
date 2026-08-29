@@ -74,6 +74,8 @@ final class RadioViewController: UIViewController {
     private let sMeter = SignalMeter(frame: .zero)
     private let nMeter = SignalMeter(frame: .zero)
     private let presetTable = UITableView(frame: .zero, style: .plain)
+    private let addPresetButton = UIButton(type: .system)
+    private let editPresetsButton = UIButton(type: .system)
     private var presets: [Receiver.Preset] = []
     private var displaySliders: [Int: UISlider] = [:]
     private var displaySaveTimer: Timer?
@@ -222,6 +224,8 @@ final class RadioViewController: UIViewController {
         // the screen it is on.
         let split = UIPanGestureRecognizer(target: self, action: #selector(splitDragged(_:)))
         spectrum.addGestureRecognizer(split)
+        spectrum.addGestureRecognizer(UITapGestureRecognizer(target: self,
+                                                             action: #selector(spectrumTapped(_:))))
 
         for (m, tint) in [(sMeter, Pal.accent), (nMeter, Pal.blue)] {
             m.tint = tint
@@ -246,11 +250,20 @@ final class RadioViewController: UIViewController {
         presetTable.translatesAutoresizingMaskIntoConstraints = false
         presetTable.dataSource = self
         presetTable.delegate = self
+        presetTable.addGestureRecognizer(
+            UILongPressGestureRecognizer(target: self, action: #selector(presetLongPressed(_:))))
         presetTable.backgroundColor = Pal.panel
         presetTable.separatorStyle = .none
         presetTable.rowHeight = 34
         presetTable.register(UITableViewCell.self, forCellReuseIdentifier: "p")
         presets = Receiver.presets()
+
+        addPresetButton.setTitle("+ Add", for: .normal)
+        addPresetButton.titleLabel?.font = xMono(15, .medium)
+        addPresetButton.addTarget(self, action: #selector(addCurrentAsPreset), for: .touchUpInside)
+        editPresetsButton.setTitle("Edit", for: .normal)
+        editPresetsButton.titleLabel?.font = xMono(15)
+        editPresetsButton.addTarget(self, action: #selector(togglePresetEditing), for: .touchUpInside)
 
         // Left column: what to listen to. Right column: what is being heard.
         // The iPad is landscape most of the time it is a receiver, and a single
@@ -317,11 +330,17 @@ final class RadioViewController: UIViewController {
         spectrum.setContentCompressionResistancePriority(.init(200), for: .vertical)
         spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
 
+        let presetBar = row([addPresetButton, UIView(), editPresetsButton])
+        presetBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(presetBar)
         view.addSubview(presetTable)
         view.addSubview(right)
         let g = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            presetTable.topAnchor.constraint(equalTo: g.topAnchor),
+            presetBar.topAnchor.constraint(equalTo: g.topAnchor, constant: 4),
+            presetBar.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 8),
+            presetBar.widthAnchor.constraint(equalToConstant: 284),
+            presetTable.topAnchor.constraint(equalTo: presetBar.bottomAnchor, constant: 4),
             presetTable.leadingAnchor.constraint(equalTo: g.leadingAnchor),
             presetTable.bottomAnchor.constraint(equalTo: g.bottomAnchor),
             presetTable.widthAnchor.constraint(equalToConstant: 300),
@@ -352,15 +371,21 @@ final class RadioViewController: UIViewController {
         return l
     }
 
+    /// One gesture, two jobs, decided by where the finger lands. The rail
+    /// between the trace and the waterfall is a handle; everywhere else is the
+    /// band, and dragging across it tunes.
     @objc private func splitDragged(_ g: UIPanGestureRecognizer) {
         let p = g.location(in: spectrum)
         let usable = spectrum.bounds.height - 24
         guard usable > 0 else { return }
-        // Only a drag that starts on the rail moves it; anywhere else on the
-        // spectrum is not a handle.
         if g.state == .began {
             let specH = ((spectrum.bounds.height - 24) * spectrum.spectrumFraction).rounded()
             draggingSplit = abs(p.y - (specH + 12)) < 26
+            scrubbing = !draggingSplit && spectrum.frequency(atX: p.x) != nil
+        }
+        if scrubbing {
+            scrubTo(p.x, ended: g.state == .ended || g.state == .cancelled)
+            return
         }
         guard draggingSplit else { return }
         spectrum.spectrumFraction = (p.y - 12) / usable
@@ -371,6 +396,30 @@ final class RadioViewController: UIViewController {
         }
     }
     private var draggingSplit = false
+    private var scrubbing = false
+    private var lastScrubAt = Date.distantPast
+
+    /// A tap lands on the frequency under the finger; a drag follows it. The
+    /// server is told at most every 60 ms while the finger moves — a retune is
+    /// a round trip and a demodulator reset, and issuing one per touch event
+    /// would spend the whole gesture catching up — and always once on release,
+    /// so where the finger stops is where the receiver ends up.
+    private func scrubTo(_ x: CGFloat, ended: Bool) {
+        guard let hz = spectrum.frequency(atX: x) else { return }
+        let now = Date()
+        guard ended || now.timeIntervalSince(lastScrubAt) > 0.06 else { return }
+        lastScrubAt = now
+        radio.setFrequency(UInt32(max(0, hz.rounded())))
+        if ended { scrubbing = false }
+        refresh()
+    }
+
+    /// Tapping without moving is still a tune: a pan recogniser reports began
+    /// and ended with no change in between, and the frequency under the finger
+    /// is the one that was asked for.
+    @objc private func spectrumTapped(_ g: UITapGestureRecognizer) {
+        scrubTo(g.location(in: spectrum).x, ended: true)
+    }
 
     /// The bands worth a button, from the same table the Mac uses. Landing on
     /// a station inside the band beats landing on its edge, so a preset in
@@ -652,6 +701,60 @@ final class RadioViewController: UIViewController {
         presetTable.visibleCells.forEach { markCell($0) }
     }
 
+    /// Add what is tuned. The name comes from the station database when it
+    /// knows the frequency, so the common case needs no typing at all.
+    @objc private func addCurrentAsPreset() {
+        let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
+        let name = StationLabel.lookup(freqHz: Double(radio.frequency), region: region)
+            ?? String(format: "%.0f kHz", Double(radio.frequency) / 1000)
+        try? PresetStore.add(name: name, frequency: Double(radio.frequency),
+                             mode: radio.mode, bandwidth: radio.config.bandwidth(for: radio.mode))
+        reloadPresets()
+    }
+
+    @objc private func togglePresetEditing() {
+        presetTable.setEditing(!presetTable.isEditing, animated: true)
+        setTitle(editPresetsButton, presetTable.isEditing ? "Done" : "Edit")
+    }
+
+    private func reloadPresets() {
+        presets = Receiver.presets()
+        presetTable.reloadData()
+        rebuildMarkers()
+    }
+
+    /// Name, frequency and mode, in a sheet. Reached by a long press on a row,
+    /// which leaves a plain tap meaning what it always meant: tune to this.
+    @objc private func presetLongPressed(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began,
+              let ip = presetTable.indexPathForRow(at: g.location(in: presetTable)),
+              case .station(let p) = items[ip.row] else { return }
+        let a = UIAlertController(title: "Edit preset", message: nil, preferredStyle: .alert)
+        a.addTextField { $0.text = p.name }
+        a.addTextField {
+            $0.text = String(format: "%.0f", p.freq / 1000)
+            $0.keyboardType = .decimalPad
+            $0.placeholder = "kHz"
+        }
+        a.addTextField {
+            $0.text = p.mode < MODE_NAMES.count ? MODE_NAMES[p.mode] : "WFM"
+            $0.placeholder = MODE_NAMES.joined(separator: " / ")
+        }
+        a.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
+            guard let self else { return }
+            let name = a.textFields?[0].text?.trimmingCharacters(in: .whitespaces) ?? p.name
+            let khz = Double(a.textFields?[1].text ?? "") ?? (p.freq / 1000)
+            let modeText = (a.textFields?[2].text ?? "").uppercased()
+            let mode = MODE_NAMES.firstIndex(of: modeText) ?? p.mode
+            try? PresetStore.update(oldName: p.name, name: name.isEmpty ? p.name : name,
+                                    frequency: khz * 1000, mode: mode,
+                                    bandwidth: self.radio.config.bandwidth(for: mode))
+            self.reloadPresets()
+        })
+        a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(a, animated: true)
+    }
+
     /// Assign only on a change. See the note in `refresh()`.
     private func setText(_ l: UILabel, _ t: String) {
         if l.text != t { l.text = t }
@@ -727,6 +830,20 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
         }
         markCell(cell)
         return cell
+    }
+
+    /// Only stations can be deleted; the band headings are not rows anyone put
+    /// there.
+    func tableView(_ t: UITableView, canEditRowAt ip: IndexPath) -> Bool {
+        if case .station = items[ip.row] { return true }
+        return false
+    }
+
+    func tableView(_ t: UITableView, commit style: UITableViewCell.EditingStyle,
+                   forRowAt ip: IndexPath) {
+        guard style == .delete, case .station(let p) = items[ip.row] else { return }
+        try? PresetStore.remove(name: p.name)
+        reloadPresets()
     }
 
     func tableView(_ t: UITableView, didSelectRowAt ip: IndexPath) {

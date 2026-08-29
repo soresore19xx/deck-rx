@@ -113,6 +113,22 @@ final class SpectrumView: XView {
     /// the frequency scale. Both the trace and the waterfall start after the
     /// gutter so the two line up column for column.
     private let gutter: CGFloat = 62
+
+    /// The window the last draw put on screen, so a touch can be turned back
+    /// into a frequency. Recorded rather than recomputed: the mapping depends
+    /// on whether a frame has arrived, and a second derivation of it would be
+    /// a second thing to keep in step with the drawing.
+    private(set) var visibleLoHz: Double = 0
+    private(set) var visibleSpanHz: Double = 0
+
+    /// The frequency under a point, or nil outside the trace. The gutter on the
+    /// left carries the dB scale and belongs to no frequency.
+    func frequency(atX x: CGFloat) -> Double? {
+        let plotW = bounds.width - gutter
+        guard plotW > 0, visibleSpanHz > 0, x >= gutter else { return nil }
+        let f = Double(min(max(0, (x - gutter) / plotW), 1))
+        return visibleLoHz + visibleSpanHz * f
+    }
     private let axisStrip: CGFloat = 24
 
     /// Where the receiver is and how wide its IQ window is, from the status
@@ -587,6 +603,8 @@ final class SpectrumView: XView {
             lo = idleCenterHz - span / 2
             tunedHz = idleCenterHz
         }
+        visibleLoHz = lo
+        visibleSpanHz = span
         func x(forHz hz: Double) -> CGFloat {
             guard span > 0 else { return plotX }
             return plotX + CGFloat((hz - lo) / span) * plotW

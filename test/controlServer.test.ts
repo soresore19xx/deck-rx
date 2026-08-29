@@ -340,6 +340,36 @@ describe('controlServer — VFO step', () => {
   }, 25_000);
 });
 
+describe('controlServer — RF gain follows the mode that reads it', () => {
+  it('AM edits amGain and every other mode edits fmGain', async () => {
+    const port = await freePort();
+    harness = await boot(port, { demodMode: 2, lastFrequency: 693_000, amGain: 4, fmGain: 8 });
+    await harness.settle(1500);
+
+    type Opts = { gain: { am: number; fm: number; max: number } };
+    const opts = async (query = '') =>
+      JSON.parse((await get(port, `/options${query}`)).body) as Opts;
+
+    expect((await opts()).gain).toMatchObject({ am: 4, fm: 8 });
+
+    // In AM the control is the AM gain, and the FM one is left where it was.
+    expect((await opts('?set=gain&value=2')).gain).toMatchObject({ am: 2, fm: 8 });
+
+    // SSB detects an angle, not an amplitude: its audio level rides the FM
+    // gain (spyService's post-demod scale), so that is the number this has to
+    // move. Routing on `mode 0 or 1` sent it to amGain instead — a value SSB
+    // never reads, so the control did nothing and quietly changed AM's.
+    await get(port, '/mode?m=4');
+    await harness.settle(300);
+    expect((await opts('?set=gain&value=5')).gain).toMatchObject({ am: 2, fm: 5 });
+
+    // And back: the two are kept apart, not merged by the last write.
+    await get(port, '/mode?m=2');
+    await harness.settle(300);
+    expect((await opts('?set=gain&value=1')).gain).toMatchObject({ am: 1, fm: 5 });
+  }, 25_000);
+});
+
 describe('controlServer — spectrum display settings', () => {
   it('reports current settings, applies changes, and clamps what it cannot do', async () => {
     const port = await freePort();

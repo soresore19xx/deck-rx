@@ -762,8 +762,8 @@ final class SpectrumView: XView {
                 drawFrequencyScale(ctx, plotX: plotX, plotW: plotW, specH: specH,
                                    lo: lo, span: span, xOf: x(forHz:))
                 ctx.setStrokeColor(XColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
-                ctx.setLineWidth(1)
-                let cx = x(forHz: tunedHz).rounded()
+                ctx.setLineWidth(0.5)
+                let cx = pixelCentre(x(forHz: tunedHz))
                 ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
                 ctx.strokePath()
                 drawStationLabels(ctx, specH: specH, lo: lo, span: span, xOf: x(forHz:))
@@ -907,12 +907,13 @@ final class SpectrumView: XView {
         // Red, and the only red on the display: the preset labels and their
         // lines are amber, so "where am I listening" never competes with
         // "what else is here".
-        // A point, not the 1.6 it was: on a point boundary that is two crisp
-        // physical pixels, where 1.6 was two lit ones with a half-lit pixel
-        // either side of them.
+        // Half a point, on a pixel centre: one lit physical pixel, which is as
+        // thin as a line gets. It can be this thin because it is not the only
+        // thing saying where the receiver is — the passband is shaded behind
+        // it, and it is the only red on the display.
         ctx.setStrokeColor(XColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
-        ctx.setLineWidth(1)
-        let cx = x(forHz: tunedHz).rounded()
+        ctx.setLineWidth(0.5)
+        let cx = pixelCentre(x(forHz: tunedHz))
         ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
         ctx.strokePath()
 

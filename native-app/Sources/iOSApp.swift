@@ -91,8 +91,12 @@ final class RadioViewController: UIViewController {
     private let stationLabel = UILabel()
     private var bandButtons: [UIButton] = []
     private var modeButtons: [UIButton] = []
-    private let stepLabel = UILabel()
+    private let stepButton = UIButton(type: .system)
     private let bwLabel = UILabel()
+    /// Mode and step as the menu was last built for them, so it is rebuilt when
+    /// either moves and not four times a second.
+    private var stepMenuKey = ""
+
     private let muteButton = UIButton(type: .system)
     private var refreshTimer: Timer?
     /// The packet gap as it stood when the drop count last moved. A live gap
@@ -199,15 +203,27 @@ final class RadioViewController: UIViewController {
         stationLabel.textColor = Pal.dim
         stationLabel.lineBreakMode = .byTruncatingTail
 
-        // Under the readout with the bandwidth, where the Mac window keeps
-        // them (main.swift's `detail` row). Alone across the foot of the
-        // column, the step was a caption with nothing to caption.
-        for l in [stepLabel, bwLabel] {
-            l.font = xMono(S(13))
-            l.textColor = Pal.dim
-            l.setContentHuggingPriority(.required, for: .horizontal)
-        }
-        stepLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        bwLabel.font = xMono(S(13))
+        bwLabel.textColor = Pal.dim
+        bwLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        // The step is a control, not a caption: it says what the keys beside it
+        // are multiples of, and picking a different one is the only way to
+        // change what they do. The Mac has had a step control since it had a
+        // toolbar; this column had the number and no way to move it.
+        var stepCfg = UIButton.Configuration.plain()
+        stepCfg.contentInsets = NSDirectionalEdgeInsets(top: S(6), leading: S(8),
+                                                        bottom: S(6), trailing: 0)
+        stepCfg.image = UIImage(systemName: "chevron.up.chevron.down")
+        stepCfg.imagePlacement = .trailing
+        stepCfg.imagePadding = S(5)
+        stepCfg.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: S(9))
+        stepButton.configuration = stepCfg
+        stepButton.tintColor = Pal.faint
+        stepButton.showsMenuAsPrimaryAction = true
+        stepButton.setContentHuggingPriority(.required, for: .horizontal)
+        stepButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        stepMenuKey = ""     // the configuration above is fresh; fill it on the next refresh
 
         // A speaker with or without a slash through it, rather than a word
         // that changes: the state is the icon, and the key no longer has to be
@@ -362,7 +378,7 @@ final class RadioViewController: UIViewController {
             // medium wave is 900 kHz and on FM it is 10 MHz. The step goes in
             // the box with them, where it is the unit of what is beside it,
             // rather than under the readout where it was a number on its own.
-            boxed("TUNE", row([tuneRow(), stepLabel])),
+            boxed("TUNE", row([tuneRow(), stepButton])),
             // Two groups on one row: mute is not a seventh mode, and a box that
             // says MODE around it would say so.
             row([boxed("MODE", modeKeys()), boxed("AUDIO", muteButton)]),
@@ -569,6 +585,27 @@ final class RadioViewController: UIViewController {
             stack.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -S(5)),
         ])
         return box
+    }
+
+    /// The step, and every step this mode has a use for. The ladder is the
+    /// plugin's own per-mode subset (`RadioConfig.stepValues`), so a WFM
+    /// receiver is not offered 100 Hz and a CW one is not offered 1 MHz.
+    private func syncStepMenu() {
+        let step = radio.tuneStepHz
+        let key = "\(radio.mode):\(step)"
+        guard key != stepMenuKey else { return }
+        stepMenuKey = key
+        var title = AttributedString("\u{00D7} " + formatStep(step))
+        title.font = xMono(S(13))
+        title.foregroundColor = Pal.dim
+        stepButton.configuration?.attributedTitle = title
+        stepButton.menu = UIMenu(children: RadioConfig.stepValues(for: radio.mode).map { v in
+            UIAction(title: formatStep(v),
+                     state: abs(v - step) < 0.001 ? .on : .off) { [weak self] _ in
+                self?.radio.setTuneStep(v)
+                self?.refresh()
+            }
+        })
     }
 
     private static func speaker(muted: Bool) -> UIImage? {
@@ -1011,7 +1048,7 @@ final class RadioViewController: UIViewController {
         // meters and the readout were measured again between every pair of
         // frames, so their contents appeared to shift on each bar update.
         setText(stationLabel, StationLabel.lookup(freqHz: shownHz, region: region) ?? " ")
-        setText(stepLabel, "\u{00D7} " + formatStep(radio.tuneStepHz))
+        syncStepMenu()
         setText(bwLabel, formatStep(radio.config.bandwidth(for: radio.mode)))
         // The same mapping the Mac window uses, so a reading means the same
         // thing on both: -100..-10 dBFS, and 0..60 dB of signal to noise.
@@ -1434,7 +1471,8 @@ final class OptionsViewController: UITableViewController {
             Section(name: "DISPLAY", rows: [
                 Row(title: "Framerate", kind: .list(values: [5, 10, 16, 24, 30, 60], unit: "fps",
                     get: { Double(r.fps) }, set: { r.fps = Int($0) })),
-                Row(title: "Smoothing", kind: .list(values: [2, 5, 10, 20, 24, 30, 50, 60], unit: "",
+                // 1 is off: the transform only averages above it.
+                Row(title: "Smoothing", kind: .list(values: [1, 2, 5, 10, 20, 24, 30, 50, 60], unit: "",
                     get: { Double(r.smoothingFactor) }, set: { r.smoothingFactor = Float($0) })),
             ]),
             Section(name: "RECEIVER", rows: [

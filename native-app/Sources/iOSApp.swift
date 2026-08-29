@@ -943,7 +943,7 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
                 rule.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
                 rule.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 4),
                 rule.heightAnchor.constraint(equalToConstant: 2),
-                l.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 10),
+                l.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: S(8)),
                 l.topAnchor.constraint(equalTo: rule.bottomAnchor, constant: 2),
             ])
             cell.contentView.backgroundColor = .clear
@@ -952,7 +952,12 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
             let (num, unit) = formatFreq(p.freq)
             let f = UILabel(); f.text = num; f.font = xMono(S(17), .light); f.textColor = Pal.text
             let u = UILabel(); u.text = unit; u.font = xMono(S(11)); u.textColor = Pal.faint
-            let n = UILabel(); n.text = p.name; n.font = xMono(S(13)); n.textColor = Pal.dim
+            // Proportional, alone in the row: a name is words, and fixed pitch
+            // buys nothing for words while costing them a third of their width.
+            // The frequency beside it stays monospaced, which is what keeps the
+            // digits from shuffling as the list scrolls past.
+            let n = UILabel(); n.text = p.name; n.font = .systemFont(ofSize: S(13))
+            n.textColor = Pal.dim
             let m = UILabel(); m.text = modeName(p.mode); m.font = xMono(S(11)); m.textColor = Pal.faint
             n.lineBreakMode = .byTruncatingTail
             for v in [f, u, n, m] {
@@ -960,15 +965,19 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
                 cell.contentView.addSubview(v)
             }
             NSLayoutConstraint.activate([
-                f.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 10),
-                f.widthAnchor.constraint(equalToConstant: S(78)),
+                f.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: S(8)),
+                // Wide enough for the longest reading the formatter produces —
+                // six monospaced digits, "100.10" — and no wider. The column is
+                // fixed so the names line up; it was fixed a dozen points past
+                // anything that could be written in it.
+                f.widthAnchor.constraint(equalToConstant: S(66)),
                 f.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
                 u.leadingAnchor.constraint(equalTo: f.trailingAnchor, constant: 1),
                 u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
-                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: 8),
-                n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -6),
+                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: S(5)),
+                n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -S(4)),
                 n.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                m.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -10),
+                m.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -S(8)),
                 m.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
             ])
             cell.selectionStyle = .default

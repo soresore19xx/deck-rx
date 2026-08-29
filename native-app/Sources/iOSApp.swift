@@ -309,6 +309,7 @@ final class RadioViewController: UIViewController {
             h.widthAnchor.constraint(equalToConstant: S(52)).isActive = true
             h.slider.tag = tag
             h.slider.isContinuous = true
+            fitFaderCap(h.slider)
             h.slider.addTarget(self, action: #selector(displayChanged(_:)), for: .valueChanged)
             displaySliders[tag] = h.slider
         }
@@ -380,6 +381,38 @@ final class RadioViewController: UIViewController {
         restBottom.isActive = true
         right.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,
                                       constant: -8).isActive = true
+    }
+
+    /// A fader cap instead of a bead.
+    ///
+    /// The system thumb is a circle, which reads as a toy beside a panel of
+    /// rules, graticules and seven-segment digits. One image serves every
+    /// slider here, the vertical rails included: they are rotated a quarter
+    /// turn, so a cap that is narrow along the travel and long across it comes
+    /// out the same way round on both.
+    ///
+    /// `.highlighted` as well as `.normal`, or UIKit puts the circle back for
+    /// as long as a finger is on it — which is exactly when it is being looked
+    /// at.
+    private func fitFaderCap(_ s: UISlider) {
+        let size = CGSize(width: S(14), height: S(28))
+        let cap = UIGraphicsImageRenderer(size: size).image { ctx in
+            let r = CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5)
+            ctx.cgContext.setFillColor(Pal.text.cgColor)
+            ctx.cgContext.fill(r)
+            // A dark edge, so the cap reads as an object on the track rather
+            // than as a gap in it.
+            ctx.cgContext.setStrokeColor(Pal.bg.cgColor)
+            ctx.cgContext.setLineWidth(1)
+            ctx.cgContext.stroke(r)
+            // The grip line down the middle, the way a real cap is moulded.
+            ctx.cgContext.setStrokeColor(Pal.bg.withAlphaComponent(0.55).cgColor)
+            ctx.cgContext.move(to: CGPoint(x: size.width / 2, y: r.minY + S(6)))
+            ctx.cgContext.addLine(to: CGPoint(x: size.width / 2, y: r.maxY - S(6)))
+            ctx.cgContext.strokePath()
+        }
+        s.setThumbImage(cap, for: .normal)
+        s.setThumbImage(cap, for: .highlighted)
     }
 
     /// A one-letter caption in the meter's own rhythm.
@@ -579,6 +612,7 @@ final class RadioViewController: UIViewController {
             s.setContentHuggingPriority(.init(1), for: .horizontal)
             s.setContentCompressionResistancePriority(.init(200), for: .horizontal)
             s.addTarget(self, action: #selector(displayChanged(_:)), for: .valueChanged)
+            fitFaderCap(s)
             displaySliders[tag] = s
             let c = UILabel()
             c.text = caption; c.font = xMono(S(11)); c.textColor = Pal.faint

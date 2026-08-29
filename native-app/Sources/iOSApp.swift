@@ -1156,7 +1156,7 @@ final class OptionsViewController: UITableViewController {
             // easier to read a weak carrier off, a fast one is easier to tune
             // by — and both survive a relaunch now that they are in the config.
             Section(name: "DISPLAY", rows: [
-                Row(title: "Framerate", kind: .list(values: [5, 10, 15, 20, 30, 60], unit: "fps",
+                Row(title: "Framerate", kind: .list(values: [5, 10, 16, 24, 30, 60], unit: "fps",
                     get: { Double(r.fps) }, set: { r.fps = Int($0) })),
                 Row(title: "Smoothing", kind: .list(values: [1, 2, 5, 10, 20, 30, 50, 100], unit: "",
                     get: { Double(r.smoothingFactor) }, set: { r.smoothingFactor = Float($0) })),
@@ -1193,32 +1193,75 @@ final class OptionsViewController: UITableViewController {
         case .bool(let get, _):
             cell.detailTextLabel?.text = get() ? "ON" : "OFF"
             cell.detailTextLabel?.textColor = get() ? Pal.accent : Pal.faint
-        case .list(_, let unit, let get, _):
-            let v = get()
-            cell.detailTextLabel?.text = unit == "kHz" ? String(format: "%g kHz", v / 1000)
-                                       : unit.isEmpty ? String(format: "%g", v)
-                                       : String(format: "%g %@", v, unit)
-            cell.detailTextLabel?.textColor = Pal.text
-        case .text(_, let get, _):
-            cell.detailTextLabel?.text = get()
-            cell.detailTextLabel?.textColor = Pal.text
+            cell.selectionStyle = .default
+        case .list(let values, let unit, let get, let set):
+            let titles = values.map { Self.listTitle($0, unit: unit) }
+            let cur = get()
+            cell.accessoryView = pullDown(titles,
+                                          selected: values.firstIndex { abs($0 - cur) < 0.001 },
+                                          fallback: Self.listTitle(cur, unit: unit)) { [weak self] i in
+                self?.apply { set(values[i]) }
+            }
+            // The control is the pull-down, so the row does not offer itself.
+            cell.selectionStyle = .none
+        case .text(let options, let get, let set):
+            cell.accessoryView = pullDown(options,
+                                          selected: options.firstIndex(of: get()),
+                                          fallback: get()) { [weak self] i in
+                self?.apply { set(options[i]) }
+            }
+            cell.selectionStyle = .none
         }
         return cell
     }
 
-    /// Tap steps the value on and wraps, as the Mac panel does.
+    private static func listTitle(_ v: Double, unit: String) -> String {
+        unit == "kHz" ? String(format: "%g kHz", v / 1000)
+      : unit.isEmpty ? String(format: "%g", v)
+      : String(format: "%g %@", v, unit)
+    }
+
+    /// The value, and every value it could be, one tap away.
+    ///
+    /// The rows used to step and wrap, the way the Mac panel's do. That is fine
+    /// for three options and tedious for eight, and it never says what the
+    /// eight are — a JP region or a framerate is something to pick, not
+    /// something to walk past. `fallback` covers a value the list does not hold,
+    /// so a config written by hand still reads as itself.
+    private func pullDown(_ titles: [String], selected: Int?, fallback: String,
+                          pick: @escaping (Int) -> Void) -> UIButton {
+        let b = UIButton(type: .system)
+        var cfg = UIButton.Configuration.plain()
+        // Vertical padding, so the tap target is a row's height rather than a
+        // line of text's.
+        cfg.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 0)
+        cfg.image = UIImage(systemName: "chevron.up.chevron.down")
+        cfg.imagePlacement = .trailing
+        cfg.imagePadding = 6
+        cfg.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 11)
+        var title = AttributedString(selected.map { titles[$0] } ?? fallback)
+        title.font = xMono(15, .medium)
+        title.foregroundColor = Pal.text
+        cfg.attributedTitle = title
+        b.configuration = cfg
+        b.tintColor = Pal.faint
+        b.menu = UIMenu(children: titles.enumerated().map { i, t in
+            UIAction(title: t, state: i == selected ? .on : .off) { _ in pick(i) }
+        })
+        b.showsMenuAsPrimaryAction = true
+        b.sizeToFit()
+        return b
+    }
+
+    /// Tap toggles a boolean; the pull-downs carry everything else.
     override func tableView(_ t: UITableView, didSelectRowAt ip: IndexPath) {
         t.deselectRow(at: ip, animated: true)
-        switch sections[ip.section].rows[ip.row].kind {
-        case .bool(let get, let set):
-            set(!get())
-        case .list(let values, _, let get, let set):
-            let cur = get()
-            set(values.first { $0 > cur + 0.001 } ?? values[0])
-        case .text(let options, let get, let set):
-            let i = ((options.firstIndex(of: get()) ?? 0) + 1) % options.count
-            set(options[i])
-        }
+        guard case .bool(let get, let set) = sections[ip.section].rows[ip.row].kind else { return }
+        apply { set(!get()) }
+    }
+
+    private func apply(_ change: () -> Void) {
+        change()
         // Saving is not applying — but applying is now `config`'s own job, so
         // writing the value above is enough. See LocalRadio.applyConfig.
         radio.config.save()

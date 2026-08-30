@@ -370,10 +370,14 @@ final class RadioViewController: UIViewController {
         plot.axis = .horizontal
         plot.spacing = S(6)
 
-        let right = UIStackView(arrangedSubviews: [
-            header,
-            plot,
-            boxed("DISPLAY", displayRow()),
+        // Two stacks, not one. Everything from BAND down is a block that sits
+        // on the bottom edge of the pane; the header, the trace and the display
+        // rail take what is left above it. As one stack, where that block ended
+        // up depended on which arranged subview the layout chose to hand the
+        // spare height to — and the answer was the group boxes, a few points
+        // each, which is what left the column spread out instead of packed
+        // down.
+        let controls = UIStackView(arrangedSubviews: [
             boxed("BAND", bandRow()),
             // The keys are multiples of the step, and nothing said so: -100 on
             // medium wave is 900 kHz and on FM it is 10 MHz. The step goes in
@@ -386,8 +390,15 @@ final class RadioViewController: UIViewController {
             // not a seventh mode, so it does not go in the MODE box either.
             row([boxed("SERVER", row([hostField, portField, connectButton])),
                  optionsButton, UIView(), boxed("AUDIO", muteButton)]),
-            statusLabel,
+            // Named and framed like everything above it: it is the one thing in
+            // the column that says whether any of the rest is doing anything.
+            boxed("STATUS", statusLabel),
         ])
+        controls.axis = .vertical
+        controls.spacing = S(10)
+        controls.translatesAutoresizingMaskIntoConstraints = false
+
+        let right = UIStackView(arrangedSubviews: [header, plot, boxed("DISPLAY", displayRow())])
         right.axis = .vertical
         right.spacing = S(10)
         right.translatesAutoresizingMaskIntoConstraints = false
@@ -406,6 +417,9 @@ final class RadioViewController: UIViewController {
         for v in right.arrangedSubviews where v !== plot {
             v.setContentHuggingPriority(.required, for: .vertical)
         }
+        for v in controls.arrangedSubviews {
+            v.setContentHuggingPriority(.required, for: .vertical)
+        }
         spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: S(220)).isActive = true
 
         let presetTitle = UILabel()
@@ -420,6 +434,7 @@ final class RadioViewController: UIViewController {
         view.addSubview(presetBar)
         view.addSubview(presetTable)
         view.addSubview(right)
+        view.addSubview(controls)
         let g = view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
             // And they start on the same line as well.
@@ -434,20 +449,23 @@ final class RadioViewController: UIViewController {
             right.topAnchor.constraint(equalTo: g.topAnchor, constant: S(8)),
             right.leadingAnchor.constraint(equalTo: presetTable.trailingAnchor, constant: S(14)),
             right.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -S(14)),
+            controls.leadingAnchor.constraint(equalTo: right.leadingAnchor),
+            controls.trailingAnchor.constraint(equalTo: right.trailingAnchor),
+            // The block starts where the display rail ends, and the trace above
+            // gives up whatever height that leaves.
+            controls.topAnchor.constraint(equalTo: right.bottomAnchor, constant: S(10)),
         ])
-        // Two bottoms: normally the safe area, but never under the keyboard.
-        // The host field is the last row of the column, so typing an address
-        // put the keyboard straight over the characters being typed. The
-        // spectrum has the loosest hugging in the column, so it is what gives
-        // up the height while the keyboard is there, and takes it back after.
-        // Flush with the preset table's own bottom, not eight points shy of it:
-        // two columns ending on different lines reads as one of them having
-        // been pushed up.
-        let restBottom = right.bottomAnchor.constraint(equalTo: g.bottomAnchor)
-        restBottom.priority = .defaultHigh
+        // Two bottoms: normally the safe area — flush with the preset table's
+        // own bottom, since two columns ending on different lines reads as one
+        // of them having been pushed up — but never under the keyboard. The
+        // host field is in this block, so typing an address put the keyboard
+        // straight over the characters being typed; when it is up the whole
+        // block rises and the trace above gives up the height.
+        let restBottom = controls.bottomAnchor.constraint(equalTo: g.bottomAnchor)
+        restBottom.priority = UILayoutPriority(999)
         restBottom.isActive = true
-        right.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,
-                                      constant: -8).isActive = true
+        controls.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,
+                                         constant: -S(8)).isActive = true
     }
 
     /// The key's own ground. A clear step up from the panel behind it (#353840

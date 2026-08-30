@@ -93,6 +93,7 @@ final class RadioViewController: UIViewController {
     private var modeButtons: [UIButton] = []
     private let stepButton = UIButton(type: .system)
     private let stereoBadge = BadgeLabel()
+    private let modeChip = UILabel()
     private let bwLabel = UILabel()
     /// Mode and step as the menu was last built for them, so it is rebuilt when
     /// either moves and not four times a second.
@@ -343,10 +344,16 @@ final class RadioViewController: UIViewController {
         stereoBadge.layer.cornerRadius = S(4)
         stereoBadge.isHidden = true
         stereoBadge.setContentHuggingPriority(.required, for: .horizontal)
-        let readout = row([freqView, stereoBadge, UIView()])
-        let detail = row([caption("BW"), bwLabel])
+        // Under the readout rather than beside it. The readout's width follows
+        // its own digits, so a badge placed after it lands wherever the
+        // frequency happens to end — half a panel away on a long one. The line
+        // below it starts where the digits start, every time.
+        modeChip.font = xMono(S(17), .medium)
+        modeChip.textColor = Pal.text
+        modeChip.setContentHuggingPriority(.required, for: .horizontal)
+        let detail = row([modeChip, stereoBadge, caption("BW"), bwLabel])
         detail.spacing = S(6)
-        let tuned = UIStackView(arrangedSubviews: [stationLabel, readout, detail])
+        let tuned = UIStackView(arrangedSubviews: [stationLabel, freqView, detail])
         tuned.axis = .vertical
         tuned.alignment = .leading
         tuned.spacing = S(2)
@@ -1152,6 +1159,7 @@ final class RadioViewController: UIViewController {
         nMeter.value = live ? max(0, min(1, radio.snrDb / 60)) : 0
         // Same condition the status feed publishes (AppServer.swift:439): a
         // stereo mode, a locked pilot, and a live receiver.
+        setText(modeChip, modeName(radio.mode))
         let stereo = live && radio.isStereoMode && radio.stereoLocked
         if stereoBadge.isHidden == stereo { stereoBadge.isHidden = !stereo }
         spectrum.bandwidthHz = radio.config.bandwidth(for: radio.mode)

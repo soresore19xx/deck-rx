@@ -1565,10 +1565,12 @@ final class OptionsViewController: UITableViewController {
                     get: { Double(r.config.spectrumFftSize) }, set: { r.fftSize = Int($0) })),
                 Row(title: "Framerate", kind: .list(values: [5, 10, 16, 24, 30, 60], unit: "fps",
                     get: { Double(r.fps) }, set: { r.fps = Int($0) })),
-                // 0 is off. The transform averages only above 1, so 0 and 1 do
-                // the same nothing — and a list that says 0 says which one it is.
-                Row(title: "Smoothing", kind: .list(values: [0, 2, 5, 10, 20, 24, 30, 50, 60], unit: "",
-                    get: { Double(r.smoothingFactor) }, set: { r.smoothingFactor = Float($0) })),
+                // SDR++'s "smoothing speed", and the plugin's: **larger follows
+                // faster**, so larger is less averaging. 16 is what SDR++ is set
+                // to here, 30 is the plugin's default, and 600 at 60 fps drives
+                // the coefficient to 1 — no averaging at all.
+                Row(title: "Smooth speed", kind: .list(values: [2, 4, 8, 16, 30, 60, 120, 300, 600],
+                    unit: "", get: { r.smoothSpeed }, set: { r.smoothSpeed = $0 })),
             ]),
             Section(name: "RECEIVER", rows: [
                 Row(title: "Tune mode", kind: .text(options: ["preset", "vfo"],

@@ -69,7 +69,7 @@ final class FFTPipeline {
     /// Taking the *most recent* n rather than the oldest is the lowest-latency
     /// choice between IQ arriving and the user seeing it, and is what the
     /// plugin does. It does mean samples between frames are never looked at.
-    func process(int16IQ iq: Data, smoothingFactor: Float) -> [Float]? {
+    func process(int16IQ iq: Data, smoothAlpha: Float) -> [Float]? {
         let totalSamples = iq.count / 4
         guard totalSamples >= n else { return nil }
         let startByte = (totalSamples - n) * 4
@@ -85,11 +85,11 @@ final class FFTPipeline {
                 imagp[i] = Float(Q) * wi
             }
         }
-        return transformAndScale(smoothingFactor: smoothingFactor)
+        return transformAndScale(smoothAlpha: smoothAlpha)
     }
 
     /// Same, for already-normalised float samples (interleaved I,Q in ±1).
-    func process(floatIQ iq: [Float], smoothingFactor: Float) -> [Float]? {
+    func process(floatIQ iq: [Float], smoothAlpha: Float) -> [Float]? {
         let totalSamples = iq.count / 2
         guard totalSamples >= n else { return nil }
         let start = (totalSamples - n) * 2
@@ -98,10 +98,10 @@ final class FFTPipeline {
             realp[i] = iq[start + i * 2] * wi
             imagp[i] = iq[start + i * 2 + 1] * wi
         }
-        return transformAndScale(smoothingFactor: smoothingFactor)
+        return transformAndScale(smoothAlpha: smoothAlpha)
     }
 
-    private func transformAndScale(smoothingFactor: Float) -> [Float] {
+    private func transformAndScale(smoothAlpha: Float) -> [Float] {
         var out = [Float](repeating: 0, count: n)
 
         realp.withUnsafeMutableBufferPointer { rp in
@@ -135,13 +135,19 @@ final class FFTPipeline {
         for k in half..<n { out[k - half] = scratch[k] }
 
         // EWMA across frames, never across bins.
-        if smoothingFactor > 1 {
+        // SDR++'s form, by way of the plugin (spectrumFeed.ts:172): the caller
+        // hands in the coefficient itself rather than a divisor, because the
+        // coefficient is normalised by the frame rate and only the caller knows
+        // that. 1 is "follow the frame exactly", which is no smoothing at all.
+        //
+        // This port had it inverted — alpha = 1 / factor — so a larger number
+        // meant more averaging where SDR++ and the plugin both mean less.
+        if smoothAlpha < 1, smoothAlpha > 0 {
             if smoothed?.count != n {
                 smoothed = out
             } else {
-                let a = 1 / smoothingFactor
-                let oneMinusA = 1 - a
-                for i in 0..<n { smoothed![i] = smoothed![i] * oneMinusA + out[i] * a }
+                let oneMinusA = 1 - smoothAlpha
+                for i in 0..<n { smoothed![i] = smoothed![i] * oneMinusA + out[i] * smoothAlpha }
             }
             return smoothed!
         }

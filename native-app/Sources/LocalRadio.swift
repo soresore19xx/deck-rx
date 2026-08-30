@@ -121,15 +121,25 @@ final class LocalRadio {
             if isConnected { auxQueue.async { self.startFrameTimer() } }
         }
     }
-    /// Frame-to-frame averaging, as a divisor: 1 is off, and larger is slower.
-    var smoothingFactor: Float {
-        get { Float(config.spectrumSmooth) }
+    /// Frame-to-frame averaging as SDR++ states it: a *speed*, where larger
+    /// follows the trace faster and therefore smooths less. Clamped the way the
+    /// plugin clamps it (spectrumFeed.ts:75).
+    var smoothSpeed: Double {
+        get { config.spectrumSmoothSpeed }
         set {
-            let v = Double(max(0, newValue))
-            guard v != config.spectrumSmooth else { return }
-            config.spectrumSmooth = v
+            let v = min(1000, max(1, newValue))
+            guard v != config.spectrumSmoothSpeed else { return }
+            config.spectrumSmoothSpeed = v
             config.save()
         }
+    }
+
+    /// The coefficient the transform actually applies, normalised by the frame
+    /// rate — spectrumFeed.ts:172, exactly. Normalising is the part that
+    /// matters: it keeps the averaging window fixed in seconds, so changing the
+    /// rate changes how often the trace is drawn, not how smooth it is.
+    private var smoothAlpha: Float {
+        Float(min(1, smoothSpeed / (Double(max(1, fps)) * 10)))
     }
 
     /// How far behind the live IQ the spectrum is drawn, in seconds.
@@ -877,7 +887,7 @@ final class LocalRadio {
                          max(0, iq.count - fftSize * 4))
         guard let fft, iq.count >= fftSize * 4,
               let bins = fft.process(int16IQ: behind > 0 ? iq.prefix(iq.count - behind) : iq,
-                                     smoothingFactor: smoothingFactor) else { return }
+                                     smoothAlpha: smoothAlpha) else { return }
         seq &+= 1
         // SNR from the frame we just built: peak over median. Free here, and
         // it saves a second FFT purely for the meter.

@@ -197,8 +197,17 @@ Little-endian throughout. A reader syncs on the magic and derives the frame
 length from `binCount`, so a mid-stream connect recovers on the next frame.
 Defaults: 1024 bins at 30 fps, seeded from `DECK_RX_SPECTRUM_FFT` /
 `DECK_RX_SPECTRUM_FPS` and changeable at runtime through `/spectrum` (FFT size
-256–4096, framerate 1–60, averaging 0–0.95). A size change rebuilds the FFT and
-drops the smoothing history, which belonged to the old bin count.
+256–4096, framerate 1–60, smoothing speed 1–1000). A size change rebuilds the
+FFT and drops the smoothing history, which belonged to the old bin count.
+
+**Smoothing is a speed, not an amount** — SDR++'s wording and SDR++'s formula:
+`alpha = min(1, speed / (fps * 10))`, so a **larger** number follows the trace
+faster and averages less, and the normalisation by framerate keeps the
+averaging window fixed in seconds. The native app had this inverted, taking the
+FFT pipeline's own divisor (`alpha = 1 / factor`, larger = smoother) where the
+plugin bypasses that smoother and applies SDR++'s form itself. Both now speak
+the same language, and a config written under the old meaning is converted at
+the framerate it was stored with.
 
 Two rates matter here and conflating them is what makes a spectrum look wrong
 when the framerate is turned down. The FFT runs continuously (up to 60 Hz),

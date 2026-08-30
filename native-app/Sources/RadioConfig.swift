@@ -73,7 +73,12 @@ struct RadioConfig: Codable, Equatable {
     /// every launch started at the defaults again.
     var spectrumFftSize = 4096
     var spectrumFps = 30
-    var spectrumSmooth: Double = 30
+    /// SDR++'s "FFT smoothing speed", and the plugin's (spectrumFeed.ts:51):
+    /// **larger follows the trace faster**, which is less averaging, and the
+    /// coefficient is normalised by the frame rate so changing the rate changes
+    /// how often the trace is drawn rather than how smooth it is.
+    /// alpha = min(1, speed / (fps * 10)).
+    var spectrumSmoothSpeed: Double = 30
     var waterfallSeconds: Double = 45
     /// The IQ width the receiver last reported. Kept so the display can place
     /// the presets on a scale at startup, before any frame — and even with the
@@ -175,7 +180,7 @@ struct RadioConfig: Codable, Equatable {
 
     /// The single `gain` this file carried before AM and FM were told apart.
     /// Not a property any more, so the synthesised keys no longer name it.
-    private enum LegacyKeys: String, CodingKey { case gain }
+    private enum LegacyKeys: String, CodingKey { case gain, spectrumSmooth }
 
     /// Decoded key by key, each falling back to its default.
     ///
@@ -227,7 +232,17 @@ struct RadioConfig: Codable, Equatable {
         spectrumZoom = (try? c.decodeIfPresent(Double.self, forKey: .spectrumZoom)) .flatMap { $0 } ?? d.spectrumZoom
         spectrumFftSize = (try? c.decodeIfPresent(Int.self, forKey: .spectrumFftSize)) .flatMap { $0 } ?? d.spectrumFftSize
         spectrumFps = (try? c.decodeIfPresent(Int.self, forKey: .spectrumFps)) .flatMap { $0 } ?? d.spectrumFps
-        spectrumSmooth = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSmooth)) .flatMap { $0 } ?? d.spectrumSmooth
+        // The old key held a divisor — alpha = 1 / value — which ran the other
+        // way: larger meant smoother. Converted at the frame rate it was stored
+        // with, so a file written under the old meaning keeps the trace it had.
+        if let sp = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSmoothSpeed)) .flatMap({ $0 }) {
+            spectrumSmoothSpeed = sp
+        } else if let old = (try? decoder.container(keyedBy: LegacyKeys.self))
+            .flatMap({ (try? $0.decodeIfPresent(Double.self, forKey: .spectrumSmooth)) ?? nil }), old > 0 {
+            spectrumSmoothSpeed = min(1000, max(1, (1 / old) * Double(spectrumFps) * 10))
+        } else {
+            spectrumSmoothSpeed = d.spectrumSmoothSpeed
+        }
         waterfallSeconds = (try? c.decodeIfPresent(Double.self, forKey: .waterfallSeconds)) .flatMap { $0 } ?? d.waterfallSeconds
         spectrumSpanHz = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSpanHz)) .flatMap { $0 } ?? d.spectrumSpanHz
         audioDecimate = (try? c.decodeIfPresent(Int.self, forKey: .audioDecimate)) .flatMap { $0 } ?? d.audioDecimate

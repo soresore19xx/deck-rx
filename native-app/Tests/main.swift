@@ -517,10 +517,10 @@ check("the edge itself counts as inside",
       LocalRadio.vfoOffset(target: 1_321_000, center: 1_134_000, maxOffset: 187_000) == 187_000)
 
 section("frame smoothing actually smooths")
-// smoothingFactor is an EWMA across frames with alpha = 1 / factor. At 60 the
-// display should barely move in one frame — if a loud frame followed by a quiet
-// one comes back quiet, the factor is being ignored and the trace jitters at
-// the full frame rate no matter what the setting says.
+// The transform takes the coefficient itself, SDR++'s way: 1 follows the frame
+// exactly (no averaging) and a small number barely moves. The port had this
+// inverted — alpha = 1 / factor — so a larger setting meant *more* averaging
+// where SDR++ and the plugin both mean less.
 func iqTone(_ n: Int, amp: Double, hz: Double, rate: Double) -> Data {
     var d = Data(count: n * 4)
     d.withUnsafeMutableBytes { (b: UnsafeMutableRawBufferPointer) in
@@ -535,21 +535,21 @@ func iqTone(_ n: Int, amp: Double, hz: Double, rate: Double) -> Data {
 let sm = FFTPipeline(1024)!
 let loud = iqTone(1024, amp: 12000, hz: 10_000, rate: 96_000)
 let quiet = iqTone(1024, amp: 40, hz: 10_000, rate: 96_000)
-if let a = sm.process(int16IQ: loud, smoothingFactor: 60),
-   let b = sm.process(int16IQ: quiet, smoothingFactor: 60),
-   let raw = FFTPipeline(1024)!.process(int16IQ: quiet, smoothingFactor: 1) {
+if let a = sm.process(int16IQ: loud, smoothAlpha: 0.02),
+   let b = sm.process(int16IQ: quiet, smoothAlpha: 0.02),
+   let raw = FFTPipeline(1024)!.process(int16IQ: quiet, smoothAlpha: 1) {
     let peak = a.firstIndex(of: a.max()!)!
     check("a loud frame is drawn as loud", a[peak] > raw[peak] + 20,
           "loud \(a[peak]) raw-quiet \(raw[peak])")
-    // One frame at 1/60 moves the bin a sixtieth of the way down, so it must
-    // still be nearer the loud reading than the quiet one.
+    // One frame at alpha 0.02 moves the bin a fiftieth of the way down, so it
+    // must still be nearer the loud reading than the quiet one.
     check("the next frame barely moves it", abs(b[peak] - a[peak]) < abs(b[peak] - raw[peak]),
           "loud \(a[peak]) smoothed \(b[peak]) raw \(raw[peak])")
     // And with smoothing off it lands on the raw reading immediately.
     let off = FFTPipeline(1024)!
-    _ = off.process(int16IQ: loud, smoothingFactor: 0)
-    if let c = off.process(int16IQ: quiet, smoothingFactor: 0) {
-        check("with smoothing off it follows the frame", near(Double(c[peak]), Double(raw[peak]), 0.001),
+    _ = off.process(int16IQ: loud, smoothAlpha: 1)
+    if let c = off.process(int16IQ: quiet, smoothAlpha: 1) {
+        check("alpha 1 follows the frame", near(Double(c[peak]), Double(raw[peak]), 0.001),
               "off \(c[peak]) raw \(raw[peak])")
     }
 } else {
@@ -565,7 +565,7 @@ section("FFT")
 if let fft = FFTPipeline(4096) {
     // A tone at exactly a bin centre, so there is no scalloping to argue about.
     let toneIQ = makeIQ(rate: 1, count: 4096, carrierOffsetHz: 0.25, amplitude: 0.5, noise: 0.001)
-    if let bins = fft.process(int16IQ: toneIQ, smoothingFactor: 0) {
+    if let bins = fft.process(int16IQ: toneIQ, smoothAlpha: 1) {
         var peakIdx = 0, peak = -Float.greatestFiniteMagnitude
         for (i, v) in bins.enumerated() where v > peak { peak = v; peakIdx = i }
         check("peak lands where fftshift puts it", peakIdx == 3072, "bin \(peakIdx)")

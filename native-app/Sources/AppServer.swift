@@ -220,7 +220,7 @@ final class AppServer {
             // three dropdowns did nothing at all on the standalone build.
             if let v = q["fft"].flatMap(Int.init) { radio.fftSize = v }
             if let v = q["fps"].flatMap(Int.init) { radio.fps = max(1, min(120, v)) }
-            if let v = q["smooth"].flatMap(Double.init) { radio.smoothingFactor = Float(max(0, v)) }
+            if let v = q["smooth"].flatMap(Double.init) { radio.smoothSpeed = v }
             if let v = q["decimation"].flatMap(UInt32.init) {
                 // The one setting that actually moves the CPU: everything
                 // downstream runs per IQ sample, so halving the rate halves the
@@ -232,7 +232,7 @@ final class AppServer {
                 if radio.isConnected { radio.disconnect(); radio.connect() }
             }
             return ("200 OK", json(["size": radio.fftSize, "fps": radio.fps,
-                                    "smooth": Int(radio.smoothingFactor),
+                                    "smooth": Int(radio.smoothSpeed),
                                     "decimation": Int(radio.config.iqDecimation),
                                     "iqRateHz": Int(radio.iqRate)]))
 

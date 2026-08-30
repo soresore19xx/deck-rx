@@ -233,7 +233,7 @@ final class RadioViewController: UIViewController {
         muteButton.setPreferredSymbolConfiguration(
             UIImage.SymbolConfiguration(pointSize: S(17), weight: .medium), forImageIn: .normal)
         muteButton.setImage(Self.speaker(muted: false), for: .normal)
-        face(muteButton, Self.mix(Pal.accent, Self.keyGround, 0.6))
+        face(muteButton, Pal.accent)
         muteButton.widthAnchor.constraint(equalToConstant: S(72)).isActive = true
         muteButton.setContentHuggingPriority(.required, for: .horizontal)
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
@@ -618,15 +618,17 @@ final class RadioViewController: UIViewController {
     /// "is there sound", and both of its answers are worth a colour. A grey key
     /// with a speaker on it says nothing about which.
     ///
-    /// Deeper than a lit band key, too (0.6 of the tint against 0.38): that one
-    /// sits in a row of six and only has to stand out from its neighbours,
-    /// while this one stands alone in a box of its own.
+    /// The colour itself, not a fraction of it worked into the key's grey. A
+    /// lit band key takes 0.38 because it sits in a row of six and only has to
+    /// stand out from its neighbours; mixed at all, this one came out a
+    /// desaturated khaki that reads as another grey key. It is an indicator
+    /// lamp in a box of its own, and a lamp is the colour it is.
     private func lightAudio(_ muted: Bool) {
         guard muteButton.isSelected != muted else { return }
         muteButton.isSelected = muted
         muteButton.setImage(Self.speaker(muted: muted), for: .normal)
         muteButton.tintColor = Pal.bg
-        face(muteButton, Self.mix(muted ? Pal.warn : Pal.accent, Self.keyGround, 0.6))
+        face(muteButton, muted ? Pal.warn : Pal.accent)
     }
 
     private static func speaker(muted: Bool) -> UIImage? {

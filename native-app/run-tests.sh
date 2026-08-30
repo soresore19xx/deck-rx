@@ -8,16 +8,17 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT="$HERE/.tests-bin"
 
-# The receiver sources, plus FreqView for its formatting. main.swift and the
-# rest of the views stay out — they would drag in a second `main`. FreqView
-# holds no top-level code, and how it groups a frequency is exactly the kind of
-# rule that is cheap to get wrong and silent when it is.
+# The receiver sources, plus FreqView for its formatting and SpectrumView for
+# the rule that decides when the display stops holding a window of its own.
+# main.swift and the rest of the views stay out — they would drag in a second
+# `main`. Neither of these two holds top-level code, and both carry exactly the
+# kind of rule that is cheap to get wrong and silent when it is.
 SRC="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
      Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift \
      Sources/Receiver.swift Sources/SpectrumFeed.swift Sources/Platform.swift \
-     Sources/FreqView.swift"
+     Sources/FreqView.swift Sources/SpectrumView.swift"
 
 echo "==> building tests ..."
 if ! ( cd "$HERE" && swiftc $SRC Tests/main.swift -o "$OUT" \

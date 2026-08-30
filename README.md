@@ -550,6 +550,18 @@ channel — about twenty medium-wave channels either way — and ±116 kHz for a
 is what moving it is for. A mode change that widens the passband past the
 current offset recentres for the same reason.
 
+A **jump** is the exception, and it is not simply a tune with a larger number.
+Choosing a preset, pressing a band button or walking the presets from the knob
+is "take me to this station", and the display is expected to arrive as well.
+Those callers pass `recenter: true` (`LocalRadio.setFrequency`), which skips the
+offset test and moves the device even when the demodulator could have reached
+the station on its own. Without it a preset a few channels away was answered
+inside the window, so the spectrum stayed wherever the last pan or tap had left
+it while the marker walked off towards the edge — which reads as a display that
+has stopped following the receiver. Everything that aims — the digits, a tap on
+the trace, the tune buttons, `/tune` — leaves it false, because a window that
+moves under the finger cannot be aimed with.
+
 Two other things follow. A tune inside the window is not a round trip, so it
 does not wait on the server and does not throw away the IQ already in hand —
 the trace carries on without a gap. And the red marker is no longer the middle
@@ -566,7 +578,12 @@ into fills in as it arrives rather than staying blank until the finger lifts.
 Two things make that work. The view is held in absolute frequency
 (`SpectrumView.viewCenterHz`) rather than as an offset in points, so the picture
 moves at the speed of the finger while the receiver moves at its own, and the
-difference between them closes on its own as each retune lands. And the
+difference between them closes on its own as each retune lands. That override
+ends when a frame arrives from the centre the view is waiting for — or from any
+other centre, since a preset chosen while the pan is still settling sends the
+device to a third frequency and the one the view is holding is never coming
+(`SpectrumView.overrideDone`); without the second half the window sat parked on
+a piece of band nothing was receiving any more. And the
 waterfall's bitmap is shifted by the same amount the centre moved, so a row
 measured before the pan still sits under the frequencies it was measured at
 — without that, every row drawn before a retune is a lie about where its

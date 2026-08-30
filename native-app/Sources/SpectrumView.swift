@@ -132,6 +132,21 @@ final class SpectrumView: XView {
     /// as the receiver arrives. Cleared in `accept` once it has.
     var viewCenterHz: Double = 0 { didSet { if viewCenterHz != oldValue { redraw() } } }
 
+    /// Whether an override on the window is finished, given the frame that has
+    /// just arrived and the centre the one before it carried.
+    ///
+    /// It is done when the receiver arrives where the view is waiting —
+    /// compared against the frame rather than against what was asked for, so a
+    /// centre the device clamped still resolves. It is equally done when the
+    /// receiver lands somewhere else instead, which is what choosing a preset
+    /// while a pan is still settling does: the centre the view is holding is
+    /// then one nothing will ever report again, and without this the window
+    /// stays parked on a piece of band nothing is receiving.
+    static func overrideDone(target: Double, previous: UInt32, frame: UInt32) -> Bool {
+        if UInt32(max(0, target.rounded())) == frame { return true }
+        return previous != 0 && frame != previous
+    }
+
     /// The width a frequency span is drawn across. The gutter down the left
     /// carries the dB scale and belongs to no frequency, so a caller turning a
     /// drag into hertz needs this rather than the view's own width.
@@ -210,12 +225,12 @@ final class SpectrumView: XView {
                                                / hzPerColumn).rounded()))
             }
         }
+        let previousCenter = centerFreq
         iqRate = frame.iqRate
         centerFreq = frame.centerFreq
-        // The view stops overriding the window once the receiver has reached
-        // it. Compared against the frame rather than against what was asked
-        // for, so a centre the device clamped still resolves.
-        if viewCenterHz > 0, UInt32(max(0, viewCenterHz.rounded())) == frame.centerFreq {
+        if viewCenterHz > 0,
+           Self.overrideDone(target: viewCenterHz, previous: previousCenter,
+                             frame: frame.centerFreq) {
             viewCenterHz = 0
         }
         let now = Date()

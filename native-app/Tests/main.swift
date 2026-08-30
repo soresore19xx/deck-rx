@@ -515,6 +515,28 @@ check("one outside it moves the device",
       LocalRadio.vfoOffset(target: 594_000, center: 1_134_000, maxOffset: 187_000) == nil)
 check("the edge itself counts as inside",
       LocalRadio.vfoOffset(target: 1_321_000, center: 1_134_000, maxOffset: 187_000) == 187_000)
+// A preset is not a step along the band: the window is expected to arrive too,
+// even when the demodulator alone could have reached the station. Without this
+// the spectrum stays where the last pan left it while the marker walks off to
+// the edge, which is what "the display stopped following the receiver" is.
+check("a jump asks for the window, not only the demodulator",
+      LocalRadio.vfoOffset(target: 954_000, center: 1_134_000, maxOffset: 187_000,
+                           recenter: true) == nil)
+
+section("the window's override ends when the receiver settles anywhere")
+// The view holds an absolute centre while a pan is catching up, and drops it
+// when a frame arrives from there.
+check("a frame from where the view is waiting ends it",
+      SpectrumView.overrideDone(target: 1_134_000, previous: 954_000, frame: 1_134_000))
+check("a frame from where it was does not",
+      !SpectrumView.overrideDone(target: 1_134_000, previous: 954_000, frame: 954_000))
+// The case that parked the window: a preset chosen while the pan was still
+// settling sends the device to a third frequency, and the centre the view is
+// waiting for is then one nothing will report again.
+check("a frame from a third frequency ends it too",
+      SpectrumView.overrideDone(target: 1_134_000, previous: 954_000, frame: 594_000))
+check("the first frame of all is not a move",
+      !SpectrumView.overrideDone(target: 1_134_000, previous: 0, frame: 954_000))
 
 section("frame smoothing actually smooths")
 // The transform takes the coefficient itself, SDR++'s way: 1 follows the frame

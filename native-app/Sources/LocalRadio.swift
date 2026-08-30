@@ -287,7 +287,15 @@ final class LocalRadio {
     /// move to reach it. Pure, so the policy can be tested without a receiver:
     /// it is the difference between "the display holds still" and "the display
     /// jumps", and getting it wrong is invisible until someone is aiming.
-    static func vfoOffset(target: Double, center: Double, maxOffset: Double) -> Double? {
+    ///
+    /// `recenter` is the caller saying the display is meant to arrive as well.
+    /// A preset or a band button is "take me to this station", and answering it
+    /// inside the window leaves the spectrum parked wherever it was last left
+    /// while the marker walks off towards the edge — which reads as a display
+    /// that has stopped following the receiver.
+    static func vfoOffset(target: Double, center: Double, maxOffset: Double,
+                          recenter: Bool = false) -> Double? {
+        guard !recenter else { return nil }
         let offset = target - center
         return abs(offset) <= maxOffset ? offset : nil
     }
@@ -428,7 +436,11 @@ final class LocalRadio {
         setFrequency(UInt32(next))
     }
 
-    func setFrequency(_ hz: UInt32) {
+    /// `recenter` is for a tune that is a jump rather than a step: the preset
+    /// list, the band buttons, the knob's preset walk. Everything that aims —
+    /// the digits, a tap on the trace, the tune buttons — leaves it false,
+    /// because a window that moves under the finger cannot be aimed with.
+    func setFrequency(_ hz: UInt32, recenter: Bool = false) {
         // Refuse rather than pretend. A second client's retune is dropped by
         // the server without a word, so accepting it here would leave the
         // window showing a frequency nothing is receiving.
@@ -450,7 +462,8 @@ final class LocalRadio {
         // it is kept and the trace carries on without a gap.
         if iqRate > 0, let offset = Self.vfoOffset(target: Double(hz),
                                                    center: Double(deviceCenterHz),
-                                                   maxOffset: maxVfoOffsetHz) {
+                                                   maxOffset: maxVfoOffsetHz,
+                                                   recenter: recenter) {
             setVfo(offset)
             return
         }
@@ -854,7 +867,9 @@ final class LocalRadio {
         }
         guard let p = next else { return nil }
         mode = p.mode
-        setFrequency(UInt32(max(0, p.freq)))
+        // A preset is a jump, so the window goes with it — the same rule the
+        // preset list follows, kept here so the knob and the list agree.
+        setFrequency(UInt32(max(0, p.freq)), recenter: true)
         return UInt32(max(0, p.freq))
     }
 

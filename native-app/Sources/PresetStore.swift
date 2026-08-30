@@ -209,10 +209,12 @@ enum PresetStore {
             // is the one whose name came from the MW table.
             for (bmName, bm) in srcEntries.sorted(by: { $0.value.frequency < $1.value.frequency }) {
                 let freq = Int(bm.frequency.rounded())
-                // Replace SDR++'s ASCII placeholder with the JP DB's broadcaster
-                // name where one exists. Shortwave and unknown frequencies keep
-                // the SDR++ name.
-                let finalName = StationLabel.rawName(freqHz: Double(freq)) ?? bmName
+                // The bookmark's own name, as the user wrote it in SDR++. The
+                // station database names the LCD's station line and the labels
+                // on the trace; a preset is the user's wording for their own
+                // entry, and overwriting it with the broadcaster's official
+                // name lost the distinction they made.
+                let finalName = bmName
                 // Frequency is identity, so a frequency already present is a
                 // skip regardless of what it is called.
                 if existingByFreq[freq] != nil { r.skipped += 1; continue }

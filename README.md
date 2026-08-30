@@ -627,7 +627,10 @@ What the window carries:
 - spectrum and waterfall with station labels, the split between them dragged
   with a pan gesture (`spectrumSplit`, same key the Mac app persists)
 - the seven-segment readout, tuned by tapping a digit, with the station name
-  above it, the bandwidth under it, and the S and N meters beside it
+  above it, the bandwidth under it, the S and N meters beside it, and the
+  STEREO badge next to it when a WFM pilot is locked — the same badge the Mac
+  window carries, in the same place, because stereo is a property of what is
+  being received rather than a setting
 - the tune keys are multiples of the step, and the step is in the box with
   them: `-100` is 900 kHz on medium wave and 10 MHz on FM, which is not
   something a key marked `-100` can say on its own. It is a pull-down, carrying

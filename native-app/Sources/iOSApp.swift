@@ -136,6 +136,7 @@ final class RadioViewController: UIViewController {
             DispatchQueue.main.async { self?.spectrum.accept(frame) }
         }
         rebuildMarkers()
+        syncAutoFft()
         radio.audioEnabled = true
         // No slider here: the iPad's own volume buttons are the volume
         // control, so the app hands the mixer full scale and gets out of the
@@ -904,7 +905,7 @@ final class RadioViewController: UIViewController {
 
     @objc private func displayChanged(_ sender: UISlider) {
         switch sender.tag {
-        case 0: spectrum.zoom = pow(2, Double(sender.value))
+        case 0: spectrum.zoom = pow(2, Double(sender.value)); syncAutoFft()
         case 1: spectrum.wfTargetSeconds = exp(Double(sender.value))
         case 2: spectrum.dbCeil = Float(max(Double(sender.value), Double(spectrum.dbFloor) + 10))
         default: spectrum.dbFloor = Float(min(Double(sender.value), Double(spectrum.dbCeil) - 10))
@@ -921,6 +922,24 @@ final class RadioViewController: UIViewController {
             self.radio.config.spectrumDbFloor = Double(self.spectrum.dbFloor)
             self.radio.config.save()
         }
+    }
+
+    /// The transform's size, when the setting says auto.
+    ///
+    /// Zooming shows fewer bins across the same width, so the size has to rise
+    /// with it or the drawing runs out of bins and interpolates between them —
+    /// a staircase, which no amount of frame smoothing can flatten because the
+    /// shortage is in frequency, not in time. The smallest power of two that
+    /// still gives a bin per drawn column, floored at 4096 and capped at the
+    /// 65536 SDR++ runs here.
+    private func syncAutoFft() {
+        guard radio.config.spectrumFftSize == 0 else { return }
+        // Columns, in the points the trace is actually drawn in — the drawing
+        // walks `0..<Int(plotW)`, not device pixels.
+        let columns = Double(max(1, spectrum.plotWidth))
+        var want = 4096.0
+        while want < columns * spectrum.zoom, want < 65536 { want *= 2 }
+        radio.autoFftSize = Int(want)
     }
 
     private func syncDisplayReadouts() {
@@ -1538,9 +1557,12 @@ final class OptionsViewController: UITableViewController {
                 // app runs its own receiver, so the transform is its own to size.
                 // 65536 is what SDR++ runs here — about 12 dB of noise floor
                 // against 4096 — and 256 is for a slow machine.
-                Row(title: "FFT size", kind: .list(values: [256, 512, 1024, 2048, 4096,
-                                                            8192, 16384, 32768, 65536], unit: "",
-                    get: { Double(r.fftSize) }, set: { r.fftSize = Int($0) })),
+                // 0 is auto: the app picks the smallest size that still gives
+                // the trace a bin per drawn column at the current zoom, so
+                // zooming in does not turn the waveform into a staircase.
+                Row(title: "FFT size", kind: .list(values: [0, 256, 512, 1024, 2048, 4096,
+                                                            8192, 16384, 32768, 65536], unit: "fft",
+                    get: { Double(r.config.spectrumFftSize) }, set: { r.fftSize = Int($0) })),
                 Row(title: "Framerate", kind: .list(values: [5, 10, 16, 24, 30, 60], unit: "fps",
                     get: { Double(r.fps) }, set: { r.fps = Int($0) })),
                 // 0 is off. The transform averages only above 1, so 0 and 1 do
@@ -1603,7 +1625,10 @@ final class OptionsViewController: UITableViewController {
     }
 
     private static func listTitle(_ v: Double, unit: String) -> String {
-        unit == "kHz" ? String(format: "%g kHz", v / 1000)
+        // The FFT size has a zero, and zero bins is not a size — it is the
+        // instruction to choose one.
+        if unit == "fft" { return v == 0 ? "auto" : String(format: "%g", v) }
+        return unit == "kHz" ? String(format: "%g kHz", v / 1000)
       : unit.isEmpty ? String(format: "%g", v)
       : String(format: "%g %@", v, unit)
     }

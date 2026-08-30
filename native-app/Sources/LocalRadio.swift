@@ -74,14 +74,37 @@ final class LocalRadio {
     // Settings the caller drives. All three live in the config: they are
     // ridden constantly and were rebuilt from scratch on every launch, which is
     // the same reason the dB window is kept.
+    /// The size the display asks for while the setting says auto. Not
+    /// persisted: it follows the zoom, and the zoom is persisted already.
+    ///
+    /// Zooming does not add bins — it shows fewer of them across the same
+    /// width — so past a few times magnification the trace runs out of them and
+    /// the drawing interpolates, which is what reads as a coarse, stepped
+    /// waveform. Frame smoothing cannot help with that: it averages in time,
+    /// and this is a shortage in frequency.
+    var autoFftSize = 4096 {
+        didSet { if config.spectrumFftSize == 0 { syncPipeline() } }
+    }
+
+    /// 0 in the setting means auto; anything else is the size the user pinned.
     var fftSize: Int {
-        get { config.spectrumFftSize }
+        get { config.spectrumFftSize > 0 ? config.spectrumFftSize : autoFftSize }
         set {
             guard newValue != config.spectrumFftSize else { return }
             config.spectrumFftSize = newValue
             config.save()
-            auxQueue.async { self.fft = FFTPipeline(newValue) }
+            syncPipeline()
         }
+    }
+
+    /// One place decides what the transform's size actually is, so the auto
+    /// path and the pinned path cannot disagree about it.
+    private var pipelineSize = 0
+    private func syncPipeline() {
+        let want = fftSize
+        guard want != pipelineSize else { return }
+        pipelineSize = want
+        auxQueue.async { self.fft = FFTPipeline(want) }
     }
     /// Restarted on a change, or the new rate would not arrive until the next
     /// connection: the timer's period is read when it is scheduled. That is
@@ -310,7 +333,8 @@ final class LocalRadio {
         // The error is NOT cleared here. Each retry used to blank it, so a
         // receiver that had been failing for an hour showed nothing at all
         // between attempts. It clears when a connection actually succeeds.
-        auxQueue.async { self.fft = FFTPipeline(self.fftSize) }
+        pipelineSize = 0
+        syncPipeline()
 
         client.onDeviceInfo = { [weak self] info in self?.start(with: info) }
         client.onIQ = { [weak self] pkt in self?.absorb(pkt) }

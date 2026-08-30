@@ -879,7 +879,7 @@ final class RadioViewController: UIViewController {
         let target = presets.first { $0.freq >= b.lo && $0.freq <= b.hi }
         radio.mode = target?.mode ?? b.mode
         radio.config.mode = radio.mode
-        radio.setFrequency(UInt32(target?.freq ?? b.lo))
+        radio.setFrequency(UInt32(target?.freq ?? b.lo), recenter: true)
         radio.config.frequencyHz = Double(radio.frequency)
         radio.config.save()
         refresh()
@@ -1422,7 +1422,10 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
         // silence, not a station.
         radio.mode = p.mode
         radio.config.mode = p.mode
-        radio.setFrequency(UInt32(p.freq))
+        // The window comes along: choosing a station is not aiming inside the
+        // one on screen, and a spectrum left where the last pan put it is a
+        // display that has stopped following the receiver.
+        radio.setFrequency(UInt32(p.freq), recenter: true)
         radio.config.frequencyHz = p.freq
         radio.config.save()
         refresh()

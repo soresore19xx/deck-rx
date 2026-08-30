@@ -516,6 +516,46 @@ check("one outside it moves the device",
 check("the edge itself counts as inside",
       LocalRadio.vfoOffset(target: 1_321_000, center: 1_134_000, maxOffset: 187_000) == 187_000)
 
+section("frame smoothing actually smooths")
+// smoothingFactor is an EWMA across frames with alpha = 1 / factor. At 60 the
+// display should barely move in one frame — if a loud frame followed by a quiet
+// one comes back quiet, the factor is being ignored and the trace jitters at
+// the full frame rate no matter what the setting says.
+func iqTone(_ n: Int, amp: Double, hz: Double, rate: Double) -> Data {
+    var d = Data(count: n * 4)
+    d.withUnsafeMutableBytes { (b: UnsafeMutableRawBufferPointer) in
+        for i in 0..<n {
+            let ph = 2 * Double.pi * hz * Double(i) / rate
+            b.storeBytes(of: Int16((cos(ph) * amp).rounded()).littleEndian, toByteOffset: i * 4, as: Int16.self)
+            b.storeBytes(of: Int16((sin(ph) * amp).rounded()).littleEndian, toByteOffset: i * 4 + 2, as: Int16.self)
+        }
+    }
+    return d
+}
+let sm = FFTPipeline(1024)!
+let loud = iqTone(1024, amp: 12000, hz: 10_000, rate: 96_000)
+let quiet = iqTone(1024, amp: 40, hz: 10_000, rate: 96_000)
+if let a = sm.process(int16IQ: loud, smoothingFactor: 60),
+   let b = sm.process(int16IQ: quiet, smoothingFactor: 60),
+   let raw = FFTPipeline(1024)!.process(int16IQ: quiet, smoothingFactor: 1) {
+    let peak = a.firstIndex(of: a.max()!)!
+    check("a loud frame is drawn as loud", a[peak] > raw[peak] + 20,
+          "loud \(a[peak]) raw-quiet \(raw[peak])")
+    // One frame at 1/60 moves the bin a sixtieth of the way down, so it must
+    // still be nearer the loud reading than the quiet one.
+    check("the next frame barely moves it", abs(b[peak] - a[peak]) < abs(b[peak] - raw[peak]),
+          "loud \(a[peak]) smoothed \(b[peak]) raw \(raw[peak])")
+    // And with smoothing off it lands on the raw reading immediately.
+    let off = FFTPipeline(1024)!
+    _ = off.process(int16IQ: loud, smoothingFactor: 0)
+    if let c = off.process(int16IQ: quiet, smoothingFactor: 0) {
+        check("with smoothing off it follows the frame", near(Double(c[peak]), Double(raw[peak]), 0.001),
+              "off \(c[peak]) raw \(raw[peak])")
+    }
+} else {
+    check("the pipeline produced frames", false)
+}
+
 section("soft limiter")
 check("linear under the knee", near(AudioLeveling.softLimit(1000), 1000, 1e-9))
 check("never exceeds the ceiling", AudioLeveling.softLimit(1e9) <= AudioLeveling.int16Max)

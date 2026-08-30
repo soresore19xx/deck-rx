@@ -464,8 +464,15 @@ final class RadioViewController: UIViewController {
         let restBottom = controls.bottomAnchor.constraint(equalTo: g.bottomAnchor)
         restBottom.priority = UILayoutPriority(999)
         restBottom.isActive = true
-        controls.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor,
-                                         constant: -S(8)).isActive = true
+        // Right on the keyboard, not eight points clear of it. The clearance
+        // cost nothing while the keyboard was up and everything while it was
+        // down: with the guide sitting on the view's bottom edge, a required
+        // "eight points above it" outranks the equality that puts this block on
+        // the safe-area line, and the block was lifted by the difference — the
+        // step against the preset table, which has no such constraint and does
+        // reach the line.
+        controls.bottomAnchor.constraint(
+            lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor).isActive = true
     }
 
     /// The key's own ground. A clear step up from the panel behind it (#353840

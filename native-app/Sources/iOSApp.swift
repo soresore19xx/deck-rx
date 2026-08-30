@@ -1543,8 +1543,9 @@ final class OptionsViewController: UITableViewController {
                     get: { Double(r.fftSize) }, set: { r.fftSize = Int($0) })),
                 Row(title: "Framerate", kind: .list(values: [5, 10, 16, 24, 30, 60], unit: "fps",
                     get: { Double(r.fps) }, set: { r.fps = Int($0) })),
-                // 1 is off: the transform only averages above it.
-                Row(title: "Smoothing", kind: .list(values: [1, 2, 5, 10, 20, 24, 30, 50, 60], unit: "",
+                // 0 is off. The transform averages only above 1, so 0 and 1 do
+                // the same nothing — and a list that says 0 says which one it is.
+                Row(title: "Smoothing", kind: .list(values: [0, 2, 5, 10, 20, 24, 30, 50, 60], unit: "",
                     get: { Double(r.smoothingFactor) }, set: { r.smoothingFactor = Float($0) })),
             ]),
             Section(name: "RECEIVER", rows: [

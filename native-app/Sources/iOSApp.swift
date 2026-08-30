@@ -1300,6 +1300,13 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
             n.textColor = Pal.dim
             let m = UILabel(); m.text = modeName(p.mode); m.font = xMono(S(11)); m.textColor = Pal.faint
             n.lineBreakMode = .byTruncatingTail
+            // The mode is two or three characters and it is the row's answer to
+            // "can this receiver even hear it": it does not give up its width to
+            // a long name. The name does — that is what truncating is for — so
+            // it resists compression least of the four.
+            m.setContentCompressionResistancePriority(.required, for: .horizontal)
+            m.setContentHuggingPriority(.required, for: .horizontal)
+            n.setContentCompressionResistancePriority(.init(249), for: .horizontal)
             // Neither half of the reading gives up any of its width.
             for v in [f, u] {
                 v.setContentHuggingPriority(.required, for: .horizontal)
@@ -1527,6 +1534,13 @@ final class OptionsViewController: UITableViewController {
             // easier to read a weak carrier off, a fast one is easier to tune
             // by — and both survive a relaunch now that they are in the config.
             Section(name: "DISPLAY", rows: [
+                // The whole ladder, as the standalone Mac window offers it: this
+                // app runs its own receiver, so the transform is its own to size.
+                // 65536 is what SDR++ runs here — about 12 dB of noise floor
+                // against 4096 — and 256 is for a slow machine.
+                Row(title: "FFT size", kind: .list(values: [256, 512, 1024, 2048, 4096,
+                                                            8192, 16384, 32768, 65536], unit: "",
+                    get: { Double(r.fftSize) }, set: { r.fftSize = Int($0) })),
                 Row(title: "Framerate", kind: .list(values: [5, 10, 16, 24, 30, 60], unit: "fps",
                     get: { Double(r.fps) }, set: { r.fps = Int($0) })),
                 // 1 is off: the transform only averages above it.

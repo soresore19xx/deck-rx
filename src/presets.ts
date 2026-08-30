@@ -173,12 +173,13 @@ export async function importFromSdrpp(sdrPath = sdrConfigPath()): Promise<{ adde
     }
     for (const [bmName, bm] of Object.entries(list.bookmarks ?? {})) {
       const freq = Math.round(bm.frequency);
-      // Replace the SDR++ ASCII placeholder ("MW HBC Radio", "FM TBS"…)
-      // with the JP DB's CJK broadcaster name when one exists at that
-      // freq+band. SW / NW / unknown freqs fall through to the SDR++
-      // name unchanged.
-      const jp = lookupJpStation(freq);
-      const finalName = jp?.name ?? bmName;
+      // The bookmark's own name, as the user wrote it in SDR++. The station
+      // database names the LCD's station line and the labels on the trace —
+      // that is what a database name is for — but a preset is the user's
+      // wording for their own entry, and overwriting it with the broadcaster's
+      // official name lost the distinction they made ("MW NHK(東京)" against
+      // "MW NHK(第2)", both of which the database calls NHK).
+      const finalName = bmName;
       // Primary check: freq-keyed dedup (the actual identity of a station).
       if (existingByFreq.has(freq)) {
         skipped++;

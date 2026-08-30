@@ -394,6 +394,18 @@ final class RadioViewController: UIViewController {
         // The spectrum takes what the rest of the column leaves.
         spectrum.setContentHuggingPriority(.init(1), for: .vertical)
         spectrum.setContentCompressionResistancePriority(.init(200), for: .vertical)
+        // And on the view the column actually holds. `right` hands its spare
+        // height to whichever arranged subview hugs least, and that is `plot`,
+        // not the spectrum inside it — with everything at the default 250 the
+        // slack went into the group boxes, which grew a few points each rather
+        // than the trace growing by all of it. The groups refuse it now and the
+        // plot takes it, so the column packs down from BAND and the trace gets
+        // the rest.
+        plot.setContentHuggingPriority(.init(1), for: .vertical)
+        plot.setContentCompressionResistancePriority(.init(200), for: .vertical)
+        for v in right.arrangedSubviews where v !== plot {
+            v.setContentHuggingPriority(.required, for: .vertical)
+        }
         spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: S(220)).isActive = true
 
         let presetTitle = UILabel()

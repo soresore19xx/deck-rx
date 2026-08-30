@@ -380,11 +380,12 @@ final class RadioViewController: UIViewController {
             // the box with them, where it is the unit of what is beside it,
             // rather than under the readout where it was a number on its own.
             boxed("TUNE", row([tuneRow(), stepButton])),
-            // Two groups on one row: mute is not a seventh mode, and a box that
-            // says MODE around it would say so.
-            row([boxed("MODE", modeKeys()), boxed("AUDIO", muteButton)]),
+            boxed("MODE", modeKeys()),
+            // AUDIO at the far right of the last row of controls, where the
+            // width the server group does not use was going to waste. Mute is
+            // not a seventh mode, so it does not go in the MODE box either.
             row([boxed("SERVER", row([hostField, portField, connectButton])),
-                 optionsButton, UIView()]),
+                 optionsButton, UIView(), boxed("AUDIO", muteButton)]),
             statusLabel,
         ])
         right.axis = .vertical

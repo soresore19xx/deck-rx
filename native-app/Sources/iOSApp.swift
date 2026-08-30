@@ -92,6 +92,7 @@ final class RadioViewController: UIViewController {
     private var bandButtons: [UIButton] = []
     private var modeButtons: [UIButton] = []
     private let stepButton = UIButton(type: .system)
+    private let stereoBadge = BadgeLabel()
     private let bwLabel = UILabel()
     /// Mode and step as the menu was last built for them, so it is rebuilt when
     /// either moves and not four times a second.
@@ -329,9 +330,23 @@ final class RadioViewController: UIViewController {
         // Header as a row, the way the Mac window has it: what is tuned on the
         // left, how well it is coming in on the right. Stacked, the readout and
         // the two meters ate a third of a landscape screen between them.
+        // The pilot, when there is one to report. Outlined rather than filled,
+        // and the only red in the header — the same badge the Mac window puts
+        // beside its readout, for the same reason: stereo is a property of what
+        // is being received, not a setting, and it belongs where the frequency
+        // is rather than in a list of controls.
+        stereoBadge.text = "STEREO"
+        stereoBadge.font = xMono(S(15), .black)
+        stereoBadge.textColor = XColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
+        stereoBadge.layer.borderColor = XColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1).cgColor
+        stereoBadge.layer.borderWidth = 1.5
+        stereoBadge.layer.cornerRadius = S(4)
+        stereoBadge.isHidden = true
+        stereoBadge.setContentHuggingPriority(.required, for: .horizontal)
+        let readout = row([freqView, stereoBadge, UIView()])
         let detail = row([caption("BW"), bwLabel])
         detail.spacing = S(6)
-        let tuned = UIStackView(arrangedSubviews: [stationLabel, freqView, detail])
+        let tuned = UIStackView(arrangedSubviews: [stationLabel, readout, detail])
         tuned.axis = .vertical
         tuned.alignment = .leading
         tuned.spacing = S(2)
@@ -1135,6 +1150,10 @@ final class RadioViewController: UIViewController {
         let live = radio.isConnected
         sMeter.value = live ? max(0, min(1, (radio.rssiDbfs + 100) / 90)) : 0
         nMeter.value = live ? max(0, min(1, radio.snrDb / 60)) : 0
+        // Same condition the status feed publishes (AppServer.swift:439): a
+        // stereo mode, a locked pilot, and a live receiver.
+        let stereo = live && radio.isStereoMode && radio.stereoLocked
+        if stereoBadge.isHidden == stereo { stereoBadge.isHidden = !stereo }
         spectrum.bandwidthHz = radio.config.bandwidth(for: radio.mode)
         // The window is drawn around the device; the marker sits where the
         // demodulator is, which is not the same place once it moves inside it.
@@ -1419,6 +1438,18 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
 /// not mix — the constraint system sizes the untransformed frame and then the
 /// rotation throws it somewhere else. So the host takes the space through
 /// constraints and places the slider inside it by hand.
+/// A label with room around its text, so a border drawn on it reads as a badge
+/// rather than as a box clamped to the glyphs.
+final class BadgeLabel: UILabel {
+    private let pad = UIEdgeInsets(top: S(3), left: S(8), bottom: S(3), right: S(8))
+    override func drawText(in rect: CGRect) { super.drawText(in: rect.inset(by: pad)) }
+    override var intrinsicContentSize: CGSize {
+        let s = super.intrinsicContentSize
+        return CGSize(width: s.width + pad.left + pad.right,
+                      height: s.height + pad.top + pad.bottom)
+    }
+}
+
 final class VerticalSliderHost: UIView {
     let slider = UISlider()
     private let caption = UILabel()

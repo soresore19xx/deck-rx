@@ -732,6 +732,15 @@ native-app/build-ios.sh sim install    # simulator, no signing needed
 native-app/build-ios.sh device         # signed, installed over the network
 ```
 
+**DRM** is here too, behind the key beside Options: the same four lamps, the
+station name, the coding and the running text, with the audio going to the
+tablet's own output. It appears only when `native-app/drm/fetch.sh` has been
+run, exactly as on the Mac. The panel is a sheet and the decode carries on when
+it is dismissed — a signal takes a while to lock and the receiver stays usable
+while it does.
+
+The weather fax decoder is compiled in but has no screen yet.
+
 It compiles from the same `Sources/` tree as the Mac app. `main.swift` and
 `AppServer.swift` are the only files left out — the first is the AppKit window,
 the second is the control endpoint the plugin owns, which an iPad has nothing

@@ -463,16 +463,33 @@ between one's own machines and poor manners towards anyone else.
 
 It works on a copy — `/Applications` is never touched — re-signs with
 **Developer ID** plus the hardened runtime and a secure timestamp, submits to
-Apple, staples the ticket, and shows what Gatekeeper makes of the result. Two
-things have to exist first, and it says so plainly if they do not:
+Apple, staples the ticket, and shows what Gatekeeper makes of the result. It
+submits a zip and never a .dmg: notarytool mounts a disk image to look inside
+it, and a mount that sticks leaves the tool waiting forever with nothing in
+Apple's history to show for it.
 
-- a **Developer ID Application** certificate (Xcode > Settings > Accounts >
-  Manage Certificates > + ; Account Holder, paid membership). Apple Development
-  cannot be notarised.
-- notarytool credentials in the keychain:
-  `xcrun notarytool store-credentials <profile> --key AuthKey_X.p8 --key-id X --issuer <uuid>`.
-  An App Store Connect API key rather than an app-specific password, so no
-  password lands in a script or a shell history.
+Two things have to exist first, and it says so plainly if they do not:
+
+- a **Developer ID Application** certificate (Account Holder, paid membership).
+  Apple Development cannot be notarised. Look on the other machines before
+  making one: a team may hold five and **a Developer ID certificate cannot be
+  revoked**, so a wasted slot stays wasted. Make it through developer.apple.com
+  rather than Xcode's Manage Certificates, which issues off the old G1
+  intermediate and produces a leaf that expires when G1 does (2027-02-01)
+  however new the certificate is — upload a CSR and pick the "G2 Sub-CA
+  (Xcode 11.4.1 or later)" sub-CA explicitly.
+- notarytool credentials, either stored in the keychain
+  (`xcrun notarytool store-credentials <profile> --key AuthKey_X.p8 --key-id X --issuer <uuid>`)
+  or passed in as `NOTARY_KEY` / `NOTARY_KEY_ID` / `NOTARY_ISSUER`, which is
+  what works over ssh where a keychain profile cannot be read. An App Store
+  Connect team API key rather than an app-specific password: it does not expire
+  and no password lands in a script or a shell history.
+
+**Signing has to happen in the desktop session.** Over ssh `codesign` cannot
+reach the login keychain and fails with `errSecInternalComponent`, whichever
+machine holds the certificate; the script says so when it happens. An ssh caller
+can still start it there without a password — `open -a Terminal <wrapper>.command`
+runs in the logged-in session.
 
 It also does two things on its own initiative, both deliberate:
 
@@ -483,6 +500,12 @@ It also does two things on its own initiative, both deliberate:
 - **It drops the bundled `presets.json`.** Shipping one machine's station list
   is right for a second Mac of the same owner and wrong for a stranger, who
   should start empty rather than with someone else's listening.
+
+One thing it cannot soften: a Developer ID signature carries the certificate
+holder's name, which for an individual membership is a real one. `codesign -dvv`
+on the result shows it, and so does the recipient's Gatekeeper dialogue. That is
+how the mechanism works — worth deciding on before publishing a build rather
+than after.
 
 ### Why it exists
 

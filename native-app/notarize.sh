@@ -57,32 +57,58 @@ SIGN_ID=$(security find-identity -v -p codesigning 2>/dev/null \
           | awk '/Developer ID Application/ {print $2; exit}')
 if [ -z "$SIGN_ID" ]; then
   cat <<'NOCERT'
-ERROR: no "Developer ID Application" certificate in the keychain.
+ERROR: no "Developer ID Application" certificate in this keychain.
 
-Only the team's Account Holder can make one, and only from a paid membership:
-  Xcode > Settings > Accounts > (your Apple ID) > Manage Certificates...
-  > + > Developer ID Application
-It lands in the login keychain by itself. (Or developer.apple.com >
-Certificates > + > Developer ID Application, with a CSR from Keychain Access.)
+Check the other machines before making one. A team may hold at most five, and
+a Developer ID certificate CANNOT BE REVOKED from the portal — a wasted slot
+stays wasted.
+
+If one has to be made, do it through developer.apple.com and not through
+Xcode's Manage Certificates: Xcode issues off the old G1 intermediate, whose
+leaf expires when G1 does (2027-02-01) however new the certificate is. Upload
+a CSR from Keychain Access and choose the "G2 Sub-CA (Xcode 11.4.1 or later)"
+sub-CA explicitly; that gives the full term.
 
 Apple Development certificates cannot be used here and cannot be notarised.
 NOCERT
   exit 1
 fi
 
-# --- the credentials ------------------------------------------------------
-if ! xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
-  cat <<CREDS
-ERROR: no notarytool credentials stored under "$PROFILE".
+# A Developer ID signature carries the certificate's subject, which is a real
+# person's name for an individual membership: `codesign -dvv` on anything this
+# script produces shows it, and so does the recipient's Gatekeeper dialogue.
+# That is inherent to the mechanism, not something the script can hide.
+echo "note: the signature will carry the certificate holder's name in the clear"
 
-Store them once; they go into the keychain, not into this script:
+# --- the credentials ------------------------------------------------------
+# Two ways in, because the keychain is not always reachable. An App Store
+# Connect API key can be passed straight in, which is what works over ssh where
+# a keychain profile cannot be read; a stored profile is tidier when running
+# locally. Neither puts a secret in this file.
+NOTARY_ARGS=()
+if [ -n "${NOTARY_KEY:-}" ]; then
+  [ -f "$NOTARY_KEY" ] || { echo "ERROR: NOTARY_KEY=$NOTARY_KEY not found"; exit 1; }
+  : "${NOTARY_KEY_ID:?set NOTARY_KEY_ID alongside NOTARY_KEY}"
+  : "${NOTARY_ISSUER:?set NOTARY_ISSUER alongside NOTARY_KEY}"
+  NOTARY_ARGS=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+elif xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
+  NOTARY_ARGS=(--keychain-profile "$PROFILE")
+else
+  cat <<CREDS
+ERROR: no notarytool credentials.
+
+Either point at an App Store Connect API key:
+
+  NOTARY_KEY=/path/AuthKey_XXXXXXXX.p8 NOTARY_KEY_ID=XXXXXXXX \\
+  NOTARY_ISSUER=<issuer-uuid> ./notarize.sh ...
+
+or store one in the keychain once and let the default profile find it:
 
   xcrun notarytool store-credentials "$PROFILE" \\
-    --key /path/to/AuthKey_XXXXXXXX.p8 --key-id XXXXXXXX --issuer <issuer-uuid>
+    --key /path/AuthKey_XXXXXXXX.p8 --key-id XXXXXXXX --issuer <issuer-uuid>
 
-The App Store Connect API key (Users and Access > Integrations > App Store
-Connect API) is the better half of the choice: an app-specific password would
-work too, but this leaves no password anywhere. Keep the .p8 outside the repo.
+A team API key (Users and Access > Integrations > App Store Connect API) does
+not expire and leaves no password anywhere. Keep the .p8 outside the repo.
 CREDS
   exit 1
 fi
@@ -107,17 +133,36 @@ fi
 # tool and Apple says so — sign nested code first, then the bundle. There is
 # none here, so the bundle is the whole job.
 echo "==> signing with Developer ID"
-codesign --force --timestamp --options runtime \
-         --sign "$SIGN_ID" "$APP" \
-  || { echo "ERROR: codesign failed"; exit 1; }
+SIGN_LOG="$OUT/codesign.log"
+if ! codesign --force --timestamp --options runtime \
+              --sign "$SIGN_ID" "$APP" 2>"$SIGN_LOG"; then
+  cat "$SIGN_LOG"
+  if grep -q "errSecInternalComponent" "$SIGN_LOG"; then
+    cat <<'SESSION'
+
+That error means the signing key was not reachable, not that anything is wrong
+with it: over ssh, codesign cannot get at the login keychain, whichever machine
+holds the certificate. Run this from a window in the desktop session instead.
+An ssh caller can still start it there without a password:
+
+  open -a Terminal /path/to/a/wrapper.command
+
+SESSION
+  fi
+  echo "ERROR: codesign failed"; exit 1
+fi
+rm -f "$SIGN_LOG"
 codesign --verify --strict --verbose=2 "$APP" 2>&1 | tail -2
 
 # --- notarise --------------------------------------------------------------
+# A zip, never a .dmg: notarytool mounts a disk image to look inside it, and a
+# mount that gets stuck leaves the tool waiting forever with nothing in Apple s
+# history to show for it.
 ZIP="$OUT/${NAME%.app}.zip"
 ditto -c -k --keepParent "$APP" "$ZIP" || exit 1
 echo "==> submitting to Apple (this takes a few minutes)"
-xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait \
-  || { echo "ERROR: notarisation failed - 'xcrun notarytool log <id> --keychain-profile $PROFILE' says why"; exit 1; }
+xcrun notarytool submit "$ZIP" "${NOTARY_ARGS[@]}" --wait \
+  || { echo "ERROR: notarisation failed - notarytool log <id> says why"; exit 1; }
 
 echo "==> stapling"
 xcrun stapler staple "$APP" || { echo "ERROR: stapling failed"; exit 1; }

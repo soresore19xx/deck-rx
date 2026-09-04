@@ -126,8 +126,18 @@ PLIST
     fi
   done
 
-  if codesign --force --deep -s - "$APP" 2>/dev/null; then
-    echo "ad-hoc signature OK"
+  # Do NOT ad-hoc sign (-s -). TCC identifies ad-hoc code by its cdhash, so
+  # every rebuild looks like a different app and the Local Network permission
+  # this app needs to reach the SpyServer is asked for again. Signed with a
+  # stable identity it is keyed on bundle ID + team, and the grant survives.
+  # Same fix as clip-search's native-gui/build-app.sh. The certificate name is
+  # never written down here: it contains a real name, so pull it from security.
+  SIGN_ID=$(security find-identity -v -p codesigning 2>/dev/null \
+            | awk '/Developer ID Application|Apple Development/ {print $2; exit}')
+  if [ -n "$SIGN_ID" ] && codesign --force --deep -s "$SIGN_ID" "$APP" 2>/dev/null; then
+    echo "signature OK (stable identity - no re-prompt after a rebuild)"
+  elif codesign --force --deep -s - "$APP" 2>/dev/null; then
+    echo "WARN: ad-hoc signature (no certificate) -> permission asked again every build"
   else
     rm -rf "$APP/Contents/_CodeSignature"
     echo "signing failed -> runs unsigned, locally"
@@ -158,7 +168,25 @@ SHARED="Sources/main.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
 RECEIVER="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
           Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
           Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
-          Sources/StationLabel.swift Sources/PresetStore.swift"
+          Sources/StationLabel.swift Sources/PresetStore.swift \
+          Sources/WefaxDecode.swift Sources/WefaxWindow.swift"
+
+# --- DRM (shortwave digital radio), built only when the core is present ---
+# The decoder is not in this repository; drm/fetch.sh downloads and patches it.
+# So it may simply not be here, and that must not be an error: with it the Solo
+# bundle gets a DRM window, without it the app is exactly what it was.
+# Point DRM_CORE_DIR somewhere else to use another copy.
+DRM_CORE_DIR="${DRM_CORE_DIR:-$HERE/drm/build/drm-core}"
+DRM_FDK_DIR="${DRM_FDK_DIR:-$HERE/drm/build/fdk/out}"
+DRM_FLAGS=""
+if [ -f "$DRM_CORE_DIR/out/macos/libdrmcore.a" ] && [ -f "$DRM_FDK_DIR/macos/libfdk-aac.a" ]; then
+  RECEIVER="$RECEIVER Sources/DrmDecode.swift Sources/DrmWindow.swift"
+  DRM_FLAGS="-D DRM_ENABLED -import-objc-header $DRM_CORE_DIR/drm_bridge.h -L$DRM_CORE_DIR/out/macos -ldrmcore -L$DRM_FDK_DIR/macos -lfdk-aac -lc++"
+  echo "DRM: linking $DRM_CORE_DIR/out/macos/libdrmcore.a"
+else
+  echo "DRM: core not built - Solo will have no DRM window"
+  echo "     (run drm/fetch.sh to add it)"
+fi
 
 if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "front" ]; then
   SRC_FILES="$SHARED"
@@ -167,6 +195,6 @@ if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "front" ]; then
 fi
 if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "solo" ]; then
   SRC_FILES="$SHARED $RECEIVER"
-  build_variant "/Applications/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE" \
+  build_variant "/Applications/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE $DRM_FLAGS" \
                 "deck-rx-solo" || exit 1
 fi

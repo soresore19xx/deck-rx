@@ -1,0 +1,1574 @@
+--- a/data/aac-processor-fdk.cpp
++++ b/data/aac-processor-fdk.cpp
+@@ -21,6 +21,7 @@
+  *    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  */
+ #include        <stdio.h>
++#include	<string>
+ #include        <float.h>
+ #include        <math.h>
+ #include        "basics.h"
+@@ -60,12 +61,6 @@
+ #else
+ 	this	-> handle	= aacDecoder_Open (TT_DRM, 2);
+ #endif
+-	connect (this, SIGNAL (faadSuccess (bool)),
+-	         drmMaster, SLOT (set_faadSyncLabel (bool)));
+-	connect (this, SIGNAL (aacData (const QString &)),
+-	         drm, SLOT (set_aacDataLabel (const QString &)));
+-	connect (this, SIGNAL (audioAvailable ()),
+-	         drm, SLOT (audioAvailable ()));
+ 	currentRate	= 0;
+ 	theConverter	= nullptr;
+ }
+@@ -181,7 +176,7 @@
+ 	   f [i - 1]. length = f [i]. startPos - f [i - 1]. startPos;
+ 	   if (f [i - 1]. length < 0 ||
+ 	       f [i - 1]. length >= lengthLow) {
+-	      faadSuccess (false);
++	      drmMaster -> set_faadSyncLabel (false);
+ 	      return;
+ 	   }
+ 	   payLoad_length += f [i - 1]. length;
+@@ -191,7 +186,7 @@
+ 	                            (headerLength + numFrames) -
+ 	                            payLoad_length;
+ 	if (f [numFrames - 1]. length < 0) {
+-	   faadSuccess (false);
++	   drmMaster -> set_faadSyncLabel (false);
+ 	   return;
+ 	}
+ //
+@@ -225,15 +220,15 @@
+ std::vector<uint8_t> audioDescriptor =
+ 	        getAudioInformation (theState, mscIndex);
+ 
+-QString text;
++std::string text;
+ 
+ 	int aacRate	= audioSamplingRate == 01 ? 12000 : 24000;
+-	text = QString::number (aacRate) + " ";
++	text = std::to_string (aacRate) + " ";
+ 	if (audioMode == 0)
+ 	   text = text + "mono";
+ 	else
+ 	   text = text + "stereo";
+-	aacData (text);
++	drmMaster -> set_aacDataLabel (text);
+ 
+ 	reinit (audioDescriptor, mscIndex);
+ 	for (i = 0; i < numFrames; i ++) {
+@@ -253,11 +248,11 @@
+ 	                            outBuffer,
+ 	                            &cnt, &rate);
+ 	   if (convOK) {
+-	      faadSuccess (true);
++	      drmMaster -> set_faadSyncLabel (true);
+ 	      writeOut (outBuffer, cnt, rate);
+ 	   }
+ 	   else
+-	      faadSuccess (false);
++	      drmMaster -> set_faadSyncLabel (false);
+ 	}
+ }
+ 
+@@ -267,7 +262,7 @@
+ 	
+ 	audioOut        -> putDataIntoBuffer (b, cnt);
+ 	if (audioOut -> GetRingBufferReadAvailable () > 4800)
+-	   audioAvailable ();
++	   drmMaster -> audioAvailable ();
+ }
+ 
+ void	aacProcessor_fdk::writeOut (int16_t *buffer, int16_t cnt,
+--- a/data/aac-processor-fdk.h
++++ b/data/aac-processor-fdk.h
+@@ -24,7 +24,6 @@
+ #ifndef	__AAC_PROCESSOR_FDK__
+ #define	__AAC_PROCESSOR_FDK__
+ 
+-#include	<QObject>
+ #include	<fdk-aac/aacdecoder_lib.h>
+ #include	<stdio.h>
+ #include	<stdint.h>
+@@ -47,8 +46,7 @@
+ 	uint8_t audio [512];
+ } audioFrame; 
+ 
+-class	aacProcessor_fdk: public QObject {
+-Q_OBJECT
++class	aacProcessor_fdk {
+ public:
+ 		aacProcessor_fdk   (stateDescriptor *,
+ 	                            drmDecoder *,
+@@ -104,10 +102,6 @@
+ 	std::vector<uint8_t>    currentConfig;
+ 	std::vector<uint8_t>
+ 	                getAudioInformation (stateDescriptor *, int);
+-signals:
+-	void		audioAvailable	();
+-	void            faadSuccess     (bool);
+-	void		aacData		(QString);
+ };
+ #endif
+ 
+--- a/data/data-processor.cpp
++++ b/data/data-processor.cpp
+@@ -22,6 +22,7 @@
+  */
+ #
+ #include	<stdio.h>
++#include	<string>
+ #include	<float.h>
+ #include	<math.h>
+ #include	"basics.h"
+@@ -61,9 +62,7 @@
+ 	this	-> theState		= theState;
+ 	this	-> m_form		= m_form;
+ 	this	-> audioChannel		= 1;
+-	connect (this, SIGNAL (set_audioModeLabel (const QString &)),
+-	         m_form, SLOT (set_audioModeLabel (const QString &)));
+-	set_audioModeLabel (" ");
++	m_form -> set_audioModeLabel (" ");
+ }
+ 
+ 	dataProcessor::~dataProcessor	(void) {
+@@ -108,7 +107,7 @@
+ //	fprintf (stderr, "mscIndex %d, startHigh %d, startLow %d, lengthH %d, length Low %d\n", mscIndex, startHigh, startLow, lengthHigh, lengthLow);
+ 	switch (audioCoding) { 
+ 	   case 0:		// AAC
+-	      set_audioModeLabel ("AAC");
++	      m_form -> set_audioModeLabel ("AAC");
+ 	      my_aacProcessor. process_aac (v, mscIndex,
+ 	                                    startHigh, lengthHigh,
+ 	                                    startLow,  lengthLow);
+@@ -121,7 +120,7 @@
+ 	      return;
+ 
+ 	   default:
+-              set_audioModeLabel (QString ("xHE-AAC"));
++              m_form -> set_audioModeLabel (std::string ("xHE-AAC"));
+ #ifdef  __WITH_FDK_AAC__
+               my_xheaacProcessor. process_usac (v, mscIndex,
+                                                 startHigh, lengthHigh,
+--- a/data/data-processor.h
++++ b/data/data-processor.h
+@@ -24,7 +24,6 @@
+ #ifndef	__DATA_PROCESSOR__
+ #define	__DATA_PROCESSOR__
+ 
+-#include	<QObject>
+ #include	<cstring>
+ #include	"ringbuffer.h"
+ #ifdef  __WITH_FDK_AAC__
+@@ -40,8 +39,7 @@
+ class	stateDescriptor;
+ class	drmDecoder;
+ 
+-class	dataProcessor: public QObject {
+-Q_OBJECT
++class	dataProcessor {
+ public:
+ 		dataProcessor	(stateDescriptor *,
+ 	                         drmDecoder *,
+@@ -68,9 +66,6 @@
+ 	int		audioChannel;
+ 	void	process_audio		(uint8_t *, int16_t,
+ 	                         	int16_t, int16_t, int16_t, int16_t);
+-signals:
+-	void		set_audioModeLabel (const QString &);
+-	void		audioAvailable	();
+ };
+ #endif
+ 
+--- a/data/message-processor.cpp
++++ b/data/message-processor.cpp
+@@ -22,6 +22,7 @@
+  */
+ #
+ #include	<cstring>
++#include	<string>
+ //#include	"drm-aacdecoder.h"
+ #include	"message-processor.h"
+ #include	"drm-decoder.h"
+@@ -37,8 +38,6 @@
+ 	messageProcessor::messageProcessor	(drmDecoder *m_form) {
+ 	this	-> m_form	= m_form;
+ 	messageState		= M_IDLE;
+-	connect (this, SIGNAL (set_messageLabel (const QString &)),
+-	         m_form, SLOT (set_messageLabel (const QString &)));
+ }
+ 
+ 	messageProcessor::~messageProcessor	() {
+@@ -120,7 +119,7 @@
+ 	    myMessage. push_back (char (v [2 + i]));
+ 	if (lastFlag != 0)
+ 	   myMessage. append ("<<<");
+-	set_messageLabel (QString::fromStdString (myMessage));
++	m_form -> set_messageLabel (std::string (myMessage));
+ }
+ 
+ static
+--- a/data/message-processor.h
++++ b/data/message-processor.h
+@@ -24,7 +24,6 @@
+ #ifndef	__MESSAGE_PROCESSOR__
+ #define	__MESSAGE_PROCESSOR__
+ 
+-#include	<QObject>
+ #include	<stdint.h>
+ #include	<cstring>
+ #include	"basics.h"
+@@ -32,8 +31,7 @@
+ class	drmDecoder;
+ class	DRM_aacDecoder;
+ 
+-class	messageProcessor: public QObject {
+-Q_OBJECT
++class	messageProcessor {
+ public:
+ 		messageProcessor	(drmDecoder *);
+ 		~messageProcessor	();
+@@ -48,8 +46,6 @@
+ 	int16_t		byteTeller;
+ 	uint8_t 	theMessage [24];
+ 	std::string	myMessage;
+-signals:
+-	void		set_messageLabel (const QString &);
+ };
+ 
+ #endif
+--- a/data/xheaac-processor.cpp
++++ b/data/xheaac-processor.cpp
+@@ -22,10 +22,11 @@
+  */
+ 
+ #include	"xheaac-processor.h"
++#include	<string>
+ #include	"basics.h"
+ #include	"drm-decoder.h"
+ #include	"state-descriptor.h"
+-#include	"rate-converter.h"
++#include	"drm-converter.h"
+ //#include	"up-converter.h"
+ #include	<deque>
+ #include	<vector>
+@@ -99,12 +100,6 @@
+ 	this	-> handle	= aacDecoder_Open (TT_DRM, 3);
+ 	fprintf (stderr, "handle = %X\n", this -> handle);
+ #endif
+-	connect (this, SIGNAL (faadSuccess (bool)),
+-	         parent, SLOT (set_faadSyncLabel (bool)));
+-	connect (this, SIGNAL (audioAvailable ()),
+-                 drm, SLOT (audioAvailable ()));
+-	connect (this, SIGNAL (set_aacDataLabel (const QString &)),
+-                 drm, SLOT (set_aacDataLabel (const QString &)));
+ 
+ 
+ 	currentRate			= 0;
+@@ -145,7 +140,7 @@
+ 	(void)numChannels;
+ 	if (!theCRC. doCRC (v, 16) || (frameBorderCount == 0)) {
+ //	   fprintf (stderr, "crc error or (%d = 0)", frameBorderCount);
+-	   faadSuccess (false);
++	   parent -> set_faadSyncLabel (false);
+ 	   return;
+ 	}
+ 
+@@ -171,7 +166,7 @@
+ 	                    get_MSCBits (v, 8 * length - 16 - 16 * i + 12, 4);
+ 
+ 	   if (frameBorderCountRepeat != frameBorderCount) {
+-	      faadSuccess (false);
++	      parent -> set_faadSyncLabel (false);
+ 	      return;
+ 	   }
+ 	   borders [i] = frameBorderIndex;
+@@ -179,7 +174,7 @@
+ 
+ 	for (int i = 0; i < frameBorderCount - 1; i ++)
+ 	   if (borders [i] >= borders [i + 1]) {
+-	      faadSuccess (false);
++	      parent -> set_faadSyncLabel (false);
+ //	      fprintf (stderr, "Fout-2\n");
+ 	      return;
+ 	   }
+@@ -188,7 +183,7 @@
+ 
+ 	uint32_t directoryOffset = length - 2 * frameBorderCount - 2;
+ 	if (borders [frameBorderCount - 1] >= directoryOffset) {
+-	   faadSuccess (false);
++	   parent -> set_faadSyncLabel (false);
+ //	   fprintf (stderr, "fout 3\n");
+ 	   return;
+ 	}
+@@ -293,7 +288,7 @@
+ 	}
+ 
+ 	if (good + fout >= 10) {
+-	   faadSuccess (good > fout);
++	   parent -> set_faadSyncLabel (good > fout);
+ //	   fprintf (stderr, "%d out of %d were good\n", good, good + fout);
+ 	   good = 0; fout = 0;
+ 	}
+@@ -304,30 +299,36 @@
+            return;
+ 	audioOut        -> putDataIntoBuffer (b, cnt);
+         if (audioOut -> GetRingBufferReadAvailable () > 4800)
+-           audioAvailable ();
++           parent -> audioAvailable ();
+ }
+ //
+ //	valid samplerates for xHE-AAC are
+ //	9.6, 12, 16, 19,2 24, 32, 38,4 and 48 KHz
+ //	translation factors are
+ //	5, 4, 3, 5 / 2, 2, 3 / 2, 5/4
++//	This used to build a rateConverter, whose only job was to call
++//	libsamplerate in SRC_LINEAR mode. drmConverter — which the AAC path
++//	already uses — carries its own filters and covers exactly the rate list
++//	xHE-AAC can produce (9600 .. 48000), so it replaces it one for one and
++//	libsamplerate leaves the decoder altogether. That matters for iOS, where
++//	a dylib from MacPorts is not an option.
+ void	xheaacProcessor::writeOut (int16_t *buffer, int16_t cnt,
+ 	                           int32_t pcmRate) {
+ 	if (theConverter == nullptr) {
+-	   theConverter = new rateConverter (pcmRate, 48000, pcmRate / 10);
++	   theConverter = new drmConverter (pcmRate, 48000, pcmRate / 10);
+ 	   currentRate	= pcmRate;
+ 	}
+ 
+ 	if (pcmRate != currentRate) {
+ 	   delete theConverter;
+-	   theConverter = new rateConverter (pcmRate, 48000, pcmRate / 10);
++	   theConverter = new drmConverter (pcmRate, 48000, pcmRate / 10);
+ 	   currentRate = pcmRate;
+ 	}
+ #if 0
+ 	fprintf (stderr, "processing %d samples (rate %d)\n",
+ 	                  cnt, pcmRate);
+ #endif
+-	std::complex<float> local [theConverter -> getOutputsize () + 10];
++	std::complex<float> local [theConverter -> getOutputSize () + 10];
+ 	for (int i = 0; i < cnt; i ++) {
+ 	   std::complex<float> tmp = 
+ 	                    std::complex<float> (buffer [2 * i] / (4 * 8192.0),
+@@ -428,7 +429,7 @@
+ 	if (errorStatus == AAC_DEC_NOT_ENOUGH_BITS) {
+ 	   *conversionOK	= false;
+ 	   *samples		= 0;
+-	   faadSuccess (false);
++	   parent -> set_faadSyncLabel (false);
+ 	   return;
+ 	}
+ 
+@@ -436,7 +437,7 @@
+ //	if ((errorStatus != AAC_DEC_OK) && (errorStatus & 0x4000 == 0)) {
+ 	   *conversionOK	= false;
+ 	   *samples		= 0;
+-	   faadSuccess (false);
++	   parent -> set_faadSyncLabel (false);
+ 	   return;
+ 	}
+ 
+@@ -461,9 +462,9 @@
+ 	   }
+ 	}
+ 
+-	QString text = QString::number (fdk_info -> sampleRate);
++	std::string text = std::to_string (fdk_info -> sampleRate);
+ 	text += fdk_info -> numChannels == 2 ? " stereo" : " mono";
+-	set_aacDataLabel (text);
++	parent -> set_aacDataLabel (text);
+ 	
+ #if 0
+ 	fprintf (stderr, "frameSize %d, samplerate %d\n",
+--- a/data/xheaac-processor.h
++++ b/data/xheaac-processor.h
+@@ -24,7 +24,6 @@
+ #ifndef	__XHEAAC_PROCESSOR__
+ #define	__XHEAAC_PROCESSOR__
+ 
+-#include        <QObject>
+ #include	<fdk-aac/aacdecoder_lib.h>
+ #include	<stdint.h>
+ #include        <cstring>
+@@ -40,11 +39,10 @@
+ 
+ class	drmDecoder;
+ //class	drmConverter;
+-class	rateConverter;
++class	drmConverter;
+ class	stateDescriptor;
+ 
+-class	xheaacProcessor: public QObject {
+-Q_OBJECT
++class	xheaacProcessor {
+ public:
+ 			xheaacProcessor	(stateDescriptor *,
+ 	                                 drmDecoder *,
+@@ -70,7 +68,7 @@
+ 	std::vector<uint8_t>	frameBuffer;
+ 	std::vector<uint32_t> borders;
+ //	drmConverter	*theConverter;
+-	rateConverter	*theConverter;
++	drmConverter	*theConverter;
+ 	int		numFrames;
+ 	void		writeOut	(int16_t *, int16_t, int32_t);
+ 	void		toOutput	(std::complex<float> *, int16_t);
+@@ -99,11 +97,6 @@
+         UCHAR           *theBuffer;
+         uint32_t        bufferP;
+         std::vector<uint8_t>    currentConfig;
+-signals:
+-	void		audioAvailable	();;
+-	void            faadSuccess     (bool);
+-	void		set_aacDataLabel	(const QString &);
+-
+ };
+ 
+ #endif
+--- a/drm-decoder.cpp
++++ b/drm-decoder.cpp
+@@ -1,5 +1,6 @@
+ 
+ #include	<vector>
++#include	<string>
+ #include	<chrono>
+ 
+ #include	"drm-decoder.h"
+@@ -19,16 +20,12 @@
+ #include	"fac-processor.h"
+ #include	"fac-tables.h"
+ #include	"sdc-processor.h"
+-#include	"eqdisplay.h"
+-#include	"iqdisplay.h"
+ 
+ #define  _USE_MATH_DEFINES
+ #include	<math.h>
+ 
+-	drmDecoder::drmDecoder (RadioInterface *theRadio,
+-	                        QSettings *s,
++	drmDecoder::drmDecoder (const drmUI &ui,
+ 	                        RingBuffer<std::complex<float>> *audioBuffer):
+-	                                 myFrame (nullptr),
+ 	                                 m_worker (nullptr),
+ 	                                 inputBuffer  (16 * 32768),
+ 	                                 iqBuffer (32768),
+@@ -49,14 +46,8 @@
+ 	                                                       audioBuffer,
+ 	                                                       &iqBuffer),
+ 	                                theState (1, 3) {
+-	this	-> theRadio	= theRadio;
+-	drmSettings		= s;
+-	setupUi (&myFrame);
+-	my_eqDisplay            = new EQDisplay (equalizerDisplay);
+-	my_iqDisplay            = new IQDisplay (iqPlotter, 512);
+-
++	theUI			= ui;
+ 	scopeMode		= SHOW_PILOTS;
+-	myFrame. show ();
+ 	running. store (false);
+ 
+ 	drmError		= false;
+@@ -64,30 +55,6 @@
+ 	modeInf. Mode		= 2;
+ 	modeInf. Spectrum	= 3;
+ 
+-//	connect (strengthSelector, SIGNAL (valueChanged (int)),
+-//	         this, SLOT (handle_strengthSelector (int)));
+-//	connect (f_cutSelector, SIGNAL (valueChanged (int)),
+-//	         this, SLOT (handle_f_cutSelector (int)));
+-	connect (modeSelector, SIGNAL (textActivated (const QString &)),
+-                 this, SLOT (handle_modeSelector (const QString &)));
+-
+-	connect (this, SIGNAL (setTimeSync (bool)),
+-                 this, SLOT (executeTimeSync (bool)));
+-        connect (this, SIGNAL (setFACSync (bool)),
+-                 this, SLOT (executeFACSync (bool)));
+-        connect (this, SIGNAL (setSDCSync (bool)),
+-                 this, SLOT (executeSDCSync (bool)));
+-        connect (this, SIGNAL (show_Mode (int)),
+-                 this, SLOT (execute_showMode (int)));
+-        connect (this, SIGNAL(show_Spectrum (int)),
+-                 this, SLOT (execute_showSpectrum (int)));
+-	connect (channel_1, SIGNAL (clicked ()),
+-                 this, SLOT (select_channel_1 ()));
+-        connect (channel_2, SIGNAL (clicked ()),
+-                 this, SLOT (select_channel_2 ()));
+-
+-	connect (resetButton, SIGNAL (clicked ()),
+-	         this, SLOT (handle_reset ()));
+ 	m_worker	=
+ 	       new std::thread (&drmDecoder::WorkerFunction, this);
+ }
+@@ -98,8 +65,6 @@
+ 	m_worker        -> join ();
+ 	delete m_worker;
+ 	m_worker = nullptr;
+-	delete	my_eqDisplay;
+-	delete	my_iqDisplay;
+ }
+ //
+ //	Called by the underlying system
+@@ -130,9 +95,9 @@
+ 	      if (!running. load ())
+ 	         throw (21);
+ 	      counter++;
+-	      emit setTimeSync (false);
+-	      emit setFACSync (false);
+-	      emit setSDCSync (false);
++	      setTimeSync (false);
++	      setFACSync (false);
++	      setSDCSync (false);
+ 	      theState. cleanUp ();
+ 	      my_Reader. waitfor (Ts_of (Mode_A));
+ 	  
+@@ -261,7 +226,7 @@
+ 	         throw (33);
+ 	      if (modeInf. Spectrum != getSpectrum (&theState))
+ 	         throw (34);
+-	      emit setFACSync (true);
++	      setFACSync (true);
+ 		
+ //
+ //	prepare for sdc processing
+@@ -285,7 +250,7 @@
+ //	The first frame of a superframe has an SDC part
+ 	         if (isFirstFrame (&theState)) {
+ 	            bool sdcOK = my_sdcProcessor. processSDC (&outbank);
+-	            emit setSDCSync (sdcOK);
++	            setSDCSync (sdcOK);
+ 	            if (sdcOK) {
+ 	               blockCount	= 0;
+ 	            }
+@@ -332,12 +297,12 @@
+ 	         bool success  = my_facProcessor.
+ 	                          processFAC (&outbank, &theState);
+ 	         if (success) {
+-	            emit setFACSync	(true);
++	            setFACSync	(true);
+ 	            missers = 0;
+ 	         }
+ 	         else {
+-	            emit setFACSync	(false);
+-	            emit setSDCSync	(false);
++	            setFACSync	(false);
++	            setSDCSync	(false);
+ 	            superframer		= false;
+ 	            if (missers++ < 2)
+ 	               continue;
+@@ -533,171 +498,156 @@
+ 	}
+ }
+ 
++//	Everything below used to paint a widget. Now each one hands its value
++//	to the drmUI callbacks the embedder supplied. A callback left empty is
++//	simply not called, so an embedder pays for only what it asks for.
++
+ void	drmDecoder::executeTimeSync	(bool f) {
+-	if (f)
+-	   timeSyncLabel -> setStyleSheet ("QLabel {background-color:green}");
+-	else {
+-	   timeSyncLabel -> setStyleSheet ("QLabel {background-color:red}");
+-	   faadSyncLabel -> setStyleSheet ("QLabel {background-color:red}");
+-	}
++	if (theUI. timeSync)
++	   theUI. timeSync (f);
++	if (!f && theUI. faadSync)
++	   theUI. faadSync (false);
+ }
+ 
+ void	drmDecoder::executeFACSync	(bool f) {
+-	if (f)
+-	   facSyncLabel -> setStyleSheet ("QLabel {background-color:green}");
+-	else {
+-	   facSyncLabel -> setStyleSheet ("QLabel {background-color:red}");
+-	   faadSyncLabel -> setStyleSheet ("QLabel {background-color:red}");
+-	}
++	if (theUI. facSync)
++	   theUI. facSync (f);
++	if (!f && theUI. faadSync)
++	   theUI. faadSync (false);
+ }
+ 
+ void	drmDecoder::executeSDCSync	(bool f) {
+-	if (f)
+-	   sdcSyncLabel -> setStyleSheet ("QLabel {background-color:green}");
+-	else {
+-	   sdcSyncLabel -> setStyleSheet ("QLabel {background-color:red}");
+-	   faadSyncLabel -> setStyleSheet ("QLabel {background-color:red}");
+-	}
++	if (theUI. sdcSync)
++	   theUI. sdcSync (f);
++	if (!f && theUI. faadSync)
++	   theUI. faadSync (false);
+ }
+ 
+ void    drmDecoder::execute_showMode            (int l) {
+-        if (1 <= l && l <= 4)
+-           modeIndicator        -> setText (QString (char ('A' + (l - 1))));
++        if ((1 <= l) && (l <= 4) && theUI. mode)
++           theUI. mode (l);
+ }
+ 
+ void    drmDecoder::execute_showSpectrum        (int l) {
+-        if (0 <= l && l < 6)
+-           spectrumIndicator    -> setText (QString (char ('0' + l)));
++        if ((0 <= l) && (l < 6) && theUI. spectrum)
++           theUI. spectrum (l);
+ }
+ 
+-
+-void    drmDecoder::set_audioModeLabel	(const QString &s) {
+-        audioModelabel  -> setText (s);
++void    drmDecoder::set_audioModeLabel	(const std::string &s) {
++	if (theUI. audioMode)
++	   theUI. audioMode (s);
+ }
+ 
+ void	drmDecoder::show_fineOffset	(float f) {
+-	show_small_offset -> display (f);
++	if (theUI. fineOffset)
++	   theUI. fineOffset (f);
+ }
+ 
+ void	drmDecoder::show_coarseOffset	(float f) {
+-	show_int_offset	-> display (f);
++	if (theUI. coarseOffset)
++	   theUI. coarseOffset (f);
+ }
+ 
++//	The ratio of frames the audio decoder accepted, over the last 500, was
++//	shown in the fourth channel slot. Keep the arithmetic; it is the only
++//	measure of audio health the decoder produces.
+ void	drmDecoder::set_faadSyncLabel	(bool b) {
+ static  int     faadCounter     = 0;
+ static  int     goodfaad        = 0;
+         faadCounter ++;
++	if (theUI. faadSync)
++	   theUI. faadSync (b);
+         if (b)
+-           faadSyncLabel -> setStyleSheet ("QLabel {background-color:green}");
+-        else
+-           faadSyncLabel -> setStyleSheet ("QLabel {background-color:red}");
+-        if (b)
+            goodfaad ++;
+         if (faadCounter > 500) {
+            float ratio = goodfaad / 500.0;
+-           channel_4 -> setText (QString::number (ratio));
++	   if (theUI. channel_4)
++	      theUI. channel_4 (std::to_string (ratio));
+            goodfaad     = 0;
+            faadCounter  = 0;
+         }
+ }
+ 
+-void	drmDecoder::set_messageLabel	(const QString &s) {
+-	messageLabel	-> setText (s);
++void	drmDecoder::set_messageLabel	(const std::string &s) {
++	if (theUI. message)
++	   theUI. message (s);
+ }
+ 
+-void	drmDecoder::set_timeLabel	(const QString &s) {
+-	timeLabel	-> setText (s);
++void	drmDecoder::set_timeLabel	(const std::string &s) {
++	if (theUI. timeText)
++	   theUI. timeText (s);
+ }
+ 
+ void	drmDecoder::show_fac_mer	(float f) {
+-	fac_mer	-> display (f);;
++	if (theUI. facMer)
++	   theUI. facMer (f);
+ }
+ 
+ void	drmDecoder::show_sdc_mer	(float f) {
+-	sdc_mer -> display (f);
++	if (theUI. sdcMer)
++	   theUI. sdcMer (f);
+ }
+ 
+ void    drmDecoder::show_msc_mer        (float f) {
+-        msc_mer -> display (f);
++	if (theUI. mscMer)
++	   theUI. mscMer (f);
+ }
+ 
+-void	drmDecoder::set_aacDataLabel	(const QString &s) {
+-	aacDataLabel	-> setText (s);
++void	drmDecoder::set_aacDataLabel	(const std::string &s) {
++	if (theUI. aacData)
++	   theUI. aacData (s);
+ }
+ 
+-void	drmDecoder::set_channel_1	(const QString &s) {
+-	channel_1	-> setText (s);
+-	selectedService	-> setText (s);
++void	drmDecoder::set_channel_1	(const std::string &s) {
++	if (theUI. service)
++	   theUI. service (s);
+ }
+ 
+-void	drmDecoder::set_channel_2	(const QString &s) {
+-	channel_2	-> setText (s);
++void	drmDecoder::set_channel_2	(const std::string &s) {
++	if (theUI. channel_2)
++	   theUI. channel_2 (s);
+ }
+ 
+-void	drmDecoder::set_channel_3	(const QString &s) {
+-	channel_3	-> setText (s);
++void	drmDecoder::set_channel_3	(const std::string &s) {
++	if (theUI. channel_3)
++	   theUI. channel_3 (s);
+ }
+ 
+-void	drmDecoder::set_channel_4	(const QString &s) {
+-	channel_4	-> setText (s);
++void	drmDecoder::set_channel_4	(const std::string &s) {
++	if (theUI. channel_4)
++	   theUI. channel_4 (s);
+ }
+ 
+-void	drmDecoder::set_datacoding	(const QString &s) {
+-	datacoding	-> setText (s);
++void	drmDecoder::set_datacoding	(const std::string &s) {
++	if (theUI. datacoding)
++	   theUI. datacoding (s);
+ }
+ 
+ void	drmDecoder::audioAvailable	() {
+-	audioAvailable (0, 48000);
++	if (theUI. audioAvailable)
++	   theUI. audioAvailable ();
+ }
+ 
++//	The two scope feeds have no display to go to any more, but the buffers
++//	they read are written unconditionally by the equalizer and the backend.
++//	Draining them here is not cosmetic: leave them and they fill, and the
++//	writer starts discarding into a full ring on every symbol.
+ void    drmDecoder::show_eqsymbol       (int amount) {
+-std::complex<float> line [amount];
+-
+-	eqBuffer. getDataFromBuffer (line, amount);
+-        if (scopeMode == SHOW_PILOTS)
+-           my_eqDisplay    -> show_pilots (line, amount);
+-        else
+-	if (scopeMode == SHOW_CHANNEL)
+-           my_eqDisplay    -> show_channel (line, amount);
+-	else
+-	   my_eqDisplay	 -> show_pilots (line, amount);
++std::vector<std::complex<float>> line (amount);
++	eqBuffer. getDataFromBuffer (line. data (), amount);
+ }
+ 
+ void    drmDecoder::showIQ  (int amount) {
+-std::complex<float> Values [amount];
+-int16_t i;
+-int16_t t;
+-double  avg     = 0;
+-int     scopeWidth      = scopeSlider -> value();
+-
+-	if (iqBuffer. GetRingBufferReadAvailable () < amount)
++std::vector<std::complex<float>> values (amount);
++	if (iqBuffer. GetRingBufferReadAvailable () < (uint32_t)amount)
+ 	   return;
+-        t = iqBuffer. getDataFromBuffer (Values, amount);
+-	for (i = 0; i < t; i ++) {
+-	   float x = abs (Values [i]);
+-	   if (!std::isnan (x) && !std::isinf (x))
+-	   avg += abs (Values [i]);
+-	}
+-	avg     /= t;
+-	my_iqDisplay -> DisplayIQ (Values, scopeWidth / avg);
++        iqBuffer. getDataFromBuffer (values. data (), amount);
+ }
+ 
+-void    drmDecoder::handle_modeSelector (const QString &m) {
+-        scopeMode = m == "Pilots" ?  SHOW_PILOTS :
+-	                  m == "Channel" ? SHOW_CHANNEL : SHOW_ERROR;
+-}
+-
+-
+-void	drmDecoder::select_channel_1	() {
+-	theState. activate_channel_1 ();
+-}
+-
+-void	drmDecoder::select_channel_2	() {
+-	theState. activate_channel_2 ();
+-}
+-
+-void	drmDecoder::handle_reset	() {
+-	fprintf (stderr, "Going to signal\n");
+-	my_Reader.signal ();
+-}
+-
++//	Raised by the worker on itself; these were signals wired back to the
++//	execute... slots above.
++void	drmDecoder::setTimeSync	(bool f)	{ executeTimeSync (f); }
++void	drmDecoder::setFACSync	(bool f)	{ executeFACSync (f); }
++void	drmDecoder::setSDCSync	(bool f)	{ executeSDCSync (f); }
++void	drmDecoder::show_Mode	(int l)		{ execute_showMode (l); }
++void	drmDecoder::show_Spectrum (int l)	{ execute_showSpectrum (l); }
+--- a/drm-decoder.h
++++ b/drm-decoder.h
+@@ -22,14 +22,16 @@
+  */
+ #pragma once
+ 
+-#include	<QSettings>
+-#include	<QObject>
+-#include	<QFrame>
++//	Headless build: no QObject, no generated form, no QSettings. The
++//	reporting methods below keep the names the processors already call, so
++//	nothing downstream of this header had to be renamed; each one now just
++//	hands the value to the drmUI callbacks instead of to a widget.
++
+ #include	<thread>
+ #include	<mutex>
+ #include	<atomic>
++#include	<string>
+ #include	<stdint.h>
+-#include	"radio.h"
+ 
+ //      for the payload we have
+ #include	"ringbuffer.h"
+@@ -40,34 +42,27 @@
+ #include	"backend-controller.h"
+ #include	"state-descriptor.h"
+ #include	"my-array.h"
++#include	"drm-ui.h"
+ //	for the fdk-aac functionw we have
+ #ifdef	__WITH_FDK_AAC__
+ #ifdef	__MINGW32__
+ #include	"aac-handler.h"
+ #endif
+ #endif
+-class	EQDisplay;
+-class	IQDisplay;
+-class	QSettings;
+ 
+-#include	"ui_drmdecoder.h"
+-
+ #define         WORKING_RATE    12000
+ 
+-class drmDecoder: public QObject, private Ui_drmdecoder {
+-Q_OBJECT
++class drmDecoder {
+ public:
+-	
+-		drmDecoder (RadioInterface *,
+-	                    QSettings *,
++
++		drmDecoder (const drmUI &,
+ 	                    RingBuffer<std::complex<float>> *);
+ 	virtual ~drmDecoder ();
+         void    processBuffer	(std::complex<float> *, int length);
+         void    process		(std::complex<float>);
+ 
+ private:
+-	QFrame			myFrame;
+-	QSettings		*drmSettings;
++	drmUI			theUI;
+ 	RingBuffer<std::complex<float>> *audioOut;
+ 	std::thread		* m_worker;
+ 	RingBuffer<std::complex<float>>	inputBuffer;
+@@ -82,9 +77,6 @@
+ 	backendController	my_backendController;
+ 	stateDescriptor		theState;
+ 
+-	EQDisplay		*my_eqDisplay;
+-	IQDisplay		*my_iqDisplay;
+-	RadioInterface		*theRadio;
+ 	std::mutex		m_lock;
+ 	std::mutex	        locker;
+ 	void			WorkerFunction	();
+@@ -128,18 +120,15 @@
+ 	void		addtoSuperFrame		(smodeInfo *,
+                                                  int16_t,
+ 	                                         myArray<theSignal> *);
+-private slots:
+-	void		select_channel_1	();
+-	void		select_channel_2	();
+-        void            handle_modeSelector     (const QString &);
+-	void		handle_reset		();
+ 
+-public slots:
++public:
++//	What the processors report. The names are the ones they already used
++//	when these were Qt slots.
+ 	void            set_faadSyncLabel	(bool);
+-	void		set_messageLabel	(const QString &);
+-	void		set_audioModeLabel	(const QString &);
+-	void		set_aacDataLabel	(const QString &);
+-	void		set_timeLabel		(const QString &);
++	void		set_messageLabel	(const std::string &);
++	void		set_audioModeLabel	(const std::string &);
++	void		set_aacDataLabel	(const std::string &);
++	void		set_timeLabel		(const std::string &);
+ 
+ 	void		show_fineOffset		(float);
+ 	void		show_coarseOffset	(float);
+@@ -153,20 +142,21 @@
+ 	void            show_sdc_mer		(float);
+ 	void		show_msc_mer		(float);
+ 
+-	void		set_datacoding		(const QString &);
++	void		set_datacoding		(const std::string &);
+ 
+-	void		set_channel_1		(const QString &);
+-	void		set_channel_2		(const QString &);
+-	void		set_channel_3		(const QString &);
+-	void		set_channel_4		(const QString &);
++	void		set_channel_1		(const std::string &);
++	void		set_channel_2		(const std::string &);
++	void		set_channel_3		(const std::string &);
++	void		set_channel_4		(const std::string &);
+ 	void		audioAvailable		();
+ 	void		show_eqsymbol		(int);
+ 	void		showIQ			(int);
+-signals:
+-	void		audioAvailable		(int, int);
++
++//	These were signals the decoder raised on itself; they now call the
++//	execute... methods straight through.
+ 	void		setTimeSync		(bool);
+-        void		setFACSync		(bool);
+-        void		setSDCSync		(bool);
+-        void		show_Mode		(int);
+-        void		show_Spectrum		(int);
++	void		setFACSync		(bool);
++	void		setSDCSync		(bool);
++	void		show_Mode		(int);
++	void		show_Spectrum		(int);
+ };
+--- a/equalizer/equalizer-1.cpp
++++ b/equalizer/equalizer-1.cpp
+@@ -66,10 +66,9 @@
+ 	                                     equalizer_base (Mode, Spectrum) {
+ float	sigmaq_noise_list [] = {16.0, 14.0, 14.0, 12.0};
+ 	sigmaq_noise	= pow (10.0, - sigmaq_noise_list [Mode - Mode_A] / 10.0);
++	this	-> m_form	= parent;
+ 	this	-> scopeMode	= SHOW_PILOTS;
+ 	this	-> eqBuffer	= b;
+-	connect (this, SIGNAL (show_eqsymbol (int)),
+-                 parent, SLOT (show_eqsymbol (int)));
+ 
+ 
+ //	Based on table 92 ETSI ES 201980
+@@ -387,7 +386,7 @@
+ 	      result [i] = 0;
+ 	   estimator_channel -> estimate_2 (testFrame [newSymbol], result);
+ 	   eqBuffer -> putDataIntoBuffer (result, K_max - K_min + 1);
+-	   show_eqsymbol (K_max - K_min + 1);
++	   m_form -> show_eqsymbol (K_max - K_min + 1);
+ 	}
+ 
+ 	processSymbol (symbol_to_process,
+@@ -412,7 +411,7 @@
+ 	         xx [carrier - K_min] = 0;
+ 	   }
+ 	   eqBuffer -> putDataIntoBuffer (xx, K_max - K_min + 1);
+-	   show_eqsymbol (K_max - K_min + 1);
++	   m_form -> show_eqsymbol (K_max - K_min + 1);
+ 	}
+ 
+ //	If we have a frame full of output: return true
+@@ -514,7 +513,7 @@
+ 	      else
+ 	         xx [carrier - K_min] = std::complex<float> (0, 0);
+ 	   eqBuffer -> putDataIntoBuffer (xx, K_max - K_min + 1);
+-	   show_eqsymbol (K_max - K_min + 1);
++	   m_form -> show_eqsymbol (K_max - K_min + 1);
+ 	}
+ 
+ //	The transfer function is now there, stored in the appropriate
+--- a/equalizer/equalizer-1.h
++++ b/equalizer/equalizer-1.h
+@@ -23,7 +23,6 @@
+ #
+ #pragma once
+ 
+-#include	<QObject>
+ #include	"basics.h"
+ #include	"equalizer-base.h"
+ #include	"ringbuffer.h"
+@@ -36,8 +35,7 @@
+ 	int16_t	carrier;
+ } trainer;
+ 
+-class	equalizer_1: public QObject, public equalizer_base {
+-Q_OBJECT
++class	equalizer_1: public equalizer_base {
+ public:
+ 			equalizer_1 	(drmDecoder	*,
+ 	                                 uint8_t	Mode,
+@@ -59,6 +57,8 @@
+ 	                                 std::vector<std::complex<float>> &);
+ 	void		set_scopeMode	(int);
+ private:
++//	the scope feed used to be a Qt signal; it is a direct call now
++	drmDecoder	*m_form;
+ 	RingBuffer<std::complex<float>> *eqBuffer;
+ 	void		getRelAddress	(int16_t, int16_t *, int16_t *);
+ 	int16_t		buildTrainers	(int16_t);
+@@ -89,7 +89,5 @@
+ 
+ 	float		sigmaq_noise;
+ 	int		scopeMode;
+-signals:
+-	void		show_eqsymbol	(int);
+ };
+ 
+--- a/equalizer/estimator-2.cpp
++++ b/equalizer/estimator-2.cpp
+@@ -23,7 +23,7 @@
+  *	Simple channel estimator for DRM based on private communication
+  *	with Geert Leus
+  */
+-#include	<QDebug>
++
+ #include	"referenceframe.h"
+ #include	"estimator-2.h"
+ #include	"matrix2.h"
+--- a/equalizer/estimator-2.h
++++ b/equalizer/estimator-2.h
+@@ -24,7 +24,8 @@
+ #pragma once
+ 
+ #include	<Eigen/Dense>
+-#include	<QString>
++#include	<string>
++#include	<string>
+ #include	"radio-constants.h"
+ #include	<vector>
+ 
+--- a/fac/fac-processor.cpp
++++ b/fac/fac-processor.cpp
+@@ -54,8 +54,6 @@
+ 	this	-> Mode		= modeInfo -> Mode;
+ 	this	-> Spectrum	= modeInfo -> Spectrum;
+ 	this	-> facTable	= getFacTableforMode (Mode);
+-	connect (this, SIGNAL (show_fac_mer (float)),
+-	         m_form, SLOT (show_fac_mer (float)));
+ }
+ 
+ 	facProcessor::~facProcessor (void) {
+@@ -95,7 +93,7 @@
+ 	   facVector [i]	= outbank -> element (symbol)[index];
+ 	}
+ 	DRM_FLOAT mer	= computeMER. computemer (facVector, FAC_SAMPLES);
+-	show_fac_mer (mer);
++	m_form -> show_fac_mer (mer);
+ 
+ 	fromSamplestoBits (facVector, facBits);
+ //	first: dispersion
+--- a/fac/fac-processor.h
++++ b/fac/fac-processor.h
+@@ -24,7 +24,6 @@
+ #ifndef	__FAC_PROCESSOR__
+ #define	__FAC_PROCESSOR__
+ 
+-#include	<QObject>
+ #include	"basics.h"
+ #include	"mapper.h"
+ #include	"qam4-metrics.h"
+@@ -36,8 +35,7 @@
+ class	stateDescriptor;
+ class	drmDecoder;
+ 
+-class	facProcessor: public QObject  {
+-Q_OBJECT
++class	facProcessor {
+ public:
+ 	                facProcessor	(drmDecoder *, smodeInfo *);
+ 			~facProcessor	();
+@@ -61,8 +59,6 @@
+ 	void		set_serviceLanguage	(int, uint8_t *, stateDescriptor *);
+ 	void		set_serviceDescriptor	(int, uint8_t *, stateDescriptor *);
+ 	int16_t		mscCells		(uint8_t, uint8_t);
+-signals:
+-	void		show_fac_mer		(float);
+ };
+ 
+ #endif
+--- a/msc/backend-controller.cpp
++++ b/msc/backend-controller.cpp
+@@ -50,8 +50,6 @@
+ 	this	-> audioBuffer		= b;
+ 	this	-> iqBuffer		= iq;
+ 
+-	connect (this, SIGNAL (showIQ (int)),
+-	         m_form, SLOT (showIQ (int)));
+ 
+ 
+ 	theWorker	= nullptr;
+@@ -106,7 +104,7 @@
+ 	std::complex<float> temp = v. signalValue;
+ 	iqBuffer        -> putDataIntoBuffer (&temp, 1);
+ 	if (iqBuffer -> GetRingBufferReadAvailable () > 512)
+-	   showIQ (512);
++	   m_form -> showIQ (512);
+ 	theWorker	-> addtoMux (blockno, cnt, v);
+ }
+ 
+--- a/msc/backend-controller.h
++++ b/msc/backend-controller.h
+@@ -26,7 +26,6 @@
+ #ifndef	__BACKEND_CONTROLLER__
+ #define	__BACKEND_CONTROLLER__
+ 
+-#include	<QObject>
+ #include	"basics.h"
+ #include	"ringbuffer.h"
+ 
+@@ -40,8 +39,7 @@
+ #endif
+ #endif
+ 
+-class	backendController: public QObject {
+-Q_OBJECT
++class	backendController {
+ public:
+ 		backendController	(drmDecoder *,
+ 	                                 int8_t,
+@@ -75,8 +73,6 @@
+ 	aacHandler	*aacFunctions;
+ #endif
+ #endif
+-signals:
+-	void		showIQ		(int);
+ };
+ 
+ #endif
+--- a/msc/msc-handler-qam16.cpp
++++ b/msc/msc-handler-qam16.cpp
+@@ -101,8 +101,6 @@
+ 	                            stream_1 -> highBits () +
+ 	                            stream_0 -> lowBits  () +
+ 	                            stream_1 -> lowBits  ());
+-	connect (this, SIGNAL (show_msc_mer (float)),
+-	         m_form, SLOT (show_msc_mer (float)));
+ }
+ 
+ 	QAM16_SM_Handler::~QAM16_SM_Handler	(void) {
+@@ -132,7 +130,7 @@
+ 
+ mer16_compute computeMER;
+ float mer = 10 * log10 (computeMER. computemer (v, theState -> muxSize));
+-        show_msc_mer  (mer);
++        m_form -> show_msc_mer (mer);
+ 
+ 	bitsOut. resize (highProtectedbits + lowProtectedbits);
+ 	bits_0. resize (stream_0 -> highBits () + stream_0 -> lowBits ());
+--- a/msc/msc-handler-qam16.h
++++ b/msc/msc-handler-qam16.h
+@@ -24,7 +24,6 @@
+ #ifndef	__MSC_HANDLER_QAM16__
+ #define	__MSC_HANDLER_QAM16__
+ 
+-#include	<QObject>
+ #include	"basics.h"
+ #include	"msc-handler.h"
+ #include	"qam16-metrics.h"
+@@ -34,8 +33,7 @@
+ class	Mapper;
+ class	drmDecoder;
+ 
+-class	QAM16_SM_Handler : public QObject,  public mscHandler {
+-Q_OBJECT
++class	QAM16_SM_Handler : public mscHandler {
+ public:
+ 		QAM16_SM_Handler	(stateDescriptor *,
+ 	                                 drmDecoder *);
+@@ -54,8 +52,6 @@
+ 	Mapper		*Y13mapper_low;
+ 	Mapper		*Y21mapper_low;
+ 	int16_t		N1, N2;
+-signals:
+-	void		show_msc_mer	(float);
+ };
+ #endif
+ 
+--- a/msc/msc-handler-qam64.cpp
++++ b/msc/msc-handler-qam64.cpp
+@@ -112,8 +112,6 @@
+ 	Y2. resize (2 * theState -> muxSize);
+ 
+ 	
+-        connect (this, SIGNAL (show_msc_mer (float)),
+-	         m_form, SLOT (show_msc_mer (float)));
+ }
+ 
+ 	QAM64_SM_Handler::~QAM64_SM_Handler	(void) {
+@@ -177,7 +175,7 @@
+ uint8_t *level_2	= (uint8_t *)alloca (2 * theState -> muxSize);
+ mer64_compute computeMER;
+ float mer = 10 * log10 (computeMER. computemer (v, theState -> muxSize));
+-        show_msc_mer (mer);
++        m_form -> show_msc_mer (mer);
+ 
+ 	for (i = 0; i < qam64Roulette; i ++) {
+ 	   myDecoder. computemetrics (v, theState -> muxSize,
+--- a/msc/msc-handler-qam64.h
++++ b/msc/msc-handler-qam64.h
+@@ -24,7 +24,6 @@
+ #ifndef	__MSC_HANDLER_QAM64__
+ #define	__MSC_HANDLER_QAM64__
+ 
+-#include	<QObject>
+ #include	"basics.h"
+ #include	"qam64-metrics.h"
+ #include	"msc-handler.h"
+@@ -34,8 +33,7 @@
+ class	Mapper;
+ class	drmDecoder;
+ 
+-class	QAM64_SM_Handler : public QObject, public mscHandler {
+-Q_OBJECT
++class	QAM64_SM_Handler : public mscHandler {
+ public:
+ 		QAM64_SM_Handler	(stateDescriptor *, int8_t, 
+ 	                                 drmDecoder *
+@@ -65,8 +63,6 @@
+ 	std::vector<metrics>	Y0;
+ 	std::vector<metrics>	Y1;
+ 	std::vector<metrics>	Y2;
+-signals:
+-	void		show_msc_mer	(float);
+ };
+ 
+ #endif
+--- a/msc/msc-processor.cpp
++++ b/msc/msc-processor.cpp
+@@ -63,8 +63,6 @@
+ 	this	-> numofStreams	= theState	-> numofStreams;
+ 	this	-> QAMMode	= theState	-> QAMMode;
+ 
+-	connect (this, SIGNAL (set_datacoding (const QString &)),
+-	         m_form, SLOT (set_datacoding (const QString &)));
+ 	this	-> muxsampleLength	= theState -> mscCells / 3;
+ 	this	-> muxsampleBuf	= new theSignal [muxsampleLength];
+ 	this	-> tempBuffer	= new theSignal [muxsampleLength];
+@@ -79,14 +77,14 @@
+ 	if (QAMMode == QAM64) {
+ 	   switch (mscMode) {
+ 	      case stateDescriptor::SM:
+-	         set_datacoding ("QAM64");
++	         m_form -> set_datacoding ("QAM64");
+ 	         my_mscHandler = new QAM64_SM_Handler (theState,
+ 	                                               qam64Roulette,
+ 	                                               m_form);
+ 	         break;
+ 
+ 	      default:  
+-	         set_datacoding ("Not here");
++	         m_form -> set_datacoding ("Not here");
+ 	         my_mscHandler = new QAM64_SM_Handler  (theState,
+ 	                                                qam64Roulette,
+ 				                        m_form);
+@@ -95,7 +93,7 @@
+ 	}
+ 	else
+ 	if (QAMMode == QAM16) {	// mscMode == SM
+-	   set_datacoding ("QAM16");
++	   m_form -> set_datacoding ("QAM16");
+ 	   my_mscHandler = new QAM16_SM_Handler (theState, m_form);
+ 	}
+ 	else
+--- a/msc/msc-processor.h
++++ b/msc/msc-processor.h
+@@ -27,7 +27,6 @@
+ #ifndef	__MSC_PROCESSOR__
+ #define	__MSC_PROCESSOR__
+ 
+-#include	<QObject>
+ #include	"basics.h"
+ #include	"ringbuffer.h"
+ #include	"data-processor.h"
+@@ -42,8 +41,7 @@
+ class	deInterleaver;
+ class	mscHandler;
+ 
+-class	mscProcessor: public QObject {
+-Q_OBJECT
++class	mscProcessor {
+ public:
+ 		mscProcessor		(stateDescriptor *,
+ 	                                 drmDecoder *,
+@@ -77,8 +75,6 @@
+ 	mscHandler	*my_mscHandler;
+ 	int16_t		muxNo;
+ 	int16_t		dataLength;
+-signals:
+-	void		set_datacoding		(const QString &);
+ };
+ 
+ #endif
+--- a/ofdm/freqsyncer.cpp
++++ b/ofdm/freqsyncer.cpp
+@@ -96,8 +96,6 @@
+ 	for (int i = 0; i < nrSymbols; i ++)
+ 	   symbolBuffer [i] = new std::complex<float> [Tu];
+ 
+-	connect (this, SIGNAL (show_fineOffset (float)),
+-	         m_form, SLOT (show_fineOffset (float)));
+ }
+ 
+ 		freqSyncer::~freqSyncer (void) {
+@@ -336,7 +334,7 @@
+ 	
+ 	if (++displayCount >= 10) {
+ 	   displayCount = 0;
+-	   show_fineOffset	(- offset / 100.0);
++	   m_form -> show_fineOffset (- offset / 100.0);
+ 	}
+ 
+ 	if (!isnan(offset)) 	// shouldn't happen
+--- a/ofdm/freqsyncer.h
++++ b/ofdm/freqsyncer.h
+@@ -23,7 +23,6 @@
+ #ifndef	__FREQ_SYNCER__
+ #define	__FREQ_SYNCER__
+ 
+-#include	<QObject>
+ #include	"basics.h"
+ #include	<stdio.h>
+ #include	<stdlib.h>
+@@ -36,8 +35,7 @@
+ class	Reader;
+ class	drmDecoder;
+ 
+-class	freqSyncer: public QObject {
+-Q_OBJECT
++class	freqSyncer {
+ public:
+ 			freqSyncer 		(Reader *,
+ 	                                         smodeInfo *,
+@@ -75,8 +73,6 @@
+ 	std::vector<float> corrV;
+ 
+ 	drmShifter	theShifter;
+-signals:
+-	void		show_fineOffset (float);
+ };
+ 
+ #endif
+--- a/ofdm/word-collector.cpp
++++ b/ofdm/word-collector.cpp
+@@ -21,6 +21,7 @@
+  *    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  */
+ #include	<stdio.h>
++#include	<string>
+ #include	<stdlib.h>
+ //#include	<Windows.h>
+ #include	<math.h>
+@@ -35,7 +36,11 @@
+ 	                              smodeInfo	*modeInf,
+ 	                              int sampleRate):
+ 	                                 theShifter (100 * sampleRate) {
+-	this	-> m_form	= m_form;
++//	Upstream wrote "m_form = m_form" here. It was harmless while the
++//	parent was only used as a connect() target, where the parameter mr was
++//	named directly; with the signals gone the member is the only route to it
++//	and an uninitialised one segfaults on the first coarse-offset report.
++	this	-> m_form	= mr;
+ 	this	-> buffer	= b;
+ 	this	-> sampleRate	= sampleRate;
+ 	this	-> modeInf	= modeInf;
+@@ -48,12 +53,6 @@
+ 	this	-> K_min	= Kmin	(Mode, Spectrum);
+ 	this	-> K_max	= Kmax	(Mode, Spectrum);
+ 	this	-> displayCount	= 0;
+-	connect (this, SIGNAL (show_fineOffset (float)),
+-                 mr, SLOT (show_fineOffset (float)));
+-        connect (this, SIGNAL (show_coarseOffset (float)),
+-                 mr, SLOT (show_coarseOffset (float)));
+-	connect (this, SIGNAL (set_channel_3 (const QString &)),
+-	         mr, SLOT (set_channel_3 (const QString &)));
+ }
+ 
+ 		wordCollector::~wordCollector () {
+@@ -96,8 +95,8 @@
+ 
+ 	if (++displayCount > 20) {
+ 	   displayCount = 0;
+-	   show_coarseOffset	(offsetInteger);
+-	   show_fineOffset	(offset / 100);
++	   m_form -> show_coarseOffset (offsetInteger);
++	   m_form -> show_fineOffset (offset / 100);
+ 	}
+ 
+ 	amount	= 0;
+@@ -136,7 +135,7 @@
+ 	      if (intOffs < -2) {
+ 	         std::string str = std::to_string (teller);
+ 			 str = str + "  " + std::to_string(intOffs);
+-	         set_channel_3 (QString::fromStdString (str));
++	         m_form -> set_channel_3 (std::string (str));
+ 	         amount = 0;
+ 	         teller = 0;
+ 	         f += -1;
+@@ -147,7 +146,7 @@
+ 	      if (intOffs > 2 ) {
+ 	         std::string str = std::to_string(teller);
+ 	         str = str + "  " + std::to_string(intOffs);
+-	         set_channel_3 (QString::fromStdString (str));
++	         m_form -> set_channel_3 (std::string (str));
+ 	         amount = 0;
+ 	         teller = 0;
+ 	         f +=  1;
+@@ -198,8 +197,8 @@
+ 
+ 	if (++displayCount > 20) {
+ 	   displayCount = 0;
+-	   show_coarseOffset	(modeInf -> freqOffset_integer);
+-	   show_fineOffset	(- fineOffset / 100);
++	   m_form -> show_coarseOffset (modeInf -> freqOffset_integer);
++	   m_form -> show_fineOffset (- fineOffset / 100);
+ 	}
+ 
+ 	fft_and_extract (&temp [Tg], out);
+--- a/ofdm/word-collector.h
++++ b/ofdm/word-collector.h
+@@ -24,7 +24,6 @@
+ #ifndef	__WORD_COLLECTOR__
+ #define	__WORD_COLLECTOR__
+ 
+-#include	<QObject>
+ #include	"basics.h"
+ #include	<stdio.h>
+ #include	<stdlib.h>
+@@ -36,8 +35,7 @@
+ class	Reader;
+ class	drmDecoder;
+ 
+-class	wordCollector: public QObject {
+-Q_OBJECT
++class	wordCollector {
+ public:
+ 			wordCollector 		(drmDecoder *,
+ 	                                         Reader *,
+@@ -80,10 +78,6 @@
+ 	                                         int nrSymbols,
+ 	                                         int range);
+ 	double		compute_mmse		(int, int);
+-signals:
+-	void		show_fineOffset		(float);
+-	void		show_coarseOffset	(float);
+-	void		set_channel_3		(const QString &);
+ };
+ 
+ #endif
+--- a/sdc/sdc-processor.cpp
++++ b/sdc/sdc-processor.cpp
+@@ -22,6 +22,7 @@
+  */
+ #
+ //#include	<windows.h>
++#include	<string>
+ #include	"sdc-include.h"
+ #include	"sdc-streamer.h"
+ #include	"sdc-processor.h"
+@@ -106,18 +107,6 @@
+ 	   thePRBS		= new prbs (stream_0 -> lengthOut () +
+ 	                                    stream_1 -> lengthOut ());
+ 	}
+-	connect (this, SIGNAL (show_sdc_mer (float)),
+-	         m_form, SLOT (show_sdc_mer (float)));
+-	connect (this, SIGNAL (set_timeLabel (const QString &)),
+-	         m_form, SLOT (set_timeLabel (const QString &)));
+-	connect (this, SIGNAL (set_channel_1 (const QString &)),
+-	         m_form, SLOT (set_channel_1 (const QString &)));
+-	connect (this, SIGNAL (set_channel_2 (const QString &)),
+-	         m_form, SLOT (set_channel_2 (const QString &)));
+-	connect (this, SIGNAL (set_channel_3 (const QString &)),
+-	         m_form, SLOT (set_channel_3 (const QString &)));
+-	connect (this, SIGNAL (set_channel_4 (const QString &)),
+-	         m_form, SLOT (set_channel_4 (const QString &)));
+ }
+ 
+ 	sdcProcessor::~sdcProcessor (void) {
+@@ -168,7 +157,7 @@
+ 	(uint8_t *)alloca ((2 * nrCells) * sizeof (uint8_t));
+ mer4_compute   computeMER;
+ float   mer     = 10 * log10 (computeMER. computemer (v. data (), nrCells));
+-        show_sdc_mer (mer);
++        m_form -> show_sdc_mer (mer);
+ 
+ 	my_qam4_metrics -> computemetrics (v. data (), nrCells, rawBits);
+ 	stream_0	-> handle_stream (rawBits, reconstructed,
+@@ -194,7 +183,7 @@
+ std::vector<uint8_t> level_1;
+ mer16_compute	computeMER;
+ DRM_FLOAT	mer	= 10 * log10 (computeMER. computemer (v. data (), nrCells));
+-	show_sdc_mer (mer);
++	m_form -> show_sdc_mer (mer);
+ 	
+ 	sdcBits. resize (4 + stream_0 -> lengthOut() + stream_1->lengthOut());
+ 	Y0_stream.resize (2 * nrCells);
+@@ -353,16 +342,16 @@
+ 	                                          s. c_str ());
+ 	               switch (shortId) {
+ 	                  case 0:
+-	                     set_channel_1 (QString::fromStdString (s));
++	                     m_form -> set_channel_1 (std::string (s));
+ 	                     break;
+ 	                  case 1:
+-	                     set_channel_2 (QString::fromStdString (s));
++	                     m_form -> set_channel_2 (std::string (s));
+ 	                     break;
+ 	                  case 2:
+-	                     set_channel_3 (QString::fromStdString (s));
++	                     m_form -> set_channel_3 (std::string (s));
+ 	                     break;
+ 	                  case 3:
+-	                     set_channel_4 (QString::fromStdString (s));
++	                     m_form -> set_channel_4 (std::string (s));
+ 	                     break;
+ 	               }
+ 	               return;
+@@ -441,7 +430,7 @@
+ 	         std::string t = std::to_string (hours);
+ 	         t. append (":");
+ 	         t. append (std::to_string (minutes));
+-	         set_timeLabel (QString::fromStdString (t));
++	         m_form -> set_timeLabel (std::string (t));
+ 	      }
+ 	      return;
+ 
+--- a/sdc/sdc-processor.h
++++ b/sdc/sdc-processor.h
+@@ -27,7 +27,6 @@
+ #ifndef	__SDC_PROCESSOR
+ #define	__SDC_PROCESSOR
+ 
+-#include	<QObject>
+ #include	<stdint.h>
+ #include	<vector>
+ #include	"basics.h"
+@@ -42,8 +41,7 @@
+ class	qam16_metrics;
+ class	drmDecoder;
+ 
+-class	sdcProcessor: public QObject {
+-Q_OBJECT
++class	sdcProcessor {
+ public:
+ 		sdcProcessor	(drmDecoder	*,
+ 	                         smodeInfo	*,
+@@ -80,12 +78,5 @@
+ 	uint8_t		qammode;
+ 	uint8_t		rmFlag;
+ 	uint8_t		SDCmode;
+-signals:
+-	void		show_sdc_mer	(float);
+-	void		set_timeLabel	(const QString &);
+-	void		set_channel_1	(const QString &);
+-	void		set_channel_2	(const QString &);
+-	void		set_channel_3	(const QString &);
+-	void		set_channel_4	(const QString &);
+ };
+ #endif

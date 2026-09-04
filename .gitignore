@@ -53,3 +53,7 @@ native-app/deck-rx-solo.icns
 native-app/deck-rx-solo.iconset/
 # iPadOS bundles (native-app/build-ios.sh regenerates them, signing included)
 native-app/build/
+
+# The DRM decoder is fetched and built, never checked in: upstream's sources,
+# Eigen, fdk-aac and every object file they produce live here.
+native-app/drm/build/

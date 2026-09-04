@@ -73,8 +73,17 @@ final class AppServer {
 
     // MARK: control endpoint
 
-    private func startControl() {
-        guard let port = NWEndpoint.Port(rawValue: controlPort) else { return }
+    /// The port the control endpoint actually came up on. Not always
+    /// `controlPort`: when the plugin holds that one this app takes the next,
+    /// so it is still reachable. Without it a script that wants this receiver
+    /// to let go of the SpyServer has nothing to ask — which is how an
+    /// unattended probe ended up recording whatever this app was tuned to.
+    private(set) var servingPort: UInt16 = 0
+
+    private func startControl() { startControl(on: controlPort, isFallback: false) }
+
+    private func startControl(on rawPort: UInt16, isFallback: Bool) {
+        guard let port = NWEndpoint.Port(rawValue: rawPort) else { return }
         // Listens on every interface, deliberately. requiredInterfaceType was
         // set here once and had no effect anyway — the socket came up on
         // *:8771 regardless — but the reachable version is the useful one:
@@ -86,7 +95,8 @@ final class AppServer {
         // receivers answering the same requests at random.
         guard let l = try? NWListener(using: params, on: port) else {
             portBusy = true
-            lastError = "control port \(controlPort) busy"
+            lastError = "control port \(rawPort) busy"
+            if !isFallback { startControl(on: rawPort &+ 1, isFallback: true) }
             return
         }
         l.newConnectionHandler = { [weak self] conn in self?.serve(conn) }
@@ -95,11 +105,14 @@ final class AppServer {
             switch state {
             case .ready:
                 self.isServing = true
+                self.servingPort = rawPort
+                self.portBusy = isFallback
                 DispatchQueue.main.async { self.onStateChange?() }
             case .failed(let e):
                 self.portBusy = true
                 self.lastError = e.localizedDescription
                 self.listener = nil
+                if !isFallback { self.startControl(on: rawPort &+ 1, isFallback: true) }
                 DispatchQueue.main.async { self.onStateChange?() }
             default: break
             }

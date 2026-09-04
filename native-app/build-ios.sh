@@ -10,6 +10,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 TARGET="${1:-sim}"
 DO_INSTALL="${2:-install}"
 
+# Version. CFBundleVersion is the build date rather than a counter: it has to
+# rise with every build Apple sees, and a date does that without anyone keeping
+# score. Both bundles carry the same numbers so a Mac and an iPad on the same
+# release are recognisably the same thing.
+VERSION="${DECKRX_VERSION:-1.0}"
+BUILD="${DECKRX_BUILD:-$(date +%Y%m%d)}"
+
 BUNDLE_ID="com.hogehoge.deckrx.ipad"
 NAME="Deck RX"
 DEPLOY_TARGET="17.0"
@@ -104,8 +111,8 @@ cat > "$APP/Info.plist" <<PLIST
 	<key>CFBundleName</key><string>$NAME</string>
 	<key>CFBundleDisplayName</key><string>$NAME</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>0.1</string>
-	<key>CFBundleVersion</key><string>1</string>
+	<key>CFBundleShortVersionString</key><string>$VERSION</string>
+	<key>CFBundleVersion</key><string>$BUILD</string>
 	<key>CFBundleSupportedPlatforms</key><array><string>$PLATFORM</string></array>
 	<key>MinimumOSVersion</key><string>$DEPLOY_TARGET</string>
 	<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>

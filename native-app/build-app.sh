@@ -92,8 +92,8 @@ build_variant() {
 	<key>CFBundleName</key><string>$NAME</string>
 	<key>CFBundleDisplayName</key><string>$NAME</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>0.1</string>
-	<key>CFBundleVersion</key><string>1</string>
+	<key>CFBundleShortVersionString</key><string>$VERSION</string>
+	<key>CFBundleVersion</key><string>$BUILD</string>
 	<key>LSMinimumSystemVersion</key><string>$DEPLOY_TARGET</string>
 	<key>NSHighResolutionCapable</key><true/>
 	<key>NSPrincipalClass</key><string>NSApplication</string>
@@ -153,6 +153,13 @@ PLIST
     -f "$APP" 2>/dev/null || true
   echo "deployed: $EXE  ($(lipo -archs "$EXE"))"
 }
+
+# Version. CFBundleVersion is the build date rather than a counter: it has to
+# rise with every build Apple sees, and a date does that without anyone keeping
+# score. Both bundles carry the same numbers so a Mac and an iPad on the same
+# release are recognisably the same thing.
+VERSION="${DECKRX_VERSION:-1.0}"
+BUILD="${DECKRX_BUILD:-$(date +%Y%m%d)}"
 
 DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
 

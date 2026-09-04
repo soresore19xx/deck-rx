@@ -54,7 +54,7 @@ esac
 DRM_FLAGS=""
 if [ -f "$DRM_CORE_DIR/out/$DRM_SLICE/libdrmcore.a" ] && \
    [ -f "$DRM_FDK_DIR/$DRM_SLICE/libfdk-aac.a" ]; then
-  SRC="$SRC Sources/DrmDecode.swift"
+  SRC="$SRC Sources/DrmDecode.swift Sources/DrmScreen.swift"
   DRM_FLAGS="-D DRM_ENABLED -import-objc-header $DRM_CORE_DIR/drm_bridge.h -L$DRM_CORE_DIR/out/$DRM_SLICE -ldrmcore -L$DRM_FDK_DIR/$DRM_SLICE -lfdk-aac -lc++"
   echo "DRM: linking $DRM_CORE_DIR/out/$DRM_SLICE/libdrmcore.a"
 else

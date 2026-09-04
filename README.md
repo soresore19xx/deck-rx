@@ -445,6 +445,45 @@ The menu bar is built by hand — there is no nib — so About and Quit exist at
 all. About reports which of the two builds is running and what it is pointed
 at, which is a real question with both installed.
 
+### Handing it to someone else
+
+The `xattr` line above is not a formality: `build-app.sh` signs with whatever
+identity is in the keychain, and on a development machine that is an **Apple
+Development** certificate. Gatekeeper rejects those on any Mac that did not
+build them (`spctl -a -vv` says `rejected`), so a recipient meets "the developer
+cannot be verified" and has to strip the quarantine flag by hand. That is fine
+between one's own machines and poor manners towards anyone else.
+
+`notarize.sh` is the other half, for a build that is actually going somewhere:
+
+```sh
+./notarize.sh                       # defaults to /Applications/Deck RX Solo.app
+./notarize.sh "/path/to/Some.app" my-profile
+```
+
+It works on a copy — `/Applications` is never touched — re-signs with
+**Developer ID** plus the hardened runtime and a secure timestamp, submits to
+Apple, staples the ticket, and shows what Gatekeeper makes of the result. Two
+things have to exist first, and it says so plainly if they do not:
+
+- a **Developer ID Application** certificate (Xcode > Settings > Accounts >
+  Manage Certificates > + ; Account Holder, paid membership). Apple Development
+  cannot be notarised.
+- notarytool credentials in the keychain:
+  `xcrun notarytool store-credentials <profile> --key AuthKey_X.p8 --key-id X --issuer <uuid>`.
+  An App Store Connect API key rather than an app-specific password, so no
+  password lands in a script or a shell history.
+
+It also does two things on its own initiative, both deliberate:
+
+- **It refuses a bundle with the DRM decoder in it.** fdk-aac's licence does not
+  combine with the GPL in a binary that is passed on, and this is the one place
+  that rule can be enforced rather than remembered. Keep the DRM build for
+  yourself — that was always allowed.
+- **It drops the bundled `presets.json`.** Shipping one machine's station list
+  is right for a second Mac of the same owner and wrong for a stranger, who
+  should start empty rather than with someone else's listening.
+
 ### Why it exists
 
 The app owned no receiver state, so it was useless without the plugin on the

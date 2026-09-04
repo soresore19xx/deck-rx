@@ -13,10 +13,15 @@
 #
 # It works on a COPY. /Applications is never touched.
 #
-# Usage: ./notarize.sh ["/Applications/Deck RX Solo.app"] [keychain-profile]
+# Usage: ./notarize.sh [--dmg] ["/Applications/Deck RX Solo.app"] [profile]
+#          --dmg   build a disk image with the app, an uninstaller and a drag
+#                  target, signed and notarised in its own right
 # ====================
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+
+WANT_DMG=0
+if [ "${1:-}" = "--dmg" ]; then WANT_DMG=1; shift; fi
 APP_IN="${1:-/Applications/Deck RX Solo.app}"
 PROFILE="${2:-deck-rx-notary}"
 OUT="$HERE/build/release"
@@ -28,11 +33,12 @@ OUT="$HERE/build/release"
 # does not combine with the GPL in a binary that is handed on. Source is
 # unaffected; a binary is not. This is the one place that rule can be enforced
 # instead of remembered, so it is enforced here.
-EXE_IN="$APP_IN/Contents/MacOS/deck-rx-receiver"
+#
 # grep -c and a count, not grep -q: under `set -o pipefail` the -q form closes
 # the pipe on its first match, nm dies of SIGPIPE, and the pipeline reports
 # failure — so the test read "no DRM here" on exactly the bundles it is meant
 # to catch. A licence check that fails open is worse than none.
+EXE_IN="$APP_IN/Contents/MacOS/deck-rx-receiver"
 DRM_SYMS=0
 [ -f "$EXE_IN" ] && DRM_SYMS=$(nm -a "$EXE_IN" 2>/dev/null | grep -c "drm_create" || true)
 if [ "${DRM_SYMS:-0}" -gt 0 ]; then
@@ -42,7 +48,6 @@ ERROR: this bundle has the DRM decoder in it, and must not be distributed.
 fdk-aac's licence does not combine with the GPL in a binary that is passed on.
 Build one without it and notarise that instead:
 
-  ./build-app.sh solo   with drm/build absent, or
   DRM_CORE_DIR=/nonexistent ./build-app.sh solo
 
 Keep the DRM build for yourself; that is allowed and always was.
@@ -113,8 +118,45 @@ CREDS
   exit 1
 fi
 
+# --- helpers ---------------------------------------------------------------
+# --options runtime is what notarisation requires; --timestamp is what keeps
+# the signature valid after the certificate expires. No --deep: it is the wrong
+# tool and Apple says so — sign nested code first, then the bundle.
+sign_it() {   # $1 = bundle
+  local target="$1" log="$OUT/codesign.log" hits
+  if codesign --force --timestamp --options runtime \
+              --sign "$SIGN_ID" "$target" 2>"$log"; then
+    rm -f "$log"; return 0
+  fi
+  cat "$log"
+  hits=$(grep -c "errSecInternalComponent" "$log" || true)
+  if [ "${hits:-0}" -gt 0 ]; then
+    cat <<'SESSION'
+
+That error means the signing key was not reachable, not that anything is wrong
+with it: over ssh, codesign cannot get at the login keychain, whichever machine
+holds the certificate. Run this from a window in the desktop session instead.
+An ssh caller can still start it there without a password:
+
+  open -a Terminal /path/to/a/wrapper.command
+
+SESSION
+  fi
+  rm -f "$log"
+  return 1
+}
+
+# A zip or a dmg, never a folder. notarytool mounts a disk image to look inside
+# it, and a mount that gets stuck leaves the tool waiting forever with nothing
+# in Apple's history to show for it — kill notarytool, then
+# `hdiutil detach <dev> -force`.
+notarise() {  # $1 = file to submit
+  xcrun notarytool submit "$1" "${NOTARY_ARGS[@]}" --wait
+}
+
 # --- work on a copy -------------------------------------------------------
 NAME="$(basename "$APP_IN")"
+BASE="${NAME%.app}"
 APP="$OUT/$NAME"
 rm -rf "$OUT"; mkdir -p "$OUT" || exit 1
 ditto "$APP_IN" "$APP" || { echo "ERROR: copy failed"; exit 1; }
@@ -127,54 +169,104 @@ if [ -f "$APP/Contents/Resources/presets.json" ]; then
   echo "removed the bundled preset list (it is this machine's, not a default)"
 fi
 
-# --- sign for distribution -------------------------------------------------
-# --options runtime is what notarisation requires; --timestamp is what keeps
-# the signature valid after the certificate expires. No --deep: it is the wrong
-# tool and Apple says so — sign nested code first, then the bundle. There is
-# none here, so the bundle is the whole job.
-echo "==> signing with Developer ID"
-SIGN_LOG="$OUT/codesign.log"
-if ! codesign --force --timestamp --options runtime \
-              --sign "$SIGN_ID" "$APP" 2>"$SIGN_LOG"; then
-  cat "$SIGN_LOG"
-  if grep -q "errSecInternalComponent" "$SIGN_LOG"; then
-    cat <<'SESSION'
-
-That error means the signing key was not reachable, not that anything is wrong
-with it: over ssh, codesign cannot get at the login keychain, whichever machine
-holds the certificate. Run this from a window in the desktop session instead.
-An ssh caller can still start it there without a password:
-
-  open -a Terminal /path/to/a/wrapper.command
-
-SESSION
-  fi
-  echo "ERROR: codesign failed"; exit 1
+# --- the uninstaller -------------------------------------------------------
+# Only for a disk image. Dragging an app to the Bin leaves its preferences,
+# caches, saved window state and settings behind, and nobody should have to be
+# told four paths to be rid of it.
+UNINST=""
+if [ "$WANT_DMG" = 1 ]; then
+  SRC_SCPT="$HERE/dist/uninstall.applescript"
+  [ -f "$SRC_SCPT" ] || { echo "ERROR: $SRC_SCPT missing"; exit 1; }
+  UNINST="$OUT/Uninstall $BASE.app"
+  echo "==> building the uninstaller"
+  # An AppleScript applet, not a .command: osacompile produces a real bundle
+  # with a Mach-O stub, so it can be signed and notarised with everything else.
+  osacompile -o "$UNINST" "$SRC_SCPT" >/dev/null 2>&1 \
+    || { echo "ERROR: osacompile failed"; exit 1; }
+  PL="$UNINST/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.hogehoge.deckrx.uninstall" "$PL" >/dev/null 2>&1 \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.hogehoge.deckrx.uninstall" "$PL" >/dev/null
+  /usr/libexec/PlistBuddy -c "Set :CFBundleName Uninstall $BASE" "$PL" >/dev/null 2>&1 \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleName string Uninstall $BASE" "$PL" >/dev/null
 fi
-rm -f "$SIGN_LOG"
+
+# --- sign ------------------------------------------------------------------
+echo "==> signing with Developer ID"
+sign_it "$APP" || { echo "ERROR: codesign failed"; exit 1; }
+if [ -n "$UNINST" ]; then
+  sign_it "$UNINST" || { echo "ERROR: codesign (uninstaller) failed"; exit 1; }
+fi
 codesign --verify --strict --verbose=2 "$APP" 2>&1 | tail -2
 
-# --- notarise --------------------------------------------------------------
-# A zip, never a .dmg: notarytool mounts a disk image to look inside it, and a
-# mount that gets stuck leaves the tool waiting forever with nothing in Apple s
-# history to show for it.
-ZIP="$OUT/${NAME%.app}.zip"
-ditto -c -k --keepParent "$APP" "$ZIP" || exit 1
+# --- notarise the bundles --------------------------------------------------
+# One submission covering everything that can be dragged out of the image. The
+# ticket is per binary, so each is stapled separately afterwards and then works
+# on a machine that never sees the image again.
+ZIP="$OUT/$BASE.zip"
+STAGE="$OUT/stage"
+rm -rf "$STAGE"; mkdir -p "$STAGE"
+ditto "$APP" "$STAGE/$NAME"
+[ -n "$UNINST" ] && ditto "$UNINST" "$STAGE/$(basename "$UNINST")"
+ditto -c -k --keepParent "$STAGE" "$ZIP" || exit 1
+
 echo "==> submitting to Apple (this takes a few minutes)"
-xcrun notarytool submit "$ZIP" "${NOTARY_ARGS[@]}" --wait \
-  || { echo "ERROR: notarisation failed - notarytool log <id> says why"; exit 1; }
+notarise "$ZIP" || { echo "ERROR: notarisation failed - notarytool log <id> says why"; exit 1; }
 
 echo "==> stapling"
 xcrun stapler staple "$APP" || { echo "ERROR: stapling failed"; exit 1; }
+if [ -n "$UNINST" ]; then
+  xcrun stapler staple "$UNINST" || { echo "ERROR: stapling the uninstaller failed"; exit 1; }
+fi
+rm -rf "$STAGE"
 
-# The ticket has to be inside the zip that is actually handed over, so it is
-# rebuilt after stapling rather than before.
+if [ "$WANT_DMG" = 0 ]; then
+  rm -f "$ZIP"
+  ditto -c -k --keepParent "$APP" "$ZIP" || exit 1
+  echo "==> Gatekeeper"
+  spctl -a -vv "$APP" 2>&1 | head -4
+  echo
+  echo "ready: $ZIP"
+  echo "A recipient can open this without xattr -dr com.apple.quarantine."
+  exit 0
+fi
+
+# --- the disk image --------------------------------------------------------
 rm -f "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP" || exit 1
+DMGDIR="$OUT/dmg"
+DMG="$OUT/$BASE.dmg"
+rm -rf "$DMGDIR" "$DMG"; mkdir -p "$DMGDIR" || exit 1
+ditto "$APP" "$DMGDIR/$NAME"
+ditto "$UNINST" "$DMGDIR/$(basename "$UNINST")"
+ln -s /Applications "$DMGDIR/Applications"
 
-# --- prove it --------------------------------------------------------------
+# GPLv3 asks that whoever receives a binary is told where its source is. A file
+# in the image is the cheapest way to mean it.
+cat > "$DMGDIR/SOURCE.txt" <<'SRC'
+Deck RX - GPL-3.0-or-later.
+
+The complete source for this build, and the licence, are at
+
+    https://github.com/soresore19xx/deck-rx
+
+To install: drag the app onto the Applications shortcut.
+To remove it later, along with its settings: run the uninstaller.
+SRC
+
+echo "==> building the disk image"
+hdiutil create -volname "$BASE" -srcfolder "$DMGDIR" -ov -format UDZO "$DMG" >/dev/null \
+  || { echo "ERROR: hdiutil failed"; exit 1; }
+
+echo "==> signing the disk image"
+codesign --force --timestamp --sign "$SIGN_ID" "$DMG" \
+  || { echo "ERROR: signing the dmg failed"; exit 1; }
+
+echo "==> submitting the disk image"
+notarise "$DMG" || { echo "ERROR: notarising the dmg failed"; exit 1; }
+xcrun stapler staple "$DMG" || { echo "ERROR: stapling the dmg failed"; exit 1; }
+
 echo "==> Gatekeeper"
-spctl -a -vv "$APP" 2>&1 | head -4
+spctl -a -vv -t open --context context:primary-signature "$DMG" 2>&1 | head -3
+spctl -a -vv "$APP" 2>&1 | head -3
 echo
-echo "ready: $ZIP"
-echo "A recipient can open this without xattr -dr com.apple.quarantine."
+echo "ready: $DMG"
+echo "The image, the app and the uninstaller are each notarised and stapled."

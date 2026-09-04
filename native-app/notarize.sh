@@ -233,7 +233,11 @@ fi
 # --- the disk image --------------------------------------------------------
 rm -f "$ZIP"
 DMGDIR="$OUT/dmg"
-DMG="$OUT/$BASE.dmg"
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+             "$APP/Contents/Info.plist" 2>/dev/null || echo "")
+# Read from the bundle rather than passed in: a file called 1.0 holding 0.9 is
+# worse than one with no version at all.
+DMG="$OUT/$BASE${VERSION:+ $VERSION}.dmg"
 rm -rf "$DMGDIR" "$DMG"; mkdir -p "$DMGDIR" || exit 1
 ditto "$APP" "$DMGDIR/$NAME"
 ditto "$UNINST" "$DMGDIR/$(basename "$UNINST")"

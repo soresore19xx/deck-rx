@@ -326,3 +326,321 @@ the row shows whichever the live mode uses.
 
 **When something sounds different between the two, the difference is a bug in
 this one.**
+
+## Deck RX Solo: design notes
+
+Moved here from `solo.md`, which is a page about using the app.
+
+### Why it exists
+
+The app owned no receiver state, so it was useless without the plugin on the
+same machine — and in exchange the whole thing carried Node plus two ABI-locked
+native modules (`naudiodon`, `deck-rx-asrc`) that had to be rebuilt against
+whatever Node the Stream Deck app shipped. Portability was the point.
+
+`fft.ts`, `AudioOutput.ts` and `asrc.ts` have no counterpart here: Accelerate,
+AVAudioEngine and AVAudioConverter replace them, and both native modules are
+absent from this path. The demodulators are ports, verified numerically against
+the TypeScript — AM 100.7 dB agreement, WFM mono/stereo 58.8/63.2, NFM 76.4,
+USB/LSB 92.5/79.0, CW 102.5. Worst-case sample difference is 1/32768 in every
+mode, which is the reference rounding to int16 while this keeps doubles.
+
+The plugin keeps its own signal path. Converting it into a client of this one
+was considered and dropped: the only argument was not making a demod fix twice,
+which costs nothing if the plugin is left alone, against 380 `spyService` call
+sites and the Tune dial timing this repo has been bitten by before. Reasoning
+in [docs/standalone-app-port.md](standalone-app-port.md).
+
+### The display is drawn where the ear is
+
+The transform was always taken over the newest IQ in hand, while the sound
+being heard left the demodulator a ring's depth ago — so a signal appeared on
+the waterfall about a fifth of a second before it could be heard, and rather
+longer than that on Bluetooth headphones. The two are now drawn together: the
+frame is transformed over samples as old as the audio latency
+(`AudioSink.latencySeconds` — the ring's depth, plus the session's own output
+latency on iOS), and the IQ buffer keeps enough history to reach back that far.
+
+The delay is eased in rather than taken from the instantaneous depth: the ring
+breathes around its target, and a display whose time axis jittered with it
+would be worse than one that is honestly early. It is clamped to what is
+actually in the buffer, so after a retune the display starts live and slides
+back to the ear's own delay as the buffer refills, and it is zero when there is
+no audio to be late for.
+
+### Tuning inside the window
+
+A tune used to move the device's own centre frequency, always. The IQ window is
+drawn around that centre, so every tune re-centred the display — the spectrum
+jumped, and the peak that was aimed at ended up in the middle of a redrawn
+panel. That is fine for a dial and useless for a finger: aiming needs the
+picture to hold still.
+
+The device now stays where it is while the demodulator moves inside the window,
+which is what SDR++ calls a VFO. `IQShift` (`Demods.swift`) is a
+phase-continuous complex mixer that brings the wanted frequency to the centre
+of the buffer before anything else sees it, so the noise reduction, the IF
+filters and the detectors all receive exactly what they would have received had
+the device been tuned there. It runs before the noise reduction as well as the
+demodulators, and it is bypassed entirely — same buffer, same bytes — while the
+offset is zero, which is every case that existed before.
+
+How far the demodulator may sit from the centre is
+`iqRate * 0.42 - bandwidth / 2`: the decimated stream is not flat to its own
+edges, so the outer 8% at each end is left alone, and the passband has to fit
+in what is left. On an Airspy HF+ at 456 kHz that is ±187 kHz for a 9 kHz AM
+channel — about twenty medium-wave channels either way — and ±116 kHz for a
+150 kHz FM one. Past that the device retunes and the window moves once, which
+is what moving it is for. A mode change that widens the passband past the
+current offset recentres for the same reason.
+
+A **jump** is the exception, and it is not simply a tune with a larger number.
+Choosing a preset, pressing a band button or walking the presets from the knob
+is "take me to this station", and the display is expected to arrive as well.
+Those callers pass `recenter: true` (`LocalRadio.setFrequency`), which skips the
+offset test and moves the device even when the demodulator could have reached
+the station on its own. Without it a preset a few channels away was answered
+inside the window, so the spectrum stayed wherever the last pan or tap had left
+it while the marker walked off towards the edge — which reads as a display that
+has stopped following the receiver. Everything that aims — the digits, a tap on
+the trace, the tune buttons, `/tune` — leaves it false, because a window that
+moves under the finger cannot be aimed with.
+
+Two other things follow. A tune inside the window is not a round trip, so it
+does not wait on the server and does not throw away the IQ already in hand —
+the trace carries on without a gap. And the red marker is no longer the middle
+of the panel: `SpectrumView.vfoHz` puts it and the passband highlight where the
+demodulator is, leaving the frame's own centre to the window.
+
+**Panning** is the other half, and the one thing tuning inside the window
+cannot do: it moves the window itself. Dragging the spectrum slides the trace
+and the waterfall with the finger, and the receiver follows about six times a
+second — not per touch event, since each step is a round trip, a demodulator
+reset and a restarted transform, but often enough that the band being dragged
+into fills in as it arrives rather than staying blank until the finger lifts.
+
+Two things make that work. The view is held in absolute frequency
+(`SpectrumView.viewCenterHz`) rather than as an offset in points, so the picture
+moves at the speed of the finger while the receiver moves at its own, and the
+difference between them closes on its own as each retune lands. That override
+ends when a frame arrives from the centre the view is waiting for — or from any
+other centre, since a preset chosen while the pan is still settling sends the
+device to a third frequency and the one the view is holding is never coming
+(`SpectrumView.overrideDone`); without the second half the window sat parked on
+a piece of band nothing was receiving any more. And the
+waterfall's bitmap is shifted by the same amount the centre moved, so a row
+measured before the pan still sits under the frequencies it was measured at
+— without that, every row drawn before a retune is a lie about where its
+signals were, and a pan smears the history sideways.
+
+What is being listened to does not change unless the pan would leave the
+demodulator outside the window, in which case it is dragged along at the edge,
+as SDR++ drags its VFO. The centre is clamped to what the device says it can
+tune to, so a drag off the end of the band stops there rather than asking the
+server for a frequency it would refuse without a word. The steps of a drag do
+not rewrite the settings file; the one the gesture ends on does.
+
+## The front-end window: design notes
+
+Moved here from `native-app.md`, which is a page about using the app.
+
+## Native receiver app
+
+`native-app/` is a full front-end over the same core — the deck's LCDs, but
+without their 200×100 px and four-panel limits.
+
+```sh
+native-app/build-app.sh          # both bundles
+native-app/build-app.sh front    # /Applications/Deck RX.app only
+native-app/build-app.sh solo     # /Applications/Deck RX Solo.app only
+native-app/run-tests.sh          # 80 assertions over the receiver
+```
+
+Two bundles, one source tree, separated by a `STANDALONE` compile flag:
+
+| | `Deck RX.app` | `Deck RX Solo.app` |
+| --- | --- | --- |
+| receiver | the plugin's | its own |
+| needs the plugin running | yes | no |
+| Stream Deck profile target | yes | no |
+| bundle id | `com.hogehoge.deckrx.receiver` | `com.hogehoge.deckrx.solo` |
+| icon | grey disc, the plugin's own | square pale-blue plate |
+
+The icons differ in shape as well as colour, which is what keeps them apart at
+16 px in a Dock or a Finder list. Solo's is rendered from `native-app/icon-solo.svg`;
+the front-end wears the plugin's `imgs/icon-source.svg`, because that is what it
+is a face for.
+
+The receiver sources are not compiled into the front-end at all rather than
+switched off inside it — dead code that cannot run is still code someone has to
+read. The display is shared, so a fix to the spectrum lands in both and cannot
+drift between them.
+
+Stream Deck switches to a profile automatically when the application it is bound
+to comes to the front — but a plugin is not an application, so a deck-rx profile
+has nothing to bind to and must be picked by hand. This app is that focus
+target: set the profile's application to `/Applications/Deck RX.app` in the
+Stream Deck app (stored as `AppIdentifier` in the profile manifest) and the deck
+follows the window.
+
+The status feed it reads is gated on the app being open. `src/statusFeed.ts`
+publishes only while the app refreshes its liveness flag, to `/Volumes/RAMDisk`
+when that RAM-backed volume is mounted and `/tmp` otherwise — measured at 320 B
+per write, 3.9 writes/s, with no measurable plugin CPU cost. A closed app costs
+the plugin one `stat()` per tick and nothing else.
+
+`Deck RX.app` reads the status feed and the spectrum socket and writes through
+the control endpoint, exactly like any other front-end; nothing about the
+receiver lives in it. The preset table comes from `data/presets.json`
+(read-only), and the row the receiver is currently
+on is highlighted by frequency, so a retune from a dial or the knob shows up
+here too. The list is grouped by band — MW, SW, FM — with a heading in the
+band's own colour, above a rule of its own that runs the full width. The
+heading is set larger than the frequencies it heads: at anything smaller it
+lost to every row under it, which is the wrong way round for something read
+before them. The grouping is deliberately coarser than the BAND JUMP
+buttons beside it: by metre band, a store holding 5750, 6055, 7325, 9975 and
+17650 kHz falls into seven headings for eight entries, since half of what is
+worth hearing on HF sits between the broadcast bands rather than inside one.
+Only the headings are coloured; the rows are a dense column of numbers, and
+tinting each of them would turn the list into confetti while re-using the
+three colours the spectrum already spends on presets, the tuned marker and the
+trace.
+
+The spectrum carries the scales a receiver needs: dB rules and labels down the
+left, a frequency scale between trace and waterfall (both share one x mapping),
+the demodulated passband shaded over the tuned frequency, and every preset
+inside the visible span labelled on the trace. The waterfall uses the classic
+blue → cyan → green → yellow → red ramp — a single-hue ramp looks tidier beside
+the rest of the UI but costs the thing a waterfall is for, telling a moderate
+signal from a strong one at a glance.
+
+Trace, scale rail and waterfall are drawn as three surfaces rather than one flat
+field, so where each ends is visible rather than inferred. **The rail between
+trace and waterfall is a handle: drag it to give either one more room**, from
+15% to 85% of the panel. Grip marks in the gutter's width of the rail say so,
+and the split is kept in `receiver.json` — how much history a band is worth is a
+habit, not a per-session decision. The waterfall's bitmap is sized to the old
+split, so its history restarts on a drag; there is no honest way to rescale it,
+since stretching would put rows at times they did not happen.
+
+Before the first frame arrives the panel draws the scale and the presets on it.
+The receiver's frequency and IQ width are known without a frame — from the
+status feed, and from `receiver.json` when even that is not up yet — so what is
+missing while waiting is the trace, not the axis: the frequency scale, the
+preset names, the passband marker and the dB scale are all there, and the
+notice sits in the empty waterfall well where it does not cover a label. With
+no saved width either (a first run), the panel falls back to an unlabelled
+graticule rather than inventing a scale the receiver never reported.
+
+The display's own settings are kept: the dB window, the zoom, the waterfall
+depth and the last IQ width, written a beat after the last slider move so a
+drag is one file write rather than one per mouse event. They used to be rebuilt
+from defaults on every launch, which meant a receiver that came up on a band
+you had already set the window for showed a flat line until you set it again.
+
+**The frequency readout tunes digit by digit.** Click above a digit to step that
+decade up, below it to step down, or scroll over it — the way most SDR
+front-ends work, and the fastest way to move a known distance: 954 kHz to
+1134 kHz is two nudges of the 100 kHz digit rather than twenty presses of a tune
+button. Every decade from 100 MHz down to 1 Hz has a digit, so anything is
+reachable by hand — which a unit-switching readout cannot offer: in MHz form the
+smallest digit was 10 kHz, and nothing finer could be tuned at all.
+
+The digits are grouped in threes and labelled kHz, so `594.000 kHz` reads as
+what it is. The unit is a label, not a conversion — the rightmost digit is
+always 1 Hz — but calling the same digits Hz made the last group read as a
+fraction of the wrong unit.
+
+Digits above the first significant one are not drawn, and the readout starts at
+its left edge, under the station name. Dimmed leading zeros were the first cut
+and left the number floating a third of the way across the header with the
+station name over nothing. The decades that disappear stay reachable: a step
+adds its weight rather than wrapping inside the digit, so pushing the leftmost
+digit up carries the number into the next decade and the digit for it appears.
+That carry also slides the digits one cell left under a stationary pointer, so
+the next click there lands on the new decade rather than the one just pushed.
+
+The options panel down the right carries what the deck's Property Inspector
+carries: the demod's own settings, the receiver-wide ones, the audio output
+including the icecast URL and bitrate when that is the output, and the two
+station databases with a row each to refresh them. The icecast password is
+deliberately not among them — it stays in the config and the Property
+Inspector's masked field rather than passing through a loopback endpoint with
+no authentication. Rows that the endpoint does not offer are not drawn at all,
+so the standalone app, which answers its own `/receiver` and has neither an
+icecast publisher nor the plugin's databases behind it, shows only what it can
+actually do.
+
+It is a column of controls, not a table of readings: clicking a row steps its
+value on. It says so now — the pointer
+becomes a hand and the row lifts under it. Without that the only way to find
+out the panel was live was to click it and see something change. Host and port
+are typed rather than cycled, in flat wells rather than system bezels, which
+had them sitting on the panel as two widgets from a different toolkit.
+
+Zoom and the dB window sit as vertical sliders down the right edge (ZOOM / MAX /
+MIN), since those are the three you ride while watching a waterfall. MAX above
+MIN, because the dB scale they act on runs that way — with them the other way
+round, pushing the upper handle up moved the bottom of the window, which reads
+as a control wired backwards. Zoom is done in the app — every frame already
+carries all the bins, and asking for a narrower FFT would cost the resolution
+zooming is meant to reveal.
+
+The window's readout beside HOLD is filled in from the sliders when the rail is
+built. It used to be a fixed `-100 / -20 dB` in the layout that nothing replaced
+until a slider was touched, so until then it described a window the spectrum was
+not using: the receiver comes up on `-160 / -1`, matching the FFT dial's default
+on the deck.
+
+Signal and noise are a segmented meter over a labelled scale, with a peak that
+hangs behind the reading — not a track with a fill, which is what the volume
+control below is, and an instrument that looks like a control invites a drag
+that does nothing. The meter takes whatever width the header has left over, so
+the readout beside it can change width with the frequency without leaving a hole
+in the middle.
+
+The toolbar carries STEP alongside the display settings. STEP goes to the
+receiver, and the TUNE buttons
+snap onto the step's grid on the first press when the receiver is off it:
+Japanese medium wave sits on multiples of 9 kHz, so a receiver parked on
+960 kHz by a coarser step otherwise walks 969, 978 … and never lands on a
+station.
+
+**The step follows the band, not just the mode.** Medium wave and short wave
+are both AM, so a step remembered per mode carried MW's 9 kHz onto the 49 m
+band, where the channels are 5 kHz apart and every press landed between two
+stations. Crossing 1.8 MHz now moves the step to the raster of the band being
+entered — 9 kHz on MW, 5 kHz on HF broadcast, 100 kHz on FM, 12.5 kHz on
+narrow FM — and each band remembers what was last chosen in it, so a step set
+by hand is not overwritten by moving away and coming back. SSB and CW have no
+raster; they start at 1 kHz and 100 Hz, which is a place to begin rather than
+a grid to land on.
+
+The right-hand panel carries every setting the receiver exposes, not just the
+demod's: below the mode-specific block and RF gain sits a RECEIVER section with
+tune mode, JP region, audio device, output mode, SDR++ auto-sync, a one-shot
+import, and the server host and port (typed, applied on Enter — changing either
+dials the new address). Those are the Property Inspector's settings — a window that can drive
+the radio but not configure it is half a front-end.
+
+The mode-specific block swaps with the demod: FM gets
+bandwidth, de-emphasis, stereo, IFNR and the audio filters; AM gets bandwidth,
+sync detection and the carrier AGC; SSB/CW get bandwidth and BFO pitch; all of
+them get RF gain. One Gain row, on whichever of the two stored indices the live
+mode uses — AM has its own, everything else shares the other, which is the
+split the demodulators themselves make. Clicking a row advances it. Values are never cached here —
+the panel redraws from what the receiver reports, so a change made on the deck
+shows up in the window.
+
+The rest of the toolbar follows SDR++'s display panel: FFT
+size, framerate and averaging (pushed to the receiver through
+`/spectrum`, since the FFT runs there and the deck's own FFT dial shares that
+pipeline), plus peak hold and the dB window (this app's own view of the same
+data, so they stay local). The controls render from what the receiver reports
+rather than from what was asked for.
+
+Not there yet, and visible as `—` rather than invented: bandwidth, tune step,
+per-mode options, RF gain, IQ rate and the demod-mode selector. Those need
+fields the status feed does not publish yet, plus a `/mode` endpoint on the
+control server.

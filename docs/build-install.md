@@ -82,7 +82,7 @@ get a `NODE_MODULE_VERSION` mismatch or, more commonly, the
 
 ### `npm run rebuild-native` — what it does
 
-[`scripts/rebuild-naudiodon.sh`](../scripts/rebuild-naudiodon.sh) automates
+[`scripts/rebuild-native.sh`](../scripts/rebuild-native.sh) automates
 three steps:
 
 1. **Swap libportaudio.dylib for the MacPorts arm64 build.** The naudiodon

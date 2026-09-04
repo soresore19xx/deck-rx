@@ -88,6 +88,9 @@ final class RadioViewController: UIViewController {
     private var ceilRail = VerticalSliderHost(caption: "MAX")
     private var floorRail = VerticalSliderHost(caption: "MIN")
     private let optionsButton = UIButton(type: .system)
+#if DRM_ENABLED
+    private let drmButton = UIButton(type: .system)
+#endif
     private let stationLabel = UILabel()
     private var bandButtons: [UIButton] = []
     private var modeButtons: [UIButton] = []
@@ -191,6 +194,16 @@ final class RadioViewController: UIViewController {
         optionsButton.widthAnchor.constraint(equalToConstant: S(110)).isActive = true
         optionsButton.setContentHuggingPriority(.required, for: .horizontal)
         optionsButton.addTarget(self, action: #selector(showOptions), for: .touchUpInside)
+
+#if DRM_ENABLED
+        // Beside Options because it is the same kind of thing: a panel that
+        // opens over the receiver and leaves it running underneath.
+        drmButton.setTitle("DRM", for: .normal)
+        styleAsKey(drmButton, font: xMono(S(15), .medium), height: S(40))
+        drmButton.widthAnchor.constraint(equalToConstant: S(72)).isActive = true
+        drmButton.setContentHuggingPriority(.required, for: .horizontal)
+        drmButton.addTarget(self, action: #selector(showDrm), for: .touchUpInside)
+#endif
 
         connectButton.setTitle("Connect", for: .normal)
         connectButton.titleLabel?.font = .systemFont(ofSize: S(17), weight: .semibold)
@@ -411,8 +424,7 @@ final class RadioViewController: UIViewController {
             // AUDIO at the far right of the last row of controls, where the
             // width the server group does not use was going to waste. Mute is
             // not a seventh mode, so it does not go in the MODE box either.
-            row([boxed("SERVER", row([hostField, portField, connectButton])),
-                 optionsButton, UIView(), boxed("AUDIO", muteButton)]),
+            serverRow(),
             // Named and framed like everything above it: it is the one thing in
             // the column that says whether any of the rest is doing anything.
             boxed("STATUS", statusLabel),
@@ -973,6 +985,20 @@ final class RadioViewController: UIViewController {
         floorRail.setReadout(String(format: "%.0f", spectrum.dbFloor))
     }
 
+    /// The server group, Options, and the mute key — plus the DRM key when the
+    /// decoder is built in. A function rather than an inline literal because
+    /// Swift will not accept #if between the elements of one.
+    private func serverRow() -> UIStackView {
+        let server = boxed("SERVER", row([hostField, portField, connectButton]))
+        var items: [UIView] = [server, optionsButton]
+#if DRM_ENABLED
+        items.append(drmButton)
+#endif
+        items.append(UIView())
+        items.append(boxed("AUDIO", muteButton))
+        return row(items)
+    }
+
     private func row(_ views: [UIView]) -> UIStackView {
         let s = UIStackView(arrangedSubviews: views)
         s.axis = .horizontal
@@ -1052,6 +1078,17 @@ final class RadioViewController: UIViewController {
         nav.modalPresentationStyle = .formSheet
         present(nav, animated: true)
     }
+
+#if DRM_ENABLED
+    /// The decode keeps running when the sheet is dismissed — a DRM signal
+    /// takes a while to lock and the receiver is meant to stay usable while it
+    /// does. Reopening shows whatever state it has reached.
+    @objc private func showDrm() {
+        let nav = UINavigationController(rootViewController: DrmViewController(radio: radio))
+        nav.modalPresentationStyle = .formSheet
+        present(nav, animated: true)
+    }
+#endif
 
     @objc private func toggleConnection() {
         guard !radio.isConnected else { radio.disconnect(); return }

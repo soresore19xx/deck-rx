@@ -244,3 +244,85 @@ used for FM it is not.
 
 Stereo still locks at 228 kHz (pilot 0.10 on J-WAVE), so the lock is not
 the thing that degrades.
+
+## iPad: the audio path
+
+Moved here from `ipad.md`, which is a page about using the app rather than
+about how it was got right.
+
+The output buffer is sized for the rate this actually runs at — 114 kHz stereo
+is 228 000 samples a second — and holds about 1.1 s, the room the plugin's own
+reader-stall absorb has. It primes too: playback banks 0.12 s before it starts
+reading, and re-primes after a dry run rather than scraping the bottom of the
+ring buffer by buffer. That depth is what the listener feels as the delay
+between turning the dial and the audio following, and it only has to cover
+jitter — the drift is cancelled separately.
+
+**The reader tracks the ring's depth.** The sender's clock (the receiver's
+crystal, by way of the server) and the device's audio clock are independent and
+drift apart by tens of ppm; with a fixed conversion ratio that difference has
+nowhere to go, so the ring fills until it overflows or empties until it
+underruns. The plugin answers this with libsamplerate, trimming the resampling
+ratio to hold its queue at a set depth. `AudioSink` runs the same loop one level
+down: it walks the ring at a fractional rate with linear interpolation, reading
+a hair faster when the ring is deeper than the target and a hair slower when it
+is shallower (`AudioSink.trackedRate`). The correction is capped at 0.4 % — two
+orders of magnitude more than the drift it cancels, and under three cents of
+pitch, approached slowly so there is no waver to hear. Latency therefore stays
+at the prime depth instead of wandering between it and the size of the ring.
+
+The status line carries two numbers worth reading when the audio breaks up:
+`drops` counts samples the output asked for and the ring did not have, and
+`gap` is the longest pause between two IQ packets in the last ten seconds.
+`drops` also carries the gap as it stood when the count last moved, which is the
+one that matters: a live gap says what the network is doing now, that one says
+what it was doing when the audio actually broke. Together they separate the two
+causes — a large gap means the samples were late (network or server), a small
+one means they arrived on time and this end could not keep up.
+
+Audio and display run on separate queues. The RMS pass behind the meters walks
+every sample of every packet and the FFT's ring is trimmed with a memmove; both
+used to sit on the audio queue, so each packet paid for them before the next
+could be demodulated, and the 30 Hz transform could land between a packet and
+its audio. Only the audio has a deadline, and only it runs at `.userInitiated`.
+
+### The signal path is the plugin's, parameter for parameter
+
+The Swift port had acquired settings of its own, and each one cost audio
+quality: an audio decimation of `audioDecimate * 12` where the plugin uses the
+configured value (9.5 kHz instead of 114 kHz, whose Nyquist sat below the 15 kHz
+anti-alias filter — a 6 kHz tone came back at 3.5 kHz, which is what wrecked
+sibilants); audio filters hard-coded off instead of following `fmLowPass` /
+`fmHighPass`; de-emphasis with no "off" branch; and no output mute window at
+all, where the plugin opens one around every gain change, retune and mode change
+so the amplitude step is not heard. Those are gone.
+
+A later sweep, comparing the two implementations parameter by parameter rather
+than symptom by symptom, found six more: the AM sync PLL ran a 100 Hz loop where
+the plugin runs 150 Hz (which is what lets the retune mute window be 200 ms
+rather than 400); the AM carrier AGC's attack and decay were hard-coded, so the
+two rows for them in the options sheet did nothing, and were pinned to 57 kHz,
+so the real time constant moved with the audio rate; the attack default was 20
+against the plugin's 50; RSSI was smoothed at 0.8/0.2 instead of 0.9/0.1 and did
+not subtract the gain the server reports in each packet header, so it read the
+receiver's own amplification as signal; and SNR was not smoothed at all.
+Everything else — every filter cutoff and Q, the stereo PLL and its
+phase-detector LPF, the IF filter's clamps and transition width, the demodulator
+gains, the AM and CW AGC set points and look-ahead, the IQ noise reduction's
+bins and window, the FFT's window and its frame-to-frame EWMA, the soft
+limiter's knee, the per-mode makeup — matches value for value.
+
+A later one again: the RF gain index never reached the demodulators. FM, SSB and
+CW detect an angle, not an amplitude, so the server-side gain moves the RSSI and
+leaves the audio where it was — the plugin carries the index into the
+demodulator's own output gain for exactly that reason (`8/8` full scale, `0/8`
+silent, `spyService.ts:1349`), and without it the Gain row was inert in every
+mode but AM. AM's own scale was `gain / 10` against the plugin's
+`amGain / maxGainIndex`, so it topped out at 0.8. And the app kept **one** gain
+where the plugin keeps two — AM pulled down against a strong medium-wave
+neighbour, FM wanting all of it — so an `fmGain` in the config file was read and
+discarded. There are two now, migrating a pre-split `gain` into the AM one, and
+the row shows whichever the live mode uses.
+
+**When something sounds different between the two, the difference is a bug in
+this one.**

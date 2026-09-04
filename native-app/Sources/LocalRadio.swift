@@ -37,6 +37,20 @@ final class LocalRadio {
     private var lastPacketAt = Date.distantPast
     private var gapWindowStart = Date.distantPast
     private let iqnr = IqNr()
+    /// Fax capture. Its own shifter rather than the audio path's: `IQShift` is
+    /// phase-continuous, so running one instance twice per packet would advance
+    /// its phase twice and tear the audio. Two consumers, two oscillators.
+    private var faxShifter = IQShift()
+    private var faxBuffer: Data?
+    private var faxWantBytes = 0
+    private var faxDone: ((WefaxImage?) -> Void)?
+    /// 0...1 while a capture runs, nil when idle. Read from any thread.
+    private(set) var faxProgress: Double?
+#if DRM_ENABLED
+    /// The DRM decoder, when one is running. Its own resampler carries its own
+    /// oscillator, for the same reason the fax capture does.
+    let drm = DrmSession()
+#endif
     /// Persisted settings. The app owns this; the plugin's config seeds it on a
     /// first run and is never written back to.
     var config = RadioConfig.load() {
@@ -530,6 +544,121 @@ final class LocalRadio {
 
     private func applyVfo() {
         shifter.setShift(hz: -vfoOffsetHz, sampleRate: Double(iqRate))
+        faxShifter.setShift(hz: -vfoOffsetHz, sampleRate: Double(iqRate))
+#if DRM_ENABLED
+        drm.setShift(hz: -vfoOffsetHz)
+#endif
+    }
+
+#if DRM_ENABLED
+    // MARK: - DRM
+
+    /// True while the DRM decoder owns the output. The ordinary demodulator
+    /// keeps running — the spectrum and the meters are drawn from it — but its
+    /// audio does not reach the sink, because DRM is what the user asked to
+    /// hear.
+    private(set) var drmAudioActive = false
+
+    /// Start decoding DRM at the current VFO. The receiver stays where it is:
+    /// the decoder gets its own copy of the same packets, resampled to the
+    /// 12 kHz the standard is defined at.
+    func startDrm() {
+        queue.async {
+            guard self.iqRate > 0 else { return }
+            self.drm.onAudio = { [weak self] pcm in
+                guard let self, self.drmAudioActive else { return }
+                self.sink.write(pcm)
+            }
+            self.drm.start(inRate: Double(self.iqRate), shiftHz: -self.vfoOffsetHz)
+            self.drmAudioActive = true
+            // DRM audio is 48 kHz stereo whatever the receiver was doing.
+            do { try self.sink.start(sourceRate: 48000, channels: 2) }
+            catch { self.lastError = "audio: \(error.localizedDescription)" }
+        }
+    }
+
+    func stopDrm() {
+        queue.async {
+            self.drm.stop()
+            self.drm.onAudio = nil
+            guard self.drmAudioActive else { return }
+            self.drmAudioActive = false
+            self.restartAudio()
+        }
+    }
+
+    /// Called on the audio queue with one packet. Cheap while idle.
+    private func feedDrm(_ rawBody: Data) {
+        guard drm.isRunning else { return }
+        drm.feed(rawBody)
+    }
+#endif
+
+    // MARK: - weather fax
+
+    /// Collect `seconds` of IQ at the current VFO and decode it as an HF fax.
+    ///
+    /// Recording and then decoding, rather than drawing as it arrives: the line
+    /// period is found by correlating whole lines against each other, which
+    /// needs the picture to exist first. A JMH chart takes about ten minutes at
+    /// 120 LPM, so that is the natural capture length.
+    func startFaxCapture(seconds: Double, completion: @escaping (WefaxImage?) -> Void) {
+        queue.async {
+            guard self.iqRate > 0 else { completion(nil); return }
+            self.faxWantBytes = Int(seconds * Double(self.iqRate)) * 4
+            self.faxBuffer = Data(capacity: self.faxWantBytes)
+            self.faxDone = completion
+            self.faxProgress = 0
+        }
+    }
+
+    func cancelFaxCapture() {
+        queue.async {
+            self.faxBuffer = nil
+            self.faxWantBytes = 0
+            self.faxProgress = nil
+            let done = self.faxDone
+            self.faxDone = nil
+            if let done { DispatchQueue.main.async { done(nil) } }
+        }
+    }
+
+    /// Called on the audio queue with one packet. Cheap while idle.
+    private func feedFax(_ rawBody: Data) {
+        guard faxBuffer != nil, faxWantBytes > 0 else { return }
+        let centred = faxShifter.isIdentity ? rawBody : faxShifter.process(rawBody)
+        faxBuffer!.append(centred)
+        faxProgress = min(1, Double(faxBuffer!.count) / Double(faxWantBytes))
+        guard faxBuffer!.count >= faxWantBytes else { return }
+
+        let iq = faxBuffer!
+        let rate = Double(iqRate)
+        let done = faxDone
+        faxBuffer = nil
+        faxWantBytes = 0
+        faxProgress = nil
+        faxDone = nil
+        // Decoding walks every sample twice; not on the queue that owes the
+        // sink a buffer every few milliseconds.
+        auxQueue.async {
+            // `touch /tmp/deck-rx-fax-dump` and the captured IQ lands next to
+            // the picture, in the same int16 interleaved layout the offline
+            // tools read. The first live capture came out slanted and
+            // over-contrasted where the same decoder had been clean on a
+            // recording; without the input there is no way to tell the capture
+            // apart from the decode, and guessing between them is how a whole
+            // day gets spent. Same flag idiom as the LCD dumps.
+            if FileManager.default.fileExists(atPath: "/tmp/deck-rx-fax-dump") {
+                let dir = ("~/.claude-work/out/solo-fax" as NSString).expandingTildeInPath
+                try? FileManager.default.createDirectory(atPath: dir,
+                                                         withIntermediateDirectories: true)
+                let name = "fax_\(Int(rate))Hz_\(Int(Date().timeIntervalSince1970)).s16"
+                try? iq.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
+                print("[fax] dumped \(iq.count / 4) samples @ \(Int(rate)) Hz -> \(name)")
+            }
+            let img = WefaxDecoder().decode(int16IQ: iq, iqRate: rate)
+            DispatchQueue.main.async { done?(img) }
+        }
     }
 
     // MARK: start-up
@@ -795,7 +924,12 @@ final class LocalRadio {
         queue.async {
             // Demodulate per packet, not per display frame: audio has to be
             // continuous, and the frame timer deliberately skips samples.
-            if self.audioEnabled, self.audioRate > 0 {
+#if DRM_ENABLED
+            let normalAudio = self.audioEnabled && !self.drmAudioActive
+#else
+            let normalAudio = self.audioEnabled
+#endif
+            if normalAudio, self.audioRate > 0 {
                 var pcm = self.demodulate(pkt.body)
                 if !pcm.isEmpty {
                     self.level(&pcm)
@@ -806,6 +940,11 @@ final class LocalRadio {
                     self.sink.write(pcm)
                 }
             }
+            // Independent of audioEnabled: a fax capture is not listening.
+            self.feedFax(pkt.body)
+#if DRM_ENABLED
+            self.feedDrm(pkt.body)
+#endif
         }
         // Not on the audio queue: the RMS pass walks every sample in the packet
         // and the trim below is a memmove, and the audio behind them would wait

@@ -24,6 +24,7 @@ SRC="Sources/Platform.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
      Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift \
+     Sources/WefaxDecode.swift \
      Sources/SpectrumView.swift Sources/FreqView.swift Sources/SignalMeter.swift"
 
 case "$TARGET" in
@@ -32,12 +33,33 @@ case "$TARGET" in
   *) echo "usage: $0 [sim|device] [install|no-install]"; exit 2 ;;
 esac
 
+# --- DRM, linked only when the core has been built for this platform ---
+# Same arrangement as build-app.sh: the decoder is not in this repository,
+# drm/fetch.sh fetches it, and its absence must not break the build.
+# There is no DRM screen in the iPad UI yet; this gets the decoder linked and
+# reachable from LocalRadio, which is what the window will bind to.
+DRM_CORE_DIR="${DRM_CORE_DIR:-$HERE/drm/build/drm-core}"
+DRM_FDK_DIR="${DRM_FDK_DIR:-$HERE/drm/build/fdk/out}"
+case "$TARGET" in
+  sim)    DRM_SLICE=ios-sim ;;
+  device) DRM_SLICE=ios ;;
+esac
+DRM_FLAGS=""
+if [ -f "$DRM_CORE_DIR/out/$DRM_SLICE/libdrmcore.a" ] && \
+   [ -f "$DRM_FDK_DIR/$DRM_SLICE/libfdk-aac.a" ]; then
+  SRC="$SRC Sources/DrmDecode.swift"
+  DRM_FLAGS="-D DRM_ENABLED -import-objc-header $DRM_CORE_DIR/drm_bridge.h -L$DRM_CORE_DIR/out/$DRM_SLICE -ldrmcore -L$DRM_FDK_DIR/$DRM_SLICE -lfdk-aac -lc++"
+  echo "DRM: linking $DRM_CORE_DIR/out/$DRM_SLICE/libdrmcore.a"
+else
+  echo "DRM: core not built for $DRM_SLICE - no DRM in this bundle"
+fi
+
 APP="$HERE/build/$TARGET/$NAME.app"
 rm -rf "$APP"; mkdir -p "$APP" || exit 1
 
 echo "==> swiftc ($TRIPLE) ..."
 ( cd "$HERE" && xcrun -sdk "$SDK" swiftc $SRC -o "$APP/DeckRX" -target "$TRIPLE" -O \
-      -module-name DeckRX ) \
+      -module-name DeckRX $DRM_FLAGS ) \
   || { echo "ERROR: swiftc build failed"; exit 1; }
 
 # iOS reads a flat bundle: the executable and the resources sit at the top,

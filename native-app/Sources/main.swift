@@ -1229,6 +1229,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameAutosaveName("deckRxReceiver")
         window.makeKeyAndOrderFront(nil)
         buildMenu()
+#if STANDALONE
+        // `open -a "Deck RX Solo" --args -direct` comes up already on its own
+        // receiver. Scripting the DIRECT pad instead meant hunting its pixel
+        // position on every launch, which broke whenever the window moved or
+        // the UI scale changed — and a missed click looks exactly like a
+        // receiver that simply did not connect.
+        if CommandLine.arguments.contains("-direct"), !direct {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.toggleSource()
+            }
+        }
+#if DRM_ENABLED
+        // -drm opens the DRM window on launch, for the same reason -direct
+        // exists: driving a menu from a script needs Accessibility, which is a
+        // permission prompt in the middle of a build check. This asks for
+        // nothing and proves the same thing.
+        if CommandLine.arguments.contains("-drm") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.showDrm()
+            }
+        }
+#endif
+#endif
         NSApp.activate(ignoringOtherApps: true)
 
         feed = SpectrumFeed { [weak self] frame in
@@ -1611,6 +1634,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Window menu, so close and minimise have their usual keys. Cmd-W
         // closes the only window, which terminates the app — see
         // applicationShouldTerminateAfterLastWindowClosed above.
+#if STANDALONE
+        // Only Solo has a receiver of its own to capture from.
+        let toolsItem = NSMenuItem()
+        main.addItem(toolsItem)
+        let toolsMenu = NSMenu(title: "ツール")
+        toolsMenu.addItem(withTitle: "気象ファクス…",
+                          action: #selector(showWefax), keyEquivalent: "f")
+            .target = self
+#if DRM_ENABLED
+        toolsMenu.addItem(withTitle: "DRM (短波デジタル)…",
+                          action: #selector(showDrm), keyEquivalent: "d")
+            .target = self
+#endif
+        toolsItem.submenu = toolsMenu
+#endif
+
         let windowItem = NSMenuItem()
         main.addItem(windowItem)
         let windowMenu = NSMenu(title: "ウインドウ")
@@ -1628,6 +1667,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// address is the useful half: with two bundles installed and a config
     /// seeded from several places, "which one is this and where is it pointed"
     /// is a real question.
+#if STANDALONE
+    private var wefax: WefaxWindowController?
+
+    /// Kept alive across opens: the window holds the capture's completion
+    /// handler, so letting it deallocate mid-capture would drop the picture on
+    /// the floor after ten minutes of waiting for it.
+    @objc private func showWefax() {
+        if wefax == nil { wefax = WefaxWindowController(radio: radio) }
+        wefax?.showWindow(nil)
+        wefax?.window?.makeKeyAndOrderFront(nil)
+    }
+
+#if DRM_ENABLED
+    private var drmWindow: DrmWindowController?
+
+    /// Kept alive across opens for the same reason the fax window is: it holds
+    /// the callback the decoder reports its state through, and a decode runs
+    /// for as long as the user leaves it running.
+    @objc private func showDrm() {
+        if drmWindow == nil { drmWindow = DrmWindowController(radio: radio) }
+        drmWindow?.showWindow(nil)
+        drmWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+#endif
+#endif
+
     @objc private func showAbout() {
         let info = Bundle.main.infoDictionary ?? [:]
         let name = info["CFBundleName"] as? String ?? "Deck RX"

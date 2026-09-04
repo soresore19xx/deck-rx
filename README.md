@@ -604,6 +604,44 @@ in `/health`, **LISTEN ONLY** in the window, 409 from `/tune`, and the readout
 follows the device rather than claiming a frequency nothing is receiving. There
 is no arbitration — which client owns the radio is the user's call.
 
+### Decoders: weather fax and DRM
+
+Both live under **ツール** in Solo's menu bar and take a copy of the same IQ the
+receiver is already pulling, so neither interrupts listening.
+
+**Weather fax (Cmd-F)** records the VFO for a chosen length and draws the chart.
+Recording first, drawing after, because the line period is found by measuring
+the whole page — see below. Presets are the three JMH frequencies; twelve
+minutes is one chart at 120 LPM. The decoder is `Sources/WefaxDecode.swift`,
+verified against the same recordings the offline tools read.
+
+The line period matters more than it sounds: the nominal 3000 samples is never
+exactly right, and an error of one part in three thousand shears the chart
+across a third of its width. Correlating each line against the next is too weak
+to find it — on a real 7795 kHz capture it scored 0.013 and chose a period that
+sheared the page. What works is the variance of the column-averaged row over the
+whole picture: at the right period every line's graticule falls in the same
+column and the contrast survives; at a wrong one the columns smear together.
+Black and white levels come from the two peaks of the frequency histogram, not
+from percentiles (which measure the noise between the strokes) and not from the
+median (which lands on whichever level covers more of the page).
+
+**DRM (Cmd-D)** decodes Digital Radio Mondiale on shortwave: sync lamps, station
+name, coding, bit rate and the running text, with the audio going to the same
+output the receiver uses. The decoder is not in this repository —
+[`native-app/drm/`](native-app/drm/) fetches and patches it, and the app links
+it only if it is there. **Run `native-app/drm/fetch.sh` once** to enable it; a
+checkout that never does still builds, without the menu item.
+
+That directory's README covers the licence position, which is short: the
+decoder is GPL and so is this, so there is nothing to reconcile; fdk-aac's
+licence means **a binary built with DRM must not be redistributed**, though
+publishing source and running it yourself are unaffected.
+
+Cost of a decode: 8-9 % of one core, 51 MB. Verified end to end on recordings —
+FAC and SDC sync, station name, QAM64, AAC 24 kbps, audio out. No DRM
+transmission has been received off the air here yet.
+
 ### CPU
 
 Measured on a 2015 MacBook Air 11 (two Broadwell cores):
@@ -828,6 +866,7 @@ The DSP algorithms and the LCD UI are inspired by / ported from two open-source 
 - **[SDR++](https://github.com/AlexandreRouma/SDRPlusPlus)** by Alexandre Rouma — Carrier AGC (`dsp::loop::AGC` + `dsp::demod::AM` CARRIER mode), FMIF noise reduction, SpyServer protocol layout, runtime tune sequence.
 - **[ATS-Mini](https://github.com/esp32-si4732/ats-mini)** by the esp32-si4732 project — segmented N (SNR) / S (RSSI) bar styling, metallic dial-knob graphic, EIBI shortwave schedule consumer.
 - **Stream Deck SDK** — [@elgato/streamdeck](https://www.npmjs.com/package/@elgato/streamdeck) by Elgato.
+- **[drm-receiver](https://github.com/JvanKatwijk/drm-receiver)** by Jan van Katwijk — the DRM decoder Solo links, with Qt taken out of it. Fetched and patched by `native-app/drm/fetch.sh`; nothing of it is checked in here.
 
 If the upstream ATS-Mini URL has moved, please file an issue.
 
@@ -836,3 +875,5 @@ If the upstream ATS-Mini URL has moved, please file an issue.
 GPL-3.0-or-later. See [LICENSE](LICENSE).
 
 deck-rx contains ports / re-implementations of algorithms from [SDR++](https://github.com/AlexandreRouma/SDRPlusPlus) (GPL-3.0-or-later), so the project is licensed under the same terms — fork / modify / redistribute freely under GPL-3.0+.
+
+The optional DRM decoder is [drm-receiver](https://github.com/JvanKatwijk/drm-receiver), GPL-2.0-or-later, which the "or later" makes compatible with this. Its audio needs **fdk-aac**, whose Fraunhofer licence grants no patent rights and therefore does not combine with the GPL in a distributed binary — the same reason ffmpeg calls a `--enable-gpl --enable-nonfree` build unredistributable. Publishing source is unaffected and is all this repository does, but **a binary built with DRM enabled must not be passed on**. Building and running one yourself triggers no obligation at all.

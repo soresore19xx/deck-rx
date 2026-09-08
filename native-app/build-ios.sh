@@ -28,6 +28,7 @@ DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
 # answer on an iPad.
 SRC="Sources/Platform.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
      Sources/iOSApp.swift Sources/LocalRadio.swift Sources/SpyClient.swift \
+     Sources/IQSource.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
      Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift \

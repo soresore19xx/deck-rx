@@ -58,8 +58,12 @@ build_variant() {
   local SLICE_ARM="$HERE/.slice-arm64" SLICE_X86="$HERE/.slice-x86_64"
   rm -f "$SLICE_ARM" "$SLICE_X86"
 
+  # ARM_ONLY_* carry what only the arm64 slice can have: the USB device source
+  # and the libairspyhf it links. MacPorts ships those arm64-only, so putting
+  # them in both slices would fail the x86_64 link and quietly cost the bundle
+  # its Intel half. An Intel Mac gets the app it had before instead.
   echo "==> $NAME: swiftc (-O, arm64) ..."
-  if ! ( cd "$HERE" && swiftc $SRC_FILES -o "$SLICE_ARM" -framework AppKit -O $FLAGS \
+  if ! ( cd "$HERE" && swiftc $SRC_FILES $ARM_ONLY_SRC -o "$SLICE_ARM" -framework AppKit -O $FLAGS $ARM_ONLY_FLAGS \
           -target "arm64-apple-macos$DEPLOY_TARGET" ); then
     echo "ERROR: swiftc build failed (arm64, $NAME)"; return 1
   fi
@@ -173,6 +177,7 @@ SHARED="Sources/main.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
         Sources/SpectrumView.swift Sources/OptionsPanel.swift Sources/FreqView.swift \
         Sources/Platform.swift Sources/RadioConfig.swift Sources/SignalMeter.swift"
 RECEIVER="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
+          Sources/IQSource.swift \
           Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
           Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
           Sources/StationLabel.swift Sources/PresetStore.swift \
@@ -195,6 +200,41 @@ else
   echo "     (run drm/fetch.sh to add it)"
 fi
 
+# --- Airspy HF+ on this machine's own USB, built only where the library is ---
+# Solo can take its IQ from a device on the bus instead of a SpyServer. That
+# needs libairspyhf, which is not part of macOS; without it the app is exactly
+# what it was and the Source row offers the server alone.
+# Static, and libusb with it, so the bundle a notarised dmg carries does not
+# depend on MacPorts being installed on the machine that opens it.
+AIRSPYHF_PREFIX="${AIRSPYHF_PREFIX:-/opt/local}"
+AIRSPY_SRC=""
+AIRSPY_FLAGS=""
+if [ -f "$AIRSPYHF_PREFIX/include/libairspyhf/airspyhf.h" ] \
+   && [ -f "$AIRSPYHF_PREFIX/lib/libairspyhf.a" ] \
+   && [ -f "$AIRSPYHF_PREFIX/lib/libusb-1.0.a" ]; then
+  # Generated rather than checked in: it names an absolute header path, which
+  # belongs to whichever machine is building rather than to the repository.
+  mkdir -p "$HERE/.airspyhf"
+  cat > "$HERE/.airspyhf/module.modulemap" <<MODMAP
+module CAirspyHF {
+    header "$AIRSPYHF_PREFIX/include/libairspyhf/airspyhf.h"
+    export *
+}
+MODMAP
+  AIRSPY_SRC="Sources/AirspyDevice.swift"
+  AIRSPY_FLAGS="-D AIRSPYHF_ENABLED -Xcc -fmodule-map-file=$HERE/.airspyhf/module.modulemap \
+                -I$AIRSPYHF_PREFIX/include \
+                $AIRSPYHF_PREFIX/lib/libairspyhf.a $AIRSPYHF_PREFIX/lib/libusb-1.0.a \
+                -framework IOKit -framework CoreFoundation -framework Security -lobjc"
+  echo "USB: linking $AIRSPYHF_PREFIX/lib/libairspyhf.a (arm64 slice only)"
+else
+  echo "USB: libairspyhf not found under $AIRSPYHF_PREFIX - Solo will offer the server only"
+  echo "     (sudo port install libairspyhf, or set AIRSPYHF_PREFIX)"
+fi
+
+ARM_ONLY_SRC=""
+ARM_ONLY_FLAGS=""
+
 if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "front" ]; then
   SRC_FILES="$SHARED"
   build_variant "/Applications/Deck RX.app" "com.hogehoge.deckrx.receiver" "Deck RX" "" \
@@ -202,6 +242,8 @@ if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "front" ]; then
 fi
 if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "solo" ]; then
   SRC_FILES="$SHARED $RECEIVER"
+  ARM_ONLY_SRC="$AIRSPY_SRC"
+  ARM_ONLY_FLAGS="$AIRSPY_FLAGS"
   build_variant "/Applications/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE $DRM_FLAGS" \
                 "deck-rx-solo" || exit 1
 fi

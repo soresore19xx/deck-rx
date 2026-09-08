@@ -12,7 +12,10 @@ import Foundation
 /// makes the two comparable side by side while both exist.
 final class LocalRadio {
 
-    private let client = SpyClient()
+    /// The IQ source in force. A `SpyClient` unless the config asks for the
+    /// USB device, and swapped in `openConnection` rather than at construction
+    /// so the setting can be changed without a relaunch.
+    private var client: IQSource = SpyClient()
     private var fft: FFTPipeline?
     private let am = AMDemod()
     private let other = Demods()
@@ -178,6 +181,16 @@ final class LocalRadio {
     /// not, clamped to that maximum either way. 8 stands in until the first
     /// DeviceInfo arrives — the ceiling both options panels are built around.
     var maxGainIndex: UInt32 { deviceInfo?.maxGainIndex ?? 8 }
+
+    /// What the header calls the thing on the other end. The server path keeps
+    /// the wording it has always had — it describes a server, and the device
+    /// behind it is only known by a type number. A device on our own USB is
+    /// known exactly, and says so.
+    var deviceLabel: String {
+        guard let info = deviceInfo else { return "" }
+        if config.source == "usb" { return "Airspy HF+ (USB)" }
+        return "SpyServer type \(info.deviceType)"
+    }
     var amGainIndex: UInt32 { min(config.amGain ?? maxGainIndex, maxGainIndex) }
     var fmGainIndex: UInt32 { min(config.fmGain ?? maxGainIndex, maxGainIndex) }
     /// What the server is told to use. AM is the split, exactly as
@@ -356,6 +369,32 @@ final class LocalRadio {
     private var connectHost = ""
     private var connectPort: UInt16 = 5555
 
+    /// Puts the source the config asks for in place. Called on every connection
+    /// attempt, so changing the setting takes effect on the next dial rather
+    /// than on the next launch — and a reconnect after an unplug re-opens the
+    /// device through the same path a first connection takes.
+    ///
+    /// Without the USB source compiled in, the setting is accepted and ignored:
+    /// a config shared with a machine that has the library says "usb" on one
+    /// that does not, and a receiver that refuses to start over a spelling is
+    /// worse than one that connects to the server it also knows about.
+    private func selectSource() {
+        let wantDevice = config.source == "usb"
+#if AIRSPYHF_ENABLED
+        if wantDevice, !(client is AirspyDevice) {
+            client.disconnect()
+            client = AirspyDevice()
+        } else if !wantDevice, !(client is SpyClient) {
+            client.disconnect()
+            client = SpyClient()
+        }
+#else
+        if wantDevice, lastError == nil {
+            lastError = "built without USB device support - using the server"
+        }
+#endif
+    }
+
     /// The connection attempt itself, separated from `connect` so a retry does
     /// not re-run the setup — and so the address it dials is the one recorded,
     /// not whatever the config says now.
@@ -367,6 +406,7 @@ final class LocalRadio {
         // between attempts. It clears when a connection actually succeeds.
         pipelineSize = 0
         syncPipeline()
+        selectSource()
 
         client.onDeviceInfo = { [weak self] info in self?.start(with: info) }
         client.onIQ = { [weak self] pkt in self?.absorb(pkt) }
@@ -398,7 +438,7 @@ final class LocalRadio {
             DispatchQueue.main.async { self.onState?() }
         }
 
-        client.connect(host: host, port: port) { [weak self] result in
+        client.open(host: host, port: port) { [weak self] result in
             guard let self else { return }
             if case .failure(let e) = result {
                 self.lastError = e.localizedDescription
@@ -933,6 +973,12 @@ final class LocalRadio {
                 var pcm = self.demodulate(pkt.body)
                 if !pcm.isEmpty {
                     self.level(&pcm)
+                    // Measured here, after levelling and before the sink, so
+                    // it describes what was demodulated rather than what came
+                    // out of the volume control.
+                    var sq = 0.0
+                    for v in pcm { sq += Double(v) * Double(v) }
+                    self.pcmRms = (sq / Double(pcm.count)).squareRoot()
                     // spyService.ts:1418 — silence while the window is open.
                     if Date() < self.muteUntil {
                         for i in 0..<pcm.count { pcm[i] = 0 }
@@ -1010,6 +1056,34 @@ final class LocalRadio {
         // preset list follows, kept here so the knob and the list agree.
         setFrequency(UInt32(max(0, p.freq)), recenter: true)
         return UInt32(max(0, p.freq))
+    }
+
+    /// Audio-path instrumentation, on stderr every five seconds, behind
+    /// DECKRX_AUDIO_DIAG=1. Kept rather than deleted for the same reason the
+    /// ASRC counters were: "the audio breaks up" and "the audio is quiet" are
+    /// different faults with the same description, and these four numbers —
+    /// underruns, queue depth, packet gap, PCM level — separate them without
+    /// another round of guessing.
+    private var diagTimer: DispatchSourceTimer?
+    /// RMS of the last buffer handed to the sink, against full scale. The one
+    /// number that says whether quiet audio is the demodulator's doing or
+    /// something after it.
+    private var pcmRms: Double = 0
+    func startAudioDiag() {
+        diagTimer?.cancel()
+        let t = DispatchSource.makeTimerSource(queue: auxQueue)
+        t.schedule(deadline: .now() + 5, repeating: 5)
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            let line = String(format: "[diag] iq=%d audio=%.0f dec=%d underruns=%d gapMs=%.0f queue=%.3fs pcm=%.5f (%.1f dBFS) rssi=%.1f vol=%.2f\n",
+                              self.iqRate, self.audioRate, self.audioDecimate,
+                              self.audioUnderruns, self.maxPacketGapMs, self.sink.latencySeconds,
+                              self.pcmRms, 20 * log10(max(self.pcmRms, 1e-9)),
+                              self.rssiDbfs, self.volume)
+            FileHandle.standardError.write(line.data(using: .utf8)!)
+        }
+        diagTimer = t
+        t.resume()
     }
 
     private func startFrameTimer() {

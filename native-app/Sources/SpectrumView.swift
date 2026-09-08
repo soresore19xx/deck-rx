@@ -166,6 +166,27 @@ final class SpectrumView: XView {
     /// without a mark taken from the touch itself the only feedback is the jump
     /// at the end, and the tap cannot be aimed.
     var aimHz: Double? { didSet { if aimHz != oldValue { redraw() } } }
+
+    /// Where the pointer says to tune. SDR++'s mapping: press anywhere on the
+    /// band and the receiver goes there, and it keeps following while the
+    /// button is held. The iPad has tuned by tap since it shipped and the
+    /// mapping it uses (`frequency(atX:)`) was already here — the Mac simply
+    /// had nothing wired to it, so the window could show a station it could
+    /// not be asked to tune. nil leaves the pointer alone.
+    var onTune: ((Double) -> Void)?
+#if !canImport(UIKit)
+    private var tuningByPointer = false
+    private var lastPointerTune = Date.distantPast
+    /// Where the button went down, and whether the pointer has since travelled
+    /// far enough to mean it.
+    private var pointerDownAt: CGPoint = .zero
+    private var pointerDragging = false
+    /// A press is never perfectly still, and every hertz of that tremor used to
+    /// become a retune — the frequency slid out from under the click. Nothing
+    /// follows the pointer until it has left this radius; inside it, the tune
+    /// issued on the press is the whole gesture.
+    private static let dragSlop: CGFloat = 5
+#endif
     private let axisStrip: CGFloat = 24
 
     /// Where the receiver is and how wide its IQ window is, from the status
@@ -482,7 +503,23 @@ final class SpectrumView: XView {
 #if !canImport(UIKit)
     override func resetCursorRects() {
         super.resetCursorRects()
-        addCursorRect(railRect(bounds), cursor: .resizeUpDown)
+        // The plot in two pieces, above and below the rail, so the rail keeps
+        // its own cursor rather than depending on which overlapping rect
+        // AppKit happens to prefer.
+        let rail = railRect(bounds)
+        let plotX = gutter, plotW = max(0, bounds.width - gutter)
+        if plotW > 0 {
+            if rail.minY > 0 {
+                addCursorRect(CGRect(x: plotX, y: 0, width: plotW, height: rail.minY),
+                              cursor: .crosshair)
+            }
+            let belowY = rail.maxY, belowH = bounds.height - belowY
+            if belowH > 0 {
+                addCursorRect(CGRect(x: plotX, y: belowY, width: plotW, height: belowH),
+                              cursor: .crosshair)
+            }
+        }
+        addCursorRect(rail, cursor: .resizeUpDown)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -491,23 +528,72 @@ final class SpectrumView: XView {
         // line the eye aims at is its border, and a handle that starts exactly
         // where the target ends is one the pointer keeps missing.
         draggingSplit = railRect(bounds).insetBy(dx: 0, dy: -4).contains(p)
-        if !draggingSplit { super.mouseDown(with: event) }
+        if draggingSplit { return }
+        if let hz = frequency(atX: p.x), onTune != nil {
+            tuningByPointer = true
+            pointerDownAt = p
+            pointerDragging = false
+            aimHz = hz
+            emitTune(hz, force: true)
+            return
+        }
+        super.mouseDown(with: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard draggingSplit else { super.mouseDragged(with: event); return }
-        let usable = bounds.height - axisStrip
-        guard usable > 0 else { return }
+        if draggingSplit {
+            let usable = bounds.height - axisStrip
+            guard usable > 0 else { return }
+            let p = convert(event.locationInWindow, from: nil)
+            // The pointer holds the middle of the rail, not its top edge, so
+            // the handle does not jump under the cursor on the first movement.
+            spectrumFraction = (p.y - axisStrip / 2) / usable
+            return
+        }
+        guard tuningByPointer else { super.mouseDragged(with: event); return }
         let p = convert(event.locationInWindow, from: nil)
-        // The pointer holds the middle of the rail, not its top edge, so the
-        // handle does not jump under the cursor on the first movement.
-        spectrumFraction = (p.y - axisStrip / 2) / usable
+        if !pointerDragging {
+            guard abs(p.x - pointerDownAt.x) > Self.dragSlop
+                || abs(p.y - pointerDownAt.y) > Self.dragSlop else { return }
+            pointerDragging = true
+        }
+        guard let hz = frequency(atX: p.x) else { return }
+        aimHz = hz
+        emitTune(hz, force: false)
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard draggingSplit else { super.mouseUp(with: event); return }
-        draggingSplit = false
-        onSplitChanged?(spectrumFraction)
+        if draggingSplit {
+            draggingSplit = false
+            onSplitChanged?(spectrumFraction)
+            return
+        }
+        guard tuningByPointer else { super.mouseUp(with: event); return }
+        tuningByPointer = false
+        // A click that never became a drag has already been answered on the
+        // press; sending a second tune from wherever the pointer drifted to is
+        // exactly the slip this is here to stop.
+        if pointerDragging {
+            let p = convert(event.locationInWindow, from: nil)
+            if let hz = frequency(atX: p.x) { emitTune(hz, force: true) }
+        }
+        pointerDragging = false
+        // The mark belongs to the press. The receiver's own marker takes over
+        // once the retune lands, and leaving both up draws two red lines a few
+        // pixels apart.
+        aimHz = nil
+    }
+
+    /// A retune resets the demodulators and restarts the transform, so issuing
+    /// one per mouse-moved event would spend the drag catching up — the same
+    /// reason the iPad samples its pan rather than following every touch. The
+    /// press and the release always go through; what is between them is
+    /// sampled.
+    private func emitTune(_ hz: Double, force: Bool) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastPointerTune) > 0.05 else { return }
+        lastPointerTune = now
+        onTune?(hz)
     }
 #endif
 
@@ -863,14 +949,20 @@ final class SpectrumView: XView {
             }
         }
 
-        // passband, before the trace so the trace stays readable on top of it
+        // passband, before the trace so the trace stays readable on top of it.
+        // Clipped to the plot the same way the trace and the waterfall are: the
+        // band is a width in Hz, so zooming in widens it in pixels until it runs
+        // off both ends — over the dB gutter on the left and past the right edge.
         if bandwidthHz > 0, span > 0 {
             let half = bandwidthHz / 2
             let r = CGRect(x: x(forHz: tunedHz - half), y: 0,
                            width: max(2, x(forHz: tunedHz + half) - x(forHz: tunedHz - half)),
                            height: h)
+            ctx.saveGState()
+            ctx.clip(to: CGRect(x: plotX, y: 0, width: plotW, height: h))
             ctx.setFillColor(XColor(red: 0.85, green: 0.35, blue: 0.30, alpha: 0.16).cgColor)
             ctx.fill(r)
+            ctx.restoreGState()
         }
 
         // trace + fill. Drawn from bin columns rather than from frequencies,
@@ -926,11 +1018,17 @@ final class SpectrumView: XView {
         // thin as a line gets. It can be this thin because it is not the only
         // thing saying where the receiver is — the passband is shaded behind
         // it, and it is the only red on the display.
+        // Clipped for the same reason the passband is: zoomed in far enough,
+        // or panned off it, the tuned frequency is outside the plot and the
+        // line would be drawn over the dB gutter instead of nowhere.
+        ctx.saveGState()
+        ctx.clip(to: CGRect(x: plotX, y: 0, width: plotW, height: h))
         ctx.setStrokeColor(XColor(red: 0.96, green: 0.24, blue: 0.24, alpha: 1).cgColor)
         ctx.setLineWidth(0.5)
         let cx = pixelCentre(x(forHz: tunedHz))
         ctx.move(to: CGPoint(x: cx, y: 0)); ctx.addLine(to: CGPoint(x: cx, y: h))
         ctx.strokePath()
+        ctx.restoreGState()
 
         drawStationLabels(ctx, specH: specH, lo: lo, span: span, xOf: x(forHz:))
         drawAim(ctx, xOf: x(forHz:), h: h, fallTop: fallTop)

@@ -8,7 +8,9 @@ Part of [deck-rx](../README.md).
 
 ## Using it
 
-1. Type the SpyServer's address and port, and press **DIRECT**.
+1. Type the SpyServer's address and port, and press **DIRECT**. Or set
+   **Source** to `usb` and it opens an Airspy HF+ on this machine's own USB
+   instead — see [Straight off USB](#straight-off-usb).
 2. Press **AUDIO**.
 3. Pick a station from the list on the left — or type a frequency into the
    readout, or walk with **TUNE −/+**.
@@ -21,6 +23,7 @@ That is all of it. The rest, briefly:
 | **TUNE − +** | one step, and the step follows the mode: 9 kHz on AM, 100 kHz on FM |
 | **WFM … CW** | the mode. Bandwidth and the options panel follow it |
 | **BAND JUMP** | MW, the shortwave metre bands, FM |
+| **IQ** | the width the receiver runs at — the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). Changing it reconnects |
 | **STEP / FFT / RATE / SMOOTH** | the spectrum: resolution, frame rate, how much it is averaged |
 | **HOLD** | freezes the trace; the waterfall keeps running |
 | **NR / LVL** | noise reduction, and the output leveller |
@@ -28,12 +31,45 @@ That is all of it. The rest, briefly:
 | **ZOOM / MAX / MIN / TIME** (right edge) | span, the dB window top and bottom, and how much history the waterfall holds |
 | **POWER** | disconnects and stops the audio |
 
-Drag on the spectrum to tune; the station name of whatever the marker is over
-appears above it. The picture is drawn where the ear is rather than where the
-samples are, so what is seen and what is heard line up.
+Click anywhere on the spectrum or the waterfall to tune there, SDR++'s
+mapping; hold the button down and the receiver follows the pointer. What is
+clicked is snapped to the step in force, so a click next to 954 kHz lands on
+954 and not on 953.7. A press that never travels more than five points is a
+click, not a drag — without that, the tremor in a click slid the frequency out
+from under it. The station name of whatever the marker is over appears above
+it, and the picture is drawn where the ear is rather than where the samples
+are, so what is seen and what is heard line up.
+
+The meters, the drop count and every row in the options panel describe **this**
+receiver whenever DIRECT is lit. They used to be read off the loopback control
+endpoint, which belongs to the Stream Deck plugin whenever the plugin is
+running: the window then showed the plugin's gain, AGC and signal while driving
+its own receiver, and the two disagreed silently.
 
 Settings live in `~/Library/Application Support/deck-rx/receiver.json` and are
 written as they change — there is no Save.
+
+## Straight off USB
+
+`Source` in the options panel is `spyserver` (the address below it) or `usb`,
+an Airspy HF+ on this machine's own bus. The device path is a translation
+rather than a second receiver: it fills in the same `DeviceInfo` the SpyServer
+client does, takes the same setting ids in the same order, and hands up the
+same interleaved int16 IQ at the same scaling, so the levels a station reads at
+are comparable between the two.
+
+Two things follow from a device being a device. **One process owns it**: with
+`usb` selected the plugin, SDR++ and anything else are locked out until Solo
+lets go — a server shares a stream, a USB device does not. And the rate ladder
+is the hardware's: 912 / 456 / 228 kHz come straight off the device, and
+anything below that is decimated here, filtered before the drop rather than
+after it.
+
+It is built only where the library is. `build-app.sh` looks for libairspyhf and
+libusb under `/opt/local` (`AIRSPYHF_PREFIX` moves that), links them statically
+into the arm64 slice — MacPorts ships them arm64-only, so the Intel slice stays
+what it was — and says which it did. Without them the app is exactly what it
+was and the Source row offers the server alone.
 
 ## Weather fax and DRM
 
@@ -158,6 +194,10 @@ than after.
 Host and port are editable from the options panel, so a copied app needs no
 hand-edited file. The station databases ship inside the bundle and seed
 `~/Library/Application Support/deck-rx/data` on first launch.
+
+`source` is `spyserver` or `usb`, and `iqDecimation` is the offset from the
+device's minimum — 0 is the device's full rate, 1 halves it. Both are on the
+toolbar and in the options panel; the file is where they persist.
 
 `spectrumSplit` is the fraction of the spectrum panel given to the trace,
 dragged on the rail rather than typed.

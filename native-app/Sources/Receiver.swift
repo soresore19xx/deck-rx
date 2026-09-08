@@ -152,6 +152,17 @@ enum Receiver {
         var mode: (Int) -> Void
         var volume: (Double) -> Void
         var toggleMute: () -> Void
+        /// The settings pages, answered in-process. Optional so a caller that
+        /// only routes control still compiles; when they are nil the HTTP path
+        /// is used, which is what the front-end wants.
+        ///
+        /// Without these the standalone window read its settings off the
+        /// loopback endpoint — which belongs to the plugin whenever the plugin
+        /// is running. The window then showed the plugin's gain, AGC and
+        /// bandwidth while driving its own receiver, and every row disagreed
+        /// with what was actually being received.
+        var options: ((String?, String?) -> [String: Any])?
+        var receiver: ((String?, String?, String?) -> [String: Any])?
     }
     static var direct: DirectControl?
 
@@ -307,6 +318,11 @@ enum Receiver {
            let v = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             parts.append("set=\(n)"); parts.append("value=\(v)")
         }
+        if let d = direct, let handler = d.receiver {
+            let j = handler(name, value, action)
+            DispatchQueue.main.async { then(j) }
+            return
+        }
         let query = parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
         guard let url = URL(string: "http://127.0.0.1:\(controlPort)/receiver\(query)") else { return }
         var req = URLRequest(url: url); req.timeoutInterval = 8
@@ -327,6 +343,11 @@ enum Receiver {
            let n = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let v = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             query = "?set=\(n)&value=\(v)"
+        }
+        if let d = direct, let handler = d.options {
+            let j = handler(name, value)
+            DispatchQueue.main.async { then(j) }
+            return
         }
         guard let url = URL(string: "http://127.0.0.1:\(controlPort)/options\(query)") else { return }
         var req = URLRequest(url: url); req.timeoutInterval = 3
@@ -378,11 +399,14 @@ enum Receiver {
     /// endpoint reports the values actually in force, clamped, so the UI can
     /// render from the answer rather than assume its request was taken.
     static func spectrum(fft: Int? = nil, fps: Int? = nil, smooth: Int? = nil,
+                         decimation: Int? = nil,
                          then: ((Int, Int, Int) -> Void)? = nil) {
         var parts: [String] = []
         if let fft { parts.append("fft=\(fft)") }
         if let fps { parts.append("fps=\(fps)") }
         if let smooth { parts.append("smooth=\(smooth)") }
+        // Standalone only: the plugin's endpoint has no decimation to set.
+        if let decimation { parts.append("decimation=\(decimation)") }
         let query = parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
         guard let url = URL(string: "http://127.0.0.1:\(controlPort)/spectrum\(query)") else { return }
         var req = URLRequest(url: url); req.timeoutInterval = 2

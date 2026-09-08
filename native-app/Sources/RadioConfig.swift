@@ -3,6 +3,15 @@ import Foundation
 struct RadioConfig: Codable, Equatable {
     var host = "127.0.0.1"
     var port = 5555
+    /// Where the IQ comes from: "spyserver" — the address above — or "usb", an
+    /// Airspy HF+ on this machine's own USB. The server stays the default: it
+    /// is what every existing config means, and it is the only one of the two
+    /// that works with the receiver in another room.
+    ///
+    /// One process owns a USB device at a time. Choosing "usb" here therefore
+    /// takes it from anything else holding it — the plugin's own receiver
+    /// included — rather than sharing it the way a SpyServer shares a stream.
+    var source = "spyserver"
     var frequencyHz: Double = 1_134_000
     var mode = 2
     /// RF gain index, kept per demod family the way the plugin keeps it
@@ -194,6 +203,7 @@ struct RadioConfig: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         host = (try? c.decodeIfPresent(String.self, forKey: .host)) .flatMap { $0 } ?? d.host
         port = (try? c.decodeIfPresent(Int.self, forKey: .port)) .flatMap { $0 } ?? d.port
+        source = (try? c.decodeIfPresent(String.self, forKey: .source)) .flatMap { $0 } ?? d.source
         frequencyHz = (try? c.decodeIfPresent(Double.self, forKey: .frequencyHz)) .flatMap { $0 } ?? d.frequencyHz
         mode = (try? c.decodeIfPresent(Int.self, forKey: .mode)) .flatMap { $0 } ?? d.mode
         // A file written before AM and FM were told apart carries one `gain`.

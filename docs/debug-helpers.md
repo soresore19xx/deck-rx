@@ -49,3 +49,42 @@ output (via `setFeedback`) keeps `seg7svg`'s unmodified `<text>` and
 is unaffected. If you ever add another tight-layout text element,
 extend the same regex pattern in `dumpTuneLcd` rather than touching
 `seg7svg` (which would shift the on-device render too).
+
+## Audio path: which fault is it (Solo)
+
+"It breaks up" and "it is too quiet" are different faults with the same
+description, and guessing between them costs a session. Launch the standalone
+app with `DECKRX_AUDIO_DIAG=1` and it writes one line to stderr every five
+seconds:
+
+```
+[diag] iq=456000 audio=114000 dec=4 underruns=0 gapMs=14 queue=0.120s pcm=0.29036 (-10.7 dBFS) rssi=-59.3 vol=0.97
+```
+
+- `underruns` climbing with `queue` near zero — the sink is starved: the demod
+  is not keeping up, or the device rate changed under it.
+- `gapMs` large — the IQ arrived late; that is the server or the network, not
+  this end. A retune shows one large gap and nothing after it.
+- `pcm` far below about −20 dBFS with a healthy `rssi` — the demodulator is
+  quiet, so look at gain, AGC and mode rather than at the audio path.
+- `pcm` fine but nothing audible — everything after the demodulator: volume,
+  mute, output device.
+
+A real case: AM at −85 dBFS with `rssi` at −77 turned out to be RF gain 2 with
+the carrier AGC off, not the 912 kHz IQ rate it was blamed on. The same numbers
+at 456 kHz settled it in one run.
+
+## Demodulator benchmarks
+
+`native-app/run-bench.sh` builds the receiver sources at `-O` with
+`Bench/main.swift` and reports, per IQ rate, how much of realtime each
+demodulator costs and what level the AM path puts out:
+
+```
+  AM 912k     0.103 s for 1.0 s of IQ  -> load  10.3%
+  WFM 912k    0.134 s for 1.0 s of IQ  -> load  13.4%
+```
+
+Use it before optimising anything. It is what showed that 912 kHz audio
+dropouts were not the demodulator's doing — a tenth of one core is not the
+thing to speed up.

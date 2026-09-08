@@ -306,6 +306,14 @@ final class MainView: NSView {
     // receiver (the deck's FFT dial shares that pipeline), so those three are
     // pushed to /spectrum; peak hold and the dB window are this app's own view
     // of the same data and stay local.
+    /// The IQ width the receiver runs at, as SDR++ offers it: the device's
+    /// maximum, halved by each decimation stage. Only the standalone bundle
+    /// shows it — the plugin's endpoint has no such setting, so in the
+    /// front-end it would be a dropdown that changes nothing.
+    private let iqPop = NSPopUpButton()
+    /// The maximum the ladder was last built from, so it is rebuilt when the
+    /// device changes rather than on every status tick.
+    private var iqLadderMax: Double = 0
     private let fftPop = NSPopUpButton()
     private let fpsPop = NSPopUpButton()
     private let avgLabel = label("(0.3s)", mono(15), P.faint)
@@ -331,6 +339,9 @@ final class MainView: NSView {
     /// Returns true when the direct path took the change, so it is not also
     /// sent to the plugin.
     var onFftSize: ((Int) -> Bool)?
+    /// Decimation stage 0,1,2,... for the IQ dropdown. Returns true when the
+    /// bundle's own receiver took it.
+    var onIqDecimation: ((Int) -> Bool)?
     lazy var srcAudioPad: TogglePad = TogglePad("AUDIO", font: mono(13), momentary: false) {
         [weak self] in self?.onAudioToggle?()
     }
@@ -503,6 +514,18 @@ final class MainView: NSView {
 #endif
             Receiver.spectrum(fft: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
         }
+        iqPop.font = mono(16)
+        iqPop.target = ButtonBox.shared
+        iqPop.action = #selector(ButtonBox.fire(_:))
+        ButtonBox.shared.actions[ObjectIdentifier(iqPop)] = { [weak self] in
+            guard let self, let item = self.iqPop.selectedItem else { return }
+#if STANDALONE
+            if let set = self.onIqDecimation, set(item.tag) { return }
+#endif
+            Receiver.spectrum(decimation: item.tag) { size, rate, avg in
+                self.adoptSpectrum(size, rate, avg)
+            }
+        }
         fpsPop.addItems(withTitles: ["5", "10", "16", "24", "30", "60"])
         fpsPop.font = mono(16)
         fpsPop.target = ButtonBox.shared
@@ -558,7 +581,9 @@ final class MainView: NSView {
             }
         }
 
-        let barRow = NSStackView(views: [
+        // Built as a list rather than a literal: the IQ dropdown is standalone
+        // only, and a compile-time branch cannot sit inside an array literal.
+        var barItems: [NSView] = [
             label("STEP", mono(14), P.faint), stepPop,
             label("FFT", mono(14), P.faint), fftPop,
             label("RATE", mono(14), P.faint), fpsPop, label("fps", mono(14), P.faint),
@@ -567,7 +592,13 @@ final class MainView: NSView {
             holdPad,
             NSView(),
             dbLabel,
-        ])
+        ]
+#if STANDALONE
+        // Right after STEP: both describe what the receiver is doing rather
+        // than how the picture is drawn.
+        barItems.insert(contentsOf: [label("IQ", mono(14), P.faint), iqPop], at: 2)
+#endif
+        let barRow = NSStackView(views: barItems)
 #if STANDALONE
         // The receiver controls exist only in the standalone build. Deck RX is
         // a front-end onto the plugin's receiver and has nothing to point them
@@ -823,6 +854,34 @@ final class MainView: NSView {
     /// Render the controls from what the receiver reports, not from what we
     /// asked for: the endpoint clamps, and the deck's FFT dial can change these
     /// too.
+    /// The IQ dropdown, from what the receiver reports it is running at. The
+    /// ladder is the device's maximum halved per stage, so a device with a
+    /// different maximum offers its own rates rather than a hard-coded list.
+    ///
+    /// The selection describes the receiver being *displayed*; changing it
+    /// applies to the one this bundle *owns*. Those are the same receiver
+    /// whenever Solo is in DIRECT, which is the case this control is for.
+    func adoptIqLadder(rateHz: Double, stage: Int) {
+        guard rateHz > 0, stage >= 0 else { return }
+        let maxRate = rateHz * pow(2, Double(stage))
+        if maxRate != iqLadderMax {
+            iqLadderMax = maxRate
+            iqPop.removeAllItems()
+            for st in 0...4 {
+                let r = maxRate / pow(2, Double(st))
+                guard r >= 100_000 else { break }
+                iqPop.addItem(withTitle: String(format: "%.0fk", r / 1000))
+                iqPop.lastItem?.tag = st
+            }
+        }
+        // Not while the menu is open: reselecting under the pointer is how a
+        // dropdown throws away the choice being made in it.
+        guard iqPop.menu?.highlightedItem == nil else { return }
+        if let i = iqPop.itemArray.firstIndex(where: { $0.tag == stage }), iqPop.indexOfSelectedItem != i {
+            iqPop.selectItem(at: i)
+        }
+    }
+
     func adoptSpectrum(_ size: Int, _ rate: Int, _ speed: Int) {
         fftPop.selectItem(withTitle: String(size))
         fpsPop.selectItem(withTitle: String(rate))
@@ -946,6 +1005,7 @@ final class MainView: NSView {
         deviceLabel.stringValue = s.device
         iqLabel.stringValue = s.iqRateHz > 0
             ? String(format: "IQ %.0fk  DEC %d", s.iqRateHz / 1000, s.decStage) : ""
+        adoptIqLadder(rateHz: s.iqRateHz, stage: s.decStage)
         dropsLabel.stringValue = s.iqRateHz > 0 ? "drops \(s.audioDrops)" : ""
         // A non-zero drop count is the audible-glitch signature, so it stops
         // being a grey footnote the moment it moves off zero.
@@ -1374,8 +1434,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 s.tuneStepHz = self.radio.tuneStepHz
                 s.volume = self.radio.volume
                 s.muted = self.radio.muted
-                s.device = self.radio.deviceInfo.map { "SpyServer type \($0.deviceType)" } ?? s.device
+                s.device = self.radio.deviceInfo != nil ? self.radio.deviceLabel : s.device
                 s.audioSink = self.radio.audioEnabled ? "local" : "off"
+                // The meters and the drop count are this receiver's own while
+                // it is running. They were left at whatever the plugin's feed
+                // said, so a standalone window showed the plugin's signal and
+                // the plugin's drops — or dashes, with the plugin stopped —
+                // while its own receiver was working perfectly well.
+                if self.radio.isConnected {
+                    s.rssiDbfs = self.radio.rssiDbfs
+                    s.snrDb = self.radio.snrDb
+                    s.audioDrops = self.radio.audioUnderruns
+                }
                 // Label the frequency ourselves — the feed's station name is
                 // whatever the plugin last tuned, which is not where we are.
                 if let name = StationLabel.lookup(freqHz: s.freqHz, region: self.region) {
@@ -1393,6 +1463,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             toggleMute: { [weak self] in
                 guard let self else { return }
                 self.radio.muted.toggle()
+            },
+            // The settings pages, answered by this bundle's own receiver
+            // instead of over the loopback — which is the plugin's whenever the
+            // plugin is up.
+            options: { [weak self] set, value in
+                guard let self else { return [:] }
+                return self.server.optionsDirect(set: set, value: value)
+            },
+            receiver: { [weak self] set, value, action in
+                guard let self else { return [:] }
+                return self.server.receiverDirect(set: set, value: value, action: action)
             })
     }
 
@@ -1446,6 +1527,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.radio.fftSize = size
             return true
         }
+        // Audio-path instrumentation, off unless asked for.
+        if ProcessInfo.processInfo.environment["DECKRX_AUDIO_DIAG"] == "1" {
+            radio.startAudioDiag()
+        }
+        v.onIqDecimation = { [weak self] stage in
+            guard let self else { return false }
+            var c = self.radio.config
+            c.iqDecimation = UInt32(max(0, min(8, stage)))
+            c.save()
+            self.radio.config = c
+            // The rate is fixed when the stream starts, so it takes a
+            // reconnect — the same thing the control endpoint does for it.
+            if self.radio.isConnected { self.radio.disconnect(); self.radio.connect() }
+            return true
+        }
         v.onAudioToggle = { [weak self] in self?.toggleAudio() }
 #endif
         // Both bundles. The display scale does not travel over the control
@@ -1456,6 +1552,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // view so a rebuilt view comes back at the split it was dragged to.
         v.spectrum.spectrumFraction = CGFloat(currentConfig.spectrumSplit)
         v.spectrum.onSplitChanged = { [weak self] f in self?.applySpectrumSplit(f) }
+        // Tuning by pointer, the way SDR++ does it and the way the iPad's tap
+        // already did. Routed through `Receiver.tune` like every other control
+        // here, so the front-end drives the plugin and Solo drives its own
+        // receiver with the same line.
+        v.spectrum.onTune = { [weak self] hz in
+            guard let self else { return }
+            // Snapped to the step in force, as the iPad's tap is: a pointer is
+            // not worth better than the raster the band is on, and without it
+            // a click next to 954 kHz lands on 953.7 and receives nothing.
+            // The step in force, from whichever side owns it in this bundle.
+#if STANDALONE
+            let step = self.radio.tuneStepHz
+#else
+            let step = Receiver.status().tuneStepHz
+#endif
+            let target = step > 0 ? snapToStep(hz, step: step) : hz
+            Receiver.tune(hz: Int(max(0, target.rounded())))
+        }
     }
 
     /// The config as it stands, from whichever copy is authoritative in this

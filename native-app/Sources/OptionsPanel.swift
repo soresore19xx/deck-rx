@@ -391,6 +391,13 @@ final class OptionsPanel: NSView {
             views.append(row("Bitrate", "rx.icecastBitrate",
                              .text(["64k", "96k", "128k", "192k", "256k"])))
         }
+        // What the receiver listens through. Above the address because it
+        // decides whether the address below means anything: on "usb" the app
+        // opens the device on this machine and the host and port are dormant
+        // (kept, not cleared — the server is usually still there to go back to).
+        if let list = rx["sources"] as? [String], list.count > 1 {
+            views.append(row("Source", "rx.source", .text(list)))
+        }
         // The link's address. Changing either dials the new server, so these
         // are typed and applied on Enter rather than cycled by accident.
         // Short names: "Server host" truncates to "Serve" in this column, and a

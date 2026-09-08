@@ -294,9 +294,16 @@ final class AppServer {
         return s
     }
 
-    private func optionsJSON() -> String {
+    private func optionsJSON() -> String { json(optionsDict()) }
+
+    /// The same answer the endpoint gives, as a dictionary. Split out so the
+    /// standalone window can ask its own receiver directly: it shares a process
+    /// with it, and the loopback endpoint may belong to the plugin — which is
+    /// how the window came to show the plugin's gain and AGC while driving its
+    /// own receiver.
+    func optionsDict() -> [String: Any] {
         let c = radio.config
-        return json([
+        return [
             "mode": radio.mode,
             "fm": ["bandwidth": c.fmBandwidthHz, "deemphasis": c.fmDeemphasis,
                    "ifnr": c.fmIfnr, "highPass": c.fmHighPass, "lowPass": c.fmLowPass,
@@ -311,12 +318,21 @@ final class AppServer {
             // the device maximum it is actually running at.
             "gain": ["am": Int(radio.amGainIndex), "fm": Int(radio.fmGainIndex),
                      "max": Int(radio.maxGainIndex)],
-        ])
+        ]
     }
 
-    private func receiverJSON() -> String {
+    private func receiverJSON() -> String { json(receiverDict()) }
+
+    func receiverDict() -> [String: Any] {
         let c = radio.config
-        return json([
+        // "usb" is offered only by a build that can actually open the device,
+        // so the row never lists a source that would be silently ignored.
+#if AIRSPYHF_ENABLED
+        let sources = ["spyserver", "usb"]
+#else
+        let sources = ["spyserver"]
+#endif
+        return [
             "tuneMode": c.tuneMode,
             "jpRegion": c.jpRegion,
             "regions": StationLabel.Region.allCases.map(\.rawValue),
@@ -326,11 +342,37 @@ final class AppServer {
             // The icecast path is the plugin's; this receiver only has a local
             // sink, so it says so rather than offering a mode it cannot enter.
             "audioSink": "local",
+            "source": c.source,
+            "sources": sources,
             "host": c.host,
             "port": c.port,
             "uiScale": c.uiScale,
             "uiScales": UI.names,
-        ])
+        ]
+    }
+
+    /// Apply-and-report, for the in-process path. Mirrors the endpoint's two
+    /// cases exactly; an unknown name is reported the way the endpoint reports
+    /// it, so a caller cannot tell the two paths apart.
+    func optionsDirect(set: String?, value: String?) -> [String: Any] {
+        if let set, let value, !applyOption(set, value) {
+            return ["ok": false, "error": "unknown option \(set)"]
+        }
+        return optionsDict()
+    }
+
+    func receiverDirect(set: String?, value: String?, action: String?) -> [String: Any] {
+        if action == "importSdrpp" {
+            guard let r = try? PresetStore.importFromSdrpp() else {
+                return ["ok": false, "error": "import failed"]
+            }
+            return ["added": r.added, "skipped": r.skipped,
+                    "migrated": r.migrated, "lists": r.lists]
+        }
+        if let set, let value, !applyReceiver(set, value) {
+            return ["ok": false, "error": "unknown setting \(set)"]
+        }
+        return receiverDict()
     }
 
     private func stationsJSON(from: Double?, to: Double?) -> String {
@@ -400,6 +442,9 @@ final class AppServer {
             guard UI.names.contains(raw) else { return false }
             c.uiScale = raw
             scaleChanged = true
+        case "source":
+            guard raw == "spyserver" || raw == "usb" else { return false }
+            c.source = raw
         case "host":
             let h = raw.trimmingCharacters(in: .whitespaces)
             guard !h.isEmpty else { return false }
@@ -414,7 +459,7 @@ final class AppServer {
         if scaleChanged { DispatchQueue.main.async { self.onUiScaleChanged?() } }
         // The address only takes effect on the next connection, so dial it now
         // — otherwise the field accepts a new host and nothing happens.
-        if name == "host" || name == "port", radio.isConnected {
+        if name == "host" || name == "port" || name == "source", radio.isConnected {
             radio.disconnect()
             radio.connect()
         }
@@ -451,9 +496,10 @@ final class AppServer {
             "bandwidthHz": radio.bandwidthHz,
             "stereo": live && radio.isStereoMode && radio.stereoLocked,
             "tuneStepHz": radio.tuneStepHz,
-            "device": radio.deviceInfo.map { "SpyServer type \($0.deviceType)" } ?? "",
+            "device": radio.deviceLabel,
             "iqRateHz": Double(radio.iqRate),
             "audioSink": radio.audioEnabled ? "local" : "off",
+            "source": radio.config.source,
             "host": radio.config.host,
             "port": radio.config.port,
             "canControl": radio.canControl,

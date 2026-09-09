@@ -74,6 +74,28 @@ A real case: AM at −85 dBFS with `rssi` at −77 turned out to be RF gain 2 wi
 the carrier AGC off, not the 912 kHz IQ rate it was blamed on. The same numbers
 at 456 kHz settled it in one run.
 
+## Recording what the receiver is actually putting out
+
+Two file flags, one per receiver, so both can be captured at once and the two
+WAVs told apart:
+
+| flag | writes | what it is |
+| --- | --- | --- |
+| `/tmp/deck-rx-solo-audio-record` | `/tmp/deck-rx-solo-audio-<ts>.wav` | the standalone app's audio, after levelling and the mute window, before the sink |
+| `/tmp/deck-rx-audio-record` | `/tmp/deck-rx-audio-<ts>.wav` | the same point in the plugin |
+| `/tmp/deck-rx-postasrc-record` | `/tmp/deck-rx-postasrc-<ts>.wav` | the plugin again, but the exact bytes handed to the output device, after resampling |
+
+`touch` to start, `rm` to stop; the header is patched on close. The plugin's
+pair localises a fault to the resampler or the device clock. The standalone
+one is what settled "why is Solo noisier than SDR++ on 594 kHz": record the
+same station from both, normalise each to its own 0.3-3 kHz program band, and
+compare by octave. Level differences cancel; filter skirts do not.
+
+A caution learned the hard way there: a recording of pure silence is not
+evidence of a broken audio path. Check `muted` in `/health` first — the
+plugin's mute is persisted in `config.json` and hydrated on connect, so a
+restart can come back muted with everything else looking healthy.
+
 ## Demodulator benchmarks
 
 `native-app/run-bench.sh` builds the receiver sources at `-O` with

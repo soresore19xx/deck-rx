@@ -315,11 +315,51 @@ st.setDeemphasis(audioRate: audioRate, tau: 50e-6)
 let stOut = st.processWFMStereo(int16IQ: stereoIQ, decimate: audioDec)
 check("stereo output is interleaved", stOut.count % 2 == 0 && !stOut.isEmpty)
 check("pilot locks", st.stereoLocked, "pilot never reached the badge threshold")
-// L and R carry different tones, so a真 stereo decode has them differ.
+// L and R carry different tones, so a true stereo decode has them differ.
 var l = [Float](), r = [Float]()
 for i in stride(from: 0, to: stOut.count - 1, by: 2) { l.append(stOut[i]); r.append(stOut[i + 1]) }
 let diff = zip(l, r).map { abs($0 - $1) }.reduce(0, +) / Float(max(1, l.count))
 check("L and R differ", diff > 1e-4, "mean |L-R| = \(diff)")
+
+// How MUCH they differ, which "they differ" does not ask. A tone in one
+// channel only: whatever appears in the other is crosstalk, and the ratio is
+// the separation figure a receiver is judged on. This is the check that would
+// have caught the 38 kHz reference being built from the phase the PLL had
+// already advanced: the decode still looked stereo by every test above while
+// L-R arrived scaled by cos 30 degrees, which is 23 dB — technically stereo,
+// and not what anyone would call a stereo image. Flat across audio frequency,
+// which is the signature of a matrix gain error rather than a filter.
+func toneAmplitude(_ x: [Float], hz: Double, rate: Double) -> Double {
+    var re = 0.0, im = 0.0
+    for (i, v) in x.enumerated() {
+        let t = 2 * .pi * hz * Double(i) / rate
+        re += Double(v) * cos(t); im += Double(v) * sin(t)
+    }
+    let n = Double(max(1, x.count))
+    return ((re * re + im * im) / (n * n)).squareRoot()
+}
+for toneHz in [100.0, 1000.0, 5000.0] {
+    let sepIQ = makeIQ(rate: rate, count: 456_000, deviationHz: 50_000, mpx: { t in
+        // Left only: L-R and L+R carry the same tone at the same level, so a
+        // reference that is off in phase or gain lands audibly in the right.
+        let lpr = sin(2 * .pi * toneHz * t) / 2, lmr = lpr
+        return lpr + 0.08 * cos(2 * .pi * 19_000 * t) + lmr * cos(2 * .pi * 38_000 * t)
+    })
+    let sd = Demods()
+    sd.setWfmAudioBand(iqRate: rate)
+    sd.setWfmIfBandwidth(iqRate: rate, cutoffHz: 75_000)   // the 150 kHz FM default
+    sd.setDeemphasis(audioRate: audioRate, tau: 50e-6)
+    let o = sd.processWFMStereo(int16IQ: sepIQ, decimate: audioDec)
+    var sl = [Float](), sr = [Float]()
+    for i in stride(from: 0, to: o.count - 1, by: 2) { sl.append(o[i]); sr.append(o[i + 1]) }
+    let settle = sl.count / 10          // the PLL is still pulling in
+    sl = Array(sl[settle...]); sr = Array(sr[settle...])
+    let wanted = toneAmplitude(sl, hz: toneHz, rate: audioRate)
+    let leak = toneAmplitude(sr, hz: toneHz, rate: audioRate)
+    let sepDb = 20 * log10(wanted / max(1e-30, leak))
+    check("separation at \(Int(toneHz)) Hz is a stereo image, not a hint",
+          sepDb > 30, String(format: "%.1f dB", sepDb))
+}
 
 section("mono FM on the same signal does not claim stereo")
 let mono = Demods()
@@ -523,6 +563,37 @@ check("a jump asks for the window, not only the demodulator",
       LocalRadio.vfoOffset(target: 954_000, center: 1_134_000, maxOffset: 187_000,
                            recenter: true) == nil)
 
+section("a jump reaches the receiver as a jump")
+// The rule above is only worth having if the call sites ask for it. Every
+// control in the Mac window is routed through `Receiver`, so that is where the
+// flag has to survive — the preset list once shared the plain tune call with
+// the digits and the trace click, and the window then followed only the
+// presets that happened to fall outside the IQ span.
+var tuneCalls: [(hz: Int, recenter: Bool)] = []
+Receiver.direct = Receiver.DirectControl(
+    status: { Receiver.Status() },
+    tuneHz: { hz, recenter in tuneCalls.append((hz, recenter)) },
+    tuneTicks: { _ in },
+    mode: { _ in },
+    volume: { _ in },
+    toggleMute: { })
+Receiver.tune(hz: 954_000)
+check("aiming leaves the window where it is", tuneCalls.last?.recenter == false)
+Receiver.jump(to: Receiver.bands[0])
+check("a band button brings the window along", tuneCalls.last?.recenter == true)
+
+// And the raster a pointer tune snaps to comes from the same receiver. The
+// standalone bundle owns one of its own, but it only drives it while `direct`
+// is installed; as a front-end onto the plugin its own receiver is not even
+// connected, and reading the step off it snapped an FM click onto the 1 kHz
+// raster the config was left on.
+check("the local step is used while the local receiver is the live one",
+      Receiver.tuneStepInForce(localStep: 12_345) == 12_345)
+Receiver.direct = nil
+var askedLocal = false
+_ = Receiver.tuneStepInForce(localStep: { askedLocal = true; return 12_345 }())
+check("and is not even consulted when it is not", !askedLocal)
+
 section("the window's override ends when the receiver settles anywhere")
 // The view holds an absolute centre while a pan is catching up, and drops it
 // when a frame arrives from there.
@@ -649,6 +720,24 @@ Thread.sleep(forTimeInterval: 2.5)
 // is the observable form of "no further attempts".
 check("disconnect stops the retries", rc.lastError == errAfterStop,
       "error moved to \(rc.lastError ?? "nil")")
+
+// Quitting is a stop too, and a stricter one: the audio device, the server's
+// single control slot and — on the USB source — the Airspy itself are all
+// held by the process, so they have to be handed back before it goes rather
+// than dropped for something else to notice.
+let sd = LocalRadio()
+var sdCfg = RadioConfig()
+sdCfg.host = "127.0.0.1"; sdCfg.port = 1
+sd.config = sdCfg
+sd.audioEnabled = true
+sd.connect()
+sd.shutdown()
+check("shutdown turns the audio off", !sd.audioEnabled)
+check("and leaves nothing claiming a connection", !sd.isConnected)
+// The point of `shutdown` over `disconnect` is that it has finished when it
+// returns; a source with nothing to wait for still has to answer it.
+check("a source with no hardware to release still answers shutdown",
+      { let c = SpyClient(); c.shutdown(); return true }())
 
 section("the reader tracks the ring depth instead of drifting off it")
 // The sender's clock and the device's differ by tens of ppm. With a fixed

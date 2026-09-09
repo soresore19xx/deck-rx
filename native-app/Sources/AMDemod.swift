@@ -112,9 +112,25 @@ final class AMDemod {
     /// complex IF low-pass on I/Q (at `iqRate`). The IF one is the load-bearing
     /// filter: without it an off-centre station bleeds through the envelope
     /// detector no matter what the receiver is tuned to.
+    /// The post-detection channel filter. See `BrickWallLpf`: the Butterworth
+    /// cascade below is kept only as the fallback for a rate the FIR cannot be
+    /// designed for.
+    private let audioBrick = BrickWallLpf()
+
     func setBandwidth(audioRate: Double, bandwidthHz: Double, iqRate: Double) {
-        if bandwidthHz > 0, bandwidthHz < audioRate * 0.45 {
-            for k in 0..<4 { audioLpf[k].setLowPass(fs: audioRate, fc: bandwidthHz, q: Self.q4[k]) }
+        // Half the figure, for the same reason the IF filter below halves it:
+        // `bandwidthHz` is the width of the RF channel, so the audio in it only
+        // reaches half that. Cutting the audio at the full 9 kHz left the
+        // 4.5-9 kHz octave — which on a 9 kHz channel raster holds nothing but
+        // the neighbours' splatter and noise — riding on the IF filter's skirt
+        // alone. Measured against SDR++ on 594 kHz: 5-6 kHz sat 60 dB louder
+        // here than there.
+        let audioCut = bandwidthHz / 2
+        audioBrick.configure(fs: audioRate, cutoffHz: audioCut)
+        if audioBrick.isActive {
+            audioLpfEnabled = false
+        } else if audioCut > 0, audioCut < audioRate * 0.45 {
+            for k in 0..<4 { audioLpf[k].setLowPass(fs: audioRate, fc: audioCut, q: Self.q4[k]) }
             audioLpfEnabled = true
         } else {
             audioLpfEnabled = false
@@ -154,6 +170,7 @@ final class AMDemod {
         resetForRetune()
         for i in 0..<8 { ifI[i].reset(); ifQ[i].reset() }
         for i in 0..<4 { audioLpf[i].reset() }
+        audioBrick.reset()
     }
 
     /// Demodulates one packet of interleaved int16 LE IQ into mono float
@@ -264,12 +281,18 @@ final class AMDemod {
                 for k in 0..<4 { v = audioLpf[k].step(v) }
             }
 
-            // int16 domain throughout, converted at the very end — same scale
-            // the plugin's sink receives, so levels are comparable.
-            let clipped = min(max(v, -32767), 32767)
-            out[oi] = Float(clipped / 32768)
+            out[oi] = Float(v)      // int16 domain; scaled and clipped below
             oi += 1
             i += decimate
+        }
+        // The channel filter runs over the block rather than per sample: a FIR
+        // this long is a vector operation, and doing it here also means the
+        // clipping below happens after the filter rather than inside it.
+        if audioBrick.isActive { out = audioBrick.process(out) }
+        // int16 domain throughout, converted at the very end — same scale the
+        // plugin's sink receives, so levels are comparable.
+        for k in 0..<out.count {
+            out[k] = Float(min(max(Double(out[k]), -32767), 32767) / 32768)
         }
         return out
     }

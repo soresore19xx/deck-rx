@@ -484,6 +484,107 @@ final class LocalRadio {
         DispatchQueue.main.async { self.onState?() }
     }
 
+    // MARK: audio capture
+
+    private var tapFd: Int32 = -1
+    private var tapBytes = 0
+    private var tapPath = ""
+    private var tapLastCheck = Date.distantPast
+
+    /// Flag-gated WAV of the audio this receiver is producing — the same idiom
+    /// as the plugin's `/tmp/deck-rx-audio-record` and the fax IQ dump:
+    /// `touch /tmp/deck-rx-solo-audio-record` to start, `rm` it to stop.
+    ///
+    /// Its own flag, not the plugin's, so both can be captured at once and
+    /// compared: with the plugin running there are two receivers on this
+    /// machine, and a shared flag would make the two WAVs impossible to tell
+    /// apart. Written after levelling and the mute window, before the sink —
+    /// what is actually being handed to the audio device, at `audioRate`.
+    ///
+    /// The float samples are the sink's own domain (-1..1); they go out as
+    /// int16 because that is what every analysis tool reads.
+    private func tapAudio(_ pcm: [Float]) {
+        let now = Date()
+        if now.timeIntervalSince(tapLastCheck) > 0.5 {
+            tapLastCheck = now
+            let wanted = FileManager.default.fileExists(atPath: "/tmp/deck-rx-solo-audio-record")
+            if wanted, tapFd < 0 {
+                let stamp = ISO8601DateFormatter().string(from: now)
+                    .replacingOccurrences(of: ":", with: "-")
+                    .replacingOccurrences(of: "T", with: "-")
+                    .replacingOccurrences(of: "Z", with: "")
+                let path = "/tmp/deck-rx-solo-audio-\(stamp).wav"
+                let ch = isStereoMode ? 2 : 1
+                let rate = Int(audioRate)
+                var h = Data(count: 44)
+                func put32(_ off: Int, _ v: Int) {
+                    var le = UInt32(truncatingIfNeeded: v).littleEndian
+                    withUnsafeBytes(of: &le) { h.replaceSubrange(off..<off+4, with: $0) }
+                }
+                func put16(_ off: Int, _ v: Int) {
+                    var le = UInt16(truncatingIfNeeded: v).littleEndian
+                    withUnsafeBytes(of: &le) { h.replaceSubrange(off..<off+2, with: $0) }
+                }
+                h.replaceSubrange(0..<4, with: Array("RIFF".utf8))
+                put32(4, 36)
+                h.replaceSubrange(8..<12, with: Array("WAVE".utf8))
+                h.replaceSubrange(12..<16, with: Array("fmt ".utf8))
+                put32(16, 16); put16(20, 1); put16(22, ch); put32(24, rate)
+                put32(28, rate * ch * 2); put16(32, ch * 2); put16(34, 16)
+                h.replaceSubrange(36..<40, with: Array("data".utf8))
+                put32(40, 0)
+                let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+                if fd >= 0 {
+                    _ = h.withUnsafeBytes { write(fd, $0.baseAddress, 44) }
+                    tapFd = fd; tapBytes = 0; tapPath = path
+                    NSLog("[tap] audio → \(path) (\(rate) Hz x \(ch) ch)")
+                }
+            } else if !wanted, tapFd >= 0 {
+                closeTap()
+            }
+        }
+        guard tapFd >= 0 else { return }
+        var pcm16 = [Int16](repeating: 0, count: pcm.count)
+        for i in 0..<pcm.count {
+            let v = max(-1, min(1, Double(pcm[i]))) * 32767
+            pcm16[i] = Int16(v.rounded())
+        }
+        pcm16.withUnsafeBytes { _ = write(tapFd, $0.baseAddress, $0.count) }
+        tapBytes += pcm.count * 2
+    }
+
+    /// Patches the RIFF sizes so the file is playable, then lets go of it.
+    private func closeTap() {
+        guard tapFd >= 0 else { return }
+        var riff = UInt32(36 + tapBytes).littleEndian
+        var data = UInt32(tapBytes).littleEndian
+        withUnsafeBytes(of: &riff) { _ = pwrite(tapFd, $0.baseAddress, 4, 4) }
+        withUnsafeBytes(of: &data) { _ = pwrite(tapFd, $0.baseAddress, 4, 40) }
+        close(tapFd)
+        NSLog("[tap] audio closed: \(tapPath) (\(tapBytes) bytes)")
+        tapFd = -1; tapBytes = 0
+    }
+
+    /// Put the radio down for good: audio off, stream stopped, device closed,
+    /// and all of it finished before this returns.
+    ///
+    /// What quitting has to release is held by this process, not by the window:
+    /// the output device, the SpyServer's single control slot, and — on the USB
+    /// source — the Airspy itself. Exiting without this leaves them held until
+    /// something else notices, which is what "the plugin cannot take the device
+    /// back after Solo quits" looks like from the other side.
+    func shutdown() {
+        closeTap()
+        audioEnabled = false
+        wantConnection = false
+        reconnectTimer?.cancel(); reconnectTimer = nil
+        sink.stop()
+        client.stopStreaming()
+        client.shutdown()
+        isConnected = false
+        stopFrameTimer()
+    }
+
     func tune(ticks: Int) {
         let delta = Double(ticks) * tuneStepHz
         let next = max(0, Double(frequency) + delta)
@@ -983,6 +1084,7 @@ final class LocalRadio {
                     if Date() < self.muteUntil {
                         for i in 0..<pcm.count { pcm[i] = 0 }
                     }
+                    self.tapAudio(pcm)
                     self.sink.write(pcm)
                 }
             }

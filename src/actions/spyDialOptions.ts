@@ -20,7 +20,7 @@ const DEEMPH_CYCLE: DeemphasisOpt[] = ['off', '50us', '75us'];
 // stereo subcarrier 53 kHz tight clipping past Carson) and 90 kHz
 // (mono-leaning, -50 dB at the adjacent centre with 8th-order Butter).
 // 200 kHz is the SDR++ default; 150 / 110 fall in between.
-const BW_CYCLE_FM: number[] = [200_000, 150_000, 110_000, 100_000, 90_000];
+const BW_CYCLE_FM: number[] = [250_000, 200_000, 150_000, 110_000, 100_000, 90_000];
 function fmtFmBw(hz: number): string { return `${(hz / 1000) | 0}k`; }
 function nextInArray<T>(arr: T[], cur: T, ticks: number): T {
   const i = arr.indexOf(cur);

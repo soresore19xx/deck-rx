@@ -26,6 +26,19 @@ protocol IQSource: AnyObject {
     func setFrequency(_ hz: UInt32)
     func stopStreaming()
     func disconnect()
+    /// Teardown that has actually finished by the time it returns.
+    ///
+    /// `disconnect()` hands the work to the source's own queue and comes back
+    /// at once, which is right everywhere except at quit: there is no later
+    /// then, and whatever the source is holding is still held when the process
+    /// goes. A socket does not care — the kernel closes it and the server sees
+    /// that immediately — but a USB device does, so the one that holds a
+    /// hardware handle overrides this.
+    func shutdown()
+}
+
+extension IQSource {
+    func shutdown() { disconnect() }
 }
 
 extension SpyClient: IQSource {

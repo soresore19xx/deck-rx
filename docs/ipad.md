@@ -39,6 +39,12 @@ Landscape, and the width goes to the spectrum.
 Controls sit in named, framed groups — DISPLAY, BAND, TUNE, MODE, AUDIO, SERVER
 — the way a panel is silkscreened.
 
+The demodulators are the same files the Mac builds from, so the AM brick-wall
+channel filter and the FM stereo reference both arrive here on a rebuild rather
+than needing a port — see [The AM channel filter](solo.md#the-am-channel-filter).
+The FM bandwidth list carries 250 kHz for the same reason it does on the Mac:
+at 150 kHz a full-deviation stereo broadcast only separates by 30 dB.
+
 There is no volume control: the iPad's own buttons are the volume, and a second
 attenuator in series only costs headroom.
 

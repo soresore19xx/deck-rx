@@ -808,9 +808,16 @@ final class MainView: NSView {
         // Mode first, then frequency — the order the dial's preset cycle uses.
         // Sending the frequency alone put the receiver on an FM channel while
         // still demodulating AM, which is silence.
+        // `recenter`: a preset is "take me to this station", so the window
+        // arrives with the receiver. Answered inside the IQ window instead —
+        // which is what the two presets either side of the centre would get —
+        // the spectrum stays parked and only the marker moves, so switching
+        // presets looked like a display that followed some of them and not
+        // others. The iPad already asked for this; the Mac lost it by routing
+        // through the same call the digits and the trace click use.
         presetList.onPick = { p in
             Receiver.mode(p.mode)
-            Receiver.tune(hz: Int(p.freq))
+            Receiver.tune(hz: Int(p.freq), recenter: true)
         }
         // Label stations on the trace. The names come from the receiver's own
         // JP DB lookup rather than from the preset text, so a label on the
@@ -1258,7 +1265,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window = NSWindow(contentRect: view.frame,
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
+        // The two bundles share this window, so the title has to say which one
+        // is in front: Solo drives its own receiver, the front-end drives the
+        // plugin's.
+#if STANDALONE
+        window.title = "Deck RX Solo"
+#else
         window.title = "Deck RX"
+#endif
         window.contentView = view
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
@@ -1446,6 +1460,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     s.snrDb = self.radio.snrDb
                     s.audioDrops = self.radio.audioUnderruns
                 }
+                // The badge too, and for the same reason: it was reporting
+                // whether the *plugin* had a pilot lock — false whenever the
+                // plugin is not running, which is the normal case for Solo. Its
+                // own receiver can be decoding stereo perfectly and the window
+                // would still say nothing. `AppServer` already answers this
+                // question about the same receiver; this is the same line.
+                s.stereo = self.radio.isConnected && self.radio.isStereoMode
+                    && self.radio.stereoLocked
                 // Label the frequency ourselves — the feed's station name is
                 // whatever the plugin last tuned, which is not where we are.
                 if let name = StationLabel.lookup(freqHz: s.freqHz, region: self.region) {
@@ -1456,7 +1478,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.lastLabelledFreq = s.freqHz
                 return s
             },
-            tuneHz: { [weak self] hz in self?.radio.setFrequency(UInt32(max(0, hz))) },
+            tuneHz: { [weak self] hz, recenter in
+                self?.radio.setFrequency(UInt32(max(0, hz)), recenter: recenter)
+            },
             tuneTicks: { [weak self] t in self?.radio.tune(ticks: t) },
             mode: { [weak self] m in self?.radio.mode = m },
             volume: { [weak self] v in self?.radio.volume = v },
@@ -1490,7 +1514,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // SpyServer hands control to the first client only. Without this
             // the window looks fine and tuning simply does nothing.
             let ctl = radio.canControl ? "" : " · LISTEN ONLY (another client has the device)"
-            let srv = server.isServing ? " serving" : (server.portBusy ? " (plugin owns :8771)" : "")
+            // The port is worth naming: on a machine where the plugin holds 8771
+            // this app answers somewhere else, and whatever drives it — a knob,
+            // a script — has to be told where.
+            let srv = server.isServing
+                ? (server.portBusy ? " serving :\(server.servingPort)" : " serving")
+                : (server.portBusy ? " (no control port)" : "")
             let r = radio.deviceInfo.map { "IQ \(Int(Double($0.maxSampleRate) / 1000)) k max" } ?? ""
             view.srcLabel.stringValue = "direct \(r)\(a)\(srv)\(ctl)"
             view.srcLabel.textColor = radio.canControl ? P.dim : P.warn
@@ -1504,6 +1533,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+
+    /// Quitting hands back what this process was holding, rather than dropping
+    /// it and letting something else find out.
+    ///
+    /// Only the standalone bundle holds anything: the output device, the
+    /// SpyServer's control slot — it is given to the first client and the
+    /// plugin cannot steer the radio until it is free — and, on the USB source,
+    /// the Airspy itself. `radio.shutdown()` waits for the close; `disconnect()`
+    /// would not, and at quit "later" never comes.
+    ///
+    /// Cmd-W lands here too, by way of the delegate above.
+    func applicationWillTerminate(_ notification: Notification) {
+#if STANDALONE
+        radio.shutdown()
+        server.stop()
+#endif
+    }
 
     /// The window's contents, built fresh. Fonts and constraint constants are
     /// captured here from `UI.scale`, which is why a scale change needs a new
@@ -1561,11 +1607,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Snapped to the step in force, as the iPad's tap is: a pointer is
             // not worth better than the raster the band is on, and without it
             // a click next to 954 kHz lands on 953.7 and receives nothing.
-            // The step in force, from whichever side owns it in this bundle.
+            // From the receiver this window is driving — which in the
+            // standalone bundle is the plugin's whenever Solo is a front-end
+            // onto it. See `Receiver.tuneStepInForce`.
 #if STANDALONE
-            let step = self.radio.tuneStepHz
+            let step = Receiver.tuneStepInForce(localStep: self.radio.tuneStepHz)
 #else
-            let step = Receiver.status().tuneStepHz
+            let step = Receiver.tuneStepInForce(localStep: 0)
 #endif
             let target = step > 0 ? snapToStep(hz, step: step) : hz
             Receiver.tune(hz: Int(max(0, target.rounded())))

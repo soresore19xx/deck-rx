@@ -46,6 +46,19 @@ endpoint, which belongs to the Stream Deck plugin whenever the plugin is
 running: the window then showed the plugin's gain, AGC and signal while driving
 its own receiver, and the two disagreed silently.
 
+A preset or a **BAND JUMP** brings the window with it: the spectrum re-centres
+on where you asked to go. Everything that aims — the digits, a click on the
+trace, **TUNE −/+** — leaves the window where it is, because a window that
+moves under the pointer cannot be aimed with. Both presets either side of the
+current centre used to be answered inside the IQ window, so the display
+followed some presets and not others.
+
+Closing the window quits, and quitting hands back what the process was holding:
+the audio device, the SpyServer's single control slot, and on `usb` the Airspy
+itself. **A tool window keeps the app alive** — with 気象ファクス or DRM open,
+the main window's close button is not the last window closed, so the app stays
+running and so does the audio. Close the tool window too, or use ⌘Q.
+
 Settings live in `~/Library/Application Support/deck-rx/receiver.json` and are
 written as they change — there is no Save.
 
@@ -199,6 +212,12 @@ hand-edited file. The station databases ship inside the bundle and seed
 device's minimum — 0 is the device's full rate, 1 halves it. Both are on the
 toolbar and in the options panel; the file is where they persist.
 
+`audioDevice` is the one row in the options panel that opens rather than
+cycles: a Mac has as many outputs as it has ever had devices attached, and
+walking them one click at a time moves the audio to each in turn on the way
+past. The list is read when the menu opens, so a device plugged in after the
+window was built is in it.
+
 `spectrumSplit` is the fraction of the spectrum panel given to the trace,
 dragged on the rail rather than typed.
 
@@ -232,6 +251,41 @@ and in the standalone app whenever the plugin held the port.
 | min | 1139 × 620 |
 
 An 11-inch MacBook Air is 1366 × 768, so `compact` is what fits it.
+
+## The AM channel filter
+
+AM is filtered twice: a 16th-order Butterworth on the IQ at half the channel
+width, and then a linear-phase brick wall on the detected audio — a Kaiser
+window sinc, 100 dB down, 300 Hz of transition, run as a FIR through vDSP
+(`Sources/BrickWall.swift`).
+
+The brick wall is there because an IIR skirt cannot turn fast enough. Japanese
+medium wave sits on a 9 kHz raster, so nothing above half the channel width
+belongs to the station being listened to: it is the neighbours' splatter and
+the band noise. Measured against SDR++ on 594 kHz, same SpyServer, same twenty
+seconds, in dB relative to the 0.3-3 kHz program band:
+
+| band | before | after | SDR++ |
+| --- | --- | --- | --- |
+| 4.0-4.5k | −9.5 | −9.1 | −9.0 |
+| 4.5-4.8k | −19.0 | −21.0 | −35.3 |
+| 4.8-5.2k | −23.9 | −104.1 | −88.3 |
+| 5.2-6.0k | −29.5 | −101.1 | −85.7 |
+| 6-8k | −40.1 | −97.1 | −81.7 |
+
+Everything above the transition is now 15-20 dB quieter than SDR++, and the
+passband matches it. The one band SDR++ still wins is its own transition,
+300 Hz wide, where its FFT filter turns faster than 2433 taps can.
+
+Two things were wrong before. The audio filter's cutoff was the full channel
+width where the IF filter used half it, so the 4.5-9 kHz octave rode on the IF
+skirt alone; and that skirt was an 8th-order Butterworth. The first is a
+one-line fix worth 15 dB on its own and applies to the plugin too, which has
+the same line.
+
+The filter costs about 5% of a core at the 114 kHz audio rate and adds 11 ms of
+constant delay. It designs itself from the bandwidth in force, and falls back
+to the Butterworth cascade for a rate it cannot be built for.
 
 ## Sharing the receiver
 

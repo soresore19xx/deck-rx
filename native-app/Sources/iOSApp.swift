@@ -1581,7 +1581,7 @@ final class OptionsViewController: UITableViewController {
         switch r.mode {
         case 0, 1:
             demod = Section(name: "FM OPTIONS", rows: [
-                Row(title: "Bandwidth", kind: .list(values: [90_000, 100_000, 110_000, 150_000, 200_000],
+                Row(title: "Bandwidth", kind: .list(values: [90_000, 100_000, 110_000, 150_000, 200_000, 250_000],
                     unit: "kHz", get: { r.config.fmBandwidthHz }, set: { r.config.fmBandwidthHz = $0 })),
                 Row(title: "De-emphasis", kind: .text(options: ["off", "50us", "75us"],
                     get: { r.config.fmDeemphasis }, set: { r.config.fmDeemphasis = $0 })),

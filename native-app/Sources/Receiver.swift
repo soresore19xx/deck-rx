@@ -147,7 +147,10 @@ enum Receiver {
     /// which receiver is live — returning true means the direct path took it.
     struct DirectControl {
         var status: () -> Status
-        var tuneHz: (Int) -> Void
+        /// Hz, and whether the display is meant to arrive with the receiver.
+        /// See `LocalRadio.vfoOffset`: a jump answered inside the IQ window
+        /// leaves the spectrum parked where it was while only the marker moves.
+        var tuneHz: (Int, Bool) -> Void
         var tuneTicks: (Int) -> Void
         var mode: (Int) -> Void
         var volume: (Double) -> Void
@@ -169,6 +172,21 @@ enum Receiver {
     static func status() -> Status {
         if let d = direct { return d.status() }
         return status_fromFeed()
+    }
+
+    /// The tuning raster in force on the receiver this window is *driving*.
+    ///
+    /// Which is not always the one the bundle owns: with the plugin up, the
+    /// standalone app starts as a front-end onto it and its own receiver is not
+    /// connected at all — mode and frequency are then whatever the config was
+    /// last left at. A pointer tune that snapped to that receiver's step put an
+    /// FM click on a 1 kHz raster while the plugin was on the 100 kHz one, and
+    /// the click landed 3 kHz off the station.
+    ///
+    /// `localStep` is only evaluated when the local receiver is the live one,
+    /// so the drag does not pay for a status read it will not use.
+    static func tuneStepInForce(localStep: @autoclosure () -> Double) -> Double {
+        direct != nil ? localStep() : status().tuneStepHz
     }
 
     /// The feed on its own, with no direct-control override. The direct path
@@ -240,7 +258,7 @@ enum Receiver {
     static func jump(to band: Band) {
         let target = presets().first { $0.freq >= band.lo && $0.freq <= band.hi }
         mode(target?.mode ?? band.mode)
-        tune(hz: Int(target?.freq ?? band.lo))
+        tune(hz: Int(target?.freq ?? band.lo), recenter: true)
     }
 
     /// The deck-rx-owned store the plugin maintains (data/presets.json), read
@@ -283,9 +301,13 @@ enum Receiver {
         if let d = direct { d.tuneTicks(ticks); return }
         call("/tune?ticks=\(ticks)")
     }
-    static func tune(hz: Int)      {
-        if let d = direct { d.tuneHz(hz); return }
-        call("/tune?hz=\(hz)")
+    /// `recenter` is for a tune that is a jump rather than an aim — the preset
+    /// list, the band buttons. Everything that aims (the digits, a click on the
+    /// trace, the tune buttons) leaves it false, because a window that moves
+    /// under the pointer cannot be aimed with.
+    static func tune(hz: Int, recenter: Bool = false) {
+        if let d = direct { d.tuneHz(hz, recenter); return }
+        call("/tune?hz=\(hz)" + (recenter ? "&recenter=1" : ""))
     }
     static func volume(delta: Int) { call("/volume?d=\(delta)") }
     /// Absolute 0..1 — what a click on the volume bar means.

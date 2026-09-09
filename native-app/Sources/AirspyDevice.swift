@@ -128,6 +128,22 @@ final class AirspyDevice: IQSource {
         }
     }
 
+    /// The same close, waited for. At quit the asynchronous one never runs:
+    /// the process is gone before the queue gets to it, `airspyhf_close` is
+    /// never called, and the Airspy is left claimed — the next launch, or the
+    /// plugin taking over, then finds the device busy. The wait is bounded
+    /// because `airspyhf_stop` joins the library's streaming thread and a
+    /// wedged USB stack must not turn quitting into hanging.
+    func shutdown() {
+        let done = DispatchSemaphore(value: 0)
+        queue.async {
+            self.intentionalClose = true
+            self.closeDevice()
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + 2)
+    }
+
     func stopStreaming() {
         queue.async {
             guard let dev = self.dev, self.streaming else { return }

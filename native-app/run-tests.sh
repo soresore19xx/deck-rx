@@ -14,11 +14,12 @@ OUT="$HERE/.tests-bin"
 # `main`. Neither of these two holds top-level code, and both carry exactly the
 # kind of rule that is cheap to get wrong and silent when it is.
 SRC="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
-     Sources/FFT.swift Sources/AMDemod.swift Sources/Demods.swift \
+     Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
      Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift \
      Sources/Receiver.swift Sources/SpectrumFeed.swift Sources/Platform.swift \
-     Sources/FreqView.swift Sources/SpectrumView.swift"
+     Sources/FreqView.swift Sources/SpectrumView.swift \
+     Sources/IQSource.swift Sources/WefaxDecode.swift"
 
 echo "==> building tests ..."
 if ! ( cd "$HERE" && swiftc $SRC Tests/main.swift -o "$OUT" \

@@ -140,7 +140,14 @@ final class OptionsPanel: NSView {
     /// `action` carries the endpoint action it runs: there is more than one
     /// now, and a row that hard-codes the only one there used to be is a row
     /// that quietly runs the wrong thing when a second arrives.
-    private enum Kind { case bool, list([Double], String), text([String]), action(String) }
+    /// `menu` is `text` for a list too long to walk: clicking pops the choices
+    /// up instead of advancing one per click. The choices come from a closure
+    /// rather than an array so a device plugged in after the panel was built is
+    /// in the list the moment it is opened.
+    private enum Kind {
+        case bool, list([Double], String), text([String]), action(String)
+        case menu(() -> [String])
+    }
 
     private func jpRegions() -> [String] {
         (rx["regions"] as? [String]) ?? ["kanto"]
@@ -218,7 +225,11 @@ final class OptionsPanel: NSView {
         // value keep its shape while the name stays readable.
         v.widthAnchor.constraint(lessThanOrEqualTo: r.widthAnchor, multiplier: 0.66).isActive = true
         rows.append((name, v, kind))
-        let pad = ClickRow { [weak self] in self?.cycle(name, kind) }
+        // The row is its own menu anchor. Weak, or the closure the row owns
+        // would own the row back.
+        weak var anchor: ClickRow?
+        let pad = ClickRow { [weak self] in self?.cycle(name, kind, from: anchor) }
+        anchor = pad
         pad.translatesAutoresizingMaskIntoConstraints = false
         pad.addSubview(r)
         NSLayoutConstraint.activate([
@@ -338,7 +349,7 @@ final class OptionsPanel: NSView {
         switch mode {
         case 0, 1:   // NFM / WFM
             views.append(header("FM OPTIONS"))
-            views.append(row("Bandwidth", "fm.bandwidth", .list([90_000, 100_000, 110_000, 150_000, 200_000], "kHz")))
+            views.append(row("Bandwidth", "fm.bandwidth", .list([90_000, 100_000, 110_000, 150_000, 200_000, 250_000], "kHz")))
             views.append(row("De-emphasis", "fm.deemphasis", .text(["off", "50us", "75us"])))
             views.append(row("Stereo", "fm.stereo", .bool))
             views.append(row("IFNR", "fm.ifnr", .bool))
@@ -373,7 +384,15 @@ final class OptionsPanel: NSView {
         views.append(row("UI scale", "rx.uiScale", .text(UI.names)))
         // "Audio" rather than "Audio out": the device names are long and the
         // column is 228 pt. A name that survives beats one that explains.
-        views.append(row("Audio", "rx.audioDevice", .text(audioDevices())))
+        //
+        // The one row that opens rather than cycles. A Mac has as many outputs
+        // as it has ever had devices attached — internal, HDMI, every pair of
+        // headphones, every aggregate and virtual device — and walking them one
+        // click at a time, reading each truncated name as it goes past, is not
+        // choosing from a list. It is also the row where a wrong stop is
+        // audible: each click moves the audio to whatever it landed on.
+        views.append(row("Audio", "rx.audioDevice",
+                         .menu({ [weak self] in self?.audioDevices() ?? [] })))
         views.append(row("Output", "rx.outputMode", .text(["local", "icecast"])))
         views.append(row("SDR++ sync", "rx.autoSyncSdrpp", .bool))
         views.append(row("SDR++ import", "rx.import", .action("importSdrpp")))
@@ -475,7 +494,7 @@ final class OptionsPanel: NSView {
                 } else {
                     r.value.stringValue = String(format: "%g %@", d, unit)
                 }
-            case .text:
+            case .text, .menu:
                 r.value.textColor = P.text
                 let t = (v as? String) ?? "—"
                 r.value.stringValue = t.isEmpty ? "system default" : t
@@ -488,7 +507,7 @@ final class OptionsPanel: NSView {
 
     /// Clicking a row advances it: booleans flip, everything else steps to the
     /// next value in its list and wraps. One gesture for the whole panel.
-    private func cycle(_ name: String, _ kind: Kind) {
+    private func cycle(_ name: String, _ kind: Kind, from anchor: ClickRow? = nil) {
         // Receiver-wide settings live behind a different endpoint than the
         // demod's; the row does not need to care which.
         let isRx = name.hasPrefix("rx.")
@@ -524,6 +543,33 @@ final class OptionsPanel: NSView {
             let cur = (value(for: name) as? String) ?? options[0]
             let i = ((options.firstIndex(of: cur) ?? 0) + 1) % options.count
             send(options[i])
+        case .menu(let choices):
+            let options = choices()
+            guard !options.isEmpty, let anchor else { return }
+            let cur = (value(for: name) as? String) ?? ""
+            let picker = MenuPick { v in send(v) }
+            let m = NSMenu()
+            m.font = mono(13)
+            var current: NSMenuItem?
+            for o in options {
+                let item = NSMenuItem(title: o.isEmpty ? "system default" : o,
+                                      action: #selector(MenuPick.fire(_:)), keyEquivalent: "")
+                item.target = picker
+                item.representedObject = o
+                item.state = o == cur ? .on : .off
+                if o == cur { current = item }
+                m.addItem(item)
+            }
+            // The live choice under the pointer, the way a pop-up button opens:
+            // the list appears where the value already is rather than dropping
+            // from the top and making the eye find the row again.
+            // `popUp` runs its own event loop and the item's target is not
+            // retained by the menu, so the picker has to outlive the call.
+            withExtendedLifetime(picker) {
+                m.popUp(positioning: current, at: NSPoint(x: 0, y: anchor.bounds.height),
+                        in: anchor)
+            }
+            anchor.clearHover()
         case .action(let what):
             // Show what it did, briefly, in the row's own value. These take a
             // network fetch and a file write; a button that goes back to
@@ -560,6 +606,14 @@ final class TopClipView: NSClipView {
     override var isFlipped: Bool { true }
 }
 
+/// Carries a menu item's closure. `NSMenuItem` needs a target and a selector,
+/// and the panel would otherwise need one selector per row that opens a list.
+private final class MenuPick: NSObject {
+    private let pick: (String) -> Void
+    init(_ pick: @escaping (String) -> Void) { self.pick = pick; super.init() }
+    @objc func fire(_ sender: NSMenuItem) { pick(sender.representedObject as? String ?? "") }
+}
+
 final class ClickRow: NSView {
     private let action: () -> Void
     /// The row's own ground — banded or not — so hover can lift it and put it
@@ -592,6 +646,10 @@ final class ClickRow: NSView {
                                                  .inVisibleRect],
                                        owner: self, userInfo: nil))
     }
+    /// A menu opening over the row takes the mouse without ever sending an
+    /// exit event, so the lift would still be on it after the menu closed.
+    func clearHover() { hot = false }
+
     override func mouseEntered(with event: NSEvent) { hot = true }
     override func mouseExited(with event: NSEvent) { hot = false }
     override func resetCursorRects() {

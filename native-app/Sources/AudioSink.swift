@@ -156,6 +156,48 @@ final class AudioSink {
         #endif
     }
 
+    /// Which output to play through, by the name the picker showed. Empty is
+    /// the system default.
+    ///
+    /// This was collected, stored, listed in the panel and never once applied:
+    /// the setting round-tripped through the config file while the audio went
+    /// to whatever the system default was. A row that remembers a choice and
+    /// ignores it is worse than no row, and it reads as "the app has no sound"
+    /// when the default output is not what you are listening on.
+    var deviceName: String = ""
+
+    #if !os(iOS)
+    /// The device id behind a name from `outputDeviceNames()`, or nil. Matched
+    /// exactly, including the trailing spaces CoreAudio puts in some names
+    /// ("DX7s ", "SMSL USB AUDIO ") — those are part of the name, and trimming
+    /// here would fail to find the very devices the picker offered.
+    private static func outputDeviceID(named name: String) -> AudioObjectID? {
+        guard !name.isEmpty else { return nil }
+        var size = UInt32(0)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject),
+                                             &addr, 0, nil, &size) == noErr else { return nil }
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
+                                         &addr, 0, nil, &size, &ids) == noErr else { return nil }
+        for id in ids {
+            var nameAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioObjectPropertyName,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain)
+            var nameRef: Unmanaged<CFString>?
+            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            guard AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &nameSize, &nameRef) == noErr,
+                  let s = nameRef?.takeRetainedValue() as String?, s == name else { continue }
+            return id
+        }
+        return nil
+    }
+    #endif
+
     /// Default sized for the rate this actually runs at: 114 kHz stereo is
     /// 228 000 samples a second, so the old 96 000 was 0.42 s of cushion —
     /// less than a single Wi-Fi retransmission burst. The plugin rides out
@@ -327,6 +369,18 @@ final class AudioSink {
         }
         source = node
         engine.attach(node)
+        #if !os(iOS)
+        // Before the graph is built and before the engine starts: the output
+        // unit's device cannot be changed underneath a running engine, and the
+        // mixer's format is negotiated against whatever device is set here.
+        // A name that no longer resolves — the device was unplugged since it
+        // was chosen — falls through to the system default rather than
+        // refusing to play at all.
+        if let id = Self.outputDeviceID(named: deviceName) {
+            do { try engine.outputNode.auAudioUnit.setDeviceID(id) }
+            catch { NSLog("[audio] could not open \(deviceName): \(error.localizedDescription)") }
+        }
+        #endif
         engine.connect(node, to: engine.mainMixerNode, format: fmt)
         engine.mainMixerNode.outputVolume = 1
         engine.prepare()

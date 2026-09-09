@@ -952,6 +952,12 @@ final class LocalRadio {
         } ?? true
         let graphChanged = previous.map {
             $0.fmStereo != config.fmStereo || $0.audioDecimate != config.audioDecimate
+            // The output device is bound when the engine starts, so choosing a
+            // different one is a graph change like the other two. Without this
+            // the picker stored a name and nothing moved until the next
+            // connect — which is indistinguishable from a picker that does
+            // nothing, because for a whole session it was one.
+            || $0.audioDevice != config.audioDevice
         } ?? true
         queue.async {
             self.configureDemods()
@@ -1076,6 +1082,10 @@ final class LocalRadio {
 
     private func restartAudio() {
         guard audioRate > 0 else { return }
+        // The chosen output, every time the graph is built. `start` is where
+        // the device is bound, so a device changed while running takes effect
+        // on the restart `applyConfig` asks for below.
+        sink.deviceName = config.audioDevice
         do { try sink.start(sourceRate: audioRate, channels: isStereoMode ? 2 : 1) }
         catch { lastError = "audio: \(error.localizedDescription)" }
     }

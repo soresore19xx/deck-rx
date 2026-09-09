@@ -1403,6 +1403,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // mute state it was left on; the AUDIO pad still stops it.
         installDirectControl()
         server.start()
+        // The saved demod mode, before the link comes up. `connect()` takes the
+        // frequency from the config but never touched the mode, and the source
+        // switch that used to do it — `radio.mode = config.mode` on the way
+        // into DIRECT — went with the switch. `LocalRadio` starts at 2, so
+        // every launch came up in AM: an FM station demodulated by the AM
+        // detector, mono, through the AM channel filter. It sounds like a
+        // receiver that has lost its sensitivity, which is what it was
+        // reported as.
+        radio.mode = radio.config.mode
         radio.connect()
         radio.audioEnabled = true
         view.srcAudioPad.isOn = true

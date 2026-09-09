@@ -147,8 +147,10 @@ One consequence worth knowing: with the plugin also running, the two compete
 for the radio. SpyServer gives control to whichever client connected first and
 silently drops the other's retunes, so opening Solo while the plugin has the
 device takes it away — the plugin keeps its own idea of the frequency and
-demodulates whatever the window it can no longer move is centred on. The app
-says which side of that it is on (**LISTEN ONLY** in the label, `canControl` in
+demodulates whatever the window it can no longer move is centred on — until
+whichever of them is left takes control back, which each now notices and acts
+on (see [Sharing the receiver](#sharing-the-receiver)). The app says which side
+of that it is on (**LISTEN ONLY** in the label, `canControl` in
 `/health`, 409 from `/tune`). Run one at a time, or stop the plugin's receiver
 from the deck first.
 
@@ -312,6 +314,15 @@ later client's retune is discarded silently, so the app reports it: `canControl`
 in `/health`, **LISTEN ONLY** in the window, 409 from `/tune`, and the readout
 follows the device rather than claiming a frequency nothing is receiving. There
 is no arbitration — which client owns the radio is the user's call.
+
+What is not the user's call is what happens when control comes back. The server
+promotes whoever is left when the controlling client goes, and that arrives as
+a sync with `canControl` newly true — no reconnect, no notice. Both this app
+and the plugin now act on that edge: each keeps the frequency it was *told* to
+be on, through every refusal, and re-issues it the moment it may. Without it a
+client sat demodulating the piece of band the departed one had left the device
+on, which looks and sounds exactly like a receiver that has stopped working —
+and did, for twenty minutes, with nothing anywhere saying why.
 
 ## CPU
 

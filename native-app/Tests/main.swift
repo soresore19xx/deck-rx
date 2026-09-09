@@ -563,6 +563,23 @@ check("a jump asks for the window, not only the demodulator",
       LocalRadio.vfoOffset(target: 954_000, center: 1_134_000, maxOffset: 187_000,
                            recenter: true) == nil)
 
+section("control arriving means going where you were told")
+// SpyServer gives control to the first client and drops everyone else's
+// retunes without a word. The loser is not wrong about where it wants to be —
+// it simply cannot get there — so the edge where control arrives is when it
+// pays that back. Missing this is what "FM stopped receiving" was: the app
+// kept demodulating the band the departed client had left the device on.
+check("control arriving, and the device is elsewhere, reclaims",
+      LocalRadio.shouldReclaim(was: false, now: true, wanted: 81_300_000, deviceFreq: 7_325_000))
+check("already in control changes nothing",
+      !LocalRadio.shouldReclaim(was: true, now: true, wanted: 81_300_000, deviceFreq: 7_325_000))
+check("losing control does not retune",
+      !LocalRadio.shouldReclaim(was: true, now: false, wanted: 81_300_000, deviceFreq: 7_325_000))
+check("control arriving on the frequency we wanted re-issues nothing",
+      !LocalRadio.shouldReclaim(was: false, now: true, wanted: 81_300_000, deviceFreq: 81_300_000))
+check("nothing wanted yet, nothing to reclaim",
+      !LocalRadio.shouldReclaim(was: false, now: true, wanted: 0, deviceFreq: 7_325_000))
+
 section("a jump reaches the receiver as a jump")
 // The rule above is only worth having if the call sites ask for it. Every
 // control in the Mac window is routed through `Receiver`, so that is where the

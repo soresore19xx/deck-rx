@@ -8,12 +8,20 @@ Part of [deck-rx](../README.md).
 
 ## Using it
 
-1. Type the SpyServer's address and port, and press **DIRECT**. Or set
-   **Source** to `usb` and it opens an Airspy HF+ on this machine's own USB
-   instead — see [Straight off USB](#straight-off-usb).
+1. Check **Host** and **Port** in the options panel — it connects to them the
+   moment it opens. Or set **Source** to `usb` and it opens an Airspy HF+ on
+   this machine's own USB instead — see [Straight off USB](#straight-off-usb).
 2. Press **AUDIO**.
 3. Pick a station from the list on the left — or type a frequency into the
    readout, or walk with **TUNE −/+**.
+
+It is its own receiver and only its own. It does not read the plugin's status
+file or its spectrum socket, and none of its controls reach over the loopback:
+POWER, the preset pads and the volume all act on the receiver in this window.
+The pad marked **DIRECT** is that receiver's link, up or down — it used to be a
+source switch, where "off" turned the window into a front-end onto the plugin,
+which is what made closing the window not stop the sound. The sound was never
+this app's to stop. `Deck RX.app` is the bundle for looking at the plugin.
 
 That is all of it. The rest, briefly:
 
@@ -41,7 +49,7 @@ it, and the picture is drawn where the ear is rather than where the samples
 are, so what is seen and what is heard line up.
 
 The meters, the drop count and every row in the options panel describe **this**
-receiver whenever DIRECT is lit. They used to be read off the loopback control
+receiver. They used to be read off the loopback control
 endpoint, which belongs to the Stream Deck plugin whenever the plugin is
 running: the window then showed the plugin's gain, AGC and signal while driving
 its own receiver, and the two disagreed silently.
@@ -131,8 +139,18 @@ That last line is needed for a build signed here rather than one from a
 [release](https://github.com/soresore19xx/deck-rx/releases/latest); see
 [Handing it to someone else](#handing-it-to-someone-else) below.
 
-`autoDirect` and `autoAudio` in the config do the two opening presses at
-launch, which is the only way to drive it on a machine nobody sits at.
+`autoAudio` starts the audio at launch as well, which is what a machine nobody
+sits at needs. Connecting no longer waits to be asked — `autoDirect` is left in
+the file for the iPad's own use and is not read here.
+
+One consequence worth knowing: with the plugin also running, the two compete
+for the radio. SpyServer gives control to whichever client connected first and
+silently drops the other's retunes, so opening Solo while the plugin has the
+device takes it away — the plugin keeps its own idea of the frequency and
+demodulates whatever the window it can no longer move is centred on. The app
+says which side of that it is on (**LISTEN ONLY** in the label, `canControl` in
+`/health`, 409 from `/tune`). Run one at a time, or stop the plugin's receiver
+from the deck first.
 
 The menu bar is built by hand — there is no nib — so About and Quit exist at
 all. About reports which of the two builds is running and what it is pointed

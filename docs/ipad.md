@@ -39,6 +39,12 @@ Landscape, and the width goes to the spectrum.
 Controls sit in named, framed groups — DISPLAY, BAND, TUNE, MODE, AUDIO, SERVER
 — the way a panel is silkscreened.
 
+It connects to the server in the SERVER group the moment it opens — there is
+no plugin on an iPad to borrow a receiver from, so there was never anything to
+wait for. CONNECT drops the link and brings it back. (The **Connect at start**
+row in the options sheet no longer decides anything; the setting it writes is
+kept for the file's sake.)
+
 The demodulators are the same files the Mac builds from, so the AM brick-wall
 channel filter and the FM stereo reference both arrive here on a rebuild rather
 than needing a port — see [The AM channel filter](solo.md#the-am-channel-filter).

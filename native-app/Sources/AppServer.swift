@@ -65,8 +65,16 @@ final class AppServer {
         spectrumSource?.cancel(); spectrumSource = nil
         for c in spectrumClients { close(c) }
         spectrumClients.removeAll()
-        if spectrumFd >= 0 { close(spectrumFd); spectrumFd = -1 }
-        unlink(spectrumPath)
+        // Only the owner removes it. The socket path is shared with the
+        // plugin, and this used to unlink it unconditionally — so quitting an
+        // app that had never opened it pulled the plugin's socket out from
+        // under it, which the plugin logs as "socket file gone from under us"
+        // and recovers from by re-listening. A quit should not cost anyone
+        // else a reconnect.
+        if spectrumFd >= 0 {
+            close(spectrumFd); spectrumFd = -1
+            unlink(spectrumPath)
+        }
         isServing = false
         DispatchQueue.main.async { self.onStateChange?() }
     }

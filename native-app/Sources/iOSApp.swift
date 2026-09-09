@@ -151,11 +151,15 @@ final class RadioViewController: UIViewController {
         radio.mode = radio.config.mode
         refresh()
 
-        // Same rule as the Mac window: honour autoDirect once there is
-        // something on screen, so a refused connection lands in the status
-        // line rather than happening before anything is drawn. autoAudio is
-        // not consulted here — audio is already on, for the reason above.
-        if radio.config.autoDirect { connectNow() }
+        // Its own receiver, from the moment there is something on screen —
+        // the same rule the Mac's standalone bundle now follows. A refused
+        // connection lands in the status line rather than happening before
+        // there is anywhere to show it, and the CONNECT button is there to
+        // drop the link. There is nothing else to be: this app has no plugin
+        // to borrow a receiver from, and waiting to be asked only meant one
+        // more tap before the radio worked. `autoAudio` is not consulted here
+        // — audio is already on, for the reason above.
+        connectNow()
     }
 
     // MARK: layout

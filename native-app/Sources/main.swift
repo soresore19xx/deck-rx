@@ -1239,7 +1239,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 #if STANDALONE
     private let radio = LocalRadio()
     private lazy var server = AppServer(radio: radio)
+#if STANDALONE
+    /// Always true here. The standalone bundle *is* the receiver: there is no
+    /// front-end mode to fall back to, no plugin to read, and nothing that
+    /// reaches over the loopback. The pad on the bar connects and disconnects
+    /// its own receiver, which is all it ever meant once the window stopped
+    /// borrowing the plugin's.
+    private let direct = true
+#else
     private var direct = false
+#endif
     private var lastLabelledFreq: Double = -1
     /// JP region for the station database. Follows the plugin's setting when
     /// the feed is up, so the two do not disagree about which 関東 is meant.
@@ -1328,14 +1337,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 #endif
         NSApp.activate(ignoringOtherApps: true)
 
+#if !STANDALONE
+        // The plugin's spectrum socket. The standalone bundle draws its own
+        // receiver's frames (below) and never reads this one.
         feed = SpectrumFeed { [weak self] frame in
-            guard let self else { return }
-#if STANDALONE
-            guard !self.direct else { return }             // DIRECT wins while it is on
-#endif
-            self.view.spectrum.accept(frame)
+            self?.view.spectrum.accept(frame)
         }
         feed?.start()
+#endif
 
 #if STANDALONE
         radio.onFrame = { [weak self] frame in
@@ -1382,51 +1391,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         view.options.refresh()
 #if STANDALONE
-        // Honour autoDirect after the window is up, so a failure to connect is
-        // visible in the label rather than happening before anything is drawn.
-        if radio.config.autoDirect {
-            toggleSource()
-            if radio.config.autoAudio {
-                radio.audioEnabled = true
-                view.srcAudioPad.isOn = true
-                syncSource()
-            }
+        // Its own receiver, from the moment the window is up. Started after the
+        // view exists so a failure to connect appears in the label rather than
+        // before there is anywhere to show it. `autoAudio` still decides
+        // whether it also starts making noise — connecting is free, and two
+        // receivers on one machine playing at once is not what anyone wants by
+        // surprise.
+        installDirectControl()
+        server.start()
+        radio.connect()
+        if radio.config.autoAudio {
+            radio.audioEnabled = true
+            view.srcAudioPad.isOn = true
         }
-#endif
+        syncSource()
+#else
         // The plugin only publishes the status feed while this flag is fresh.
+        // Only a front-end needs it: this bundle is the thing the feed
+        // describes.
         aliveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in Receiver.touchAlive() }
+#endif
     }
 
 #if STANDALONE
-    /// DIRECT: the app connects to SpyServer itself instead of reading the
-    /// plugin's socket. Server address and tuned frequency come from the status
-    /// feed, so this follows whatever the receiver is already set to rather than
-    /// introducing a second place to configure the same thing.
+    /// The receiver's own link, up or down. It used to be a source switch —
+    /// off meant the window became a front-end onto the plugin — and that is
+    /// what made "Solo" confusing: the bundle that exists to be independent
+    /// came up borrowing another receiver's numbers, and closing its window
+    /// therefore did not stop the sound, because the sound was never its own.
+    ///
+    /// Down means down now. Nothing is borrowed and nothing falls back;
+    /// `Receiver.direct` stays installed so every control keeps addressing this
+    /// receiver whether the link is up or not.
     private func toggleSource() {
-        direct.toggle()
-        if direct {
-            // Prefer the live feed when the plugin happens to be up — following
-            // it avoids a jump when switching — but fall back to the app's own
-            // config, which is what a machine with no plugin has.
-            let s = Receiver.status_fromFeed()
-            radio.mode = s.fresh ? s.mode : radio.config.mode
-            radio.connect(host: s.fresh && !s.host.isEmpty ? s.host : nil,
-                          port: s.fresh && s.port > 0 ? UInt16(s.port) : nil,
-                          frequency: s.fresh && s.freqHz > 0 ? UInt32(s.freqHz) : nil)
-            installDirectControl()
-            // Serve the plugin's three interfaces so a front-end can drive this
-            // app instead. Silently declines when the plugin already owns them.
-            server.start()
-        } else {
-            server.stop()
-            Receiver.direct = nil
-            radio.iqNrEnabled = false
-            radio.levelingEnabled = false
-            view.nrPad.isOn = false
-            view.levelPad.isOn = false
+        if radio.isConnected {
             radio.audioEnabled = false
             view.srcAudioPad.isOn = false
             radio.disconnect()
+        } else {
+            radio.connect()
         }
         syncSource()
     }
@@ -1438,7 +1441,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Receiver.direct = Receiver.DirectControl(
             status: { [weak self] in
                 guard let self else { return Receiver.Status() }
-                var s = Receiver.status_fromFeed()   // keep station name etc. when the plugin is up
+                // Built from this receiver alone. It used to start from the
+                // plugin's status file to borrow a station name; an
+                // independent app has no business reading another receiver's
+                // feed, and every field that mattered was overwritten below
+                // anyway.
+                var s = Receiver.Status()
                 s.connected = self.radio.isConnected
                 s.enabled = self.radio.isConnected
                 s.fresh = true
@@ -1448,7 +1456,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 s.tuneStepHz = self.radio.tuneStepHz
                 s.volume = self.radio.volume
                 s.muted = self.radio.muted
-                s.device = self.radio.deviceInfo != nil ? self.radio.deviceLabel : s.device
+                s.device = self.radio.deviceInfo != nil ? self.radio.deviceLabel : ""
                 s.audioSink = self.radio.audioEnabled ? "local" : "off"
                 // The meters and the drop count are this receiver's own while
                 // it is running. They were left at whatever the plugin's feed
@@ -1498,15 +1506,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             receiver: { [weak self] set, value, action in
                 guard let self else { return [:] }
                 return self.server.receiverDirect(set: set, value: value, action: action)
-            })
+            },
+            // POWER and the preset pads. Without these two they went out over
+            // the loopback and toggled the *plugin's* receiver while this
+            // window drove its own — the power pad in particular looked dead,
+            // because the thing it stopped was not the thing being heard.
+            togglePower: { [weak self] in self?.toggleSource() },
+            presetStep: { [weak self] dir in _ = self?.radio.stepPreset(dir) })
     }
 
     private func syncSource() {
-        view.srcPad.isOn = direct
-        if !direct {
-            view.srcLabel.stringValue = "via plugin"
-            view.srcLabel.textColor = P.faint
-        } else if let e = radio.lastError {
+        view.srcPad.isOn = radio.isConnected
+        if let e = radio.lastError {
             view.srcLabel.stringValue = e
             view.srcLabel.textColor = P.warn
         } else if radio.isConnected {
@@ -1722,7 +1733,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UI.scale = wanted
 
 #if STANDALONE
-        let wasDirect = direct
+        let wasConnected = radio.isConnected
 #endif
         let frame = window.frame
         let fresh = makeView()
@@ -1739,7 +1750,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // app's own receiver state, so the front-end has nothing to restore:
         // its pads are read-only there and its readings arrive on the next tick.
 #if STANDALONE
-        fresh.srcPad.isOn = wasDirect
+        fresh.srcPad.isOn = wasConnected
         fresh.srcAudioPad.isOn = radio.audioEnabled
         fresh.nrPad.isOn = radio.iqNrEnabled
         fresh.levelPad.isOn = radio.levelingEnabled

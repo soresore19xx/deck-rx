@@ -166,6 +166,13 @@ enum Receiver {
         /// with what was actually being received.
         var options: ((String?, String?) -> [String: Any])?
         var receiver: ((String?, String?, String?) -> [String: Any])?
+        /// Power and the preset walk. Optional for the same reason as the two
+        /// above — a caller that only routes control still compiles — but the
+        /// standalone bundle installs them, because without them these two pads
+        /// reached over the loopback and toggled the *plugin's* receiver while
+        /// the window drove its own.
+        var togglePower: (() -> Void)?
+        var presetStep: ((Int) -> Void)?
     }
     static var direct: DirectControl?
 
@@ -309,7 +316,13 @@ enum Receiver {
         if let d = direct { d.tuneHz(hz, recenter); return }
         call("/tune?hz=\(hz)" + (recenter ? "&recenter=1" : ""))
     }
-    static func volume(delta: Int) { call("/volume?d=\(delta)") }
+    static func volume(delta: Int) {
+        if let d = direct {
+            d.volume(max(0, min(1, status().volume + Double(delta) * 0.05)))
+            return
+        }
+        call("/volume?d=\(delta)")
+    }
     /// Absolute 0..1 — what a click on the volume bar means.
     static func volume(level: Double) {
         if let d = direct { d.volume(max(0, min(1, level))); return }
@@ -319,8 +332,14 @@ enum Receiver {
         if let d = direct { d.toggleMute(); return }
         call("/mute?toggle=1")
     }
-    static func togglePower()      { call("/power?toggle=1") }
-    static func preset(step: Int)  { call("/preset?d=\(step > 0 ? 1 : -1)") }
+    static func togglePower() {
+        if let h = direct?.togglePower { h(); return }
+        call("/power?toggle=1")
+    }
+    static func preset(step: Int) {
+        if let h = direct?.presetStep { h(step > 0 ? 1 : -1); return }
+        call("/preset?d=\(step > 0 ? 1 : -1)")
+    }
     /// Demod mode by index (see MODE_NAMES). A preset's mode travels with it.
     static func mode(_ m: Int)     {
         if let d = direct { d.mode(m); return }

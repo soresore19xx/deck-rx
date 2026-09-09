@@ -1391,19 +1391,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         view.options.refresh()
 #if STANDALONE
-        // Its own receiver, from the moment the window is up. Started after the
-        // view exists so a failure to connect appears in the label rather than
-        // before there is anywhere to show it. `autoAudio` still decides
-        // whether it also starts making noise — connecting is free, and two
-        // receivers on one machine playing at once is not what anyone wants by
-        // surprise.
+        // Its own receiver, and audible, from the moment the window is up.
+        // Started after the view exists so a failure to connect appears in the
+        // label rather than before there is anywhere to show it.
+        //
+        // The audio used to wait for `autoAudio`, on the reasoning that two
+        // receivers on one machine playing at once is a surprise. It is a
+        // worse surprise to open a radio and have it sit there silent with
+        // nothing saying why — which is the same friction as the DIRECT press
+        // this bundle just stopped needing. It comes up on the volume and the
+        // mute state it was left on; the AUDIO pad still stops it.
         installDirectControl()
         server.start()
         radio.connect()
-        if radio.config.autoAudio {
-            radio.audioEnabled = true
-            view.srcAudioPad.isOn = true
-        }
+        radio.audioEnabled = true
+        view.srcAudioPad.isOn = true
         syncSource()
 #else
         // The plugin only publishes the status feed while this flag is fresh.

@@ -11,9 +11,11 @@ Part of [deck-rx](../README.md).
 1. Check **Host** and **Port** in the options panel — it connects to them the
    moment it opens. Or set **Source** to `usb` and it opens an Airspy HF+ on
    this machine's own USB instead — see [Straight off USB](#straight-off-usb).
-2. Press **AUDIO**.
-3. Pick a station from the list on the left — or type a frequency into the
+2. Pick a station from the list on the left — or type a frequency into the
    readout, or walk with **TUNE −/+**.
+
+It connects and starts playing on its own, at the volume and mute state it was
+left on. **AUDIO** stops the sound without dropping the link.
 
 It is its own receiver and only its own. It does not read the plugin's status
 file or its spectrum socket, and none of its controls reach over the loopback:
@@ -139,9 +141,9 @@ That last line is needed for a build signed here rather than one from a
 [release](https://github.com/soresore19xx/deck-rx/releases/latest); see
 [Handing it to someone else](#handing-it-to-someone-else) below.
 
-`autoAudio` starts the audio at launch as well, which is what a machine nobody
-sits at needs. Connecting no longer waits to be asked — `autoDirect` is left in
-the file for the iPad's own use and is not read here.
+Neither `autoDirect` nor `autoAudio` is read any more: connecting and playing
+both happen at launch. A radio that opens silent with nothing saying why is the
+same friction as the DIRECT press this bundle stopped needing.
 
 One consequence worth knowing: with the plugin also running, the two compete
 for the radio. SpyServer gives control to whichever client connected first and
@@ -237,6 +239,13 @@ cycles: a Mac has as many outputs as it has ever had devices attached, and
 walking them one click at a time moves the audio to each in turn on the way
 past. The list is read when the menu opens, so a device plugged in after the
 window was built is in it.
+
+It is bound when the audio engine starts, so choosing a different one rebuilds
+the graph rather than waiting for the next connect. Names are matched exactly,
+trailing spaces and all — CoreAudio reports "DX7s " and "SMSL USB AUDIO " that
+way, and trimming would fail to find the very devices the picker offered. A
+name that no longer resolves falls back to the system default rather than
+refusing to play.
 
 `spectrumSplit` is the fraction of the spectrum panel given to the trace,
 dragged on the rail rather than typed.

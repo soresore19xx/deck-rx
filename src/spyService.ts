@@ -345,6 +345,12 @@ class SpyService {
   private deviceInfo: DeviceInfo | null = null;
   private deviceInfoWaiters: Array<(info: DeviceInfo) => void> = [];
   private lastSync: SyncInfo | null = null;
+  /** Whether this client may steer the device. False means another client
+   *  connected first: retunes are accepted here and dropped by the server, so
+   *  nothing works and nothing says why. Optimistic until the first sync says
+   *  otherwise, which is the state a lone client is in. */
+  private canControl = true;
+  private controlListeners: Array<(can: boolean) => void> = [];
 
   private audioOutput: AudioOutput | null = null;
   private currentAudioDeviceName: string = '';
@@ -488,8 +494,29 @@ class SpyService {
       // the server's "current" freq is just an echo of our last setting.
       // After our setFrequency, the server-side initial sync still echoes
       // an older value, racing our config-restored _currentFreq.
+      const hadControl = this.canControl;
+      this.canControl = s.canControl;
       this.lastSync = s;
       log.info(`[spyService] sync canControl=${s.canControl} gain=${s.gain} iqFreq=${s.iqCenterFreq} min=${s.minIQCenterFreq} max=${s.maxIQCenterFreq}`);
+      // Control arriving is the moment to go where we were told to be.
+      // SpyServer gives it to the first client and drops everyone else's
+      // retunes without a word, then promotes whoever is left when that one
+      // goes — so this fires on its own, with no reconnect and no human. Until
+      // it did, the plugin kept its own idea of the frequency, could finally
+      // act on it, and never did: it sat demodulating the piece of band the
+      // departed client had left the device on, which looks and sounds exactly
+      // like a receiver that has stopped working. `_currentFreq` is that idea,
+      // kept through the refusal because `setFrequency` records it before
+      // sending rather than after.
+      if (!hadControl && s.canControl && this._currentFreq > 0
+          && s.iqCenterFreq !== this._currentFreq) {
+        log.info(`[spyService] control regained — retuning to ${this._currentFreq} `
+                 + `(device was on ${s.iqCenterFreq})`);
+        this.setFrequency(this._currentFreq);
+      }
+      if (hadControl !== s.canControl) {
+        for (const fn of this.controlListeners) fn(s.canControl);
+      }
       for (const fn of this.syncListeners) fn(s);
     });
     this.client.on('error', (e: unknown) => {
@@ -1901,6 +1928,14 @@ class SpyService {
   }
   offConnect(fn: ConnectListener): void { this.connectListeners.delete(fn); }
   isConnected(): boolean { return this.connected; }
+  /** False while another client owns the device. Worth showing: it is the
+   *  difference between "the radio is broken" and "something else is holding
+   *  it", and those look identical from a dial that does not say. */
+  hasControl(): boolean { return this.canControl; }
+  onControlChange(fn: (can: boolean) => void): void {
+    this.controlListeners.push(fn);
+    fn(this.canControl);   // replay for late subscribers, as the others do
+  }
   /** Subscribe to TCP connection state changes (true=connected handshake done,
    *  false=disconnected). Replays current state immediately. */
   subscribeConnectionState(fn: ConnectionStateListener): void {

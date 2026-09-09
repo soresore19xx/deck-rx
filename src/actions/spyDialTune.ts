@@ -789,7 +789,13 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         unit = 'kHz';
       }
       const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', modeStr, isFM && showStereo, subDigits));
-      const headerImg = D(makeHeaderSvg(header, false));
+      // Another client owns the device: our retunes are accepted here and
+      // dropped by the server, so the dial turns and nothing happens. Saying
+      // so where the station name goes is the difference between "the radio is
+      // broken" and "something else is holding it" — they look identical from
+      // a dial that does not say, and that cost a session.
+      const hdrText = live && !spyService.hasControl() ? 'LISTEN ONLY' : header;
+      const headerImg = D(makeHeaderSvg(hdrText, false));
       const freqImg   = D(freqSvg);
       const borderImg = makeBorderSvg(this.borderSide);
       await a.setFeedback({
@@ -830,7 +836,13 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         unit = 'kHz';
       }
       const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', 'VFO', showStereo, subDigitsVfo));
-      const headerImg = D(makeHeaderSvg(header, false));
+      // Another client owns the device: our retunes are accepted here and
+      // dropped by the server, so the dial turns and nothing happens. Saying
+      // so where the station name goes is the difference between "the radio is
+      // broken" and "something else is holding it" — they look identical from
+      // a dial that does not say, and that cost a session.
+      const hdrText = live && !spyService.hasControl() ? 'LISTEN ONLY' : header;
+      const headerImg = D(makeHeaderSvg(hdrText, false));
       const freqImg   = D(freqSvg);
       const borderImg = makeBorderSvg(this.borderSide);
       await a.setFeedback({

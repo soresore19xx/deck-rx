@@ -76,6 +76,12 @@ final class LocalRadio {
     /// error, no reply, the frequency simply does not move. Reported so the
     /// window can say so instead of looking broken.
     private(set) var canControl = true
+    /// Where this receiver has been *told* to be, which is not always where it
+    /// is: while another client owns the device our retunes are dropped and the
+    /// readout follows the device instead. Kept so that the moment control
+    /// arrives we can go where we were always meant to be, rather than sitting
+    /// on someone else's frequency until a human notices.
+    private var wantedFrequency: UInt32 = 0
     /// What the server says the device is actually tuned to. When we cannot
     /// control it, this is where the radio really is, and the frequency we
     /// asked for is fiction.
@@ -310,6 +316,24 @@ final class LocalRadio {
     /// window moves once, which is what moving it is for.
     var maxVfoOffsetHz: Double { max(0, Double(iqRate) * 0.42 - bandwidthHz / 2) }
 
+    /// Whether an arriving sync means "go where you were told".
+    ///
+    /// Control arriving is that moment. SpyServer gives it to the first client
+    /// and promotes whoever is left when that one goes, so this happens on its
+    /// own — no reconnect, no human. Without acting on it the app keeps its own
+    /// idea of the frequency, can finally act on it, and never does: it sits
+    /// demodulating the piece of band the departed client left behind, which
+    /// looks and sounds exactly like a receiver that has stopped working. That
+    /// is what "FM stopped receiving" turned out to be, with nothing in the
+    /// window to say so.
+    ///
+    /// Only on the edge, and only when the device is somewhere else: holding
+    /// control and already being there is the ordinary case and must not
+    /// re-issue anything.
+    static func shouldReclaim(was: Bool, now: Bool, wanted: UInt32, deviceFreq: UInt32) -> Bool {
+        !was && now && wanted > 0 && wanted != deviceFreq
+    }
+
     /// Where a target leaves the demodulator, or nil when the device has to
     /// move to reach it. Pure, so the policy can be tested without a receiver:
     /// it is the difference between "the display holds still" and "the display
@@ -353,6 +377,7 @@ final class LocalRadio {
         let host = host ?? config.host
         let port = port ?? UInt16(clamping: config.port)
         frequency = freq ?? UInt32(max(0, config.frequencyHz))
+        wantedFrequency = frequency
         deviceCenterHz = frequency
         vfoOffsetHz = 0
         sink.volume = config.volume
@@ -422,6 +447,11 @@ final class LocalRadio {
                 // Someone else's centre, so there is no offset to hold either.
                 self.deviceCenterHz = sync.iqCenterFreq
                 self.setVfo(0)
+            }
+            if Self.shouldReclaim(was: was, now: sync.canControl,
+                                  wanted: self.wantedFrequency,
+                                  deviceFreq: sync.iqCenterFreq) {
+                self.setFrequency(self.wantedFrequency, recenter: true)
             }
             if was != sync.canControl { DispatchQueue.main.async { self.onState?() } }
         }
@@ -596,6 +626,10 @@ final class LocalRadio {
     /// the digits, a tap on the trace, the tune buttons — leaves it false,
     /// because a window that moves under the finger cannot be aimed with.
     func setFrequency(_ hz: UInt32, recenter: Bool = false) {
+        // Where we were asked to go, recorded before the refusal below: a tune
+        // made while another client owns the device is not forgotten, it is
+        // owed. `onSync` pays it back the moment control arrives.
+        wantedFrequency = hz
         // Refuse rather than pretend. A second client's retune is dropped by
         // the server without a word, so accepting it here would leave the
         // window showing a frequency nothing is receiving.

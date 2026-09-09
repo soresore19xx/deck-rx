@@ -41,9 +41,16 @@ export interface FMOptions {
   // kHz (76.0 / 76.1 / 76.2 …), so the cycle (BW_CYCLE_FM in the dial
   // actions) includes 100 kHz and 90 kHz — narrow enough to suppress
   // the immediate-adjacent station ~−50 dB with 8th-order Butterworth.
-  //   200000 = SDR++ default WFM IF, full Carson, all stereo intact
-  //   150000 = light tightening, still keeps stereo subcarrier (53 kHz)
-  //   110000 = stereo-just-fits, decent adjacent rejection
+  // The width also sets how much stereo survives: truncating the FM spectrum
+  // distorts the discriminator output, and that distortion lands in L-R as
+  // crosstalk. Channel separation measured on a full-deviation broadcast MPX
+  // (L+R and L-R at 45% each, pilot 10%, 75 kHz peak), 1 kHz tone in one
+  // channel, native-app/Tests measures the same way:
+  //   250000 = full Carson for 75 kHz deviation (2 x (75 + 53)), 62 dB
+  //   200000 = SDR++ default WFM IF, 36 dB
+  //   150000 = light tightening, 30 dB
+  //   110000 = stereo-just-fits, decent adjacent rejection, 11 dB - the
+  //            image is gone well before the subcarrier is
   //   100000 = matches one JP channel, mono only past this point
   //    90000 = aggressive adjacent rejection (~-50 dB at 100 kHz neighbour)
   bandwidth: number;

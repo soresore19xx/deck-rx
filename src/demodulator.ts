@@ -803,8 +803,18 @@ export class Demodulator {
       // toward 0 instead of positive bias.
       const lockMetric = this.pllPdI - Math.abs(this.pllPdQ);
       this.pilotPower = 0.999 * this.pilotPower + 0.001 * lockMetric;
-      // 38 kHz reference: phase-locked, unit amplitude (just take cosine of doubled phase)
-      const ref38 = Math.cos(2 * this.pllPhase);
+      // 38 kHz reference: phase-locked, unit amplitude. Built from the phase the
+      // pilot was MEASURED against (cosV), not from `this.pllPhase` — the loop
+      // above has already advanced that by one sample, and one sample is a real
+      // angle here: 15 deg at 19 kHz on a 456 kHz stream, 30 deg on a 228 kHz
+      // one, doubled to 30 / 60 deg at 38 kHz. L-R then arrives scaled by that
+      // cosine, and a flat gain error in one arm of the channel matrix is all
+      // the separation there is: 23 dB at 456 kHz, ~10 dB at 228 kHz, both of
+      // them "technically stereo, barely stereo in the room". Same-sample phase
+      // via cos 2x = 2 cos^2 x - 1 measures 39 dB at the 150 kHz FM bandwidth
+      // and costs one Math.cos() less per sample. Verified in
+      // native-app/Tests/main.swift, which measures the identical decoder.
+      const ref38 = 2 * cosV * cosV - 1;
       // Recover L−R baseband: mix demod with 38 kHz reference (×2 to compensate for
       // the cos·cos averaging factor of 1/2), then LPF
       const lmrIn = demod * ref38 * 2;

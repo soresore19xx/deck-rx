@@ -80,6 +80,14 @@ final class AppServer {
     /// unattended probe ended up recording whatever this app was tuned to.
     private(set) var servingPort: UInt16 = 0
 
+    /// How far past the canonical port to look for a free one. The plugin owns
+    /// 8771 whenever it is up, and anything else on the machine may have taken
+    /// the next one — this app gave up after a single try and then had no
+    /// control endpoint at all, which is silent: the window works, and nothing
+    /// outside it can drive the receiver. A knob, a script or a second machine
+    /// all arrive through this door.
+    private static let portScanRange: UInt16 = 10
+
     private func startControl() { startControl(on: controlPort, isFallback: false) }
 
     private func startControl(on rawPort: UInt16, isFallback: Bool) {
@@ -96,7 +104,11 @@ final class AppServer {
         guard let l = try? NWListener(using: params, on: port) else {
             portBusy = true
             lastError = "control port \(rawPort) busy"
-            if !isFallback { startControl(on: rawPort &+ 1, isFallback: true) }
+            if rawPort &- controlPort < Self.portScanRange {
+                startControl(on: rawPort &+ 1, isFallback: true)
+            } else {
+                lastError = "no free control port in \(controlPort)-\(controlPort &+ Self.portScanRange)"
+            }
             return
         }
         l.newConnectionHandler = { [weak self] conn in self?.serve(conn) }
@@ -112,7 +124,9 @@ final class AppServer {
                 self.portBusy = true
                 self.lastError = e.localizedDescription
                 self.listener = nil
-                if !isFallback { self.startControl(on: rawPort &+ 1, isFallback: true) }
+                if rawPort &- self.controlPort < Self.portScanRange {
+                    self.startControl(on: rawPort &+ 1, isFallback: true)
+                }
                 DispatchQueue.main.async { self.onStateChange?() }
             default: break
             }
@@ -180,7 +194,10 @@ final class AppServer {
                         + ",\"deviceFreqHz\":\(radio.deviceFreq)}")
             }
             if let hz = q["hz"].flatMap(Double.init) {
-                radio.setFrequency(UInt32(max(0, hz)))
+                // `recenter=1` is a front-end saying this is a jump (a preset,
+                // a band button), not an aim: the window moves with the
+                // receiver instead of the demodulator sliding inside it.
+                radio.setFrequency(UInt32(max(0, hz)), recenter: q["recenter"] == "1")
                 return ok("\"freqHz\":\(Int(hz))")
             }
             if let t = q["ticks"].flatMap(Int.init) {
@@ -479,7 +496,11 @@ final class AppServer {
     }
 
     private func writeStatus() {
-        guard isServing else { return }   // the plugin owns the feed otherwise
+        // The feed is one shared file, and the canonical port is what says who
+        // owns it. Serving on a scanned-for port means something else holds
+        // 8771 — the plugin — so it holds the feed too, and two writers would
+        // hand every reader a mixture of two receivers.
+        guard isServing, isServingCandidate else { return }
         let live = radio.isConnected
         let name = StationLabel.lookup(freqHz: Double(radio.frequency),
                                        region: StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto)

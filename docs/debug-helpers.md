@@ -76,20 +76,32 @@ at 456 kHz settled it in one run.
 
 ## Recording what the receiver is actually putting out
 
-Two file flags, one per receiver, so both can be captured at once and the two
-WAVs told apart:
+File flags, two taps per receiver, so all of them can be captured at once and
+the WAVs told apart:
 
 | flag | writes | what it is |
 | --- | --- | --- |
-| `/tmp/deck-rx-solo-audio-record` | `/tmp/deck-rx-solo-audio-<ts>.wav` | the standalone app's audio, after levelling and the mute window, before the sink |
-| `/tmp/deck-rx-audio-record` | `/tmp/deck-rx-audio-<ts>.wav` | the same point in the plugin |
-| `/tmp/deck-rx-postasrc-record` | `/tmp/deck-rx-postasrc-<ts>.wav` | the plugin again, but the exact bytes handed to the output device, after resampling |
+| `/tmp/deck-rx-solo-audio-record` | `/tmp/deck-rx-solo-audio-<ts>.wav` | the standalone app's audio, after levelling and the mute window, **before the volume knob** and before the sink |
+| `/tmp/deck-rx-solo-postmix-record` | `/tmp/deck-rx-solo-postmix-<ts>.wav` | the standalone app again, at the engine's main mixer — after the volume ramp and after AVAudioEngine's own rate conversion |
+| `/tmp/deck-rx-audio-record` | `/tmp/deck-rx-audio-<ts>.wav` | the plugin, **after** its volume ramp, before resampling |
+| `/tmp/deck-rx-postasrc-record` | `/tmp/deck-rx-postasrc-<ts>.wav` | the plugin again, the exact bytes handed to the output device, after resampling |
 
-`touch` to start, `rm` to stop; the header is patched on close. The plugin's
-pair localises a fault to the resampler or the device clock. The standalone
-one is what settled "why is Solo noisier than SDR++ on 594 kHz": record the
-same station from both, normalise each to its own 0.3-3 kHz program band, and
-compare by octave. Level differences cancel; filter skirts do not.
+`touch` to start, `rm` to stop; the header is patched on close. Each receiver's
+pair localises a fault to the resampler or the device clock: `solo-audio` vs
+`solo-postmix` on one side, `audio` vs `postasrc` on the other.
+
+**Match the taps before comparing levels across receivers.** The two `audio`
+flags are not the same point: the standalone one sits *before* the volume knob
+and the plugin's *after* it. Comparing them directly is how 6.8 dB of plain
+volume was mistaken for 7.6 dB of demodulator gain, and how a soft limiter's
+32767 ceiling — which is upstream of the knob, so it does not budge when the
+volume is lowered — was read as clipping that lowering the volume would fix.
+Use `solo-postmix` against `audio`, or divide the knob back out.
+
+The standalone tap is also what settled "why is Solo noisier than SDR++ on
+594 kHz": record the same station from both, normalise each to its own
+0.3-3 kHz program band, and compare by octave. Level differences cancel;
+filter skirts do not.
 
 A caution learned the hard way there: a recording of pure silence is not
 evidence of a broken audio path. Check `muted` in `/health` first — the

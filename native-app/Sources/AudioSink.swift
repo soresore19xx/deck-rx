@@ -387,7 +387,96 @@ final class AudioSink {
         try engine.start()
     }
 
+    // MARK: post-mix capture
+
+    private var mixTapFd: Int32 = -1
+    private var mixTapBytes = 0
+    private var mixTapPath = ""
+    private var mixTapLastCheck = Date.distantPast
+    private var mixTapInstalled = false
+
+    /// What the engine hands the device, after its own rate conversion — the
+    /// counterpart of the plugin's post-ASRC tap, and the half of the path the
+    /// demodulator-side flag cannot see.
+    ///
+    /// `touch /tmp/deck-rx-solo-postmix-record` to start, `rm` to stop. The
+    /// producer side runs at the audio rate (114 kHz here) and AVAudioEngine
+    /// converts to whatever the output device wants; distortion that appears
+    /// only between the two taps belongs to that conversion or to the volume
+    /// ramp, neither of which the earlier tap passes through.
+    ///
+    /// An engine tap is delivered on its own queue, not the render thread, so
+    /// writing a file from it is what the API is for.
+    private func pollMixTap() {
+        let now = Date()
+        guard now.timeIntervalSince(mixTapLastCheck) > 0.5 else { return }
+        mixTapLastCheck = now
+        let wanted = FileManager.default.fileExists(atPath: "/tmp/deck-rx-solo-postmix-record")
+        if wanted, !mixTapInstalled, engine.isRunning {
+            let bus = engine.mainMixerNode.outputFormat(forBus: 0)
+            guard bus.sampleRate > 0, bus.channelCount > 0 else { return }
+            let ch = Int(bus.channelCount), rate = Int(bus.sampleRate)
+            let stamp = ISO8601DateFormatter().string(from: now)
+                .replacingOccurrences(of: ":", with: "-")
+                .replacingOccurrences(of: "T", with: "-")
+                .replacingOccurrences(of: "Z", with: "")
+            let path = "/tmp/deck-rx-solo-postmix-\(stamp).wav"
+            var h = Data(count: 44)
+            func put32(_ o: Int, _ v: Int) {
+                var le = UInt32(truncatingIfNeeded: v).littleEndian
+                withUnsafeBytes(of: &le) { h.replaceSubrange(o..<o+4, with: $0) }
+            }
+            func put16(_ o: Int, _ v: Int) {
+                var le = UInt16(truncatingIfNeeded: v).littleEndian
+                withUnsafeBytes(of: &le) { h.replaceSubrange(o..<o+2, with: $0) }
+            }
+            h.replaceSubrange(0..<4, with: Array("RIFF".utf8)); put32(4, 36)
+            h.replaceSubrange(8..<12, with: Array("WAVE".utf8))
+            h.replaceSubrange(12..<16, with: Array("fmt ".utf8))
+            put32(16, 16); put16(20, 1); put16(22, ch); put32(24, rate)
+            put32(28, rate * ch * 2); put16(32, ch * 2); put16(34, 16)
+            h.replaceSubrange(36..<40, with: Array("data".utf8)); put32(40, 0)
+            let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+            guard fd >= 0 else { return }
+            _ = h.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, 44) }
+            mixTapFd = fd; mixTapBytes = 0; mixTapPath = path
+            engine.mainMixerNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buf, _ in
+                guard let self, self.mixTapFd >= 0,
+                      let chans = buf.floatChannelData else { return }
+                let n = Int(buf.frameLength), c = Int(buf.format.channelCount)
+                var pcm = [Int16](repeating: 0, count: n * c)
+                for f in 0..<n {
+                    for k in 0..<c {
+                        let v = max(-1, min(1, Double(chans[k][f]))) * 32767
+                        pcm[f * c + k] = Int16(v.rounded())
+                    }
+                }
+                pcm.withUnsafeBytes { _ = Darwin.write(self.mixTapFd, $0.baseAddress, $0.count) }
+                self.mixTapBytes += pcm.count * 2
+            }
+            mixTapInstalled = true
+            NSLog("[tap] post-mix → \(path) (\(rate) Hz x \(ch) ch)")
+        } else if !wanted, mixTapInstalled {
+            closeMixTap()
+        }
+    }
+
+    private func closeMixTap() {
+        guard mixTapInstalled else { return }
+        engine.mainMixerNode.removeTap(onBus: 0)
+        mixTapInstalled = false
+        guard mixTapFd >= 0 else { return }
+        var riff = UInt32(36 + mixTapBytes).littleEndian
+        var data = UInt32(mixTapBytes).littleEndian
+        withUnsafeBytes(of: &riff) { _ = pwrite(mixTapFd, $0.baseAddress, 4, 4) }
+        withUnsafeBytes(of: &data) { _ = pwrite(mixTapFd, $0.baseAddress, 4, 40) }
+        close(mixTapFd)
+        NSLog("[tap] post-mix closed: \(mixTapPath) (\(mixTapBytes) bytes)")
+        mixTapFd = -1; mixTapBytes = 0
+    }
+
     func stop() {
+        closeMixTap()
         readFrac = 0
         rate = 1
         if engine.isRunning { engine.stop() }
@@ -403,6 +492,7 @@ final class AudioSink {
     /// here would stall the network thread that feeds it.
     func write(_ samples: [Float]) {
         guard !samples.isEmpty, engine.isRunning else { return }
+        pollMixTap()
         let target = Float(muted ? 0 : min(max(volume, 0), 1))
         // Spread the change across the buffer. At the rates this runs at a
         // buffer is tens of milliseconds, so even a full-scale move arrives as

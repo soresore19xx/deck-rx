@@ -65,9 +65,10 @@ followed some presets and not others.
 
 Closing the window quits, and quitting hands back what the process was holding:
 the audio device, the SpyServer's single control slot, and on `usb` the Airspy
-itself. **A tool window keeps the app alive** — with 気象ファクス or DRM open,
-the main window's close button is not the last window closed, so the app stays
-running and so does the audio. Close the tool window too, or use ⌘Q.
+itself. Closing it takes the tool windows with it, so 気象ファクス or DRM being
+open no longer leaves the app running with its window gone — which it used to,
+because a tool window is a window of its own and the main one was then not the
+last to close.
 
 Settings live in `~/Library/Application Support/deck-rx/receiver.json` and are
 written as they change — there is no Save.
@@ -108,6 +109,11 @@ in three thousand shears the chart across a third of its width.
 **DRM** (Cmd-D) decodes Digital Radio Mondiale on shortwave: sync lamps, station
 name, coding, bit rate and the running text, with the audio going to the same
 output the receiver uses. Costs 8-9 % of one core.
+
+Closing either window stops what it was doing. Both controllers are kept alive
+across opens — the fax window holds the completion handler for a capture that
+takes twelve minutes — and that used to mean a closed window went on recording
+or decoding with nothing on screen to say so.
 
 ![DRM](solo-drm.png)
 

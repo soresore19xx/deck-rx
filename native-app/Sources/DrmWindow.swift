@@ -9,7 +9,7 @@ import AppKit
 /// SDC carries the service description, so the station name appears with it.
 /// AUDIO is the AAC decoder accepting frames. A lamp that lights and drops back
 /// says where the chain is failing far more precisely than "no sound".
-final class DrmWindowController: NSWindowController {
+final class DrmWindowController: NSWindowController, NSWindowDelegate {
 
     /// Frequencies the schedule search turned up, none of which has yet been
     /// heard here — DRM on shortwave is thin and the propagation has to
@@ -53,6 +53,7 @@ final class DrmWindowController: NSWindowController {
         w.title = "DRM (短波デジタル)"
         w.backgroundColor = P.bg
         super.init(window: w)
+        w.delegate = self
         build()
         radio.drm.onState = { [weak self] key, value in self?.apply(key, value) }
     }
@@ -159,6 +160,19 @@ final class DrmWindowController: NSWindowController {
         running = true
         startButton.title = "停止"
         hint.stringValue = "同期待ち"
+    }
+
+    /// Closing the window stops the decoder, for the same reason the fax window
+    /// does: the controller is kept alive for the next open, so without this the
+    /// decode carried on behind a closed window, holding the receiver on the DRM
+    /// frequency with nothing on screen to say why.
+    func windowWillClose(_ notification: Notification) {
+        guard running else { return }
+        radio.stopDrm()
+        running = false
+        startButton.title = "受信開始"
+        hint.stringValue = "待機"
+        reset()
     }
 
     private func reset() {

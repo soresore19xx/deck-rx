@@ -2,7 +2,12 @@ import Foundation
 
 struct RadioConfig: Codable, Equatable {
     var host = "127.0.0.1"
-    var port = 5555
+    /// 8888, which is what the plugin defaults to (spyService.ts:1579) and what
+    /// every SpyServer in this house listens on. SpyServer's own upstream
+    /// default is 5555, and using it here meant a fresh install of this app
+    /// could not reach a server the plugin found on its first try. The host
+    /// stays local: a server on this machine, or a placeholder to type over.
+    var port = 8888
     /// Where the IQ comes from: "spyserver" — the address above — or "usb", an
     /// Airspy HF+ on this machine's own USB. The server stays the default: it
     /// is what every existing config means, and it is the only one of the two
@@ -34,7 +39,14 @@ struct RadioConfig: Codable, Equatable {
     var tuneStepByMode: [String: Double] = [:]
 
     var amBandwidthHz: Double = 9000
-    var amCarrierAgc = false
+    /// On, as DEFAULT_AM_OPTIONS has it (spyService.ts:78). Carrier AGC is what
+    /// makes a weak station and a strong one arrive at the same loudness, so
+    /// starting with it off meant a fresh install of this app sounded quieter
+    /// and less even than the plugin on the same signal, for no stated reason.
+    var amCarrierAgc = true
+    /// Off, as the plugin and SDR++ both default it (spyService.ts:85).
+    /// Synchronous detection is worth turning on for a fading shortwave
+    /// carrier; it is not what a first run should assume.
     var amSync = false
     var fmBandwidthHz: Double = 150_000
     var fmStereo = true

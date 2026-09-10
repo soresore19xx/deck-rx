@@ -146,7 +146,7 @@ final class SpyClient {
             tcp.keepaliveIdle = 30
         }
         let c = NWConnection(host: NWEndpoint.Host(host),
-                             port: NWEndpoint.Port(rawValue: port) ?? 5555,
+                             port: NWEndpoint.Port(rawValue: port) ?? 8888,
                              using: params)
         conn = c
 

@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { Demodulator } from '../src/demodulator.js';
-import { generateCw, generateSsb, findPeakFreq } from './fixtures/iqGenerator.js';
+import { generateAm, generateCw, generateSsb, findPeakFreq } from './fixtures/iqGenerator.js';
 
 const IQ_RATE = 12_000;        // 12 kHz, comfortably above the 3 kHz audio band
 const AUDIO_RATE = IQ_RATE;    // decimate = 1 keeps the math simple in tests
@@ -118,5 +118,40 @@ describe('processCW — BFO + Weaver', () => {
     const peak = findPeakFreq(pcm, AUDIO_RATE);
     expect(peak).toBeGreaterThanOrEqual(450);
     expect(peak).toBeLessThanOrEqual(550);
+  });
+});
+
+describe('setAmBandwidth — post-detection channel filter', () => {
+  // The AM channel is bwHz wide in RF, so the audio inside it only reaches
+  // bwHz/2. A tone at 8 kHz therefore sits inside a 9 kHz channel but well
+  // outside the audio the channel can actually carry, and has to come out
+  // far down. Cutting the audio LPF at the full 9 kHz left it barely
+  // touched — the bug this guards against.
+  const AM_RATE = 48_000;
+  const BW = 9000;
+
+  function detectedToneRms(audioFreqHz: number): number {
+    const iq = generateAm({
+      iqRate: AM_RATE, durationSec: 0.6,
+      audioFreqHz, amplitude: 400, modulationDepth: 0.5,
+    });
+    const d = new Demodulator();
+    // No iqRate argument, so the complex IF filter stays off and what is
+    // measured is the audio LPF on its own.
+    d.setAmBandwidth(AM_RATE, BW);
+    // The DC blocker inside processAM has a 1000-sample time constant and
+    // starts from zero, so a short settle window leaves a decaying step that
+    // buries a stopband tone. 12000 samples is 12 of them.
+    const settle = 12_000 * 4;
+    d.processAM(iq.subarray(0, settle), 1);
+    return rms(d.processAM(iq.subarray(settle), 1));
+  }
+
+  it('passes 1 kHz and stops 8 kHz, i.e. cuts at bwHz/2', () => {
+    const inBand = detectedToneRms(1000);
+    const outOfBand = detectedToneRms(8000);
+    expect(inBand).toBeGreaterThan(100);
+    const attenDb = 20 * Math.log10(outOfBand / inBand);
+    expect(attenDb).toBeLessThan(-30);
   });
 });

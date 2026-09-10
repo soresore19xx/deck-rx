@@ -312,8 +312,11 @@ passband matches it. The one band SDR++ still wins is its own transition,
 Two things were wrong before. The audio filter's cutoff was the full channel
 width where the IF filter used half it, so the 4.5-9 kHz octave rode on the IF
 skirt alone; and that skirt was an 8th-order Butterworth. The first is a
-one-line fix worth 15 dB on its own and applies to the plugin too, which has
-the same line.
+one-line fix worth 15 dB on its own, and the plugin had the same line: it now
+halves the cutoff too (`demodulator.ts setAmBandwidth`, covered by
+`test/demodulator.test.ts`), which is what `docs/architecture.md` had claimed
+all along. The brick wall stays here only — 2433 taps at the 114 kHz audio rate
+is 2.8e8 multiply-accumulates a second, which is not Node's work.
 
 The filter costs about 5% of a core at the 114 kHz audio rate and adds 11 ms of
 constant delay. It designs itself from the bandwidth in force, and falls back

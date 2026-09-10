@@ -392,7 +392,7 @@ final class LocalRadio {
     }
 
     private var connectHost = ""
-    private var connectPort: UInt16 = 5555
+    private var connectPort: UInt16 = 8888
 
     /// Puts the source the config asks for in place. Called on every connection
     /// attempt, so changing the setting takes effect on the next dial rather

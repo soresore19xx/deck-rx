@@ -2,12 +2,20 @@ import Foundation
 
 struct RadioConfig: Codable, Equatable {
     var host = "127.0.0.1"
-    /// 8888, which is what the plugin defaults to (spyService.ts:1579) and what
-    /// every SpyServer in this house listens on. SpyServer's own upstream
-    /// default is 5555, and using it here meant a fresh install of this app
-    /// could not reach a server the plugin found on its first try. The host
-    /// stays local: a server on this machine, or a placeholder to type over.
-    var port = 8888
+    /// 5555, SpyServer's own default, and deliberately NOT the plugin's 8888.
+    ///
+    /// Aligning it to 8888 on 2026-09-10 looked tidy and was a mistake: with the
+    /// default host being loopback, 8888 is a port other things on this machine
+    /// answer — nginx does here — so a config that had lost its host connected
+    /// to something that is not a SpyServer and sat in "reconnecting..."
+    /// forever. On 5555 nothing answers, the connection is refused at once, and
+    /// the failure is legible. A default that cannot work should fail fast
+    /// rather than plausibly.
+    ///
+    /// The port only matters until it is set, and it is always set: the plugin's
+    /// config seeds it when one is present, and the address field takes it
+    /// otherwise.
+    var port = 5555
     /// Where the IQ comes from: "spyserver" — the address above — or "usb", an
     /// Airspy HF+ on this machine's own USB. The server stays the default: it
     /// is what every existing config means, and it is the only one of the two
@@ -276,7 +284,21 @@ struct RadioConfig: Codable, Equatable {
 
     // MARK: persistence
 
+    /// `DECK_RX_RECEIVER_CONFIG` redirects this file, and the test runner sets it.
+    ///
+    /// Without it the runner wrote the user's live settings: it builds these
+    /// sources into a plain binary, several tests construct a `LocalRadio`, and
+    /// the config's `didSet` reaches a `save()`. On 2026-09-10 that replaced a
+    /// working `host` with the loopback default twice in one evening, and the app
+    /// then sat reconnecting against a machine with no SpyServer on it. A test
+    /// run must not be able to touch what the user is listening with.
     private static let ownPath: String = {
+        if let p = ProcessInfo.processInfo.environment["DECK_RX_RECEIVER_CONFIG"],
+           !p.isEmpty {
+            let dir = URL(fileURLWithPath: p).deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return p
+        }
         let dir = Plat.appSupport.appendingPathComponent("deck-rx")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("receiver.json").path

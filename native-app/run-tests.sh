@@ -6,6 +6,10 @@
 # ====================
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Never the user's own settings. Several of these construct a LocalRadio,
+# whose config setter saves, and on 2026-09-10 that twice replaced a working
+# host with the loopback default while the app was in use.
+export DECK_RX_RECEIVER_CONFIG="$(mktemp -d)/receiver.json"
 OUT="$HERE/.tests-bin"
 
 # The receiver sources, plus FreqView for its formatting and SpectrumView for

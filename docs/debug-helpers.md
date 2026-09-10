@@ -108,6 +108,21 @@ evidence of a broken audio path. Check `muted` in `/health` first — the
 plugin's mute is persisted in `config.json` and hydrated on connect, so a
 restart can come back muted with everything else looking healthy.
 
+## Running the app's own suites without losing your settings
+
+`native-app/run-tests.sh` and `run-bench.sh` build the receiver sources into a
+plain binary, and several of the tests construct a `LocalRadio`. That object
+loads `RadioConfig` and its `didSet` reaches a `save()`, so until 2026-09-10
+**a test run wrote `~/Library/Application Support/deck-rx/receiver.json`** —
+twice in one evening it replaced a working `host` with the loopback default
+while the app was in use, and the app then sat reconnecting against a machine
+with no SpyServer on it. `POWER` looked dead and the cause was a test run.
+
+Both scripts now `export DECK_RX_RECEIVER_CONFIG="$(mktemp -d)/receiver.json"`,
+which `RadioConfig.ownPath` honours. Anything else that links these sources
+outside an app bundle should set it too. To check a runner is behaving, read
+`host` out of the real file before and after — it must not move.
+
 ## Demodulator benchmarks
 
 `native-app/run-bench.sh` builds the receiver sources at `-O` with

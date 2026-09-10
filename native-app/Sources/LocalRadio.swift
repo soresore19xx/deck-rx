@@ -367,6 +367,9 @@ final class LocalRadio {
     private var reconnectTimer: DispatchSourceTimer?
     private var reconnectDelay: TimeInterval = 1
     private static let reconnectMax: TimeInterval = 30
+    /// Armed when the socket opens, cancelled when DEVICE_INFO arrives. See
+    /// `armHandshakeWatchdog`.
+    private var handshakeTimer: DispatchSourceTimer?
 
     // MARK: control
 
@@ -470,13 +473,47 @@ final class LocalRadio {
 
         client.open(host: host, port: port) { [weak self] result in
             guard let self else { return }
-            if case .failure(let e) = result {
+            switch result {
+            case .failure(let e):
                 self.lastError = e.localizedDescription
                 self.isConnected = false
                 DispatchQueue.main.async { self.onState?() }
                 self.scheduleReconnect()
+            case .success:
+                self.armHandshakeWatchdog(host: host, port: port)
             }
         }
+    }
+
+    /// A socket that opens and then says nothing is not a SpyServer, and until
+    /// this existed it looked exactly like a server that was down: the retry
+    /// loop overwrote whatever had been reported with "reconnecting...", and the
+    /// window sat there indefinitely.
+    ///
+    /// That is not hypothetical. On 2026-09-10 a config lost its host, fell back
+    /// to the loopback default, and reached the nginx this machine runs on 8888.
+    /// The TCP connect succeeded, no DEVICE_INFO ever came, and the app reported
+    /// nothing but that it was reconnecting — to an address the user had not
+    /// chosen and could not see was wrong.
+    ///
+    /// `isConnected` is only set once DEVICE_INFO has been decoded, so it is the
+    /// flag to test. Five seconds is long next to a handshake that is one round
+    /// trip on a LAN.
+    private func armHandshakeWatchdog(host: String, port: UInt16) {
+        handshakeTimer?.cancel()
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + 5)
+        t.setEventHandler { [weak self] in
+            guard let self, self.wantConnection, !self.isConnected else { return }
+            self.lastError = "\(host):\(port) accepted the connection but did not "
+                           + "answer as a SpyServer - wrong host or port?"
+            DispatchQueue.main.async { self.onState?() }
+            // Drop it rather than sit on a socket that will never speak, so the
+            // retry loop is dialling rather than waiting.
+            self.client.disconnect()
+        }
+        handshakeTimer = t
+        t.resume()
     }
 
     /// Backs off to `reconnectMax` and stays there. The server being down for
@@ -505,6 +542,7 @@ final class LocalRadio {
         // describes the connection we are closing on purpose.
         lastError = nil
         reconnectTimer?.cancel(); reconnectTimer = nil
+        handshakeTimer?.cancel(); handshakeTimer = nil
         sink.stop()
         client.stopStreaming()
         client.disconnect()
@@ -621,6 +659,7 @@ final class LocalRadio {
         audioEnabled = false
         wantConnection = false
         reconnectTimer?.cancel(); reconnectTimer = nil
+        handshakeTimer?.cancel(); handshakeTimer = nil
         sink.stop()
         client.stopStreaming()
         client.shutdown()
@@ -874,6 +913,7 @@ final class LocalRadio {
         client.setSetting(.iqDigitalGain, digital)
         client.setSetting(.streamingEnabled, 1)
 
+        handshakeTimer?.cancel(); handshakeTimer = nil
         isConnected = true
         lastError = nil
         reconnectDelay = 1        // a good connection earns a fast first retry

@@ -142,7 +142,7 @@ A plugin install is still used as a seed source when one is present.
 
 Verified with the app's data directory seeded **only** from the bundle:
 41 MW and 97 FM names from the JP DB, 895 shortwave entries active at
-that moment from EIBI, and a config fallback of 127.0.0.1:8888 when
+that moment from EIBI, and a config fallback of 127.0.0.1:5555 when
 neither config file exists.
 
 `RadioConfig` is the app's own file, in

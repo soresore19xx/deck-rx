@@ -66,7 +66,7 @@ The weather fax decoder is compiled in but has no screen yet.
 
 ## First run
 
-Connects to `127.0.0.1:8888`, the default the shared `RadioConfig` carries;
+Connects to `127.0.0.1:5555`, the default the shared `RadioConfig` carries;
 there is no plugin config on an iPad to seed a real address from. Address and
 port are two boxes because they are two things, and `host:port` pasted into the
 address box is still split correctly. Both are saved before the connect is

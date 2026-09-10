@@ -160,9 +160,8 @@ describe('output stage, against the standalone app', () => {
   // The two receivers run the same three stages with the same constants, so
   // they can be compared by arithmetic rather than by ear. This side checks the
   // plugin's arrays in the shared fixture; native-app/Tests/main.swift checks
-  // the app's. The fixture's comment says what the one real difference is and
-  // why it is not settled: the volume sits inside the limiter here and outside
-  // it there.
+  // the app's, against the same file. The fixture's comment carries what went
+  // wrong before they agreed.
   const golden = JSON.parse(readFileSync(
     resolve(__dirname, 'fixtures', 'audioOutputGolden.json'), 'utf8',
   )) as {
@@ -180,45 +179,48 @@ describe('output stage, against the standalone app', () => {
       const g = c.volume * golden.params.makeup * golden.params.audioGain;
       // The AGC is off by default, so leveler.gain is 1 and the ramp across the
       // buffer is flat — what spyService's loop then computes per sample is
-      // exactly this.
+      // exactly this. Volume goes in BEFORE the limiter; that is the order the
+      // app had to be brought round to.
       const out = golden.input.map(x => softLimit(x * g));
       expect(out).toEqual(c.plugin);
     });
 
-    it(`agrees with the app below the knee at volume ${c.volume}`, () => {
-      // Below the limiter's knee both are a plain multiply, so the topologies
-      // cannot differ there. This is the half that must never drift.
-      const knee = INT16_MAX * 0.85;
-      const g = c.volume * golden.params.makeup * golden.params.audioGain;
-      let compared = 0;
-      golden.input.forEach((x, i) => {
-        if (Math.abs(x) * golden.params.makeup * golden.params.audioGain > knee) return;
-        compared++;
-        // Rounding is the only licensed difference: the plugin returns an
-        // integer from softLimit, the app stays in float.
-        expect(Math.abs(c.plugin[i] - c.solo[i])).toBeLessThanOrEqual(0.5);
-        expect(c.plugin[i]).toBe(Math.round(x * g));
+    it(`agrees with the app at every input at volume ${c.volume}`, () => {
+      // Not just below the knee: since 2026-09-10 the volume sits on the same
+      // side of the limiter in both, so the two agree across the whole vector,
+      // through the nonlinearity. Rounding is the only licensed difference —
+      // the plugin returns an integer from softLimit, the app stays in float.
+      golden.input.forEach((_, i) => {
+        expect(Math.abs(c.plugin[i] - c.solo[i]),
+          `input ${golden.input[i]}: plugin ${c.plugin[i]} vs app ${c.solo[i]}`)
+          .toBeLessThanOrEqual(0.5);
       });
-      expect(compared).toBeGreaterThan(5);
     });
   }
 
-  it('the two topologies coincide when nothing is attenuated', () => {
+  it('the volume 1.0 case actually exercises the limiter', () => {
+    // Otherwise the agreement above would only be saying that two linear
+    // multiplies match, which is not the part that was broken.
     const control = golden.cases.find(c => c.volume === 1.0);
-    expect(control, 'the fixture needs its volume 1.0 control case').toBeTruthy();
-    control!.plugin.forEach((p, i) => {
-      expect(Math.abs(p - control!.solo[i])).toBeLessThanOrEqual(0.5);
-    });
+    expect(control, 'the fixture needs its volume 1.0 case').toBeTruthy();
+    const knee = INT16_MAX * 0.85;
+    const g = golden.params.makeup * golden.params.audioGain;
+    const limited = golden.input.filter(x => Math.abs(x) * g > knee).length;
+    expect(limited).toBeGreaterThan(5);
+    // And the limiter is doing something visible: full scale x 1.5 lands under
+    // the ceiling rather than at 49150.
+    const i = golden.input.indexOf(32767);
+    expect(control!.plugin[i]).toBeLessThan(INT16_MAX);
+    expect(control!.plugin[i]).toBeGreaterThan(INT16_MAX * 0.99);
   });
 
-  it('records how far apart they are above the knee at the volume in use', () => {
+  it('the AM peak that the app used to lose is now the same on both', () => {
+    // input 24000 is AM_AGC_MAX_OUTPUT, where the carrier AGC's look-ahead puts
+    // peaks. The app used to compress it to 13293 while the plugin passed 14760
+    // — 0.91 dB, from identical config. This is the regression's own row.
     const c = golden.cases.find(x => x.volume === 0.41)!;
-    const i = golden.input.indexOf(24000);   // the AM AGC's look-ahead ceiling
-    const dB = 20 * Math.log10(Math.abs(c.solo[i]) / Math.abs(c.plugin[i]));
-    // Not a preference, a measurement: the app compresses this peak and the
-    // plugin does not. If either topology changes this number moves, which is
-    // the point of asserting it.
-    expect(dB).toBeLessThan(-0.7);
-    expect(dB).toBeGreaterThan(-1.1);
+    const i = golden.input.indexOf(24000);
+    expect(c.plugin[i]).toBe(14760);
+    expect(Math.abs(c.solo[i] - c.plugin[i])).toBeLessThanOrEqual(0.5);
   });
 });

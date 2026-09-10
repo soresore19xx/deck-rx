@@ -348,59 +348,67 @@ and did, for twenty minutes, with nothing anywhere saying why.
 ### Loudness, next to the plugin
 
 The two chains leave the audio at the same level: same per-mode makeup, same
-master trim, same AM AGC constants, same soft limiter. Measured on 6055 kHz
-with both receivers on the same IQ, they agree within 0.15 dB. So anything you
-hear as "one of them is louder" is the volume control, and matching the two
-numbers matches the loudness — 41 % here is 41 % there. A step of `/volume?d=`
-moves 2 % on either, so the same knob or pad feels the same whichever receiver
-is answering.
+master trim, same AM AGC constants, same soft limiter in the same place. 41 %
+here is 41 % there, sample for sample, and a step of `/volume?d=` moves 2 % on
+either, so the same knob or pad feels the same whichever receiver is answering.
+
+That is a recent statement. It was not true until 2026-09-10 — the limiter was
+on the wrong side of the volume here, which is the next section — and the
+sentence that used to sit in this paragraph, "anything you hear as one of them
+being louder is the volume control", was how it went unfixed. If the two sound
+different at the same settings, the arithmetic is comparable and should be
+compared before the knobs are.
 
 One trap when measuring it: `/tmp/deck-rx-solo-audio-record` is written before
-the volume control, and the plugin's `/tmp/deck-rx-audio-record` after its own.
-Two WAVs taken that way differ by the plugin's volume setting before either
-receiver has done anything differently, and the peaks in this app's file sit on
-32767 because that is where the soft limiter puts them — not because the volume
-is clipping something.
+the volume control *and* before the limiter, while the plugin's
+`/tmp/deck-rx-audio-record` is after both. Two WAVs taken that way differ by the
+plugin's volume setting before either receiver has done anything differently,
+and a peak past full scale in this app's file is the makeup's headroom rather
+than clipping. `/tmp/deck-rx-solo-postmix-record` is the one to compare against
+the plugin's tap: it sits downstream of both.
 
-#### Where the volume sits, which is the one thing that differs
+#### Where the volume sits — the bug that made this app the quieter one
 
 Both chains are makeup, then the optional AGC, then the tanh limiter — and both
 are code in this repository, so they can be compared by arithmetic rather than
-by ear. Doing that turns up one difference, and it is in the order:
+by ear. Doing that, on 2026-09-10, turned up an order that had been wrong since
+the audio was ported:
 
-| | volume | limiter |
+| | until 2026-09-10 | now |
 | --- | --- | --- |
-| plugin | inside the limiter — `softLimit(x · volume · makeup)` | threshold moves with the knob |
-| this app | outside it — `softLimit(x · makeup)` then the sink applies volume | threshold is fixed |
+| plugin | `softLimit(x · volume · makeup)` | unchanged |
+| this app | `softLimit(x · makeup)`, then volume | `softLimit(x · volume · makeup)` |
 
-At volume 1.0 the two are the same number for every input, which is what makes
-the difference attributable to the order and nothing else. Below the knee they
-are the same at any volume. Above it, at the 0.41 both are set to, this app
-compresses peaks the plugin passes through linearly:
+Limiting before the volume fixes the knee at an input level rather than one that
+moves with the knob. At the 0.41 both receivers were set to, that meant this app
+compressed peaks the plugin passed through linearly, from identical settings on
+both sides:
 
-| input (int16, pre-makeup) | plugin | this app | |
+| input (int16, pre-makeup) | plugin | this app, before | after |
 | --- | --- | --- | --- |
-| ≤ 18568 | — | — | identical |
-| 20000 | 12300 | 12248 | −0.04 dB |
-| 24000 | 14760 | 13293 | **−0.91 dB** |
-| 32767 | 20152 | 13434 | −3.52 dB |
+| ≤ 18568 | — | same | same |
+| 20000 | 12300 | 12248 | 12300 |
+| 24000 | 14760 | 13293 (**−0.91 dB**) | 14760 |
+| 32767 | 20152 | 13434 (−3.52 dB) | 20152 |
 
 24000 is not an arbitrary row: it is `AM_AGC_MAX_OUTPUT`, where the carrier
-AGC's look-ahead puts peaks, so AM programme peaks land there routinely. On a
-deeply modulated 1 kHz tone the whole-buffer RMS differs by 0.8 dB.
+AGC's look-ahead puts peaks, so AM programme peaks landed there routinely. On a
+deeply modulated tone the whole-buffer RMS was 0.8 dB down.
 
-Which order is right is a real question. A limiter after the volume has its
-threshold move with the knob, so how compressed the audio is depends on how
-loud it is set — and at a low setting the limiter is effectively not there,
-which is the opposite of what a protective limiter is for. This app's order is
-the conventional one. Changing the plugin to match would make its AM peaks
-compress the way this app's do, so it is a decision about how the plugin should
-sound, not a bug fix, and it has not been made.
+Two things about how it stayed hidden are worth keeping. It only became audible
+when this app started carrying the sound itself — before it was an independent
+receiver, the plugin was doing the listening and this stage was only on the path
+after DIRECT was pressed. And when the loudness difference was finally noticed,
+it was diagnosed as a volume-knob difference and "fixed" by turning this app
+*down*, from 0.9 to 0.41, which matched the wrong one of the two and left the
+original complaint in place.
 
-`test/fixtures/audioOutputGolden.json` pins all of it: the plugin's numbers are
-checked by `test/audioLeveling.test.ts` and this app's by
+The limiter now lives in `AudioSink.write`, after the volume ramp, so
+`level()` hands on samples that may exceed ±1 — that headroom is what the makeup
+is for. `test/fixtures/audioOutputGolden.json` pins the whole vector: the
+plugin's numbers are checked by `test/audioLeveling.test.ts` and this app's by
 `native-app/Tests/main.swift`, both against the same file, so neither side can
-drift without a test going red.
+change its order again without a test going red.
 
 ## CPU
 

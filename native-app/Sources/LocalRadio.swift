@@ -529,18 +529,20 @@ final class LocalRadio {
     /// compared: with the plugin running there are two receivers on this
     /// machine, and a shared flag would make the two WAVs impossible to tell
     /// apart. Written after levelling and the mute window, before the sink —
-    /// at `audioRate`, and **before the volume control**, which lives in the
-    /// sink.
+    /// at `audioRate`, and **before both the volume control and the limiter**,
+    /// which live in the sink.
     ///
-    /// That last part is the trap when comparing the two: the plugin's tap is
-    /// taken *after* its volume (`spyService.ts`, right below the ramp loop),
-    /// so a WAV from here and a WAV from there differ by the plugin's volume
-    /// setting before either receiver has done anything differently. Divide it
-    /// back out — or the same 7.6 dB that is really one knob at 0.41 gets
-    /// written down as a demodulator difference, which is what happened on
-    /// 2026-09-10. For the same reason the peak sitting on 32767 here is the
-    /// soft limiter's ceiling, not clipping the volume could relieve: the knob
-    /// is downstream of this file.
+    /// That is the trap when comparing the two: the plugin's tap is taken
+    /// *after* its volume and its limiter (`spyService.ts`, right below the
+    /// ramp loop), so a WAV from here and a WAV from there differ by the
+    /// plugin's volume setting before either receiver has done anything
+    /// differently. Divide it back out — or the same 7.6 dB that is really one
+    /// knob at 0.41 gets written down as a demodulator difference, which is
+    /// what happened on 2026-09-10. Use
+    /// `/tmp/deck-rx-solo-postmix-record` against the plugin's tap instead:
+    /// that one is downstream of both, so the two are comparable as they are.
+    /// A peak past full scale here is the makeup's headroom, not clipping —
+    /// the ceiling is downstream of this file.
     ///
     /// The float samples are the sink's own domain (-1..1); they go out as
     /// int16 because that is what every analysis tool reads.
@@ -1075,20 +1077,28 @@ final class LocalRadio {
         }
     }
 
-    /// Makeup, optional AGC, then the soft ceiling — the plugin's order, and
-    /// the order matters: limiting before the gain would waste the headroom the
-    /// makeup is there to use.
+    /// Makeup and the optional AGC. **The limiter is not here** — it is in the
+    /// sink, after the volume, which is where the plugin has it.
+    ///
+    /// It used to be here, and that made the same settings sound different on
+    /// the two receivers. The plugin computes `softLimit(x · volume · makeup)`:
+    /// the attenuation goes in before the nonlinearity. Limiting first and
+    /// attenuating after put the knee at a fixed input level instead of one that
+    /// moves with the knob, so at the 0.41 both are set to this app compressed
+    /// AM peaks the plugin passed through linearly — quieter by 0.9 dB where the
+    /// carrier AGC's look-ahead puts peaks, and 3.5 dB at full scale, from
+    /// identical config on both sides. Same numbers, different arithmetic.
+    ///
+    /// The samples this leaves can exceed +/-1, which is fine: nothing between
+    /// here and the limiter cares, and that headroom is the makeup's whole
+    /// purpose.
     private func level(_ pcm: inout [Float]) {
         let makeup = (AudioLeveling.modeMakeup[mode] ?? 1) * audioGain
         let dt = audioRate > 0 ? Double(pcm.count) / (audioRate * (isStereoMode ? 2 : 1)) : 0
         let g = leveler.observe(pcm, makeup: makeup, dt: dt) * makeup
-        guard g != 1 || leveler.config.enabled else { return }
-        for i in 0..<pcm.count {
-            // int16 domain, because that is what the limiter's knee is
-            // calibrated in.
-            let v = Double(pcm[i]) * 32768 * g
-            pcm[i] = Float(AudioLeveling.softLimit(v) / 32768)
-        }
+        guard g != 1 else { return }
+        let gf = Float(g)
+        for i in 0..<pcm.count { pcm[i] *= gf }
     }
 
     private func restartAudio() {

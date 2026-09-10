@@ -826,12 +826,15 @@ outputStageCheck: do {
 
     // What LocalRadio.level() does, followed by what AudioSink.write() does.
     // Kept as the same two steps in the same order rather than folded into one
-    // expression, because the order is the thing under test.
+    // expression, because the order is the thing under test: makeup here, then
+    // volume and only then the limiter — the plugin's order. Until 2026-09-10
+    // the limiter was in the first step, which cost this app 0.91 dB on an AM
+    // peak the plugin passed through.
     func outputStage(_ x: Double, volume: Double, makeup: Double) -> Double {
-        var f = Float(x / 32768)
-        let v = Double(f) * 32768 * makeup
-        f = Float(AudioLeveling.softLimit(v) / 32768)
-        return Double(f * Float(volume)) * 32768
+        let levelled = Float(x / 32768) * Float(makeup)              // level()
+        let out = Float(AudioLeveling.softLimit(
+            Double(levelled * Float(volume)) * 32768) / 32768)       // sink
+        return Double(out) * 32768
     }
 
     for c in cases {
@@ -851,18 +854,35 @@ outputStageCheck: do {
               worst <= 0.05, "worst \(worst) at input \(worstAt)")
     }
 
-    // The volume 1.0 case is the control: with nothing attenuated the two
-    // topologies coincide, which is what makes the 0.41 difference attributable
-    // to the volume's position rather than to anything else.
-    if let control = cases.first(where: { ($0["volume"] as? Double) == 1.0 }),
-       let plugin = control["plugin"] as? [Double],
-       let solo = control["solo"] as? [Double] {
+    // Both sides of the fixture, at every volume: the two now agree across the
+    // whole vector rather than only below the limiter's knee.
+    for c in cases {
+        guard let name = c["name"] as? String,
+              let plugin = c["plugin"] as? [Double],
+              let solo = c["solo"] as? [Double] else { continue }
         var worst = 0.0
-        for (i, p) in plugin.enumerated() { worst = max(worst, abs(p - solo[i])) }
-        check("the two topologies coincide when nothing is attenuated",
-              worst <= 0.5, "worst \(worst)")
+        var worstAt = 0.0
+        for (i, p) in plugin.enumerated() {
+            let d = abs(p - solo[i])
+            if d > worst { worst = d; worstAt = input[i] }
+        }
+        // 0.5 is int16 rounding, the only difference left: the plugin returns an
+        // integer from softLimit and this app stays in float.
+        check("agrees with the plugin at every input (\(name))",
+              worst <= 0.5, "worst \(worst) at input \(worstAt)")
+    }
+
+    // The row the regression lived on: input 24000 is AM_AGC_MAX_OUTPUT, where
+    // the carrier AGC's look-ahead puts peaks. This app used to compress it to
+    // 13293 while the plugin passed 14760.
+    if let c = cases.first(where: { ($0["volume"] as? Double) == 0.41 }),
+       let i = input.firstIndex(of: 24000) {
+        let makeup = (AudioLeveling.modeMakeup[mode] ?? 1) * audioGain
+        let got = outputStage(24000, volume: 0.41, makeup: makeup)
+        check("the AM peak this app used to lose is back", abs(got - 14760) <= 0.5,
+              "\(got), fixture says \((c["solo"] as? [Double])?[i] ?? -1)")
     } else {
-        check("the fixture has its volume 1.0 control case", false)
+        check("the fixture has the 0.41 case and its 24000 row", false)
     }
 }
 

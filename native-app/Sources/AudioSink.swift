@@ -503,7 +503,15 @@ final class AudioSink {
         lock.lock()
         var w = writeIndex
         for s in samples {
-            ring[w] = s * gain
+            // The soft ceiling goes AFTER the volume, which is where the plugin
+            // has it (`softLimit(x · volume · makeup)`, spyService.ts). Putting
+            // it before the volume instead — which is what this app did until
+            // 2026-09-10 — fixes the knee at an input level rather than one that
+            // moves with the knob, so the same settings came out quieter here
+            // than there: the peaks the plugin passed linearly at 0.41 were
+            // being compressed. The knee is calibrated in int16, hence the
+            // scaling either side.
+            ring[w] = Float(AudioLeveling.softLimit(Double(s * gain) * 32768) / 32768)
             gain += step
             w += 1
             if w == capacity { w = 0 }

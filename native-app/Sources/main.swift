@@ -1232,7 +1232,7 @@ final class VolumeBar: NSView {
 }
 
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow!
     private var view: MainView!
     private var feed: SpectrumFeed?
@@ -1283,6 +1283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Deck RX"
 #endif
         window.contentView = view
+        window.delegate = self
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         // A floor rather than a wall: below this the spectrum is too narrow to
@@ -1555,6 +1556,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 #endif
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+
+    /// Closing the main window takes the tool windows with it, so the rule above
+    /// can do its job.
+    ///
+    /// The fax and DRM windows are windows of their own — they have to be, since
+    /// a chart wants to be sized and scrolled while the receiver is used for
+    /// something else — and each is kept alive across opens. That left one of
+    /// them enough to keep the app from being on its last window, so the red
+    /// button on the radio put the radio away and left the process running with
+    /// no obvious way back to it.
+    ///
+    /// Closing them rather than calling `terminate` keeps a single exit path:
+    /// each goes through its own `windowWillClose`, which is what stops its
+    /// capture, and the last close then reaches the rule above.
+    func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === window else { return }
+#if STANDALONE
+        wefax?.window?.close()
+#if DRM_ENABLED
+        drmWindow?.window?.close()
+#endif
+#endif
+    }
 
     /// Quitting hands back what this process was holding, rather than dropping
     /// it and letting something else find out.

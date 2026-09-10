@@ -7,7 +7,7 @@ import AppKit
 /// 1809 px wide and takes minutes to arrive, so it wants to be sized, scrolled
 /// and left open while the receiver is used for something else — none of which
 /// a row in the main panel can do.
-final class WefaxWindowController: NSWindowController {
+final class WefaxWindowController: NSWindowController, NSWindowDelegate {
 
     /// The JMH transmissions, which are the ones this was built against.
     /// Frequencies from the JMA schedule; 7795 kHz was the one that produced a
@@ -40,6 +40,7 @@ final class WefaxWindowController: NSWindowController {
         w.title = "気象ファクス"
         w.backgroundColor = P.bg
         super.init(window: w)
+        w.delegate = self
         build()
     }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -146,6 +147,19 @@ final class WefaxWindowController: NSWindowController {
     private func cancel() {
         radio.cancelFaxCapture()
         ticker?.invalidate(); ticker = nil
+    }
+
+    /// Closing the window stops the capture. Without this the decode ran on
+    /// with nothing showing it: the window is closed but the controller is kept
+    /// alive for the next open, so the ticker kept firing and the receiver kept
+    /// being held at the fax frequency. A closed window has to mean stopped.
+    func windowWillClose(_ notification: Notification) {
+        guard capturing else { return }
+        cancel()
+        capturing = false
+        startButton.title = "受信開始"
+        status.stringValue = "待機"
+        status.textColor = P.dim
     }
 
     @objc private func save() {

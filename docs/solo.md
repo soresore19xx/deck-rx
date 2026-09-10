@@ -241,7 +241,10 @@ past. The list is read when the menu opens, so a device plugged in after the
 window was built is in it.
 
 It is bound when the audio engine starts, so choosing a different one rebuilds
-the graph rather than waiting for the next connect. Names are matched exactly,
+the graph rather than waiting for the next connect. **Host** and **Port** dial
+the new address the moment they are entered, connected or not — that gate used
+to require an existing connection, which is the one state an address never gets
+corrected in. Names are matched exactly,
 trailing spaces and all — CoreAudio reports "DX7s " and "SMSL USB AUDIO " that
 way, and trimming would fail to find the very devices the picker offered. A
 name that no longer resolves falls back to the system default rather than

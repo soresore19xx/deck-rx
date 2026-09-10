@@ -484,7 +484,14 @@ final class AppServer {
         if scaleChanged { DispatchQueue.main.async { self.onUiScaleChanged?() } }
         // The address only takes effect on the next connection, so dial it now
         // — otherwise the field accepts a new host and nothing happens.
-        if name == "host" || name == "port" || name == "source", radio.isConnected {
+        //
+        // Especially when nothing is connected, which is when an address gets
+        // corrected in the first place. This was gated on `isConnected`, so
+        // the one case it needed to cover was the one it skipped: the retry
+        // loop kept dialling the address it had captured when it first tried,
+        // the field showed the new one, and the app sat on "TCP connect
+        // timeout" against a server nobody had asked for.
+        if name == "host" || name == "port" || name == "source" {
             radio.disconnect()
             radio.connect()
         }

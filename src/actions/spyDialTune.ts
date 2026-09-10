@@ -694,6 +694,13 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     // TCP link is down (so a brief network blip greys the panel until reconnect).
     const dim = !this.enabled || !this.connected;
     const offline = this.enabled && !this.connected;
+    // Dashes whenever there is no live receiver behind the number — master OFF
+    // as well as a dropped link. OFF used to keep the frequency on screen, on
+    // the reasoning that it is where the receiver will resume; but OFF is also
+    // the state that hands the SpyServer back, and a lit frequency reads as a
+    // radio that is still on it. The header says which of the two it is (`OFF`
+    // or `LINK`), and the frequency comes back the moment either does.
+    const noReceiver = !this.enabled || offline;
     const D = (s: string) => dimSvg(s, dim);
     // Layout-side text items (s-label, n-label, snr-num, rssi-num) aren't part
     // of any SVG so dimSvg can't reach them — override their colour explicitly
@@ -719,10 +726,8 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     // window).
     const liveModeIsWfm = spyService.getDemodMode() === 1;
     const showStereo = this.enabled && stereoLock && liveModeIsWfm && spyService.getFMOptions().stereo;
-    // While offline (TCP link down with master ON), show "-----" instead of
-    // the freq digits — the dial otherwise shows a frequency that isn't really
-    // being received. Master OFF keeps the freq visible (it's where we'll
-    // resume when re-enabled).
+    // "-----" instead of the freq digits whenever nothing is being received:
+    // the dial otherwise shows a frequency that is not being listened to.
     const offlineSvg = svgB64(seg7svg('-----', '', 200, 55, 0, 1.0, '', '', false));
     if (this.dialMode === 'preset') {
       const p = this.presets[this.slotIndex];
@@ -788,7 +793,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         num = String(kHz);
         unit = 'kHz';
       }
-      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', modeStr, isFM && showStereo, subDigits));
+      const freqSvg = noReceiver ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', modeStr, isFM && showStereo, subDigits));
       // Another client owns the device: our retunes are accepted here and
       // dropped by the server, so the dial turns and nothing happens. Saying
       // so where the station name goes is the difference between "the radio is
@@ -835,7 +840,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         num = String(kHz);
         unit = 'kHz';
       }
-      const freqSvg = offline ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', 'VFO', showStereo, subDigitsVfo));
+      const freqSvg = noReceiver ? offlineSvg : svgB64(seg7svg(num, unit, 200, 55, 0, 1.0, '', 'VFO', showStereo, subDigitsVfo));
       // Another client owns the device: our retunes are accepted here and
       // dropped by the server, so the dial turns and nothing happens. Saying
       // so where the station name goes is the difference between "the radio is

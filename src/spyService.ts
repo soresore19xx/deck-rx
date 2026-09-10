@@ -720,9 +720,19 @@ class SpyService {
     await this.persistField('enabled', this.enabled).catch(() => {});
     if (!next) {
       // Going OFF: cancel any pending reconnect, tear down audio + TCP.
+      //
+      // The device goes first, and nothing is allowed to come between the
+      // decision and the socket. SpyServer gives control to the first client
+      // and holds it until that client's socket goes, so a power-off that
+      // leaves the socket up is a receiver that reads OFF everywhere while
+      // still holding the radio away from everything else on the machine —
+      // and that is what an `await stopAudio()` before the disconnect risked:
+      // one rejection there and the disconnect below never ran.
       if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-      await this.stopAudio();
-      try { this.client.disconnect(); } catch {}
+      try { this.client.disconnect(); } catch { /* the socket is going either way */ }
+      await this.stopAudio().catch((e) => {
+        log.warn(`[spyService] stopAudio during power-off: ${e instanceof Error ? e.message : String(e)}`);
+      });
       this.setConnectedState(false);
       this.deviceInfo = null;
     } else {

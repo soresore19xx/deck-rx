@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import {
   softLimit,
   OutputLeveler,
+  MODE_MAKEUP,
   DEFAULT_LEVELER_CFG,
   INT16_MAX,
 } from '../src/audioLeveling.js';
@@ -150,5 +153,72 @@ describe('OutputLeveler', () => {
     for (let i = 0; i < 3000; i++) lv.observe(buf, 1, 0.01);
     expect(lv.gain).toBeGreaterThan(9.5);
     expect(lv.gain).toBeLessThan(10.5);
+  });
+});
+
+describe('output stage, against the standalone app', () => {
+  // The two receivers run the same three stages with the same constants, so
+  // they can be compared by arithmetic rather than by ear. This side checks the
+  // plugin's arrays in the shared fixture; native-app/Tests/main.swift checks
+  // the app's. The fixture's comment says what the one real difference is and
+  // why it is not settled: the volume sits inside the limiter here and outside
+  // it there.
+  const golden = JSON.parse(readFileSync(
+    resolve(__dirname, 'fixtures', 'audioOutputGolden.json'), 'utf8',
+  )) as {
+    input: number[];
+    params: { mode: number; makeup: number; audioGain: number };
+    cases: Array<{ name: string; volume: number; plugin: number[]; solo: number[] }>;
+  };
+
+  it('the fixture agrees with MODE_MAKEUP about the mode it claims', () => {
+    expect(MODE_MAKEUP[golden.params.mode]).toBe(golden.params.makeup);
+  });
+
+  for (const c of golden.cases) {
+    it(`reproduces the plugin's output at volume ${c.volume}`, () => {
+      const g = c.volume * golden.params.makeup * golden.params.audioGain;
+      // The AGC is off by default, so leveler.gain is 1 and the ramp across the
+      // buffer is flat — what spyService's loop then computes per sample is
+      // exactly this.
+      const out = golden.input.map(x => softLimit(x * g));
+      expect(out).toEqual(c.plugin);
+    });
+
+    it(`agrees with the app below the knee at volume ${c.volume}`, () => {
+      // Below the limiter's knee both are a plain multiply, so the topologies
+      // cannot differ there. This is the half that must never drift.
+      const knee = INT16_MAX * 0.85;
+      const g = c.volume * golden.params.makeup * golden.params.audioGain;
+      let compared = 0;
+      golden.input.forEach((x, i) => {
+        if (Math.abs(x) * golden.params.makeup * golden.params.audioGain > knee) return;
+        compared++;
+        // Rounding is the only licensed difference: the plugin returns an
+        // integer from softLimit, the app stays in float.
+        expect(Math.abs(c.plugin[i] - c.solo[i])).toBeLessThanOrEqual(0.5);
+        expect(c.plugin[i]).toBe(Math.round(x * g));
+      });
+      expect(compared).toBeGreaterThan(5);
+    });
+  }
+
+  it('the two topologies coincide when nothing is attenuated', () => {
+    const control = golden.cases.find(c => c.volume === 1.0);
+    expect(control, 'the fixture needs its volume 1.0 control case').toBeTruthy();
+    control!.plugin.forEach((p, i) => {
+      expect(Math.abs(p - control!.solo[i])).toBeLessThanOrEqual(0.5);
+    });
+  });
+
+  it('records how far apart they are above the knee at the volume in use', () => {
+    const c = golden.cases.find(x => x.volume === 0.41)!;
+    const i = golden.input.indexOf(24000);   // the AM AGC's look-ahead ceiling
+    const dB = 20 * Math.log10(Math.abs(c.solo[i]) / Math.abs(c.plugin[i]));
+    // Not a preference, a measurement: the app compresses this peak and the
+    // plugin does not. If either topology changes this number moves, which is
+    // the point of asserting it.
+    expect(dB).toBeLessThan(-0.7);
+    expect(dB).toBeGreaterThan(-1.1);
   });
 });

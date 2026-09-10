@@ -789,6 +789,83 @@ sink.stop()
 check("stereo starts", (try? sink.start(sourceRate: 9500, channels: 2)) != nil)
 sink.stop()
 
+section("output stage, against the plugin")
+// The plugin and this app run the same three stages with the same constants, so
+// the two can be compared by arithmetic instead of by listening to them. The
+// fixture is shared: test/audioLeveling.test.ts checks its `plugin` arrays
+// against the plugin's own code, this checks its `solo` arrays against ours.
+// Its comment carries the one real difference and why it is not settled here —
+// the volume sits outside the limiter in this app and inside it in the plugin.
+outputStageCheck: do {
+    // Walk up from this file until the fixture turns up, rather than counting
+    // directories: how swiftc records #filePath depends on how it was invoked,
+    // and a hard-coded number of steps was already wrong once.
+    let rel = "test/fixtures/audioOutputGolden.json"
+    var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    var found: URL?
+    for _ in 0..<6 {
+        let candidate = dir.appendingPathComponent(rel)
+        if FileManager.default.fileExists(atPath: candidate.path) { found = candidate; break }
+        dir = dir.deletingLastPathComponent()
+    }
+    let fixture = found ?? URL(fileURLWithPath: rel)
+    guard let data = try? Data(contentsOf: fixture),
+          let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          let input = root["input"] as? [Double],
+          let params = root["params"] as? [String: Any],
+          let mode = params["mode"] as? Int,
+          let makeupExpected = params["makeup"] as? Double,
+          let audioGain = params["audioGain"] as? Double,
+          let cases = root["cases"] as? [[String: Any]] else {
+        check("the shared output-stage fixture loads", false, fixture.path)
+        break outputStageCheck
+    }
+    check("the fixture agrees with modeMakeup about the mode it claims",
+          AudioLeveling.modeMakeup[mode] == makeupExpected,
+          "\(AudioLeveling.modeMakeup[mode] ?? -1) vs \(makeupExpected)")
+
+    // What LocalRadio.level() does, followed by what AudioSink.write() does.
+    // Kept as the same two steps in the same order rather than folded into one
+    // expression, because the order is the thing under test.
+    func outputStage(_ x: Double, volume: Double, makeup: Double) -> Double {
+        var f = Float(x / 32768)
+        let v = Double(f) * 32768 * makeup
+        f = Float(AudioLeveling.softLimit(v) / 32768)
+        return Double(f * Float(volume)) * 32768
+    }
+
+    for c in cases {
+        guard let name = c["name"] as? String,
+              let volume = c["volume"] as? Double,
+              let expected = c["solo"] as? [Double] else { continue }
+        let makeup = (AudioLeveling.modeMakeup[mode] ?? 1) * audioGain
+        var worst = 0.0
+        var worstAt = 0.0
+        for (i, x) in input.enumerated() {
+            let got = outputStage(x, volume: volume, makeup: makeup)
+            let d = abs(got - expected[i])
+            if d > worst { worst = d; worstAt = x }
+        }
+        // 0.05 covers the fixture carrying one decimal place, nothing more.
+        check("reproduces this app's output at volume \(volume) (\(name))",
+              worst <= 0.05, "worst \(worst) at input \(worstAt)")
+    }
+
+    // The volume 1.0 case is the control: with nothing attenuated the two
+    // topologies coincide, which is what makes the 0.41 difference attributable
+    // to the volume's position rather than to anything else.
+    if let control = cases.first(where: { ($0["volume"] as? Double) == 1.0 }),
+       let plugin = control["plugin"] as? [Double],
+       let solo = control["solo"] as? [Double] {
+        var worst = 0.0
+        for (i, p) in plugin.enumerated() { worst = max(worst, abs(p - solo[i])) }
+        check("the two topologies coincide when nothing is attenuated",
+              worst <= 0.5, "worst \(worst)")
+    } else {
+        check("the fixture has its volume 1.0 control case", false)
+    }
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 {
     print("\(failures) FAILED")

@@ -207,11 +207,14 @@ describe('importFromSdrpp', () => {
     expect(p.lists.General.bookmarks['Test SW 1']).toBeTruthy();
   });
 
-  it('replaces ASCII placeholder names with the JP DB CJK broadcaster name', async () => {
-    // SDR++ uses ASCII labels like "MW HBC Radio" / "MW STV Radio"; the
-    // import path should swap those for the JP DB names ("HBCラジオ",
-    // "STVラジオ") so the deck-rx preset list reads in 日本語. SW / NW
-    // bookmarks (no JP DB hit) keep their original SDR++ name.
+  it('keeps the SDR++ bookmark name — the database names the station, not the preset', async () => {
+    // The import used to swap an SDR++ label for the JP DB's broadcaster name
+    // wherever the DB knew the frequency. That was reversed in 889c71e on the
+    // user's rule: a preset carries the wording the user chose in SDR++ (their
+    // "MW NHK(東京)" against "MW NHK(第2)" — the DB calls both NHK), while the
+    // database names the station line on the LCD and the labels on the trace.
+    // Renaming on import also made a name depend on which rule was in force
+    // the day the entry was first imported.
     const sdrSrc = join(sandbox, 'sdrpp-jp-source.json');
     writeFileSync(sdrSrc, JSON.stringify({
       bookmarkDisplayMode: 0,
@@ -232,15 +235,17 @@ describe('importFromSdrpp', () => {
     expect(res.added).toBe(4);
     const p = await loadDeckRxPresets();
     const bk = p.lists.General.bookmarks;
-    // JP DB hits (manualStations have hokkaido/kanto entries)
-    expect(bk['HBCラジオ'], 'HBC should be renamed').toBeTruthy();
-    expect(bk['STVラジオ'], 'STV should be renamed').toBeTruthy();
-    expect(bk['TBSラジオ'], 'TBS should be renamed (kanto manual)').toBeTruthy();
-    // No JP DB entry for 9910 kHz SW → original SDR++ name retained
-    expect(bk['SW KTWR'], 'SW KTWR should keep its SDR++ name').toBeTruthy();
-    // The original ASCII names should NOT remain
-    expect(bk['MW HBC Radio']).toBeUndefined();
-    expect(bk['MW STV Radio']).toBeUndefined();
-    expect(bk['MW TBS']).toBeUndefined();
+    // Every name survives verbatim, DB hit or not. 954 kHz and 1287 kHz are
+    // in the JP DB (TBS in 関東, HBC as a 北海道 manual entry); 9910 kHz is not.
+    expect(Object.keys(bk).sort()).toEqual(
+      ['MW HBC Radio', 'MW STV Radio', 'MW TBS', 'SW KTWR'],
+    );
+    // ...and no DB name is introduced alongside them.
+    expect(bk['HBCラジオ']).toBeUndefined();
+    expect(bk['STVラジオ']).toBeUndefined();
+    expect(bk['TBSラジオ']).toBeUndefined();
+    // The frequencies still land where SDR++ had them.
+    expect(bk['MW TBS'].frequency).toBe(954000);
+    expect(bk['SW KTWR'].frequency).toBe(9910000);
   });
 });

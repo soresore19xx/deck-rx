@@ -135,34 +135,54 @@ describe('A4 — PI round-trip handlers in spyDialTune', () => {
   }, 15_000);
 
   it('setTuneMode propagates mode + step into spyService (PI Mode dropdown bug fix regression)', async () => {
-    harness = await startPlugin();
+    // A connected, enabled receiver is required, not decoration. With the
+    // master off or nothing to connect to, the dial draws its offline
+    // `-----` panel, which carries no mode label at all — the assertions
+    // below could then never pass however well the PI nudge worked, which
+    // is exactly how this test came to be permanently red.
+    harness = await startPlugin({ spyServer: true, config: { enabled: true } });
     await spawnTuneDial(harness);
+    // Let the connect + first tune settle so the dial is drawing its live
+    // panel rather than the offline one.
+    await harness.settle(1200);
 
-    // Capture all setFeedback messages from now on so we can verify the
-    // header changes after the mode flip.
-    const cap = harness.startCapture();
+    // Mode lives left of the freq digits in the freq-display SVG (it used to
+    // be a header prefix). In preset mode that slot carries the live demod,
+    // so the label is what separates the two tune modes.
+    const modeLabelsFrom = (msgs: unknown[]): string[] => {
+      const out: string[] = [];
+      for (const m of msgs) {
+        const x = m as { event?: string; payload?: { 'freq-display'?: string } };
+        if (x?.event !== 'setFeedback') continue;
+        const svg = x.payload?.['freq-display'];
+        if (typeof svg !== 'string' || !svg.startsWith('data:image/svg+xml;base64,')) continue;
+        const decoded = Buffer.from(svg.split(',')[1], 'base64').toString('utf-8');
+        for (const t of decoded.matchAll(/>([^<>]+)</g)) out.push(t[1]);
+      }
+      return out;
+    };
+
+    // Before: spawned in preset mode, so the slot shows the demod, not VFO.
+    const before = harness.startCapture();
+    await harness.settle(1200);
+    const beforeLabels = modeLabelsFrom(before.stop());
+    expect(beforeLabels, 'preset mode should draw the demod label').toContain('AM');
+    expect(beforeLabels, 'preset mode must not claim VFO').not.toContain('VFO');
 
     // Send the same PI nudge that inspector.html dispatches when the user
     // picks "VFO step" from the Mode dropdown (per spyDialTune commit
     // 22e180b: PI Mode/Step changes now propagate to spyService).
+    const cap = harness.startCapture();
     harness.sendToPlugin(TUNE_UUID, CTX, { action: 'setTuneMode', mode: 'vfo', stepHz: 100_000 });
+    // Wait long enough for spyService.setTuneMode -> tuneModeListener ->
+    // updateDisplay -> setFeedback round-trip to settle.
+    await harness.settle(600);
+    expect(modeLabelsFrom(cap.stop()), 'expected VFO mode label in freq-display after setTuneMode').toContain('VFO');
 
-    // Wait long enough for spyService.setTuneMode → tuneModeListener →
-    // updateDisplay → setFeedback round-trip to settle.
-    await harness.settle(300);
-
-    const msgs = cap.stop();
-    // After the layout move, "VFO" no longer lives in the header — Mode is
-    // now drawn left of the freq digits in the freq-display SVG. Look for
-    // it there instead.
-    const freqWithVfo = msgs.find(m => {
-      const x = m as { event?: string; payload?: { 'freq-display'?: string } };
-      if (x?.event !== 'setFeedback') return false;
-      const freqSvg = x.payload?.['freq-display'];
-      if (typeof freqSvg !== 'string' || !freqSvg.startsWith('data:image/svg+xml;base64,')) return false;
-      const decoded = Buffer.from(freqSvg.split(',')[1], 'base64').toString('utf-8');
-      return /VFO/.test(decoded);
-    });
-    expect(freqWithVfo, 'expected VFO mode label in freq-display after setTuneMode').toBeTruthy();
-  }, 10_000);
+    // The step is the other half of the title: it has to reach the config
+    // spyService persists, or the next restart comes back on 9 kHz.
+    const cfg = JSON.parse(readFileSync(harness.configPath, 'utf8')) as { tuneMode?: string; tuneStepHz?: number };
+    expect(cfg.tuneMode).toBe('vfo');
+    expect(cfg.tuneStepHz).toBe(100_000);
+  }, 20_000);
 });

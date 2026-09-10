@@ -16,11 +16,14 @@ function dataPath(): string {
 export type JpBand = 'FM' | 'MW';
 
 // JP DB regions. Each station scraped from a regional 総合通信局 page is
-// tagged with its region; lookup filters the auto-scraped pool by the user's
-// selected region so e.g. 90.5 MHz in 関東 doesn't surface 北海道's same-
-// frequency relay station. `manualStations` entries are NOT region-tagged —
-// they're consulted regardless of the active region (cross-region DX
-// targets, AFN, NHK R2 hand-curated overrides, etc.).
+// tagged with its region; lookup filters by the user's selected region so
+// e.g. 90.5 MHz in 関東 doesn't surface 北海道's same-frequency relay
+// station. `manualStations` entries were global at first, on the assumption
+// they would be cross-region DX targets, but nearly every one turned out to
+// be region-specific (MBS → 近畿, HBC → 北海道) and global lookup surfaced
+// ABCラジオ at 1008 kHz while 関東 was active. They are region-tagged and
+// filtered the same way since 4f78e31; an entry left untagged is still
+// treated as global, which is the way to add a deliberate DX target.
 export type JpRegion = 'kanto' | 'hokkaido' | 'tohoku' | 'tokai' | 'kinki' | 'chugoku' | 'kyushu' | 'okinawa';
 export const JP_REGIONS: readonly JpRegion[] = ['kanto', 'hokkaido', 'tohoku', 'tokai', 'kinki', 'chugoku', 'kyushu', 'okinawa'];
 export const JP_REGION_LABELS: Record<JpRegion, string> = {
@@ -64,7 +67,7 @@ export interface JpStation {
   freqHz: number;
   band: JpBand;
   name: string;
-  region?: JpRegion;  // undefined for manualStations (always consulted, region-independent)
+  region?: JpRegion;  // untagged = global: consulted whatever region is active
   // Optional 送信地 (transmission site) annotation, scraped from the
   // parenthesised suffix in the 関東総合通信局 / 沖縄総通局 freq cells —
   // e.g. "594kHz(東京)" → siteName: "東京". Multiple physical relay sites

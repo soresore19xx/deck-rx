@@ -529,7 +529,18 @@ final class LocalRadio {
     /// compared: with the plugin running there are two receivers on this
     /// machine, and a shared flag would make the two WAVs impossible to tell
     /// apart. Written after levelling and the mute window, before the sink —
-    /// what is actually being handed to the audio device, at `audioRate`.
+    /// at `audioRate`, and **before the volume control**, which lives in the
+    /// sink.
+    ///
+    /// That last part is the trap when comparing the two: the plugin's tap is
+    /// taken *after* its volume (`spyService.ts`, right below the ramp loop),
+    /// so a WAV from here and a WAV from there differ by the plugin's volume
+    /// setting before either receiver has done anything differently. Divide it
+    /// back out — or the same 7.6 dB that is really one knob at 0.41 gets
+    /// written down as a demodulator difference, which is what happened on
+    /// 2026-09-10. For the same reason the peak sitting on 32767 here is the
+    /// soft limiter's ceiling, not clipping the volume could relieve: the knob
+    /// is downstream of this file.
     ///
     /// The float samples are the sink's own domain (-1..1); they go out as
     /// int16 because that is what every analysis tool reads.

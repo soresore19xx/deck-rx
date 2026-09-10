@@ -55,6 +55,14 @@ func S(_ v: CGFloat) -> CGFloat { (v * UI.scale).rounded() }
 /// owns no receiver state of its own: every control call is fire-and-forget and
 /// the next status read is the truth.
 enum Receiver {
+
+    /// What one unit of `/volume?d=` moves, and what the VOL pads step by.
+    /// The plugin's `VOLUME_STEP` in `src/controlServer.ts`, because the same
+    /// clients — knobctl, this window's pads — talk to whichever receiver is
+    /// answering, and a press that moves 2 % on one and 5 % on the other is a
+    /// difference the listener hears as the two apps disagreeing about volume.
+    static let volumeStep = 0.02
+
     // MARK: paths
 
     static let baseDir: String = Plat.scratch
@@ -318,7 +326,7 @@ enum Receiver {
     }
     static func volume(delta: Int) {
         if let d = direct {
-            d.volume(max(0, min(1, status().volume + Double(delta) * 0.05)))
+            d.volume(max(0, min(1, status().volume + Double(delta) * volumeStep)))
             return
         }
         call("/volume?d=\(delta)")

@@ -218,7 +218,7 @@ final class AppServer {
             if let v = q["v"].flatMap(Double.init) {
                 radio.volume = min(max(v, 0), 1)
             } else if let d = q["d"].flatMap(Int.init) {
-                radio.volume = min(max(radio.volume + Double(d) * 0.05, 0), 1)
+                radio.volume = min(max(radio.volume + Double(d) * Receiver.volumeStep, 0), 1)
             } else {
                 return bad("need v or d")
             }

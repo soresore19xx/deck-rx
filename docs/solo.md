@@ -336,6 +336,23 @@ client sat demodulating the piece of band the departed one had left the device
 on, which looks and sounds exactly like a receiver that has stopped working —
 and did, for twenty minutes, with nothing anywhere saying why.
 
+### Loudness, next to the plugin
+
+The two chains leave the audio at the same level: same per-mode makeup, same
+master trim, same AM AGC constants, same soft limiter. Measured on 6055 kHz
+with both receivers on the same IQ, they agree within 0.15 dB. So anything you
+hear as "one of them is louder" is the volume control, and matching the two
+numbers matches the loudness — 41 % here is 41 % there. A step of `/volume?d=`
+moves 2 % on either, so the same knob or pad feels the same whichever receiver
+is answering.
+
+One trap when measuring it: `/tmp/deck-rx-solo-audio-record` is written before
+the volume control, and the plugin's `/tmp/deck-rx-audio-record` after its own.
+Two WAVs taken that way differ by the plugin's volume setting before either
+receiver has done anything differently, and the peaks in this app's file sit on
+32767 because that is where the soft limiter puts them — not because the volume
+is clipping something.
+
 ## CPU
 
 Measured on a 2015 MacBook Air 11 (two Broadwell cores):

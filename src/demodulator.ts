@@ -491,9 +491,19 @@ export class Demodulator {
   setAmBandwidth(audioRate: number, bwHz: number, iqRate?: number): void {
     // Post-envelope audio LPF: 8th-order Butterworth via 4 cascaded biquads.
     // Per-stage Q for true Butterworth: Q_k = 1/(2·sin((2k−1)π/16)), k=1..4.
-    if (bwHz > 0 && bwHz < audioRate * 0.45) {
+    // Cut at HALF the figure, for the same reason the IF filter below halves
+    // it: bwHz is the width of the RF channel, so the audio carried inside it
+    // only reaches half that. Cutting the audio at the full 9 kHz left the
+    // 4.5-9 kHz octave — which on a 9 kHz channel raster holds nothing but the
+    // neighbours' splatter and noise — riding on the IF filter's skirt alone,
+    // about 25 dB down where SDR++ is 85 dB down. Measured on 594 kHz; see
+    // docs/solo.md "The AM channel filter". The native app halves it the same
+    // way (AMDemod.swift setBandwidth) and adds a linear-phase FIR on top,
+    // which is not affordable here — 2433 taps at 114 kHz is 2.8e8 MAC/s.
+    const audioCut = bwHz / 2;
+    if (audioCut > 0 && audioCut < audioRate * 0.45) {
       const Q4 = [0.5097955791, 0.6013447997, 0.9000000000, 2.5629154497];
-      for (let k = 0; k < 4; k++) this.amLpf[k].setLowPass(audioRate, bwHz, Q4[k]);
+      for (let k = 0; k < 4; k++) this.amLpf[k].setLowPass(audioRate, audioCut, Q4[k]);
       this.amLpfEnabled = true;
     } else {
       this.amLpfEnabled = false;

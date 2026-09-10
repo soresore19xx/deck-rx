@@ -362,6 +362,46 @@ receiver has done anything differently, and the peaks in this app's file sit on
 32767 because that is where the soft limiter puts them — not because the volume
 is clipping something.
 
+#### Where the volume sits, which is the one thing that differs
+
+Both chains are makeup, then the optional AGC, then the tanh limiter — and both
+are code in this repository, so they can be compared by arithmetic rather than
+by ear. Doing that turns up one difference, and it is in the order:
+
+| | volume | limiter |
+| --- | --- | --- |
+| plugin | inside the limiter — `softLimit(x · volume · makeup)` | threshold moves with the knob |
+| this app | outside it — `softLimit(x · makeup)` then the sink applies volume | threshold is fixed |
+
+At volume 1.0 the two are the same number for every input, which is what makes
+the difference attributable to the order and nothing else. Below the knee they
+are the same at any volume. Above it, at the 0.41 both are set to, this app
+compresses peaks the plugin passes through linearly:
+
+| input (int16, pre-makeup) | plugin | this app | |
+| --- | --- | --- | --- |
+| ≤ 18568 | — | — | identical |
+| 20000 | 12300 | 12248 | −0.04 dB |
+| 24000 | 14760 | 13293 | **−0.91 dB** |
+| 32767 | 20152 | 13434 | −3.52 dB |
+
+24000 is not an arbitrary row: it is `AM_AGC_MAX_OUTPUT`, where the carrier
+AGC's look-ahead puts peaks, so AM programme peaks land there routinely. On a
+deeply modulated 1 kHz tone the whole-buffer RMS differs by 0.8 dB.
+
+Which order is right is a real question. A limiter after the volume has its
+threshold move with the knob, so how compressed the audio is depends on how
+loud it is set — and at a low setting the limiter is effectively not there,
+which is the opposite of what a protective limiter is for. This app's order is
+the conventional one. Changing the plugin to match would make its AM peaks
+compress the way this app's do, so it is a decision about how the plugin should
+sound, not a bug fix, and it has not been made.
+
+`test/fixtures/audioOutputGolden.json` pins all of it: the plugin's numbers are
+checked by `test/audioLeveling.test.ts` and this app's by
+`native-app/Tests/main.swift`, both against the same file, so neither side can
+drift without a test going red.
+
 ## CPU
 
 Measured on a 2015 MacBook Air 11 (two Broadwell cores):

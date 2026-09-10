@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "Golden vector for the audio OUTPUT STAGE of both implementations, so the two",
+    "can be compared without listening to them. The plugin (src/spyService.ts, the",
+    "ramp loop) and the standalone app (native-app/Sources/LocalRadio.swift level()",
+    "plus AudioSink.write) run the same three stages with the same constants:",
+    "per-mode makeup from MODE_MAKEUP / AudioLeveling.modeMakeup, an optional",
+    "output AGC that is off by default in both, and the tanh soft limiter at",
+    "0.85 x 32767. Every value below was produced by running the real code, not by",
+    "modelling it: test/audioLeveling.test.ts checks the `plugin` arrays and",
+    "native-app/Tests/main.swift checks the `solo` arrays.",
+    "",
+    "THE ONE DIFFERENCE the vector pins down: the volume control sits on opposite",
+    "sides of the limiter. The plugin limits AFTER applying volume, the app limits",
+    "BEFORE and the sink applies volume afterwards. At volume 1.0 the two are",
+    "therefore identical (the `vol1` case, which is the control). Below the knee",
+    "they are identical at any volume. Above it, at volume 0.41, the app compresses",
+    "peaks the plugin passes through linearly: -0.9 dB at 24000, which is where the",
+    "AM carrier AGC's look-ahead ceiling puts peaks, and -3.5 dB at full scale.",
+    "",
+    "Which is right is a real question and not settled here. Limiting after the",
+    "volume makes the limiter's threshold move with the knob, so the character of",
+    "the sound depends on the volume setting and at a low setting the limiter is",
+    "effectively absent. If the plugin is changed to match the app, the `plugin`",
+    "arrays here change with it and that is the deliberate signal."
+  ],
+  "input": [0, 1000, 4000, 8000, 12000, 16000, 18000, 18568, 19000, 20000,
+            22000, 24000, 26000, 28000, 30000, 32767, -24000, -32767],
+  "params": { "mode": 2, "makeup": 1.5, "audioGain": 1.0 },
+  "cases": [
+    {
+      "name": "vol041",
+      "volume": 0.41,
+      "note": "the volume both receivers are set to as of 2026-09-10",
+      "plugin": [0, 615, 2460, 4920, 7380, 9840, 11070, 11419, 11685, 12300,
+                 13530, 14760, 15990, 17220, 18450, 20152, -14760, -20152],
+      "solo": [0.0, 615.0, 2460.0, 4920.0, 7380.0, 9840.0, 11070.0, 11419.3,
+               11683.5, 12247.9, 12992.7, 13293.2, 13391.8, 13421.8, 13430.7,
+               13433.8, -13293.2, -13433.8]
+    },
+    {
+      "name": "vol1",
+      "volume": 1.0,
+      "note": "the control: with no attenuation the two topologies coincide",
+      "plugin": [0, 1500, 6000, 12000, 18000, 24000, 27000, 27852, 28496, 29873,
+                 31690, 32423, 32663, 32736, 32758, 32765, -32423, -32765],
+      "solo": [0.0, 1500.0, 6000.0, 12000.0, 18000.0, 24000.0, 27000.0, 27852.0,
+               28496.3, 29872.9, 31689.6, 32422.5, 32662.8, 32736.0, 32757.8,
+               32765.3, -32422.5, -32765.3]
+    }
+  ]
+}

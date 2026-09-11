@@ -436,7 +436,16 @@ final class LocalRadio {
         syncPipeline()
         selectSource()
 
-        client.onDeviceInfo = { [weak self] info in self?.start(with: info) }
+        client.onDeviceInfo = { [weak self] info in
+            guard let self else { return }
+            // Cancelled here rather than at the end of `start`, which sends a
+            // handful of settings before it sets `isConnected`. Cancelling there
+            // left a window where the watchdog could fire on a handshake that
+            // had in fact arrived, and tear down a connection that was coming
+            // up. That is not theoretical: it is what happened on 2026-09-11.
+            self.handshakeTimer?.cancel(); self.handshakeTimer = nil
+            self.start(with: info)
+        }
         client.onIQ = { [weak self] pkt in self?.absorb(pkt) }
         client.onSync = { [weak self] sync in
             guard let self else { return }
@@ -497,20 +506,29 @@ final class LocalRadio {
     /// chosen and could not see was wrong.
     ///
     /// `isConnected` is only set once DEVICE_INFO has been decoded, so it is the
-    /// flag to test. Five seconds is long next to a handshake that is one round
-    /// trip on a LAN.
+    /// flag to test. Ten seconds, not five: the server is a Pi, and five put the
+    /// timeout close enough to a real handshake to fire on one.
+    ///
+    /// The teardown owns every piece of state itself, because `client.disconnect`
+    /// is the *intentional* close — it suppresses `onDisconnect`, which is where
+    /// `isConnected` would otherwise be cleared and the retry scheduled. Calling
+    /// it without doing that work left the app claiming a connection it did not
+    /// have, with no socket and no retry: the window kept the last station name
+    /// and meters, POWER saw `isConnected` and turned the audio off instead of
+    /// reconnecting, and the app went quiet with a 54 dB signal on the screen.
     private func armHandshakeWatchdog(host: String, port: UInt16) {
         handshakeTimer?.cancel()
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now() + 5)
+        t.schedule(deadline: .now() + 10)
         t.setEventHandler { [weak self] in
             guard let self, self.wantConnection, !self.isConnected else { return }
             self.lastError = "\(host):\(port) accepted the connection but did not "
                            + "answer as a SpyServer - wrong host or port?"
-            DispatchQueue.main.async { self.onState?() }
-            // Drop it rather than sit on a socket that will never speak, so the
-            // retry loop is dialling rather than waiting.
+            self.isConnected = false
+            self.stopFrameTimer()
             self.client.disconnect()
+            DispatchQueue.main.async { self.onState?() }
+            self.scheduleReconnect()
         }
         handshakeTimer = t
         t.resume()

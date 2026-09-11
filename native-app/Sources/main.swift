@@ -1442,6 +1442,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             radio.disconnect()
         } else {
             radio.connect()
+            // Audible again, the way a launch comes up. Turning the link off
+            // turns the audio off with it — which is right, there is nothing to
+            // hear — but turning it back on used to leave the audio off, and
+            // nothing said so: the link reconnected, the meters moved, the
+            // station name came back, and the app was silent — reported as
+            // "no sound any more" with a 54 dB signal on the screen.
+            radio.audioEnabled = true
+            view.srcAudioPad.isOn = true
         }
         syncSource()
     }

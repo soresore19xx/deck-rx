@@ -97,16 +97,40 @@ final class SpectrumView: XView {
     /// centred slice of it. Zooming is done here rather than on the receiver
     /// because every frame already carries all the bins — asking for a narrower
     /// FFT would cost resolution, which is the opposite of what zooming is for.
-    var zoom: Double = 1 { didSet { hold = []; redraw() } }
+    var zoom: Double = 1 { didSet { hold = []; panBins = 0; redraw() } }
+
+    /// How far the window is panned from the receiver's centre, in bins.
+    ///
+    /// Panning lives here for the same reason zooming does: the frame already
+    /// carries every bin, so sliding the window across them costs nothing.
+    /// Asking the receiver to move its centre instead — `setDeviceCenter`, what
+    /// the iPad's drag does — is a retune, and a retune per notch of the wheel
+    /// would mute the audio and blank the band all the way across.
+    ///
+    /// The consequence is that at zoom 1 there is nothing to pan: the whole span
+    /// is already on screen. Zooming re-centres, which is why the setter above
+    /// clears this.
+    private var panBins = 0
+
+    /// Fractional notches not yet spent. A precise device sends many small
+    /// deltas and a wheel sends whole lines; carrying the remainder makes one
+    /// physical notch move one step on either.
+    private var panAccum: Double = 0
 
     /// The bin window currently on screen, and the frequencies it spans.
     private func visible(_ count: Int) -> (start: Int, end: Int, lo: Double, span: Double) {
         let z = max(1, min(64, zoom))
         let width = max(16, Int(Double(count) / z))
-        let start = max(0, (count - width) / 2)
+        let centred = max(0, (count - width) / 2)
+        // Clamped here as well as where the wheel moves it: `count` can change
+        // between frames, and a window that fell off the end would draw nothing.
+        let start = max(0, min(max(0, count - width), centred + panBins))
         let end = min(count, start + width)
         let span = Double(iqRate) * Double(end - start) / Double(max(1, count))
-        return (start, end, Double(centerFreq) - span / 2, span)
+        // The window's own centre, which is the receiver's only while unpanned.
+        let mid = Double(centerFreq) + Double(iqRate)
+                * (Double(start + end) / 2 - Double(count) / 2) / Double(max(1, count))
+        return (start, end, mid - span / 2, span)
     }
 
     /// Left gutter for the dB scale, and the strip under the trace that carries
@@ -174,6 +198,29 @@ final class SpectrumView: XView {
     /// had nothing wired to it, so the window could show a station it could
     /// not be asked to tune. nil leaves the pointer alone.
     var onTune: ((Double) -> Void)?
+
+    /// Asked for when the wheel reaches the end of the IQ window and is still
+    /// turning: the receiver's own centre has to move for the band to carry on.
+    /// Given an absolute centre in hertz. Unlike panning inside the window this
+    /// is a retune — the audio mutes for a moment and the demodulators reset —
+    /// so it only happens at the edge, never while there are bins left to slide
+    /// across.
+    var onPanBeyond: ((Double) -> Void)?
+
+    /// Centre tuning, mirrored here so the wheel knows which of two things it
+    /// is doing. Locked, the marker belongs in the middle and scrolling is a
+    /// retune that takes it along; unlocked, scrolling slides the window over
+    /// a receiver that stays where it is. Panning the window while the marker
+    /// is supposed to be pinned to the middle is the contradiction that lost a
+    /// station on 2026-09-11: the centre walked off and the tuning stayed.
+    var centerLocked = false { didSet { if centerLocked { clearPan() } } }
+
+    /// Put the window back on the receiver's own centre.
+    func clearPan() {
+        guard panBins != 0 || panAccum != 0 else { return }
+        panBins = 0; panAccum = 0
+        redraw()
+    }
 #if !canImport(UIKit)
     private var tuningByPointer = false
     private var lastPointerTune = Date.distantPast
@@ -520,6 +567,82 @@ final class SpectrumView: XView {
             }
         }
         addCursorRect(rail, cursor: .resizeUpDown)
+    }
+
+    /// The wheel pans the window left and right. Click-to-tune is the pointer's
+    /// other job and stays on the press, so the two never fight for a gesture.
+    ///
+    /// A notch moves an eighth of what is on screen — a fraction rather than a
+    /// number of hertz, so the step scales with the zoom the way the eye
+    /// expects. Scrolling away from you goes up the band; that is one sign to
+    /// flip if it reads backwards.
+    override func scrollWheel(with event: NSEvent) {
+        let count = bins.count
+        let z = max(1, min(64, zoom))
+        let width = max(16, Int(Double(count) / z))
+        guard count > 0, width < count else { super.scrollWheel(with: event); return }
+        if ProcessInfo.processInfo.environment["DECKRX_SCROLL_DIAG"] == "1" {
+            NSLog("[scroll] phase=%d momentum=%d precise=%d inverted=%d dx=%.3f dy=%.3f",
+                  Int(event.phase.rawValue), Int(event.momentumPhase.rawValue),
+                  event.hasPreciseScrollingDeltas ? 1 : 0,
+                  event.isDirectionInvertedFromDevice ? 1 : 0,
+                  event.scrollingDeltaX, event.scrollingDeltaY)
+        }
+        // A wheel reports lines and a trackpad reports points; both arrive here.
+        // Horizontal wins where there is any, so a two-finger swipe does the
+        // obvious thing on the hardware that has one.
+        let raw = event.scrollingDeltaX != 0 ? -event.scrollingDeltaX : event.scrollingDeltaY
+        var notches = (event.hasPreciseScrollingDeltas ? Double(raw) / 16 : Double(raw))
+                    * (event.isDirectionInvertedFromDevice ? -1 : 1)
+        // Momentum is the tail the hardware sends after the hand has stopped —
+        // what "inertial scrolling" turns on. Dropping it outright was wrong:
+        // some drivers mark every event they send that way, and the pan then
+        // does nothing at all. Damped instead, so coasting drifts rather than
+        // flies, and a deliberate turn still answers immediately.
+        if event.momentumPhase != [] { notches *= 0.2 }
+        // No single event crosses more than a fraction of the window either: a
+        // flick on a precise device can carry a very large delta, and landing
+        // half a band away is the same loss of aim as coasting.
+        notches = max(-2, min(2, notches))
+        // Whole steps only, with the remainder carried. That is what makes a
+        // wheel feel like a wheel on both kinds of hardware: a line-based
+        // notch moves one step, and a precise device has to travel the same
+        // distance to earn one.
+        panAccum += notches
+        let steps = (panAccum < 0 ? -1.0 : 1.0) * floor(abs(panAccum))
+        guard steps != 0 else { return }
+        panAccum -= steps
+        let hzPerBin = Double(iqRate) / Double(count)
+        // Marker pinned to the middle: there is nothing to slide, so the wheel
+        // moves the receiver and the marker rides along with it.
+        if centerLocked {
+            guard iqRate > 0, let beyond = onPanBeyond else { return }
+            beyond(Double(centerFreq) + Double(width) / 8 * steps * hzPerBin)
+            return
+        }
+        let centred = max(0, (count - width) / 2)
+        let before = panBins
+        let step = Int((Double(width) / 8 * steps).rounded())
+        let loLimit = -centred, hiLimit = max(0, count - width) - centred
+        panBins = max(loLimit, min(hiLimit, panBins + step))
+        // Whatever the window could not absorb carries on as a move of the
+        // receiver itself, so the band keeps scrolling past the edge of the IQ
+        // span instead of stopping there.
+        let spent = panBins - before
+        let leftover = step - spent
+        if leftover != 0, iqRate > 0, count > 0, let beyond = onPanBeyond {
+            beyond(Double(centerFreq) + Double(leftover) * hzPerBin)
+        }
+        guard panBins != before else { return }
+        // The history belongs to the frequencies it was measured at, so it
+        // slides with the window — the same reason `accept` slides it when the
+        // receiver moves. Positive columns move the picture left, which is what
+        // going up the band looks like.
+        if fallWidth > 0 {
+            shiftWaterfall(byColumns: Int((Double(panBins - before) * Double(fallWidth)
+                                          / Double(width)).rounded()))
+        }
+        redraw()
     }
 
     override func mouseDown(with event: NSEvent) {

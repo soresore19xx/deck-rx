@@ -886,6 +886,108 @@ outputStageCheck: do {
     }
 }
 
+section("a frequency the hardware cannot reach is clamped, not obeyed")
+// The spectrum shows more band than the device can tune to — the IQ window is
+// wider than the gap to the bottom of its range — so a click can aim below the
+// minimum. Obeying it moved the centre down a window at a time until the
+// readout said 0 kHz and the axis ran negative.
+do {
+    let lo: UInt32 = 500_000, hi: UInt32 = 260_000_000
+    check("below the bottom comes back as the bottom",
+          LocalRadio.clampToDevice(366_000, min: lo, max: hi) == lo)
+    check("zero is not a frequency this receiver has",
+          LocalRadio.clampToDevice(0, min: lo, max: hi) == lo)
+    check("above the top comes back as the top",
+          LocalRadio.clampToDevice(300_000_000, min: lo, max: hi) == hi)
+    check("inside the range is left alone",
+          LocalRadio.clampToDevice(594_000, min: lo, max: hi) == 594_000)
+    check("a device that reports no range is not second-guessed",
+          LocalRadio.clampToDevice(42, min: 0, max: 0) == 42)
+}
+
+section("IFNR on WFM stereo: what it buys and what it costs")
+// The impression to check is "the hiss goes down and the stereo image goes with
+// it" — and with FM stereo the level moves too, because losing L-R changes the
+// loudness and not only the width. So all of it is measured on one signal, at
+// several signal strengths: noise, separation, level, and the pilot.
+//
+// IFNR keeps only the strongest FFT bin of the IQ per sample. At 456 kHz with
+// 32 bins that quantises the instantaneous frequency to a 14.25 kHz grid, and
+// the MPX components that carry the stereo — a 19 kHz pilot at 8% and an L-R
+// subcarrier at 38 kHz — are small next to L+R. They are what the peak-bin
+// choice throws away first. Measuring at one strength only would have told
+// half the story: the filter is meant for a signal buried in hiss.
+do {
+    let toneHz = 1000.0
+    func leftOnly(_ noise: Double) -> Data {
+        makeIQ(rate: rate, count: 456_000, deviationHz: 50_000, noise: noise, mpx: { t in
+            let lpr = sin(2 * .pi * toneHz * t) / 2, lmr = lpr
+            return lpr + 0.08 * cos(2 * .pi * 19_000 * t) + lmr * cos(2 * .pi * 38_000 * t)
+        })
+    }
+    func measure(_ iq: Data, nr useNr: Bool) -> (snr: Double, sep: Double, lvl: Double, locked: Bool) {
+        var body = iq
+        if useNr {
+            let n = IqNr()
+            n.setMode(1)                      // WFM
+            body = n.process(iq)
+        }
+        let d = Demods()
+        d.setWfmAudioBand(iqRate: rate)
+        d.setWfmIfBandwidth(iqRate: rate, cutoffHz: 75_000)
+        d.setDeemphasis(audioRate: audioRate, tau: 50e-6)
+        let o = d.processWFMStereo(int16IQ: body, decimate: audioDec)
+        var sl = [Float](), sr = [Float]()
+        for i in stride(from: 0, to: o.count - 1, by: 2) { sl.append(o[i]); sr.append(o[i + 1]) }
+        let settle = sl.count / 10            // the PLL is still pulling in
+        sl = Array(sl[settle...]); sr = Array(sr[settle...])
+        let amp = toneAmplitude(sl, hz: toneHz, rate: audioRate)
+        let leak = toneAmplitude(sr, hz: toneHz, rate: audioRate)
+        // toneAmplitude returns A/2 for a tone of amplitude A, so the tone's
+        // own RMS is sqrt(2) times it. What is left of the total is noise.
+        let lvl = rms(sl)
+        let toneRms = amp * 2.0.squareRoot()
+        let noiseRms = max(1e-30, lvl * lvl - toneRms * toneRms).squareRoot()
+        return (20 * log10(toneRms / noiseRms),
+                20 * log10(amp / max(1e-30, leak)),
+                lvl, d.stereoLocked)
+    }
+    print("  IQ noise |        SNR off / on        |    separation off / on     | level")
+    var everHelped = false
+    for noise in [0.02, 0.1, 0.3, 0.6] {
+        let iq = leftOnly(noise)
+        let off = measure(iq, nr: false), on = measure(iq, nr: true)
+        if on.snr > off.snr + 1 { everHelped = true }
+        print(String(format: "  %7.2f  | %6.2f -> %6.2f dB (%+5.2f) | %6.2f -> %6.2f dB (%+6.2f) | %+5.2f dB  pilot %@/%@",
+                     noise, off.snr, on.snr, on.snr - off.snr,
+                     off.sep, on.sep, on.sep - off.sep,
+                     20 * log10(on.lvl / max(1e-30, off.lvl)),
+                     off.locked ? "ok" : "LOST", on.locked ? "ok" : "LOST"))
+    }
+    // What the table says, as assertions, so any of it moving shows up:
+    // the cost is unconditional, the benefit is weak-signal only, and on a
+    // strong signal the filter is strictly worse than leaving it off.
+    _ = everHelped
+    let strong = leftOnly(0.02), weak = leftOnly(0.6)
+    let sOff = measure(strong, nr: false), sOn = measure(strong, nr: true)
+    let wOff = measure(weak, nr: false), wOn = measure(weak, nr: true)
+    check("IFNR costs the stereo image, and not a little",
+          sOn.sep < sOff.sep - 20, String(format: "%.1f -> %.1f dB", sOff.sep, sOn.sep))
+    check("it costs it on a weak signal too, so strength is no excuse",
+          wOn.sep < wOff.sep - 20, String(format: "%.1f -> %.1f dB", wOff.sep, wOn.sep))
+    check("IFNR changes the level audibly, so it is not a free switch",
+          abs(20 * log10(sOn.lvl / max(1e-30, sOff.lvl))) > 2,
+          String(format: "%+.2f dB", 20 * log10(sOn.lvl / max(1e-30, sOff.lvl))))
+    check("on a strong signal IFNR makes the SNR worse, not better",
+          sOn.snr < sOff.snr - 1, String(format: "%.2f -> %.2f dB", sOff.snr, sOn.snr))
+    check("on a weak signal it earns its keep",
+          wOn.snr > wOff.snr + 5, String(format: "%.2f -> %.2f dB", wOff.snr, wOn.snr))
+    // The badge is the part a listener cannot check: the pilot still locks
+    // while there is no separation left, so the display says STEREO either way.
+    check("the pilot still locks with IFNR on, which is why the badge misleads",
+          sOn.locked, "it did not lock - the badge story changed")
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 {
     print("\(failures) FAILED")

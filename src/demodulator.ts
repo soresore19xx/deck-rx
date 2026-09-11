@@ -813,18 +813,33 @@ export class Demodulator {
       // toward 0 instead of positive bias.
       const lockMetric = this.pllPdI - Math.abs(this.pllPdQ);
       this.pilotPower = 0.999 * this.pilotPower + 0.001 * lockMetric;
-      // 38 kHz reference: phase-locked, unit amplitude. Built from the phase the
-      // pilot was MEASURED against (cosV), not from `this.pllPhase` — the loop
-      // above has already advanced that by one sample, and one sample is a real
-      // angle here: 15 deg at 19 kHz on a 456 kHz stream, 30 deg on a 228 kHz
-      // one, doubled to 30 / 60 deg at 38 kHz. L-R then arrives scaled by that
-      // cosine, and a flat gain error in one arm of the channel matrix is all
-      // the separation there is: 23 dB at 456 kHz, ~10 dB at 228 kHz, both of
-      // them "technically stereo, barely stereo in the room". Same-sample phase
-      // via cos 2x = 2 cos^2 x - 1 measures 39 dB at the 150 kHz FM bandwidth
-      // and costs one Math.cos() less per sample. Verified in
-      // native-app/Tests/main.swift, which measures the identical decoder.
-      const ref38 = 2 * cosV * cosV - 1;
+      // 38 kHz reference: phase-locked, unit amplitude.
+      //
+      // Two things have to be right here, and the second one was wrong from the
+      // day the PLL was written (2026-05-03) until 2026-09-12.
+      //
+      // 1. Take the phase the pilot was MEASURED against (cosV / sinV), not
+      //    `this.pllPhase` — the loop above has already advanced that by one
+      //    sample, and one sample is a real angle: 15 deg at 19 kHz on a
+      //    456 kHz stream, doubled to 30 deg at 38 kHz. A flat gain error in
+      //    one arm of the channel matrix is all the separation there is.
+      // 2. Double the phase with SINE, not cosine. The broadcast standard
+      //    (Zenith-GE, ITU-R BS.450 / 47 CFR 73.322) puts the pilot and the
+      //    suppressed subcarrier in the composite as sin(psi) and sin(2·psi):
+      //    both cross zero going positive at the same instant. Our PLL locks
+      //    cosV onto the pilot, so at lock cosV = sin(psi), i.e.
+      //    phase = psi − 90 deg. The reference we need is
+      //    sin(2·psi) = sin(2·phase + 180 deg) = −sin(2·phase)
+      //               = −2·sinV·cosV.
+      //    `cos(2·phase)` — what this line used to compute — is exactly in
+      //    quadrature with that, so the coherent L−R recovered was ZERO and
+      //    every broadcast came out mono. It survived so long because the
+      //    synthetic test signal was generated with cos for BOTH the pilot and
+      //    the subcarrier: self-consistent, and therefore blind to the error.
+      //    Measured on a standard-compliant signal: cos form 0.0 dB of
+      //    separation (mono), this form 48 dB. The sign is not cosmetic —
+      //    +2·sinV·cosV separates just as well but delivers L and R swapped.
+      const ref38 = -2 * sinV * cosV;
       // Recover L−R baseband: mix demod with 38 kHz reference (×2 to compensate for
       // the cos·cos averaging factor of 1/2), then LPF
       const lmrIn = demod * ref38 * 2;

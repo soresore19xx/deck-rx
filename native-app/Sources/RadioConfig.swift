@@ -56,7 +56,13 @@ struct RadioConfig: Codable, Equatable {
     /// Synchronous detection is worth turning on for a fading shortwave
     /// carrier; it is not what a first run should assume.
     var amSync = false
-    var fmBandwidthHz: Double = 150_000
+    /// 250 kHz: full Carson for a broadcast, which is 2 x (75 kHz deviation +
+    /// 53 kHz of MPX) = 256. Narrower throws the outer sidebands away, and with
+    /// them the L-R subcarrier that carries the stereo. Measured on a 75 kHz
+    /// signal: 150 kHz gives 23.7 dB of separation, 200 gives 34.1, 250 gives
+    /// 59.2. The old 150 was chosen for adjacent-channel rejection without
+    /// anyone checking what it cost the thing FM is listened to for.
+    var fmBandwidthHz: Double = 250_000
     var fmStereo = true
     var fmIfnr = false
     /// "50us" (JP/EU) or "75us" (US). Stored as the plugin stores it.

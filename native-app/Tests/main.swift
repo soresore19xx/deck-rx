@@ -189,7 +189,7 @@ section("demod routing sends each mode to the right detector")
 // narrow path — the bug this catches — leaves the output an order of magnitude
 // down, so the check is a level ratio rather than an exact match.
 let rate = 456_000.0
-let wideIQ = makeIQ(rate: rate, count: 45_600, deviationHz: 50_000,
+let wideIQ = makeIQ(rate: rate, count: 45_600, deviationHz: 75_000,
                     mpx: { sin(2 * .pi * 440 * $0) })
 // The plugin's own config: audioDecimate 4 over a 456 kHz IQ rate = 114 kHz.
 let audioDec = 4
@@ -304,9 +304,9 @@ section("FM stereo locks on a real pilot")
 // station might simply be mono.
 let L = { (t: Double) in sin(2 * .pi * 440 * t) }
 let R = { (t: Double) in sin(2 * .pi * 880 * t) }
-let stereoIQ = makeIQ(rate: rate, count: 456_000, deviationHz: 50_000, mpx: { t in
+let stereoIQ = makeIQ(rate: rate, count: 456_000, deviationHz: 75_000, mpx: { t in
     let lpr = (L(t) + R(t)) / 2, lmr = (L(t) - R(t)) / 2
-    return lpr + 0.08 * cos(2 * .pi * 19_000 * t) + lmr * cos(2 * .pi * 38_000 * t)
+    return lpr + 0.08 * sin(2 * .pi * 19_000 * t) + lmr * sin(2 * .pi * 38_000 * t)
 })
 let st = Demods()
 st.setWfmAudioBand(iqRate: rate)
@@ -339,15 +339,20 @@ func toneAmplitude(_ x: [Float], hz: Double, rate: Double) -> Double {
     return ((re * re + im * im) / (n * n)).squareRoot()
 }
 for toneHz in [100.0, 1000.0, 5000.0] {
-    let sepIQ = makeIQ(rate: rate, count: 456_000, deviationHz: 50_000, mpx: { t in
+    let sepIQ = makeIQ(rate: rate, count: 456_000, deviationHz: 75_000, mpx: { t in
         // Left only: L-R and L+R carry the same tone at the same level, so a
         // reference that is off in phase or gain lands audibly in the right.
         let lpr = sin(2 * .pi * toneHz * t) / 2, lmr = lpr
-        return lpr + 0.08 * cos(2 * .pi * 19_000 * t) + lmr * cos(2 * .pi * 38_000 * t)
+        return lpr + 0.08 * sin(2 * .pi * 19_000 * t) + lmr * sin(2 * .pi * 38_000 * t)
     })
     let sd = Demods()
     sd.setWfmAudioBand(iqRate: rate)
-    sd.setWfmIfBandwidth(iqRate: rate, cutoffHz: 75_000)   // the 150 kHz FM default
+    // 200 kHz channel. At the real 75 kHz deviation a 150 kHz channel cannot
+    // reach 30 dB however good the decoder is — the sweep below measures
+    // 23.6 dB there against 34.7 dB at 200 kHz and 59 dB at 250 kHz, because
+    // Carson wants 2*(75+53) = 256 kHz and the outer sidebands carrying the
+    // 38 kHz subcarrier are the first thing a narrow IF throws away.
+    sd.setWfmIfBandwidth(iqRate: rate, cutoffHz: 100_000)
     sd.setDeemphasis(audioRate: audioRate, tau: 50e-6)
     let o = sd.processWFMStereo(int16IQ: sepIQ, decimate: audioDec)
     var sl = [Float](), sr = [Float]()
@@ -365,7 +370,7 @@ section("mono FM on the same signal does not claim stereo")
 let mono = Demods()
 mono.setWfmAudioBand(iqRate: rate)
 mono.setWfmIfBandwidth(iqRate: rate, cutoffHz: 80_000)
-let monoIQ = makeIQ(rate: rate, count: 456_000, deviationHz: 50_000,
+let monoIQ = makeIQ(rate: rate, count: 456_000, deviationHz: 75_000,
                     mpx: { sin(2 * .pi * 440 * $0) })
 _ = mono.processWFMStereo(int16IQ: monoIQ, decimate: audioDec)
 check("no pilot, no lock", !mono.stereoLocked)
@@ -905,6 +910,68 @@ do {
           LocalRadio.clampToDevice(42, min: 0, max: 0) == 42)
 }
 
+section("stereo separation across the IQ rates the receiver actually runs")
+// The separation checks above all run at 456 kHz, which is one of the rates the
+// device offers and not the one a listener is necessarily on. A decoder whose
+// pilot loop or 38 kHz reference is tuned for one rate can collapse at another,
+// and that failure is invisible to a test that only ever uses the first.
+do {
+    let toneHz = 1000.0
+    for dev in [50_000.0, 75_000.0] {
+      print("  [deviation \(Int(dev/1000)) kHz]")
+      let appFilters = true, noise = 0.02
+      for r in [912_000.0] {
+        for bw in [150_000.0, 200_000.0, 250_000.0, 300_000.0] {
+            let dec = 4
+            let aRate = r / Double(dec)
+            let iq = makeIQ(rate: r, count: Int(r), deviationHz: dev, noise: noise, mpx: { t in
+                let lpr = sin(2 * .pi * toneHz * t) / 2, lmr = lpr
+                return lpr + 0.08 * sin(2 * .pi * 19_000 * t) + lmr * sin(2 * .pi * 38_000 * t)
+            })
+            let d = Demods()
+            d.setWfmAudioBand(iqRate: r)
+            d.setWfmIfBandwidth(iqRate: r, cutoffHz: bw / 2)
+            d.setDeemphasis(audioRate: aRate, tau: 50e-6)
+            // What `LocalRadio.configureDemods` does and this test did not: with
+            // the audio low pass switched off the cutoff is 0.45 of the audio
+            // rate, which at 228 kHz is 102 kHz. Leaving these out was why the
+            // test read 47 dB while the receiver delivered 31 dB down.
+            if appFilters {
+                let lpf = aRate * 0.45
+                d.setAudioFilters(rate: aRate, lowPassHz: lpf, highPassHz: 0)
+                d.setStereoAudioFilters(rate: aRate, lowPassHz: lpf, highPassHz: 0)
+            }
+            let o = d.processWFMStereo(int16IQ: iq, decimate: dec)
+            var sl = [Float](), sr = [Float]()
+            for i in stride(from: 0, to: o.count - 1, by: 2) { sl.append(o[i]); sr.append(o[i + 1]) }
+            guard sl.count > 100 else { print("  \(Int(r/1000))k bw \(Int(bw/1000))k: no audio"); continue }
+            let settle = sl.count / 10
+            sl = Array(sl[settle...]); sr = Array(sr[settle...])
+            let amp = toneAmplitude(sl, hz: toneHz, rate: aRate)
+            let leak = toneAmplitude(sr, hz: toneHz, rate: aRate)
+            // What DigiCheck's Lissajous shows: +1 is a line at 45 degrees,
+            // which is mono however loud the two channels are.
+            var num = 0.0, dl = 0.0, dr = 0.0
+            for i in 0..<min(sl.count, sr.count) {
+                let a = Double(sl[i]), b = Double(sr[i])
+                num += a * b; dl += a * a; dr += b * b
+            }
+            let corr = num / max(1e-30, (dl * dr).squareRoot())
+            // Side against Mid, which is the shape a Lissajous draws.
+            var mid = 0.0, side = 0.0
+            for i in 0..<min(sl.count, sr.count) {
+                let a = Double(sl[i]), b = Double(sr[i])
+                mid += ((a + b) / 2) * ((a + b) / 2); side += ((a - b) / 2) * ((a - b) / 2)
+            }
+            let sm = 10 * log10(max(side, 1e-30) / max(mid, 1e-30))
+            print(String(format: "  IQ %4dk  bw %3dk : separation %6.2f dB   Side/Mid %+6.2f dB   corr %+.4f   pilot %.4f   lock %@",
+                         Int(r/1000), Int(bw/1000), 20 * log10(amp / max(1e-30, leak)),
+                         sm, corr, d.pilotMetric, d.stereoLocked ? "yes" : "NO"))
+        }
+      }
+    }
+}
+
 section("IFNR on WFM stereo: what it buys and what it costs")
 // The impression to check is "the hiss goes down and the stereo image goes with
 // it" — and with FM stereo the level moves too, because losing L-R changes the
@@ -920,9 +987,9 @@ section("IFNR on WFM stereo: what it buys and what it costs")
 do {
     let toneHz = 1000.0
     func leftOnly(_ noise: Double) -> Data {
-        makeIQ(rate: rate, count: 456_000, deviationHz: 50_000, noise: noise, mpx: { t in
+        makeIQ(rate: rate, count: 456_000, deviationHz: 75_000, noise: noise, mpx: { t in
             let lpr = sin(2 * .pi * toneHz * t) / 2, lmr = lpr
-            return lpr + 0.08 * cos(2 * .pi * 19_000 * t) + lmr * cos(2 * .pi * 38_000 * t)
+            return lpr + 0.08 * sin(2 * .pi * 19_000 * t) + lmr * sin(2 * .pi * 38_000 * t)
         })
     }
     func measure(_ iq: Data, nr useNr: Bool) -> (snr: Double, sep: Double, lvl: Double, locked: Bool) {
@@ -964,9 +1031,14 @@ do {
                      20 * log10(on.lvl / max(1e-30, off.lvl)),
                      off.locked ? "ok" : "LOST", on.locked ? "ok" : "LOST"))
     }
-    // What the table says, as assertions, so any of it moving shows up:
-    // the cost is unconditional, the benefit is weak-signal only, and on a
-    // strong signal the filter is strictly worse than leaving it off.
+    // What the table says, as assertions, so any of it moving shows up. Read
+    // these together: the quiet IFNR delivers is bought with the image, not
+    // earned by cleaning the signal. The residual it removes is largely the
+    // noise that rode in on L-R, so "SNR" rises by about 9 dB while
+    // separation falls by 22 dB, and at the weakest signal even that
+    // dividend is gone. Measured 2026-09-12, after the 38 kHz reference was
+    // corrected; the earlier readings were taken through a decoder that
+    // recovered no L-R at all, so both of these once read the other way.
     _ = everHelped
     let strong = leftOnly(0.02), weak = leftOnly(0.6)
     let sOff = measure(strong, nr: false), sOn = measure(strong, nr: true)
@@ -978,10 +1050,12 @@ do {
     check("IFNR changes the level audibly, so it is not a free switch",
           abs(20 * log10(sOn.lvl / max(1e-30, sOff.lvl))) > 2,
           String(format: "%+.2f dB", 20 * log10(sOn.lvl / max(1e-30, sOff.lvl))))
-    check("on a strong signal IFNR makes the SNR worse, not better",
-          sOn.snr < sOff.snr - 1, String(format: "%.2f -> %.2f dB", sOff.snr, sOn.snr))
-    check("on a weak signal it earns its keep",
-          wOn.snr > wOff.snr + 5, String(format: "%.2f -> %.2f dB", wOff.snr, wOn.snr))
+    check("the quiet IFNR buys comes out of the image, not out of the noise",
+          sOn.snr > sOff.snr + 5 && sOn.sep < sOff.sep - 20,
+          String(format: "SNR %.2f -> %.2f dB, separation %.1f -> %.1f dB",
+                 sOff.snr, sOn.snr, sOff.sep, sOn.sep))
+    check("on the weakest signal even that stops paying",
+          wOn.snr < wOff.snr + 1, String(format: "%.2f -> %.2f dB", wOff.snr, wOn.snr))
     // The badge is the part a listener cannot check: the pilot still locks
     // while there is no separation left, so the display says STEREO either way.
     check("the pilot still locks with IFNR on, which is why the badge misleads",

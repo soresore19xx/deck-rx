@@ -63,6 +63,41 @@ moves under the pointer cannot be aimed with. Both presets either side of the
 current centre used to be answered inside the IQ window, so the display
 followed some presets and not others.
 
+**The wheel scrolls the band sideways**, and the crosshair button beside the
+readout decides what that means. It is SDR++'s centre-tuning switch, in SDR++'s
+place and wearing its mark:
+
+| | the wheel | a click on the trace |
+| --- | --- | --- |
+| crosshair **off** (default) | slides the window over a receiver that stays put | tunes without moving the window |
+| crosshair **on** | tunes, and the marker stays in the middle | tunes and re-centres |
+
+Off, the scroll is free until it runs out of window: every frame already carries
+all the bins, so sliding across them costs no retune, no mute and no blank band
+— the same reason zooming is done here rather than at the receiver. Past the
+edge the receiver's own centre moves, so the band carries on to the ends of what
+the hardware can tune, and those steps do mute for a moment because each is a
+retune. Switching the crosshair on re-centres immediately rather than waiting
+for the next tune: tuned into a corner of the window, it brings the marker to
+the middle and the spectrum with it.
+
+The two cannot both be true at once, which is why the switch changes what the
+wheel does rather than sitting alongside it. Panning the window while the marker
+is supposed to be pinned to the middle walks the centre away and leaves the
+tuning behind — 1134 kHz lost at 18x zoom, which is how this was found.
+
+Momentum is dropped to a fifth rather than obeyed: with inertial scrolling
+turned on in the mouse settings, a coasting wheel carried the window further
+than anyone aimed it. Dropping momentum outright was worse — some drivers mark
+every event they send that way, and the pan then did nothing at all.
+
+A frequency the hardware cannot reach is clamped rather than obeyed. The
+spectrum legitimately shows more band than the receiver can tune to: the IQ
+window is 456 kHz wide, so near the bottom of the band its left edge falls below
+the device's minimum and a pointer can aim there. Taking that aim at face value
+walked the receiver down a window's width per click until the readout said
+0 kHz and the frequency axis ran negative.
+
 Closing the window quits, and quitting hands back what the process was holding:
 the audio device, the SpyServer's single control slot, and on `usb` the Airspy
 itself. Closing it takes the tool windows with it, so 気象ファクス or DRM being

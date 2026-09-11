@@ -351,6 +351,12 @@ final class MainView: NSView {
     }
     var onNrToggle: (() -> Void)?
     var onLevelToggle: (() -> Void)?
+    var onCenterToggle: (() -> Void)?
+    /// SDR++'s centre-tuning switch, in the place SDR++ puts it: against the
+    /// right of the readout, drawn as the same crosshair.
+    lazy var centerPad: CrosshairPad = CrosshairPad {
+        [weak self] in self?.onCenterToggle?()
+    }
     lazy var nrPad: TogglePad = TogglePad("NR", font: mono(13), momentary: false) {
         [weak self] in self?.onNrToggle?()
     }
@@ -427,14 +433,31 @@ final class MainView: NSView {
 
         // frequency header
         let header = panelView(NSColor(red: 0.082, green: 0.086, blue: 0.102, alpha: 1))
+        // Recentring follows the CTR switch: on, the receiver moves so the new
+        // frequency lands in the middle; off, only the offset inside the window
+        // moves and the spectrum stays where it was put. The switch is Solo's:
+        // the plugin's control server has no notion of recentring.
+#if STANDALONE
+        freqView.onTune = { [weak self] hz in
+            Receiver.tune(hz: Int(hz), recenter: self?.centerPad.isOn ?? false)
+        }
+#else
         freqView.onTune = { hz in Receiver.tune(hz: Int(hz)) }
+#endif
         freqView.translatesAutoresizingMaskIntoConstraints = false
         // FreqView derives its digit height from its own bounds, so this one
         // constant sizes the whole readout.
         freqView.heightAnchor.constraint(equalToConstant: UI.H(96)).isActive = true
         stereoBadge.isHidden = true
         stereoBadge.translatesAutoresizingMaskIntoConstraints = false
+#if STANDALONE
+        centerPad.toolTip = "Centre tuning: keep the tuned frequency in the middle"
+        let freqRow = NSStackView(views: [freqView, centerPad, modeChip, stereoBadge])
+#else
+        // The plugin's control server has no notion of recentring, so the
+        // switch would be a light that does nothing on the front-end.
         let freqRow = NSStackView(views: [freqView, modeChip, stereoBadge])
+#endif
         freqRow.orientation = .horizontal; freqRow.alignment = .centerY; freqRow.spacing = 10
         let meters = NSStackView(views: [meterRow("S", sBar, sNum), meterRow("N", nBar, nNum)])
         meters.orientation = .vertical; meters.spacing = 6; meters.alignment = .leading
@@ -1094,6 +1117,85 @@ final class ButtonBox: NSObject {
 /// whether the receiver is powered were all invisible until you read the state
 /// somewhere else on screen. This draws itself: filled and dark-on-accent when
 /// on, outlined and dim when off.
+/// A square latching pad that draws a mark instead of a word.
+///
+/// SDR++ puts its centre-tuning switch to the right of the readout as a
+/// crosshair, and that is the shape being matched here — a row of lettered pads
+/// is the right idiom along the bottom, but this one sits against the digits
+/// where a word would read as part of the frequency.
+///
+/// The colours are the ones the palette added for being seen. The first cut
+/// filled it with `P.panel` and outlined it in `P.line` — the same shade as the
+/// header it sits on — and it did not read as a button at all. The palette
+/// already carries that lesson twice over, in the comments on `rule` and
+/// `band`: a thing nobody can see is not there. So the plate is `band`, a step
+/// up from every panel behind it, the outline is `rule`, and the mark is full
+/// `text`. A pointer over it turns into a hand, which is the plainest statement
+/// that something is clickable that macOS has.
+final class CrosshairPad: NSView {
+    private let action: () -> Void
+    private var pressed = false
+    private var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
+    var isOn = false { didSet { if isOn != oldValue { needsDisplay = true } } }
+
+    init(action: @escaping () -> Void) {
+        self.action = action
+        super.init(frame: .zero)
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 36, height: 36) }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseExited(with event: NSEvent) { hovered = false }
+
+    override func mouseDown(with event: NSEvent) { pressed = true; needsDisplay = true }
+    override func mouseUp(with event: NSEvent) {
+        pressed = false; needsDisplay = true
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { action() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let box = bounds.insetBy(dx: 1, dy: 1)
+        let plate = CGPath(roundedRect: box, cornerWidth: 6, cornerHeight: 6, transform: nil)
+        let fill: NSColor = pressed ? P.accent.withAlphaComponent(0.5)
+                          : isOn    ? P.accent
+                          : hovered ? P.rule
+                          : P.band
+        ctx.addPath(plate)
+        ctx.setFillColor(fill.cgColor)
+        ctx.fillPath()
+        ctx.addPath(plate)
+        ctx.setStrokeColor((isOn ? P.accent : P.rule).cgColor)
+        ctx.setLineWidth(1.5)
+        ctx.strokePath()
+
+        // The mark: a ring, a dot at dead centre, and four ticks breaking the
+        // ring at the cardinals — a target, which is what centre tuning does.
+        let ink: NSColor = isOn ? NSColor(white: 0.05, alpha: 1) : P.text
+        ctx.setStrokeColor(ink.cgColor)
+        ctx.setFillColor(ink.cgColor)
+        ctx.setLineWidth(1.6)
+        let c = CGPoint(x: bounds.midX, y: bounds.midY)
+        let r = min(bounds.width, bounds.height) * 0.24
+        ctx.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+        ctx.strokePath()
+        let gap = r * 1.15, tick = r * 0.7
+        for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+            ctx.move(to: CGPoint(x: c.x + dx * gap, y: c.y + dy * gap))
+            ctx.addLine(to: CGPoint(x: c.x + dx * (gap + tick), y: c.y + dy * (gap + tick)))
+        }
+        ctx.strokePath()
+        let d = r * 0.32
+        ctx.fillEllipse(in: CGRect(x: c.x - d, y: c.y - d, width: d * 2, height: d * 2))
+    }
+}
+
 final class TogglePad: NSView {
     private let title: String
     private let font: NSFont
@@ -1622,6 +1724,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         v.onImportPresets = { [weak self] in self?.importPresets() }
         v.onNrToggle = { [weak self] in self?.toggleNr() }
         v.onLevelToggle = { [weak self] in self?.toggleLeveling() }
+#if STANDALONE
+        v.centerPad.isOn = radio.config.centerTuning
+        v.onCenterToggle = { [weak self] in
+            guard let self else { return }
+            self.radio.config.centerTuning.toggle()
+            self.radio.config.save()
+            self.view.centerPad.isOn = self.radio.config.centerTuning
+            // SDR++ moves the moment the switch goes on, and that is the point
+            // of it: tuned into the corner of the window with the marker out by
+            // the edge, switching on brings the marker to the middle and the
+            // spectrum with it. Acting only on the next tune would leave the
+            // switch looking like it had done nothing.
+            self.view.spectrum.centerLocked = self.radio.config.centerTuning
+            if self.radio.config.centerTuning {
+                self.radio.setFrequency(self.radio.frequency, recenter: true)
+            }
+        }
+#endif
         v.onFftSize = { [weak self] size in
             guard let self, self.direct else { return false }
             self.radio.fftSize = size
@@ -1652,6 +1772,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // view so a rebuilt view comes back at the split it was dragged to.
         v.spectrum.spectrumFraction = CGFloat(currentConfig.spectrumSplit)
         v.spectrum.onSplitChanged = { [weak self] f in self?.applySpectrumSplit(f) }
+#if STANDALONE
+        // The wheel past the end of the IQ window moves the receiver, so the
+        // band carries on to the top and bottom of what the hardware can tune
+        // rather than stopping at the edge of one 456 kHz view. `setDeviceCenter`
+        // clamps to the device's range and keeps the station being listened to
+        // where it is for as long as it fits in the window.
+        v.spectrum.centerLocked = radio.config.centerTuning
+        v.spectrum.onPanBeyond = { [weak self] hz in
+            guard let self else { return }
+            if self.radio.config.centerTuning {
+                // The marker is pinned to the middle, so the wheel is a tuning
+                // control: the receiver and what is being listened to move
+                // together and the station stays under the centre line.
+                self.radio.setFrequency(UInt32(max(0, hz.rounded())), recenter: true)
+            } else {
+                // Only the window moves; the station stays where it was left,
+                // for as long as it still fits inside the span.
+                self.radio.setDeviceCenter(hz)
+            }
+        }
+#endif
         // Tuning by pointer, the way SDR++ does it and the way the iPad's tap
         // already did. Routed through `Receiver.tune` like every other control
         // here, so the front-end drives the plugin and Solo drives its own
@@ -1670,7 +1811,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let step = Receiver.tuneStepInForce(localStep: 0)
 #endif
             let target = step > 0 ? snapToStep(hz, step: step) : hz
+            // Same switch the readout obeys: CTR on recentres the window on
+            // what was clicked, off leaves the spectrum where it is so the next
+            // click can be aimed from the same picture.
+#if STANDALONE
+            Receiver.tune(hz: Int(max(0, target.rounded())),
+                          recenter: self.view.centerPad.isOn)
+#else
             Receiver.tune(hz: Int(max(0, target.rounded())))
+#endif
         }
     }
 

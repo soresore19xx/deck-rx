@@ -72,6 +72,14 @@ struct RadioConfig: Codable, Equatable {
     var cwBfoHz: Double = 700
     /// "preset" walks the store; "vfo" steps by tuneStepHz. The plugin's own
     /// wording, so the two files stay readable by each other.
+    /// SDR++'s centre-tuning switch — the crosshair beside its readout. On, a
+    /// tune moves the receiver so the station lands in the middle of the
+    /// spectrum; off, the window stays put and only the demodulator's offset
+    /// inside it moves. Off is the default because a window that jumps under
+    /// the pointer cannot be aimed with, which is the same reason
+    /// `Receiver.tune` defaults `recenter` to false.
+    var centerTuning = false
+
     var tuneMode = "preset"
     var autoSyncSdrpp = false
     /// Empty means the system default output. A name that no longer exists
@@ -252,6 +260,7 @@ struct RadioConfig: Codable, Equatable {
         amAgcDecay = (try? c.decodeIfPresent(Double.self, forKey: .amAgcDecay)) .flatMap { $0 } ?? d.amAgcDecay
         ssbBandwidthHz = (try? c.decodeIfPresent(Double.self, forKey: .ssbBandwidthHz)) .flatMap { $0 } ?? d.ssbBandwidthHz
         cwBfoHz = (try? c.decodeIfPresent(Double.self, forKey: .cwBfoHz)) .flatMap { $0 } ?? d.cwBfoHz
+        centerTuning = (try? c.decodeIfPresent(Bool.self, forKey: .centerTuning)) .flatMap { $0 } ?? d.centerTuning
         tuneMode = (try? c.decodeIfPresent(String.self, forKey: .tuneMode)) .flatMap { $0 } ?? d.tuneMode
         autoSyncSdrpp = (try? c.decodeIfPresent(Bool.self, forKey: .autoSyncSdrpp)) .flatMap { $0 } ?? d.autoSyncSdrpp
         audioDevice = (try? c.decodeIfPresent(String.self, forKey: .audioDevice)) .flatMap { $0 } ?? d.audioDevice

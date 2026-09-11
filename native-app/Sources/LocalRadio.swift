@@ -695,7 +695,24 @@ final class LocalRadio {
     /// list, the band buttons, the knob's preset walk. Everything that aims —
     /// the digits, a tap on the trace, the tune buttons — leaves it false,
     /// because a window that moves under the finger cannot be aimed with.
+    /// The tuning range the device reports, applied to anything asked of it.
+    ///
+    /// The spectrum legitimately shows more band than the receiver can tune to:
+    /// the IQ window is 456 kHz wide, so near the bottom of the band its left
+    /// edge falls below the device's minimum and a pointer can aim there. Taking
+    /// that aim at face value walked the receiver down a window's width per
+    /// click until the readout said 0 kHz and the frequency axis ran negative
+    /// (2026-09-11, reported as "HW の限度超えてる"). A frequency the hardware
+    /// cannot reach is clamped, not obeyed.
+    static func clampToDevice(_ hz: UInt32, min lo: UInt32, max hi: UInt32) -> UInt32 {
+        guard hi > lo else { return hz }
+        return Swift.min(Swift.max(hz, lo), hi)
+    }
+
     func setFrequency(_ hz: UInt32, recenter: Bool = false) {
+        let hz = deviceInfo.map {
+            Self.clampToDevice(hz, min: $0.minFrequency, max: $0.maxFrequency)
+        } ?? hz
         // Where we were asked to go, recorded before the refusal below: a tune
         // made while another client owns the device is not forgotten, it is
         // owed. `onSync` pays it back the moment control arrives.

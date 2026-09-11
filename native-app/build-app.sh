@@ -4,6 +4,9 @@
 # Builds two bundles from one source tree:
 #   /Applications/Deck RX.app       front-end onto the plugin's receiver
 #   /Applications/Deck RX Solo.app  the same window with its own receiver
+# DECKRX_APP_DIR moves both somewhere else, which is what a release build wants:
+# the DRM-free copy notarize.sh can distribute must not displace the DRM build
+# the machine listens with.
 # They differ only by the STANDALONE compile flag, so a fix to the display
 # lands in both and cannot drift.
 # This bundle is the focus target a Stream Deck profile binds to (AppIdentifier),
@@ -162,6 +165,11 @@ PLIST
 # rise with every build Apple sees, and a date does that without anyone keeping
 # score. Both bundles carry the same numbers so a Mac and an iPad on the same
 # release are recognisably the same thing.
+# Where the bundles land. /Applications is the default because that is where
+# they are used from; a release build points this somewhere else so notarising
+# a DRM-free copy does not replace the DRM build the machine listens with.
+APP_DIR="${DECKRX_APP_DIR:-/Applications}"
+mkdir -p "$APP_DIR" || { echo "ERROR: cannot create $APP_DIR"; exit 1; }
 VERSION="${DECKRX_VERSION:-1.0}"
 BUILD="${DECKRX_BUILD:-$(date +%Y%m%d)}"
 
@@ -237,13 +245,13 @@ ARM_ONLY_FLAGS=""
 
 if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "front" ]; then
   SRC_FILES="$SHARED"
-  build_variant "/Applications/Deck RX.app" "com.hogehoge.deckrx.receiver" "Deck RX" "" \
+  build_variant "$APP_DIR/Deck RX.app" "com.hogehoge.deckrx.receiver" "Deck RX" "" \
                 "deck-rx-receiver" || exit 1
 fi
 if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "solo" ]; then
   SRC_FILES="$SHARED $RECEIVER"
   ARM_ONLY_SRC="$AIRSPY_SRC"
   ARM_ONLY_FLAGS="$AIRSPY_FLAGS"
-  build_variant "/Applications/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE $DRM_FLAGS" \
+  build_variant "$APP_DIR/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE $DRM_FLAGS" \
                 "deck-rx-solo" || exit 1
 fi

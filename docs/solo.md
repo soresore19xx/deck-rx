@@ -217,7 +217,19 @@ It also does two things on its own initiative, both deliberate:
 - **It refuses a bundle with the DRM decoder in it.** fdk-aac's licence does not
   combine with the GPL in a binary that is passed on, and this is the one place
   that rule can be enforced rather than remembered. Keep the DRM build for
-  yourself — that was always allowed.
+  yourself — that was always allowed. Build the distributable copy somewhere
+  else rather than over the one you listen with:
+
+  ```sh
+  DECKRX_APP_DIR=~/.claude-work/out/release DECKRX_VERSION=1.1 \
+    DRM_CORE_DIR=/nonexistent ./build-app.sh solo
+  ./notarize.sh --dmg "~/.claude-work/out/release/Deck RX Solo.app"
+  ```
+
+  `DECKRX_APP_DIR` defaults to `/Applications`, which is where a development
+  build belongs; a release build wants it elsewhere, because the DRM-free copy
+  would otherwise displace the DRM build and the machine would quietly lose the
+  decoder it had.
 - **It drops the bundled `presets.json`.** Shipping one machine's station list
   is right for a second Mac of the same owner and wrong for a stranger, who
   should start empty rather than with someone else's listening.

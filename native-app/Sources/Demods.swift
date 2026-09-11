@@ -317,16 +317,27 @@ final class Demods {
                 let lockMetric = pllPdI - abs(pllPdQ)
                 pilotPower = 0.999 * pilotPower + 0.001 * lockMetric
 
-                // The doubled reference has to come from the phase the pilot
-                // was measured against — `pllPhase` has already been advanced a
-                // sample by the loop above, and a sample is 15 degrees at
-                // 19 kHz, so 30 degrees at 38 kHz. L-R then arrives scaled by
-                // cos 30, and a flat 6% amplitude error in one of the two
-                // channel-matrix terms is 23 dB of separation: audibly stereo
-                // on a scope, barely stereo in the room. Same-sample phase,
-                // via cos 2x = 2 cos^2 x - 1, measures 39 dB at the FM
-                // bandwidth in force and costs one cos() less per sample.
-                let ref38 = 2 * cosV * cosV - 1
+                // Two things have to be right here, and the second was wrong
+                // from the day the PLL was written until 2026-09-12.
+                //
+                // 1. The doubled reference has to come from the phase the pilot
+                //    was measured against — `pllPhase` has already been advanced
+                //    a sample by the loop above, and a sample is 15 degrees at
+                //    19 kHz, so 30 degrees at 38 kHz.
+                // 2. Double it with SINE, not cosine. The broadcast standard
+                //    (Zenith-GE, ITU-R BS.450) carries the pilot and the
+                //    suppressed subcarrier as sin(psi) and sin(2.psi), crossing
+                //    zero going positive together. The loop locks cosV onto the
+                //    pilot, so cosV = sin(psi) and phase = psi - 90 deg; the
+                //    reference is sin(2.psi) = -sin(2.phase) = -2.sinV.cosV.
+                //    cos(2.phase) is in quadrature with that: the coherent L-R
+                //    came out ZERO and every broadcast was mono. The synthetic
+                //    test signal used cos for the pilot AND the subcarrier, so
+                //    it was self-consistent and never caught it. Measured on a
+                //    standard-compliant signal: cos form 0.0 dB separation,
+                //    this form 48 dB. The sign matters — +2.sinV.cosV separates
+                //    equally well but hands back L and R swapped.
+                let ref38 = -2 * sinV * cosV
                 // x2 compensates the 1/2 from cos.cos.
                 var lmr = demod * ref38 * 2
                 for k in 0..<4 { lmr = lmrLpf[k].step(lmr) }

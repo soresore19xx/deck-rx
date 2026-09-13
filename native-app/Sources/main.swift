@@ -1717,6 +1717,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // were showing nothing.
                 s.bandwidthHz = self.radio.config.bandwidth(for: self.radio.mode)
                 s.iqRateHz = Double(self.radio.iqRateHz)
+                // The decimation in force, as the IQ menu counts it: the
+                // offset the menu's tags set (`/spectrum?decimation=`). Left at
+                // 0, the menu's ladder was built from the current rate as if it
+                // were the device's maximum — a receiver on 456k offered
+                // 456 / 228 / 114 and no way up to 912.
+                s.decStage = Int(self.radio.config.iqDecimation)
                 s.tuneStepHz = self.radio.tuneStepHz
                 s.volume = self.radio.volume
                 s.muted = self.radio.muted

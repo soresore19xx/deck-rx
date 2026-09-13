@@ -419,7 +419,15 @@ enum Receiver {
     /// through the same JP DB lookup that names the station above the
     /// frequency readout — a preset's own text is the user's bookmark wording
     /// ("MW TBS"), not what the station is called.
+    ///
+    /// The standalone app answers from its own process. The loopback port may
+    /// belong to the plugin — it does whenever the deck is running — and asked
+    /// over HTTP, Solo drew the plugin's presets on its own trace: a station
+    /// added to Solo's list never got a label (2026-09-13).
+    static var localStations: (() -> [(freq: Double, name: String)])?
+
     static func stations(then: @escaping ([(freq: Double, name: String)]) -> Void) {
+        if let local = localStations { then(local()); return }
         guard let url = URL(string: "http://127.0.0.1:\(controlPort)/stations") else { return }
         var req = URLRequest(url: url); req.timeoutInterval = 3
         URLSession.shared.dataTask(with: req) { data, _, _ in

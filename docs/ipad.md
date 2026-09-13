@@ -72,6 +72,29 @@ port are two boxes because they are two things, and `host:port` pasted into the
 address box is still split correctly. Both are saved before the connect is
 attempted, so a refused address survives to the next launch.
 
+## When the SpyServer is on the other segment
+
+A tablet on a wired adapter is usually on a different subnet from its Wi-Fi,
+and a SpyServer that only has an address on the Wi-Fi side is reached over the
+air whatever the cable is doing. At 456 kHz of int16 IQ that is 14.6 Mbit/s
+without a pause, and the audio ring holds 0.12 s: every Wi-Fi hiccup longer
+than that is heard as a dropout.
+
+The fix is not in the app. A Mac with a foot on both segments can carry the
+stream over the cable:
+
+```
+native-app/tools/spyserver-relay.sh install <the-Mac's-wired-address> <spyserver-host:port>
+```
+
+installs a launchd-kept socat relay on port 5555 (SpyServer's own default),
+bound to that address and accepting only its own /24, so it is not a door in
+from the Wi-Fi side. Point the iPad at the Mac's wired address, port 5555; it
+picks the cable on its own, because the address is on the cable's subnet.
+One install per wired address if the tablet may turn up on more than one.
+`status` and `remove` do what they say; the log is
+`/tmp/com.hogehoge.spyserver-relay.<address>.log`, one line per connection.
+
 ## Signing
 
 Built by plain `swiftc`, so Xcode's automatic signing never runs: make the

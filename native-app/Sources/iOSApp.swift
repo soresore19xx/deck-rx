@@ -110,11 +110,48 @@ final class RadioViewController: UIViewController {
     /// the network or this end".
     private var lastDrops = 0
     private var gapAtDrop: Double = 0
+    /// The window and the trace as last laid out, so the log gets one line
+    /// per change and not one per pass. The trace is in the key because it is
+    /// what moves when the keyboard comes up, and that is the pass worth
+    /// seeing.
+    private var laidOut = (window: CGSize.zero, trace: CGFloat(0))
+    /// The block from BAND down, kept so the log can say how much of the
+    /// window is spoken for by fixed heights — the number that decides
+    /// whether the keyboard fits.
+    private var controlsBlock: UIStackView?
 
     /// The modes worth a segment on a receiver this size. RAW and DSB exist in
     /// the mode list but are not what anyone reaches for on an iPad, and eight
     /// segments across a phone-width layout are unreadable.
     private static let shownModes = [0, 1, 2, 4, 6, 5]  // NFM WFM AM USB LSB CW
+
+    /// What the layout actually has to fit into. On an iPad that is not the
+    /// screen: Stage Manager and Split View hand the scene a window of their
+    /// own choosing, and "the port box is cut off" is a report about that
+    /// window, not about the panel. Logged so the size can be read off the
+    /// device instead of guessed from a description.
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // A turn later: this runs when the root view's own subviews have
+        // their frames, and the trace is two stacks further down, still at
+        // whatever it had before. By the next turn the pass has reached it.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let size = self.view.bounds.size
+            let key = (window: size, trace: self.spectrum.bounds.height)
+            guard key != self.laidOut else { return }
+            self.laidOut = key
+            let screen = self.view.window?.windowScene?.screen.bounds.size ?? .zero
+            // Everything that is not the trace has a fixed height; what the
+            // trace is left with is the slack, and the keyboard has to fit
+            // inside it.
+            let fixed = size.height - self.spectrum.bounds.height
+            NSLog("[ui] window %.0f x %.0f pt (screen %.0f x %.0f), scale %@ = %.2f, fixed %.0f (controls %.0f) trace %.0f",
+                  size.width, size.height, screen.width, screen.height,
+                  self.radio.config.uiScale, UI.scale, fixed,
+                  self.controlsBlock?.bounds.height ?? 0, self.spectrum.bounds.height)
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -190,7 +227,10 @@ final class RadioViewController: UIViewController {
         hostField.widthAnchor.constraint(equalToConstant: S(190)).isActive = true
         // No return key on a number pad, so this one is committed by Connect.
         portField.keyboardType = .numberPad
-        portField.widthAnchor.constraint(equalToConstant: S(74)).isActive = true
+        // Five digits plus the clear button that appears while editing. At 74
+        // the button pushed the first digit of "5555" out of the box, so the
+        // number being typed was the one thing the box did not show.
+        portField.widthAnchor.constraint(equalToConstant: S(92)).isActive = true
         // Return connects and puts the keyboard away, which is the whole
         // reason the field is being typed into.
         optionsButton.setTitle("Options", for: .normal)
@@ -331,7 +371,7 @@ final class RadioViewController: UIViewController {
         presetTable.backgroundColor = Pal.panel
         presetTable.separatorStyle = .none
         // A fallback only; heightForRowAt gives the two kinds of row their own.
-        presetTable.rowHeight = S(28)
+        presetTable.rowHeight = UI.L(28)
         presetTable.register(UITableViewCell.self, forCellReuseIdentifier: "p")
         presets = Receiver.presets()
 
@@ -436,6 +476,7 @@ final class RadioViewController: UIViewController {
         controls.axis = .vertical
         controls.spacing = S(10)
         controls.translatesAutoresizingMaskIntoConstraints = false
+        controlsBlock = controls
 
         let right = UIStackView(arrangedSubviews: [header, plot, boxed("DISPLAY", displayRow())])
         right.axis = .vertical
@@ -459,7 +500,18 @@ final class RadioViewController: UIViewController {
         for v in controls.arrangedSubviews {
             v.setContentHuggingPriority(.required, for: .vertical)
         }
-        spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: S(220)).isActive = true
+        // High, not required. The keyboard is the case: with it up the block
+        // below has to rise by its height, and at the two larger scales the
+        // header, the rail and the block already add up to more than the
+        // screen leaves above it. Every other height in the column is a fixed
+        // constant, so the trace is the one thing that can give, and a
+        // required floor here meant UIKit dropped a constraint of its own
+        // choosing instead — the SERVER row behind the keyboard, the port box
+        // cut off while it was being typed into. With the keyboard down the
+        // floor holds as before.
+        let traceFloor = spectrum.heightAnchor.constraint(greaterThanOrEqualToConstant: S(220))
+        traceFloor.priority = .defaultHigh
+        traceFloor.isActive = true
 
         let presetTitle = UILabel()
         presetTitle.text = "PRESET"
@@ -479,11 +531,11 @@ final class RadioViewController: UIViewController {
             // And they start on the same line as well.
             presetBar.topAnchor.constraint(equalTo: g.topAnchor, constant: S(8)),
             presetBar.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: S(8)),
-            presetBar.widthAnchor.constraint(equalToConstant: S(284)),
+            presetBar.widthAnchor.constraint(equalToConstant: UI.L(284)),
             presetTable.topAnchor.constraint(equalTo: presetBar.bottomAnchor, constant: S(4)),
             presetTable.leadingAnchor.constraint(equalTo: g.leadingAnchor),
             presetTable.bottomAnchor.constraint(equalTo: g.bottomAnchor),
-            presetTable.widthAnchor.constraint(equalToConstant: S(300)),
+            presetTable.widthAnchor.constraint(equalToConstant: UI.L(300)),
 
             right.topAnchor.constraint(equalTo: g.topAnchor, constant: S(8)),
             right.leadingAnchor.constraint(equalTo: presetTable.trailingAnchor, constant: S(14)),
@@ -1355,7 +1407,7 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
         case .head(let band):
             let l = UILabel()
             l.text = band
-            l.font = xMono(S(19), .bold)
+            l.font = xMono(UI.L(19), .bold)
             l.textColor = Self.bandColor(band)
             l.translatesAutoresizingMaskIntoConstraints = false
             let rule = UIView()
@@ -1367,25 +1419,25 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
                 rule.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
                 rule.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 4),
                 rule.heightAnchor.constraint(equalToConstant: 2),
-                l.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: S(8)),
+                l.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: UI.L(8)),
                 l.topAnchor.constraint(equalTo: rule.bottomAnchor, constant: 2),
             ])
             cell.contentView.backgroundColor = .clear
             cell.selectionStyle = .none
         case .station(let p):
             let (num, unit) = formatFreq(p.freq)
-            let f = UILabel(); f.text = num; f.font = xMono(S(17), .light); f.textColor = Pal.text
+            let f = UILabel(); f.text = num; f.font = xMono(UI.L(17), .light); f.textColor = Pal.text
             // The unit reads as part of the number, so it is set as part of it:
             // same face, same size, same colour, and close enough to belong to
             // it. Small and grey, it read as an annotation on the row instead.
-            let u = UILabel(); u.text = unit; u.font = xMono(S(17), .light); u.textColor = Pal.text
+            let u = UILabel(); u.text = unit; u.font = xMono(UI.L(17), .light); u.textColor = Pal.text
             // Proportional, alone in the row: a name is words, and fixed pitch
             // buys nothing for words while costing them a third of their width.
             // The frequency beside it stays monospaced, which is what keeps the
             // digits from shuffling as the list scrolls past.
-            let n = UILabel(); n.text = p.name; n.font = .systemFont(ofSize: S(13))
+            let n = UILabel(); n.text = p.name; n.font = .systemFont(ofSize: UI.L(13))
             n.textColor = Pal.dim
-            let m = UILabel(); m.text = modeName(p.mode); m.font = xMono(S(11)); m.textColor = Pal.faint
+            let m = UILabel(); m.text = modeName(p.mode); m.font = xMono(UI.L(11)); m.textColor = Pal.faint
             n.lineBreakMode = .byTruncatingTail
             // The mode is two or three characters and it is the row's answer to
             // "can this receiver even hear it": it does not give up its width to
@@ -1413,18 +1465,18 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
             // takes the column's whole width, and pushing is better than
             // overlapping.
             let unitColumn = u.leadingAnchor.constraint(
-                equalTo: cell.contentView.leadingAnchor, constant: S(72))
+                equalTo: cell.contentView.leadingAnchor, constant: UI.L(72))
             unitColumn.priority = UILayoutPriority(999)
             NSLayoutConstraint.activate([
-                f.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: S(8)),
+                f.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: UI.L(8)),
                 f.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
                 unitColumn,
-                u.leadingAnchor.constraint(greaterThanOrEqualTo: f.trailingAnchor, constant: S(2)),
+                u.leadingAnchor.constraint(greaterThanOrEqualTo: f.trailingAnchor, constant: UI.L(2)),
                 u.firstBaselineAnchor.constraint(equalTo: f.firstBaselineAnchor),
-                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: S(6)),
-                n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -S(4)),
+                n.leadingAnchor.constraint(equalTo: u.trailingAnchor, constant: UI.L(6)),
+                n.trailingAnchor.constraint(lessThanOrEqualTo: m.leadingAnchor, constant: -UI.L(4)),
                 n.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-                m.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -S(8)),
+                m.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -UI.L(8)),
                 m.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
             ])
             cell.selectionStyle = .default
@@ -1438,8 +1490,8 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
     /// they are measured separately rather than everything being sized for the
     /// tallest thing in the list.
     func tableView(_ t: UITableView, heightForRowAt ip: IndexPath) -> CGFloat {
-        if case .head = items[ip.row] { return S(32) }
-        return S(26)
+        if case .head = items[ip.row] { return UI.L(32) }
+        return UI.L(26)
     }
 
     /// Only stations can be deleted; the band headings are not rows anyone put

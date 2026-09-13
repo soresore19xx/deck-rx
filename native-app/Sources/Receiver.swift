@@ -28,6 +28,14 @@ enum UI {
 
     /// Dimension scaled for those two, rounded.
     static func H(_ v: CGFloat) -> CGFloat { (v * headline).rounded() }
+
+    /// The preset list goes the other way: a floor, not a second reduction.
+    /// The list is the thing that gets read, and at 0.72 a station name was a
+    /// 9-point line on a 13-inch screen — the smallest setting was chosen to
+    /// make the controls fit, not to make the names unreadable. Everything
+    /// else on the page follows `scale`; the list stops at 0.88.
+    static var list: CGFloat { max(scale, 0.88) }
+    static func L(_ v: CGFloat) -> CGFloat { (v * list).rounded() }
 }
 
 /// Scaled dimension. Rounded, because a half-pixel constraint on every panel

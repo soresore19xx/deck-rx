@@ -599,7 +599,8 @@ final class SpectrumView: XView {
         // some drivers mark every event they send that way, and the pan then
         // does nothing at all. Damped instead, so coasting drifts rather than
         // flies, and a deliberate turn still answers immediately.
-        if event.momentumPhase != [] { notches *= 0.2 }
+        let coasting = event.momentumPhase != []
+        if coasting { notches *= 0.2 }
         // No single event crosses more than a fraction of the window either: a
         // flick on a precise device can carry a very large delta, and landing
         // half a band away is the same loss of aim as coasting.
@@ -613,10 +614,16 @@ final class SpectrumView: XView {
         guard steps != 0 else { return }
         panAccum -= steps
         let hzPerBin = Double(iqRate) / Double(count)
+        // Coasting may slide the picture; it never moves the receiver. A flick
+        // on a Magic Mouse sends momentum events for a second or more, and
+        // with each of them allowed to retune, a small turn on medium wave
+        // kept going after the hand had stopped and came to rest at 0 kHz —
+        // the only floor the device reports. The receiver moves on the turns
+        // the hand actually makes.
         // Marker pinned to the middle: there is nothing to slide, so the wheel
         // moves the receiver and the marker rides along with it.
         if centerLocked {
-            guard iqRate > 0, let beyond = onPanBeyond else { return }
+            guard !coasting, iqRate > 0, let beyond = onPanBeyond else { return }
             beyond(Double(centerFreq) + Double(width) / 8 * steps * hzPerBin)
             return
         }
@@ -630,7 +637,7 @@ final class SpectrumView: XView {
         // span instead of stopping there.
         let spent = panBins - before
         let leftover = step - spent
-        if leftover != 0, iqRate > 0, count > 0, let beyond = onPanBeyond {
+        if leftover != 0, !coasting, iqRate > 0, count > 0, let beyond = onPanBeyond {
             beyond(Double(centerFreq) + Double(leftover) * hzPerBin)
         }
         guard panBins != before else { return }

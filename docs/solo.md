@@ -38,6 +38,7 @@ That is all of it. The rest, briefly:
 | **HOLD** | freezes the trace; the waterfall keeps running |
 | **NR / LVL** | noise reduction, and the output leveller |
 | **IMPORT** | pulls SDR++'s bookmarks into the preset list |
+| **+ Add / Edit** (above the list) | Add puts what is tuned on the list, named from the station database when it knows the frequency. Edit turns a click on a row into a sheet — name, kHz, mode, and a Delete button — until Done. The same two buttons the iPad has, writing the same file |
 | **ZOOM / MAX / MIN / TIME** (right edge) | span, the dB window top and bottom, and how much history the waterfall holds |
 | **POWER** | disconnects and stops the audio |
 
@@ -89,7 +90,11 @@ tuning behind — 1134 kHz lost at 18x zoom, which is how this was found.
 Momentum is dropped to a fifth rather than obeyed: with inertial scrolling
 turned on in the mouse settings, a coasting wheel carried the window further
 than anyone aimed it. Dropping momentum outright was worse — some drivers mark
-every event they send that way, and the pan then did nothing at all.
+every event they send that way, and the pan then did nothing at all. And
+coasting only ever slides the picture; it never moves the receiver. A flick on
+a Magic Mouse sends momentum events for a second or more, and with each of
+them allowed to retune, a small turn on medium wave kept going after the hand
+had stopped and came to rest at 0 kHz — the only floor the device reports.
 
 A frequency the hardware cannot reach is clamped rather than obeyed. The
 spectrum legitimately shows more band than the receiver can tune to: the IQ

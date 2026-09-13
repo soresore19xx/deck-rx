@@ -69,6 +69,13 @@ final class PresetList: NSView {
     private var rows: [(row: NSView, bar: NSView, freq: NSTextField, name: NSTextField, preset: Receiver.Preset)] = []
     private var presets: [Receiver.Preset] = []
     var onPick: ((Receiver.Preset) -> Void)?
+    /// The iPad's two buttons, on the Mac. Add takes what is tuned; Edit turns
+    /// a click on a row into an edit sheet instead of a retune, until Done.
+    /// The list does not know the receiver, so the window answers both.
+    var onAdd: (() -> Void)?
+    var onEdit: ((Receiver.Preset) -> Void)?
+    private(set) var editing = false
+    private let editButton = NSButton()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -85,9 +92,32 @@ final class PresetList: NSView {
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         scroll.documentView = stack
-        addSubview(scroll)
+        // The heading row: PRESET on the left, the two actions on the right —
+        // the same line the iPad puts them on, so the two lists read alike.
+        let title = label("PRESET", mono(13, .bold), P.faint)
+        title.attributedStringValue = NSAttributedString(
+            string: "PRESET", attributes: [.font: mono(13, .bold), .foregroundColor: P.faint, .kern: 1.2])
+        let addButton = NSButton()
+        for (b, t, sel) in [(addButton, "+ Add", #selector(addTapped)),
+                            (editButton, "Edit", #selector(editTapped))] {
+            b.isBordered = false
+            b.target = self
+            b.action = sel
+            b.setButtonType(.momentaryChange)
+            Self.title(b, t)
+            b.translatesAutoresizingMaskIntoConstraints = false
+            b.setContentHuggingPriority(.required, for: .horizontal)
+        }
+        title.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(title); addSubview(addButton); addSubview(editButton); addSubview(scroll)
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: S(10)),
+            title.topAnchor.constraint(equalTo: topAnchor, constant: S(8)),
+            editButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: S(-20)),
+            editButton.centerYAnchor.constraint(equalTo: title.centerYAnchor),
+            addButton.trailingAnchor.constraint(equalTo: editButton.leadingAnchor, constant: S(-12)),
+            addButton.centerYAnchor.constraint(equalTo: title.centerYAnchor),
+            scroll.topAnchor.constraint(equalTo: title.bottomAnchor, constant: S(4)),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -96,6 +126,23 @@ final class PresetList: NSView {
         reload()
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Blue text, no border: an action in the heading, not a key on the panel.
+    private static func title(_ b: NSButton, _ t: String) {
+        b.attributedTitle = NSAttributedString(
+            string: t, attributes: [.font: mono(13, .medium), .foregroundColor: P.blue])
+    }
+
+    @objc private func addTapped() { onAdd?() }
+
+    @objc private func editTapped() {
+        editing.toggle()
+        Self.title(editButton, editing ? "Done" : "Edit")
+        // The rows say which mode they are in: dimmed a little while a click
+        // edits rather than tunes, so the list does not look the same in two
+        // states that answer a click differently.
+        stack.alphaValue = editing ? 0.75 : 1
+    }
 
     /// One colour per band, on the heading only. The rows are a dense column of
     /// numbers; colouring every one of them turns the list into confetti, and
@@ -262,7 +309,8 @@ final class PresetList: NSView {
     override func mouseDown(with event: NSEvent) {
         let inStack = stack.convert(event.locationInWindow, from: nil)
         for r in rows where r.row.frame.contains(inStack) {
-            onPick?(r.preset); return
+            if editing { onEdit?(r.preset) } else { onPick?(r.preset) }
+            return
         }
     }
 }
@@ -842,15 +890,87 @@ final class MainView: NSView {
             Receiver.mode(p.mode)
             Receiver.tune(hz: Int(p.freq), recenter: true)
         }
+        // Add what is tuned, named from the station line when the database
+        // knows the frequency — the same rule the iPad uses, so a station
+        // added on either device gets the same name.
+        presetList.onAdd = { [weak self] in
+            guard let self, self.currentFreqHz > 0 else { return }
+            let name = self.currentStation.isEmpty
+                ? String(format: "%.0f kHz", self.currentFreqHz / 1000) : self.currentStation
+            try? PresetStore.add(name: name, frequency: self.currentFreqHz, mode: self.currentMode,
+                                 bandwidth: self.currentBandwidthHz)
+            self.presetsChanged()
+        }
+        presetList.onEdit = { [weak self] p in self?.editPreset(p) }
         // Label stations on the trace. The names come from the receiver's own
         // JP DB lookup rather than from the preset text, so a label on the
         // spectrum reads the same as the station line above the frequency.
         Receiver.stations { [weak self] list in self?.spectrum.markers = list; self?.spectrum.needsDisplay = true }
     }
 
+    /// The list and the labels on the trace both come from the store, so a
+    /// change to it is answered in both places at once.
+    private func presetsChanged() {
+        presetList.reload()
+        presetList.markCurrent(freqHz: currentFreqHz)
+        Receiver.stations { [weak self] list in self?.spectrum.markers = list; self?.spectrum.needsDisplay = true }
+    }
+
+    /// One sheet for everything Edit can do to a row: rename, move it, change
+    /// its mode, or delete it — the iPad's long-press dialog and its swipe to
+    /// delete, in the one place a Mac puts such things.
+    private func editPreset(_ p: Receiver.Preset) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Edit preset"
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        let nameField = NSTextField(string: p.name)
+        let khzField = NSTextField(string: String(format: "%.1f", p.freq / 1000))
+        let modeField = NSTextField(string: p.mode < MODE_NAMES.count ? MODE_NAMES[p.mode] : "WFM")
+        modeField.placeholderString = MODE_NAMES.joined(separator: " / ")
+        let grid = NSGridView(views: [
+            [label("Name", mono(12), P.dim), nameField],
+            [label("kHz", mono(12), P.dim), khzField],
+            [label("Mode", mono(12), P.dim), modeField],
+        ])
+        grid.rowSpacing = 6
+        grid.columnSpacing = 8
+        grid.column(at: 1).width = 240
+        grid.frame = NSRect(x: 0, y: 0, width: 300, height: 90)
+        alert.accessoryView = grid
+        alert.window.initialFirstResponder = nameField
+        // The store keeps a bandwidth per entry; a rename must not reset it to
+        // whatever the receiver happens to be on.
+        let kept = PresetStore.load().values.compactMap { $0[p.name] }.first?.bandwidth
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn:
+                let name = nameField.stringValue.trimmingCharacters(in: .whitespaces)
+                let khz = Double(khzField.stringValue) ?? (p.freq / 1000)
+                let mode = MODE_NAMES.firstIndex(of: modeField.stringValue.uppercased()) ?? p.mode
+                try? PresetStore.update(oldName: p.name, name: name.isEmpty ? p.name : name,
+                                        frequency: khz * 1000, mode: mode,
+                                        bandwidth: kept ?? self.currentBandwidthHz)
+            case .alertSecondButtonReturn:
+                try? PresetStore.remove(name: p.name)
+            default:
+                return
+            }
+            self.presetsChanged()
+        }
+    }
+
     private var smoothSpeed = 30
     private var currentStepHz = 0
     private var currentFreqHz: Double = 0
+    /// What Add writes: the last status the window drew. The list does not
+    /// know the receiver, and this window already knows everything it needs.
+    private var currentMode = 1
+    private var currentStation = ""
+    private var currentBandwidthHz: Double = 0
 
     /// Step the VFO, snapping onto the step's grid first when the receiver is
     /// off it. Japanese medium wave sits on multiples of 9 kHz, so a receiver
@@ -1065,6 +1185,9 @@ final class MainView: NSView {
         nNum.stringValue = live ? String(format: "%.0f dB", s.snrDb) : "—"
 
         currentFreqHz = s.freqHz
+        currentMode = s.mode
+        currentStation = s.station
+        currentBandwidthHz = s.bandwidthHz
         // Where the demodulator is, which is the middle of the window only
         // until something tunes inside it.
         spectrum.vfoHz = s.freqHz

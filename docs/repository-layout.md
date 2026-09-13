@@ -31,6 +31,7 @@
 │   ├── Sources/SpectrumView.swift  # Spectrum + waterfall drawing (both platforms)
 │   ├── Sources/Platform.swift      # AppKit / UIKit seams (view, font, redraw, paths)
 │   ├── Sources/iOSApp.swift        # iPad host: scene, layout, preset table, options sheet
+│   ├── tools/spyserver-relay.sh    # launchd socat relay: wired segment -> SpyServer (docs/ipad.md)
 │   ├── build-app.sh                # swiftc + bundle -> /Applications/Deck RX.app
 │   └── build-ios.sh                # swiftc + sign -> iPad bundle (sim | device)
 └── com.hogehoge.deck-rx.sdPlugin/

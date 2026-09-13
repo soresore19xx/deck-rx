@@ -898,7 +898,7 @@ final class MainView: NSView {
             let name = self.currentStation.isEmpty
                 ? String(format: "%.0f kHz", self.currentFreqHz / 1000) : self.currentStation
             try? PresetStore.add(name: name, frequency: self.currentFreqHz, mode: self.currentMode,
-                                 bandwidth: self.currentBandwidthHz)
+                                 bandwidth: self.bandwidthForPreset(mode: self.currentMode))
             self.presetsChanged()
         }
         presetList.onEdit = { [weak self] p in self?.editPreset(p) }
@@ -906,6 +906,14 @@ final class MainView: NSView {
         // JP DB lookup rather than from the preset text, so a label on the
         // spectrum reads the same as the station line above the frequency.
         Receiver.stations { [weak self] list in self?.spectrum.markers = list; self?.spectrum.needsDisplay = true }
+    }
+
+    /// What a preset records for its mode: the receiver's own bandwidth when
+    /// the status carries one for that mode, else the config's default — the
+    /// same 9 kHz / 200 kHz the receiver itself starts from.
+    private func bandwidthForPreset(mode: Int) -> Double {
+        if mode == currentMode, currentBandwidthHz > 0 { return currentBandwidthHz }
+        return RadioConfig().bandwidth(for: mode)
     }
 
     /// The list and the labels on the trace both come from the store, so a
@@ -942,8 +950,10 @@ final class MainView: NSView {
         alert.accessoryView = grid
         alert.window.initialFirstResponder = nameField
         // The store keeps a bandwidth per entry; a rename must not reset it to
-        // whatever the receiver happens to be on.
-        let kept = PresetStore.load().values.compactMap { $0[p.name] }.first?.bandwidth
+        // whatever the receiver happens to be on. A stored 0 is not a
+        // bandwidth, though — an entry written before the status carried one.
+        let stored = PresetStore.load().values.compactMap { $0[p.name] }.first?.bandwidth ?? 0
+        let kept: Double? = stored > 0 ? stored : nil
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             switch response {
@@ -953,7 +963,8 @@ final class MainView: NSView {
                 let mode = MODE_NAMES.firstIndex(of: modeField.stringValue.uppercased()) ?? p.mode
                 try? PresetStore.update(oldName: p.name, name: name.isEmpty ? p.name : name,
                                         frequency: khz * 1000, mode: mode,
-                                        bandwidth: kept ?? self.currentBandwidthHz)
+                                        bandwidth: mode == p.mode ? (kept ?? self.bandwidthForPreset(mode: mode))
+                                                                  : self.bandwidthForPreset(mode: mode))
             case .alertSecondButtonReturn:
                 try? PresetStore.remove(name: p.name)
             default:
@@ -1487,6 +1498,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
 #if STANDALONE
         Receiver.seedData()
+        // Before the view exists: it asks for the trace's labels as it is
+        // built, and until this is set the answer comes from the loopback
+        // port — the plugin's list, whenever the deck is running.
+        Receiver.localStations = { [weak self] in self?.server.stationsList() ?? [] }
 #endif
         // Before the view is built: every constraint constant and font size is
         // captured at construction, so a later change rebuilds the view.
@@ -1697,6 +1712,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 s.fresh = true
                 s.freqHz = Double(self.radio.frequency)
                 s.mode = self.radio.mode
+                // The bandwidth in force: the readout's "BW" line and what
+                // Add writes into a preset both read it from here, and both
+                // were showing nothing.
+                s.bandwidthHz = self.radio.config.bandwidth(for: self.radio.mode)
                 s.iqRateHz = Double(self.radio.iqRateHz)
                 s.tuneStepHz = self.radio.tuneStepHz
                 s.volume = self.radio.volume

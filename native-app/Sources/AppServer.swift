@@ -400,14 +400,16 @@ final class AppServer {
         return receiverDict()
     }
 
-    private func stationsJSON(from: Double?, to: Double?) -> String {
+    /// The labels as data, for the window that shares this process.
+    func stationsList(from: Double? = nil, to: Double? = nil) -> [(freq: Double, name: String)] {
         let region = StationLabel.Region(rawValue: radio.config.jpRegion) ?? .kanto
-        let list = Receiver.presets()
+        return Receiver.presets()
             .filter { (from == nil || $0.freq >= from!) && (to == nil || $0.freq <= to!) }
-            .map { p -> [String: Any] in
-                ["freq": p.freq,
-                 "name": StationLabel.lookup(freqHz: p.freq, region: region) ?? p.name]
-            }
+            .map { p in (freq: p.freq, name: StationLabel.lookup(freqHz: p.freq, region: region) ?? p.name) }
+    }
+
+    private func stationsJSON(from: Double?, to: Double?) -> String {
+        let list = stationsList(from: from, to: to).map { ["freq": $0.freq, "name": $0.name] as [String: Any] }
         // A bare array, which is the shape the plugin's endpoint answers in and
         // the only shape `Receiver.stations` parses. Wrapped in an object, the
         // parse failed silently and the standalone build drew a spectrum with

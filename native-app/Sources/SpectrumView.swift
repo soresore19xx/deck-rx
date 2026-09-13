@@ -810,11 +810,14 @@ final class SpectrumView: XView {
     // each other into an unreadable smear ("RKB毎日放 HBCラジオ"). Each
     // label takes the topmost row whose previous label has already ended,
     // so neighbours step down instead of colliding.
+        // At the window's scale, like the text around the trace: at the
+        // smallest setting every caption on the page had come down and the
+        // names were still 16 points, the one thing that had not noticed.
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: xMono(16, .semibold),
+            .font: xMono(S(16), .semibold),
             .foregroundColor: XColor.black,
         ]
-        let rowH: CGFloat = 24
+        let rowH: CGFloat = S(24)
         let maxRows = max(1, Int((specH * 0.45) / rowH))
         var rowEnds = [CGFloat](repeating: -1_000_000, count: maxRows)
 

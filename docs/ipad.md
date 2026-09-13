@@ -54,6 +54,21 @@ at 150 kHz a full-deviation stereo broadcast only separates by 30 dB.
 There is no volume control: the iPad's own buttons are the volume, and a second
 attenuator in series only costs headroom.
 
+**UI scale** (min / middle / max, in the options sheet) sizes everything at
+once, with two exceptions that go their own way. The preset list has a floor:
+at the smallest setting it stops at 0.88 of full size rather than following
+the controls down to 0.72, because the list is what gets read and a 9-point
+station name was not a setting anyone chose. The station labels on the trace
+follow the scale like everything else — they used to be 16 points regardless.
+
+When the keyboard is up, the block from BAND down rises above it and the trace
+gives up the height; at the two larger scales that is more than the trace's
+usual floor, and it is allowed to. Before, the floor held and UIKit dropped a
+constraint of its own choosing — the port box being typed into was the thing
+that vanished, which is why the smallest scale was the only one that seemed
+to work. The layout logs its numbers (`[ui] window … fixed … trace …`) on
+every change, readable with `devicectl device process launch --console`.
+
 ## DRM
 
 Behind the key beside Options, and only in a build where

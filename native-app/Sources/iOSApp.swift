@@ -98,6 +98,11 @@ final class RadioViewController: UIViewController {
     private let stereoBadge = BadgeLabel()
     private let modeChip = UILabel()
     private let bwLabel = UILabel()
+    /// Both clocks, as on the Mac. Shortwave schedules are published in UTC —
+    /// EIBI's are, and this app carries EIBI — so the receiver that is used for
+    /// shortwave is the one that needs the conversion in front of it.
+    private let clockJST = UILabel()
+    private let clockUTC = UILabel()
     /// Mode and step as the menu was last built for them, so it is rebuilt when
     /// either moves and not four times a second.
     private var stepMenuKey = ""
@@ -420,7 +425,26 @@ final class RadioViewController: UIViewController {
         ])
         meters.axis = .vertical
         meters.spacing = S(6)
-        let header = UIStackView(arrangedSubviews: [tuned, meters])
+        // The clocks sit where the Mac window puts them: the right end of the
+        // top row. Stacked rather than side by side, because two 19 character
+        // stamps in a row would take the width the meters need on a screen this
+        // shape.
+        for c in [clockJST, clockUTC] {
+            c.font = xMono(S(15))
+            c.setContentHuggingPriority(.required, for: .horizontal)
+        }
+        clockJST.textColor = Pal.text
+        clockUTC.textColor = Pal.dim
+        let clocks = UIStackView(arrangedSubviews: [
+            row([caption("JST"), clockJST]),
+            row([caption("UTC"), clockUTC]),
+        ])
+        clocks.axis = .vertical
+        clocks.alignment = .trailing
+        clocks.spacing = S(2)
+        clocks.setContentHuggingPriority(.required, for: .horizontal)
+
+        let header = UIStackView(arrangedSubviews: [tuned, meters, clocks])
         header.axis = .horizontal
         header.alignment = .center
         header.spacing = S(20)
@@ -1226,7 +1250,21 @@ final class RadioViewController: UIViewController {
 
     // MARK: state
 
+    /// The same two formats the Mac window uses, so a time reads the same on
+    /// both screens.
+    private static let jstFormat: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.timeZone = TimeZone(identifier: "Asia/Tokyo"); return f
+    }()
+    private static let utcFormat: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.timeZone = TimeZone(identifier: "UTC"); return f
+    }()
+
     private func refresh() {
+        let now = Date()
+        setText(clockJST, Self.jstFormat.string(from: now))
+        setText(clockUTC, Self.utcFormat.string(from: now))
         // The pending frequency while a finger is on the spectrum; the
         // receiver's own the rest of the time.
         // The mark under a resting finger, so the digits and the station name

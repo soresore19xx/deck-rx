@@ -125,8 +125,14 @@ be added alongside it.
 
 ## What is still Mac-only
 
-The JST/UTC clock, SDR++ import and sync, icecast publishing, output device
-selection, and the RAW and DSB modes — six mode keys are what fits.
+The JST/UTC clock, SDR++ import and sync, output device selection, and the RAW
+and DSB modes — six mode keys are what fits.
+
+Icecast used to be on that list and does not belong there: publishing lives in
+the plugin, and neither Mac app has it. What the Mac window shows is the
+plugin's own icecast rows, and only while it is looking at the plugin — see
+`OptionsPanel.swift`, which says in as many words that the standalone app "has
+neither an icecast publisher nor the plugin's station databases behind it".
 
 ## Under it
 

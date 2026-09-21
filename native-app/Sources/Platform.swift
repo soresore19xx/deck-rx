@@ -150,21 +150,35 @@ enum Plat {
 
 /// The window's palette, in a form both platforms can build a colour from.
 ///
-/// KNOWN DUPLICATION, deliberate for now: `enum P` in main.swift still carries
-/// its own copies of these same values, and is under active edit there. Folding
-/// `P` onto this is a job for when the AppKit views are ported, not a silent
-/// refactor underneath work in progress. Until then, a change to a shade has to
-/// be made in both places — which is exactly why it should not stay this way.
+/// The one place a shade is written down. `enum P` in main.swift used to carry
+/// its own copies of all twelve and now forwards here, so a colour changes in
+/// one file (2026-09-22; the duplication was deliberate while the AppKit views
+/// were being ported, and outlived that).
 enum Pal {
     static let bg     = XColor(red: 0.071, green: 0.075, blue: 0.086, alpha: 1) // #121316
     static let panel  = XColor(red: 0.090, green: 0.094, blue: 0.110, alpha: 1) // #17181C
     static let sunken = XColor(red: 0.047, green: 0.051, blue: 0.059, alpha: 1) // #0C0D0F
+    /// Separator between rows. The first attempt was #25272D against a
+    /// #17181C panel — a difference small enough that the line was not there
+    /// as far as the eye was concerned. A separator nobody can see is not a
+    /// separator; this one is meant to be read, not merely to exist.
     static let rule   = XColor(red: 0.271, green: 0.286, blue: 0.322, alpha: 1) // #454952
+    // Contrast against the near-black panels, not just a tidy grey ramp. The
+    // previous dim/faint pair measured about 5:1 and 3.4:1 against #17181C —
+    // the second is below the readable floor for text at any size, and it was
+    // carrying units, section headers and axis labels. These are ~10:1 and
+    // ~6.3:1, so a secondary label still reads as secondary but is legible.
     static let text   = XColor(red: 0.941, green: 0.949, blue: 0.961, alpha: 1) // #F0F2F5
     static let dim    = XColor(red: 0.765, green: 0.788, blue: 0.816, alpha: 1) // #C3C9D0
     static let faint  = XColor(red: 0.596, green: 0.627, blue: 0.659, alpha: 1) // #98A0A8
     static let accent = XColor(red: 0.349, green: 0.851, blue: 0.451, alpha: 1) // #59D973
     static let line   = XColor(red: 0.149, green: 0.157, blue: 0.176, alpha: 1) // #26282D
+    /// Every other row's background. A line per row read as a table with more
+    /// structure than the content has; banding separates the rows without
+    /// drawing anything, and a row's own name and value sit on one shade.
+    /// #212328 first, which against a #17181C panel was invisible — the same
+    /// mistake as the rule colour, made twice. Banding that cannot be seen is
+    /// not banding.
     static let band   = XColor(red: 0.208, green: 0.220, blue: 0.251, alpha: 1) // #353840
     static let blue   = XColor(red: 0.400, green: 0.702, blue: 0.949, alpha: 1) // #66B3F2
     static let warn   = XColor(red: 0.949, green: 0.749, blue: 0.349, alpha: 1) // #F2BF59

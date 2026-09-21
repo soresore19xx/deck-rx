@@ -1085,9 +1085,7 @@ final class LocalRadio {
         // so a gain or decimation chosen here is what comes back next time this
         // receiver is selected — and is not carried onto a different one.
         if let key = activeDeviceKey, !isCapturingProfile {
-            let wanted = RadioConfig.DeviceProfile(iqDecimation: config.iqDecimation,
-                                                   amGain: config.amGain,
-                                                   fmGain: config.fmGain)
+            let wanted = config.profileInForce()
             if config.devices[key] != wanted {
                 isCapturingProfile = true
                 config.devices[key] = wanted

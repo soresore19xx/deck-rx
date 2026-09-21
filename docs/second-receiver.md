@@ -23,6 +23,13 @@ file I/O around it was not, which is why no resolver test caught it. The plugin
 also has to carry `devices` through `loadConfig()`; that function rebuilds the
 config field by field, so anything it forgets is dropped on every start.
 
+Solo had the same shape of fault from the other direction: two places built a
+`DeviceProfile` and one of them filled three of the four fields, so the
+`audioDecimate` that `adopt` filed was overwritten with nothing on the next
+settings change. There is one builder now, `RadioConfig.profileInForce()`.
+Both faults were found by switching receivers on the hardware and looking at
+the file — neither is reachable from a resolver test.
+
 ## What the V4 is for
 
 Measured against the HF+ on the same antenna on 2026-09-21 (mediumwave, three

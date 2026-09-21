@@ -1062,6 +1062,10 @@ do {
           sOn.locked, "it did not lock - the badge story changed")
 }
 
+
+
+runDeviceSettingsTests()
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 {
     print("\(failures) FAILED")

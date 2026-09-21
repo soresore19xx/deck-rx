@@ -6,6 +6,9 @@ import {
   STREAM_MODE_IQ_ONLY, STREAM_FORMAT_INT16,
   computeDigitalGain,
 } from './SpyClient.js';
+import {
+  resolveDeviceSettings, adoptDeviceSettings, deviceKey, type DeviceProfile,
+} from './deviceSettings.js';
 import { Demodulator } from './demodulator.js';
 import { OutputLeveler, MODE_MAKEUP, softLimit, DEFAULT_LEVELER_CFG } from './audioLeveling.js';
 import { Ifnr } from './ifnr.js';
@@ -118,6 +121,10 @@ interface Config {
   gain?: number;          // legacy single-gain field (migrated to amGain on first load)
   amGain?: number;        // RF gain index used while in AM mode
   fmGain?: number;        // RF gain index used while in NFM/WFM (and other non-AM)
+  /// Per-receiver overrides, keyed `deviceType:deviceSerial`. The four fields
+  /// above are offsets, divisors and indices rather than absolute values, so
+  /// they do not survive a change of frontend — see src/deviceSettings.ts.
+  devices?: Record<string, DeviceProfile>;
   naudiodon?: { deviceId?: number; deviceName?: string };
   // ffmpeg sub-object now configures the icecast publish path only.
   // `mode === 'icecast'` selects FfmpegOutput; otherwise local audio goes
@@ -1249,25 +1256,49 @@ class SpyService {
     // wrap to −58 kHz baseband (inside our IF LPF), so even the narrow BW
     // settings (90/100 kHz) couldn't suppress it — symptom was "switching BW
     // barely changes anything; 80 MHz tuned still leaks 80.17 MHz".
-    const decOffset = cfg.iqDecimation ?? 1;
-    const decStage = decOffset + info.minIQDecimation;
-    const iqRate = Math.round(info.maxSampleRate / (1 << decStage));
-    const audioDecimate = Math.max(1, cfg.audioDecimate ?? 1);
+    //
+    // All of that reasoning is about ONE receiver. These settings are offsets
+    // and divisors, so the same stored numbers mean different rates on a
+    // different frontend — resolveDeviceSettings corrects for the device that
+    // actually answered, and files the result under its own key so switching
+    // receivers is not a one-way trip. See src/deviceSettings.ts.
+    const useAm = this.currentDemodMode === 2;
+    const resolved = resolveDeviceSettings(
+      info,
+      { iqDecimation: cfg.iqDecimation, audioDecimate: cfg.audioDecimate,
+        amGain: this.amGain, fmGain: this.fmGain, devices: cfg.devices },
+      this.currentDemodMode);
+    const decStage = resolved.decStage;
+    const iqRate = resolved.iqRate;
+    const audioDecimate = resolved.audioDecimate;
     const audioRate = Math.round(iqRate / audioDecimate);
     // Do NOT overwrite currentDemodMode here — it has already been set by
     // connect-time hydration (cfg.demodMode) and may have been updated since
     // by setDemodMode() (e.g., from a connectListener pushing a preset's mode).
     this.currentAudioDecimate = audioDecimate;
-    // Pick the gain index for the current demod mode. AM uses amGain (typically
+    // The gain index for the current demod mode. AM uses amGain (typically
     // lowered to dodge IMD from strong MW stations), other modes use fmGain.
-    const useAm = this.currentDemodMode === 2;
-    const stored = useAm ? this.amGain : this.fmGain;
-    const gain = Math.max(0, Math.min(info.maxGainIndex, stored ?? info.maxGainIndex));
+    const gain = resolved.gainIndex;
     if (useAm) this.amGain = gain; else this.fmGain = gain;
     this.currentDecStage = decStage;
     const channels = 2; // always stereo PCM (mono modes duplicate L=R)
     this.currentAudioRate = audioRate;
     this.currentIQRate = iqRate;
+    // File what was USED under this receiver, so the next connection to it
+    // restores rather than re-derives, and a different receiver is not handed
+    // these numbers. Written out only the first time a receiver is seen: that
+    // changes no setting the user touched, so nothing else would ever save it.
+    {
+      const key = deviceKey(info.deviceType, info.deviceSerial);
+      const hadProfile = !!cfg.devices?.[key];
+      adoptDeviceSettings(resolved, cfg, info, this.currentDemodMode);
+      if (!hadProfile) {
+        writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2)).catch((e) =>
+          log.error(`[spyService] could not store the profile for ${key}: ${e}`));
+        log.info(`[spyService] new receiver ${key}: iqDecimation=${resolved.iqDecimationOffset} ` +
+                 `iqRate=${iqRate} audioDecimate=${audioDecimate} gain=${gain}`);
+      }
+    }
     // Configure stereo decode at IQ rate (filters need iqRate, not audioRate)
     this.demod.setStereo(iqRate);
     // Apply FM/AM/SSB options (de-emph + audio filters + AM bandwidth/AGC,

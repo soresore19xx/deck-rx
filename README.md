@@ -64,6 +64,7 @@ And the rest:
 - [Data sources & attribution](docs/data-sources.md) — Japan-only sources (総務省 MIC / 関東総通局 / 沖縄総通局) plus the international EIBI shortwave DB; license terms + refresh scripts
 - [Standalone app port](docs/standalone-app-port.md) — what moved to Swift, what the system frameworks replaced, and why the plugin keeps its own signal path
 - [Debug helpers](docs/debug-helpers.md) — LCD dump / lint / compare-baseline scripts
+- [A second receiver](docs/second-receiver.md) — running an RTL-SDR Blog V4 beside the Airspy HF+: what measures the same and what does not, and the settings that cannot be shared between front ends
 
 ## Credits / References
 

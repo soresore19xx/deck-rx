@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="700" viewBox="0 0 1240 700" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1240" height="700" fill="#ffffff"/>
+
+  <text x="24" y="38" font-size="21" font-weight="bold" fill="#111">Second receiver — target layout</text>
+  <text x="24" y="60" font-size="13" fill="#666">One antenna, two receivers, two spyserver instances. Clients change host:port, nothing else.</text>
+
+  <!-- ============ column 1: antenna ============ -->
+  <text x="40" y="104" font-size="12" font-weight="bold" fill="#888" letter-spacing="1">ANTENNA</text>
+
+  <rect x="40" y="120" width="150" height="46" rx="5" fill="#eef4fb" stroke="#4a76a8" stroke-width="1.5"/>
+  <text x="115" y="140" font-size="13" text-anchor="middle" fill="#1a3a5c">MLA-30+</text>
+  <text x="115" y="157" font-size="11" text-anchor="middle" fill="#5a7a9c">active loop (balcony)</text>
+
+  <line x1="115" y1="166" x2="115" y2="196" stroke="#4a76a8" stroke-width="2"/>
+  <rect x="40" y="196" width="150" height="40" rx="5" fill="#eef4fb" stroke="#4a76a8" stroke-width="1.5"/>
+  <text x="115" y="221" font-size="12" text-anchor="middle" fill="#1a3a5c">AMP BOX (bias fed)</text>
+
+  <line x1="115" y1="236" x2="115" y2="272" stroke="#4a76a8" stroke-width="2"/>
+  <rect x="40" y="272" width="150" height="70" rx="5" fill="#eef4fb" stroke="#4a76a8" stroke-width="1.5"/>
+  <text x="115" y="294" font-size="12" text-anchor="middle" fill="#1a3a5c">RX antenna switch</text>
+  <text x="115" y="311" font-size="11" text-anchor="middle" fill="#5a7a9c">4 in, 1 out</text>
+  <text x="115" y="328" font-size="11" text-anchor="middle" fill="#5a7a9c">loop on IN1</text>
+
+  <text x="40" y="372" font-size="11" fill="#999">IN2-4: FM loop / ANT2 / ANT3</text>
+  <text x="40" y="390" font-size="11" fill="#c0392b">must stay on IN1 for HF jobs</text>
+
+  <!-- ============ column 2: the T ============ -->
+  <line x1="190" y1="307" x2="250" y2="307" stroke="#4a76a8" stroke-width="2"/>
+  <circle cx="262" cy="307" r="13" fill="#fff" stroke="#c0392b" stroke-width="2"/>
+  <text x="262" y="312" font-size="12" text-anchor="middle" font-weight="bold" fill="#c0392b">T</text>
+  <text x="262" y="452" font-size="11" text-anchor="middle" fill="#c0392b">SMA T</text>
+  <text x="262" y="468" font-size="10" text-anchor="middle" fill="#c0392b">no isolation</text>
+  <text x="262" y="483" font-size="10" text-anchor="middle" fill="#c0392b">-3.5 dB each</text>
+
+  <path d="M 262 294 L 262 230 L 330 230" fill="none" stroke="#4a76a8" stroke-width="2"/>
+  <path d="M 262 320 L 262 400 L 330 400" fill="none" stroke="#4a76a8" stroke-width="2"/>
+
+  <!-- ============ column 3: receivers ============ -->
+  <text x="330" y="104" font-size="12" font-weight="bold" fill="#888" letter-spacing="1">RECEIVERS</text>
+
+  <rect x="330" y="204" width="190" height="56" rx="5" fill="#e9f6ee" stroke="#2e8b57" stroke-width="1.5"/>
+  <text x="425" y="226" font-size="13" text-anchor="middle" font-weight="bold" fill="#1d5c39">Airspy HF+ Discovery</text>
+  <text x="425" y="245" font-size="11" text-anchor="middle" fill="#4a8a68">18 bit · gain 0-8 · weak signals</text>
+
+  <rect x="330" y="374" width="190" height="56" rx="5" fill="#fdf0e6" stroke="#d2691e" stroke-width="1.5"/>
+  <text x="425" y="396" font-size="13" text-anchor="middle" font-weight="bold" fill="#8a4513">RTL-SDR Blog V4</text>
+  <text x="425" y="415" font-size="11" text-anchor="middle" fill="#b5754a">8 bit · gain 0-28 · 0x0BDA:0x2838</text>
+
+  <text x="330" y="452" font-size="11" fill="#c0392b">never enable a bias tee on either:</text>
+  <text x="330" y="468" font-size="11" fill="#c0392b">DC crosses the T into the other input</text>
+
+  <!-- USB arrows -->
+  <path d="M 520 232 L 600 232" fill="none" stroke="#555" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M 520 402 L 600 402" fill="none" stroke="#555" stroke-width="2" marker-end="url(#a)"/>
+  <text x="560" y="224" font-size="11" text-anchor="middle" fill="#555">USB</text>
+  <text x="560" y="394" font-size="11" text-anchor="middle" fill="#555">USB</text>
+  <text x="560" y="418" font-size="10" text-anchor="middle" fill="#888">move from studio</text>
+
+  <!-- ============ column 4: mini4 / VM ============ -->
+  <text x="600" y="104" font-size="12" font-weight="bold" fill="#888" letter-spacing="1">mini4 (192.168.0.51)</text>
+
+  <rect x="600" y="120" width="330" height="390" rx="8" fill="#fafafa" stroke="#bbb" stroke-width="1.5"/>
+  <text x="616" y="142" font-size="12" fill="#888">VirtualBuddy 2.2-b5 (Apple VZ) — this VM only</text>
+
+  <rect x="616" y="156" width="298" height="336" rx="6" fill="#f2f2f7" stroke="#9999aa" stroke-width="1.5"/>
+  <text x="632" y="178" font-size="13" font-weight="bold" fill="#44445c">VM "SpyServer" — Ubuntu 24.04 aarch64</text>
+  <text x="632" y="196" font-size="11" fill="#777">host sserv · 192.168.0.143 · USB attaches by VID/PID</text>
+
+  <rect x="632" y="212" width="266" height="76" rx="5" fill="#e9f6ee" stroke="#2e8b57" stroke-width="1.5"/>
+  <text x="648" y="233" font-size="12" font-weight="bold" fill="#1d5c39">spyserver :8888</text>
+  <text x="648" y="252" font-size="11" fill="#4a8a68">device_type = AirspyHF+</text>
+  <text x="648" y="270" font-size="11" fill="#4a8a68">maximum_clients = 3 · running today</text>
+
+  <rect x="632" y="300" width="266" height="94" rx="5" fill="#fdf0e6" stroke="#d2691e" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="648" y="321" font-size="12" font-weight="bold" fill="#8a4513">spyserver :8889</text>
+  <text x="648" y="340" font-size="11" fill="#b5754a">device_type = RTL-SDR</text>
+  <text x="648" y="358" font-size="11" fill="#b5754a">second config + systemd unit</text>
+  <text x="648" y="376" font-size="11" fill="#b5754a">needs librtlsdr (dlopen at runtime)</text>
+
+  <text x="632" y="420" font-size="11" fill="#666">the binary already implements RTL-SDR:</text>
+  <text x="632" y="437" font-size="10" fill="#888" font-family="Menlo, monospace">rtlsdr_open / set_center_freq /</text>
+  <text x="632" y="452" font-size="10" fill="#888" font-family="Menlo, monospace">set_tuner_gain / set_direct_sampling</text>
+  <text x="632" y="474" font-size="11" fill="#c0392b">direct sampling must stay 0 (V4 upconverts)</text>
+
+  <!-- ============ column 5: clients ============ -->
+  <text x="985" y="104" font-size="12" font-weight="bold" fill="#888" letter-spacing="1">CLIENTS</text>
+
+  <!-- both servers join one bus, and the bus feeds every client -->
+  <path d="M 930 250 L 958 250" fill="none" stroke="#2e8b57" stroke-width="2"/>
+  <path d="M 930 345 L 958 345" fill="none" stroke="#d2691e" stroke-width="2" stroke-dasharray="5 3"/>
+  <line x1="958" y1="158" x2="958" y2="374" stroke="#888" stroke-width="2"/>
+  <path d="M 958 158 L 985 158" fill="none" stroke="#888" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M 958 230 L 985 230" fill="none" stroke="#888" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M 958 302 L 985 302" fill="none" stroke="#888" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M 958 374 L 985 374" fill="none" stroke="#888" stroke-width="2" marker-end="url(#a)"/>
+
+  <rect x="985" y="128" width="215" height="60" rx="5" fill="#fff" stroke="#888" stroke-width="1.5"/>
+  <text x="1092" y="150" font-size="12" text-anchor="middle" font-weight="bold" fill="#333">Stream Deck plugin</text>
+  <text x="1092" y="169" font-size="11" text-anchor="middle" fill="#777">TypeScript · SpyClient.ts</text>
+
+  <rect x="985" y="200" width="215" height="60" rx="5" fill="#fff" stroke="#888" stroke-width="1.5"/>
+  <text x="1092" y="222" font-size="12" text-anchor="middle" font-weight="bold" fill="#333">Deck RX Solo</text>
+  <text x="1092" y="241" font-size="11" text-anchor="middle" fill="#777">Swift · macOS</text>
+
+  <rect x="985" y="272" width="215" height="60" rx="5" fill="#fff" stroke="#888" stroke-width="1.5"/>
+  <text x="1092" y="294" font-size="12" text-anchor="middle" font-weight="bold" fill="#333">iPad app</text>
+  <text x="1092" y="313" font-size="11" text-anchor="middle" fill="#777">Swift · shared core</text>
+
+  <rect x="985" y="344" width="215" height="60" rx="5" fill="#fff" stroke="#888" stroke-width="1.5"/>
+  <text x="1092" y="366" font-size="12" text-anchor="middle" font-weight="bold" fill="#333">SDR++ / unattended jobs</text>
+  <text x="1092" y="385" font-size="11" text-anchor="middle" fill="#777">drm_probe.js · DRM_HOST/PORT</text>
+
+  <rect x="985" y="428" width="215" height="112" rx="5" fill="#f7f9fc" stroke="#4a76a8" stroke-width="1.5"/>
+  <text x="1092" y="450" font-size="12" text-anchor="middle" font-weight="bold" fill="#1a3a5c">protocol: no change</text>
+  <text x="997" y="472" font-size="10.5" fill="#33566f">DEVICE_RTLSDR = 3, maxGainIndex</text>
+  <text x="997" y="490" font-size="10.5" fill="#33566f">read from the device. Solo heard</text>
+  <text x="997" y="508" font-size="10.5" fill="#c0392b">594 kHz on 2026-09-21 — but only</text>
+  <text x="997" y="526" font-size="10.5" fill="#c0392b">after iqDecimation 0 → 4 (see doc)</text>
+
+  <!-- footer note -->
+  <line x1="40" y1="566" x2="1200" y2="566" stroke="#ddd" stroke-width="1"/>
+  <text x="40" y="590" font-size="12" font-weight="bold" fill="#555">Why not rtl_tcp:</text>
+  <text x="152" y="590" font-size="12" fill="#666">decimation would move into every client (and the RTL2832U has no rate between 300 k and 900 k),</text>
+  <text x="152" y="608" font-size="12" fill="#666">8 bit widening in three codebases, and rtl_tcp serves one client where SpyServer serves three.</text>
+  <text x="40" y="634" font-size="12" font-weight="bold" fill="#555">Measured 2026-09-21:</text>
+  <text x="192" y="634" font-size="12" fill="#666">V4 is −1.4 dB C/N median vs HF+ on strong stations, −15 dB on a weak one. Strong signals only.</text>
+  <text x="40" y="662" font-size="12" font-weight="bold" fill="#c0392b">Also on mini4:</text>
+  <text x="145" y="662" font-size="12" fill="#666">UTM runs three other VMs (Linux Radio = Roon Server, Linux, OpenVPN-TCP) and OrbStack runs Grafana.</text>
+  <text x="145" y="680" font-size="12" fill="#666">This work touches none of them — only the VirtualBuddy VM above is stopped and restarted.</text>
+
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#555"/>
+    </marker>
+    <marker id="g" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#2e8b57"/>
+    </marker>
+  </defs>
+</svg>

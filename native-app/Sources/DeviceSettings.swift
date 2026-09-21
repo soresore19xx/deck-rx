@@ -143,22 +143,19 @@ enum DeviceSettingsResolver {
         !(freqHz >= mediumwaveTopHz)
     }
 
-    /// The highest gain index worth allowing here — a ceiling, not a preference.
+    /// The highest gain index this device has. Nothing narrower.
     ///
-    /// On an 8 bit front end tuned to mediumwave, gain is not a trade: it is
-    /// destructive. Measured 2026-09-21 on the V4 through the same antenna,
-    /// index 0 against index 5 — the 594 kHz carrier fell from 51 to 32 dB over
-    /// the floor, the noise floor at 1100 kHz rose 39 dB, the stations visible
-    /// around 750 kHz went from 11 to 3, and the band filled with narrow peaks
-    /// off the 9 kHz raster, which are stations that are not there. A gain
-    /// stored for another band (one per demod mode, so SSB on mediumwave would
-    /// reach for the shortwave value) must not be able to do that.
+    /// There was a mediumwave ceiling here for a day — an 8 bit front end is
+    /// measurably worse at high gain on that band (index 0 against 5 on the V4:
+    /// the 594 kHz carrier fell from 51 to 32 dB over the floor and the band
+    /// filled with peaks that are not stations) — and it was wrong to put it
+    /// here. It applied when a stream started and not when a gain was changed
+    /// while listening, so the control worked and then undid itself on the next
+    /// connect. A setting that argues with the person holding it is worse than
+    /// a setting that lets them be wrong. The band still chooses the DEFAULT,
+    /// which is what protects the case nobody has an opinion about.
     static func gainCeiling(for info: SpyClient.DeviceInfo, freqHz: Double) -> UInt32 {
-        if info.deviceType == SpyClient.DeviceType.rtlsdr.rawValue,
-           isMediumwave(freqHz) {
-            return min(rtlMWGainIndex, info.maxGainIndex)
-        }
-        return info.maxGainIndex
+        info.maxGainIndex
     }
 
     // MARK: resolution

@@ -307,20 +307,20 @@ func runDeviceSettingsTests() {
           DeviceSettingsResolver.isMediumwave(1_999_999)
             && !DeviceSettingsResolver.isMediumwave(2_000_000))
 
-    // The reported fault: one gain per demod mode means SSB on mediumwave
-    // reaches for the value last used on shortwave.
-    let capped = DeviceSettingsResolver.resolve(
+    // There was a mediumwave ceiling here for a day. It is gone: it applied
+    // when a stream started and not when a gain was changed while listening,
+    // so the control worked and then undid itself on the next connect.
+    let keptMW = DeviceSettingsResolver.resolve(
         info: Rx.v4, config: cfg(fmGain: 6), mode: RxMode.dsb, freqHz: mw)
-    check("a gain stored for another band is capped on mediumwave",
-          capped.gainIndex == DeviceSettingsResolver.rtlMWGainIndex,
-          "gain \(capped.gainIndex)")
+    check("a stored gain is kept on mediumwave, not overridden",
+          keptMW.gainIndex == 6, "gain \(keptMW.gainIndex)")
     let keptHF = DeviceSettingsResolver.resolve(
         info: Rx.v4, config: cfg(fmGain: 6), mode: RxMode.dsb, freqHz: hf)
     check("and kept on shortwave", keptHF.gainIndex == 6, "gain \(keptHF.gainIndex)")
-    let hfpMW = DeviceSettingsResolver.resolve(
-        info: Rx.hfp, config: cfg(amGain: 6), mode: RxMode.am, freqHz: mw)
-    check("a receiver that is not an 8 bit stick is not capped",
-          hfpMW.gainIndex == 6, "gain \(hfpMW.gainIndex)")
+    let tooBig = DeviceSettingsResolver.resolve(
+        info: Rx.v4, config: cfg(amGain: 99), mode: RxMode.am, freqHz: mw)
+    check("a stored gain is still clamped to what the device has",
+          tooBig.gainIndex == Rx.v4.maxGainIndex, "gain \(tooBig.gainIndex)")
     let bandA = DeviceSettingsResolver.resolve(
         info: Rx.v4, config: cfg(iqDec: 4), mode: RxMode.am, freqHz: mw)
     let bandB = DeviceSettingsResolver.resolve(

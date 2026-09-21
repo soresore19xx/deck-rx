@@ -158,21 +158,19 @@ export function isMediumwave(freqHz: number): boolean {
 }
 
 /**
- * The highest gain index worth allowing here — a ceiling, not a preference.
+ * The highest gain index this device has. Nothing narrower.
  *
- * On an 8 bit front end tuned to mediumwave, gain is not a trade: it is
- * destructive. Measured 2026-09-21 on the V4 through the same antenna, index 0
- * against index 5: the 594 kHz carrier fell from 51 to 32 dB over the floor,
- * the noise floor at 1100 kHz rose by 39 dB, the count of stations visible
- * around 750 kHz went from 11 to 3, and the band filled with narrow peaks off
- * the 9 kHz raster — stations that are not there. A stored gain from another
- * band (deck-rx keeps one per demod mode, so SSB on mediumwave would reach for
- * the shortwave value) must not be able to do that.
+ * There was a mediumwave ceiling here for a day — an 8 bit front end is
+ * measurably worse at high gain on that band (index 0 against 5 on the V4: the
+ * 594 kHz carrier fell from 51 to 32 dB over the floor, the noise floor at
+ * 1100 kHz rose 39 dB, and the band filled with peaks that are not stations) —
+ * and it was the wrong place for it. The ceiling applied when a stream started
+ * and not when a gain was changed while listening, so the control worked and
+ * then undid itself on the next connect. A setting that argues with the person
+ * holding it is worse than one that lets them be wrong. The band still chooses
+ * the default, which covers the case nobody has an opinion about.
  */
-export function gainCeiling(info: DeviceInfo, freqHz: number): number {
-  if (info.deviceType === DEVICE_RTLSDR && isMediumwave(freqHz)) {
-    return Math.min(RTL_MW_GAIN_INDEX, info.maxGainIndex);
-  }
+export function gainCeiling(info: DeviceInfo, _freqHz: number): number {
   return info.maxGainIndex;
 }
 

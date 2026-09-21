@@ -128,6 +128,20 @@ be added alongside it.
 The JST/UTC clock, SDR++ import and sync, output device selection, and the RAW
 and DSB modes — six mode keys are what fits.
 
+Three of those are settled as deliberate omissions rather than gaps (decided
+2026-09-22):
+
+- **SDR++ import and sync** — it reads a file on the Mac, so there is nothing
+  for it to read here.
+- **Output device selection** — iPadOS has no equivalent to offer. An app
+  cannot enumerate output devices; plugging in a USB DAC moves the system's
+  route, and that is the only mechanism there is. On the Mac the picker exists
+  because CoreAudio lets it.
+- **RAW and DSB** — the six mode keys are the ones worth having at this size.
+
+The JST/UTC clock is the one still open: EIBI's schedules are in UTC, so it
+earns its place on shortwave.
+
 Icecast used to be on that list and does not belong there: publishing lives in
 the plugin, and neither Mac app has it. What the Mac window shows is the
 plugin's own icecast rows, and only while it is looking at the plugin — see

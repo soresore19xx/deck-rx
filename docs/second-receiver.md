@@ -30,6 +30,17 @@ settings change. There is one builder now, `RadioConfig.profileInForce()`.
 Both faults were found by switching receivers on the hardware and looking at
 the file — neither is reachable from a resolver test.
 
+**Gain on an 8 bit front end belongs to the band, not to the demod mode.**
+deck-rx files one gain per mode (`amGain`, `fmGain`), which is fine for a
+receiver with headroom and wrong for this one: SSB on mediumwave then reaches
+for whatever was last used on shortwave. Measured on the V4 through the same
+antenna, index 0 against index 5 — the 594 kHz carrier fell from 51 to 32 dB
+over the floor, the noise floor at 1100 kHz rose 39 dB, the stations visible
+around 750 kHz went from 11 to 3, and the band filled with narrow peaks off the
+9 kHz raster. So for RTL devices the resolver picks its default by frequency
+(index 1, about 0.9 dB, below 2 MHz; index 17, about 32.8 dB, above it) and
+also caps a stored value on mediumwave. Other receivers are untouched.
+
 ## What the V4 is for
 
 Measured against the HF+ on the same antenna on 2026-09-21 (mediumwave, three

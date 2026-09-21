@@ -120,8 +120,45 @@ enum DeviceSettingsResolver {
     /// (594/810/954/1134/1242, all of them powerful in central Tokyo) barely
     /// moved and hid the collapse entirely. Everything else keeps the previous
     /// behaviour of starting at the device's maximum.
-    static func defaultGainIndex(for info: SpyClient.DeviceInfo) -> UInt32 {
-        info.deviceType == SpyClient.DeviceType.rtlsdr.rawValue ? 0 : info.maxGainIndex
+    static func defaultGainIndex(for info: SpyClient.DeviceInfo,
+                                 freqHz: Double = 0) -> UInt32 {
+        guard info.deviceType == SpyClient.DeviceType.rtlsdr.rawValue else {
+            return info.maxGainIndex
+        }
+        return min(isMediumwave(freqHz) ? rtlMWGainIndex : rtlHFGainIndex,
+                   info.maxGainIndex)
+    }
+
+    /// Where mediumwave stops mattering for this decision.
+    static let mediumwaveTopHz: Double = 2_000_000
+    /// ~0.9 dB on the tuner's 29 step list: 0.00% clipped, and within 0.7 dB of
+    /// the HF+ on the same antenna (594 kHz, 2026-09-21).
+    static let rtlMWGainIndex: UInt32 = 1
+    /// ~32.8 dB, the same list. Nothing saturates on shortwave, and the floor
+    /// of the list throws about 6 dB of SNR away (measured the same day).
+    static let rtlHFGainIndex: UInt32 = 17
+
+    /// An unknown frequency counts as mediumwave: overload is the worse mistake.
+    static func isMediumwave(_ freqHz: Double) -> Bool {
+        !(freqHz >= mediumwaveTopHz)
+    }
+
+    /// The highest gain index worth allowing here — a ceiling, not a preference.
+    ///
+    /// On an 8 bit front end tuned to mediumwave, gain is not a trade: it is
+    /// destructive. Measured 2026-09-21 on the V4 through the same antenna,
+    /// index 0 against index 5 — the 594 kHz carrier fell from 51 to 32 dB over
+    /// the floor, the noise floor at 1100 kHz rose 39 dB, the stations visible
+    /// around 750 kHz went from 11 to 3, and the band filled with narrow peaks
+    /// off the 9 kHz raster, which are stations that are not there. A gain
+    /// stored for another band (one per demod mode, so SSB on mediumwave would
+    /// reach for the shortwave value) must not be able to do that.
+    static func gainCeiling(for info: SpyClient.DeviceInfo, freqHz: Double) -> UInt32 {
+        if info.deviceType == SpyClient.DeviceType.rtlsdr.rawValue,
+           isMediumwave(freqHz) {
+            return min(rtlMWGainIndex, info.maxGainIndex)
+        }
+        return info.maxGainIndex
     }
 
     // MARK: resolution
@@ -134,7 +171,8 @@ enum DeviceSettingsResolver {
     /// where that would not work here.
     static func resolve(info: SpyClient.DeviceInfo,
                         config: RadioConfig,
-                        mode: Int) -> DeviceSettings {
+                        mode: Int,
+                        freqHz: Double = 0) -> DeviceSettings {
         let key = RadioConfig.deviceKey(type: info.deviceType, serial: info.deviceSerial)
         let profile = config.devices[key]
 
@@ -146,7 +184,9 @@ enum DeviceSettingsResolver {
 
         let storedGain = mode == RxMode.am ? (profile?.amGain ?? config.amGain)
                                            : (profile?.fmGain ?? config.fmGain)
-        let gain = min(storedGain ?? defaultGainIndex(for: info), info.maxGainIndex)
+        let fallback: UInt32 = defaultGainIndex(for: info, freqHz: freqHz)
+        let ceiling: UInt32 = gainCeiling(for: info, freqHz: freqHz)
+        let gain: UInt32 = min(storedGain ?? fallback, ceiling)
 
         let audio = audioDecimation(iqRate: rate, mode: mode,
                                     stored: profile?.audioDecimate ?? config.audioDecimate)

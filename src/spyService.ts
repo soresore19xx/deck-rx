@@ -7,7 +7,8 @@ import {
   computeDigitalGain,
 } from './SpyClient.js';
 import {
-  resolveDeviceSettings, adoptDeviceSettings, deviceKey, type DeviceProfile,
+  resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig, deviceKey,
+  type DeviceProfile,
 } from './deviceSettings.js';
 import { Demodulator } from './demodulator.js';
 import { OutputLeveler, MODE_MAKEUP, softLimit, DEFAULT_LEVELER_CFG } from './audioLeveling.js';
@@ -891,6 +892,24 @@ class SpyService {
     this.configWriteChain = next.catch(() => {});
     return next;
   }
+  /** One receiver's profile, merged into the map instead of replacing it.
+   *
+   *  `persistFields` assigns whole top-level values, so passing `devices`
+   *  through it would write this process's copy over the file's — and the
+   *  first version of this feature did exactly that with a bare writeFile.
+   *  Measured on the deck 2026-09-21: connect to the V4, file `3:00000000`,
+   *  reconnect to the HF+, and the V4's profile was gone. Merge at the key. */
+  private persistDeviceProfile(key: string, profile: DeviceProfile,
+                               top: Record<string, unknown>): Promise<void> {
+    const next = this.configWriteChain.then(async () => {
+      const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
+      const cfg = JSON.parse(raw) as Record<string, unknown>;
+      mergeProfileIntoConfig(cfg, key, profile, top);
+      await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    });
+    this.configWriteChain = next.catch(() => {});
+    return next;
+  }
 
   getFMOptions(): FMOptions { return { ...this.fmOptions }; }
 
@@ -1293,7 +1312,10 @@ class SpyService {
       const hadProfile = !!cfg.devices?.[key];
       adoptDeviceSettings(resolved, cfg, info, this.currentDemodMode);
       if (!hadProfile) {
-        writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2)).catch((e) =>
+        this.persistDeviceProfile(key, cfg.devices![key], {
+          iqDecimation: cfg.iqDecimation, audioDecimate: cfg.audioDecimate,
+          ...(useAm ? { amGain: cfg.amGain } : { fmGain: cfg.fmGain }),
+        }).catch((e) =>
           log.error(`[spyService] could not store the profile for ${key}: ${e}`));
         log.info(`[spyService] new receiver ${key}: iqDecimation=${resolved.iqDecimationOffset} ` +
                  `iqRate=${iqRate} audioDecimate=${audioDecimate} gain=${gain}`);
@@ -1619,6 +1641,11 @@ class SpyService {
       lastFrequency: cfg.lastFrequency,
       iqDecimation:  cfg.iqDecimation  ?? 1,
       audioDecimate: cfg.audioDecimate ?? 1,
+      // Carried, not defaulted: this map is what makes a second receiver
+      // possible. Dropping it here made every connection look like a first
+      // one, and the write that follows a first one then wiped the other
+      // receivers' profiles (measured on the deck 2026-09-21).
+      devices:       cfg.devices,
       gain:          cfg.gain,
       amGain:        cfg.amGain,
       fmGain:        cfg.fmGain,

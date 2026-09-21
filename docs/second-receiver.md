@@ -15,6 +15,14 @@ rules are pinned by `test/deviceSettings.test.ts` and
 `native-app/Tests/DeviceSettingsTests.swift`; the rest of this file is kept as
 the reasoning that got there.
 
+**Verified on the deck the same evening**, and worth knowing before touching the
+map: a profile is filed by merging it into the config as it sits on disk, never
+by writing this process's whole config back. The first version did the latter,
+and switching V4 → HF+ deleted the V4's entry — the resolver was right and the
+file I/O around it was not, which is why no resolver test caught it. The plugin
+also has to carry `devices` through `loadConfig()`; that function rebuilds the
+config field by field, so anything it forgets is dropped on every start.
+
 ## What the V4 is for
 
 Measured against the HF+ on the same antenna on 2026-09-21 (mediumwave, three

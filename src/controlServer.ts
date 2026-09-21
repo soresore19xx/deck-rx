@@ -162,14 +162,33 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
 
   switch (url.pathname) {
     case '/health': {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        ok: true,
-        freq: spyService.currentFreq,
-        volume: spyService.getVolume(),
-        muted: spyService.isMuted(),
-        enabled: spyService.isEnabled(),
-      }));
+      // Which receiver, not just whether one is on. There are two SpyServers on
+      // this network now, and the unattended capture jobs stand down when a
+      // person is listening — which was right with one receiver and wrong with
+      // two: listening to the V4 on 8889 made a job that wanted the HF+ on 8888
+      // give up its slot. Answering with the address lets the guard compare.
+      spyService.getServerConfigPersisted().then((cfg) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          freq: spyService.currentFreq,
+          volume: spyService.getVolume(),
+          muted: spyService.isMuted(),
+          enabled: spyService.isEnabled(),
+          host: cfg.host,
+          port: cfg.port,
+        }));
+      }).catch(() => {
+        // The address is an extra, not the point of /health.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          freq: spyService.currentFreq,
+          volume: spyService.getVolume(),
+          muted: spyService.isMuted(),
+          enabled: spyService.isEnabled(),
+        }));
+      });
       return;
     }
     case '/tune': {

@@ -294,6 +294,12 @@ for dev in d.get("result", {}).get("devices", []):
     props = dev.get("deviceProperties", {})
     hw = dev.get("hardwareProperties", {})
     name = props.get("name", "")
+    # `reality` is what separates a real iPad from a simulator that is also
+    # called one: every simulator in the list reports deviceType "iPad" too,
+    # and the first of them was being picked, which fails the install with
+    # "The capability Install Application is not supported by this device."
+    if hw.get("reality") != "physical":
+        continue
     if "ipad" in name.lower() or hw.get("deviceType") == "iPad":
         print(dev.get("identifier", ""))
         break

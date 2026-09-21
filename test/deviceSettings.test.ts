@@ -297,19 +297,21 @@ describe('gain by band on an 8 bit front end', () => {
     expect(isMediumwave(2_000_000)).toBe(false);
   });
 
-  it('caps a gain stored for another band — the reported fault', () => {
-    // deck-rx keeps one gain per demod mode, so SSB on mediumwave reaches for
-    // the value last used on shortwave. On the V4 that is destructive.
+  // There was a mediumwave ceiling here for a day. It is gone: it applied when
+  // a stream started and not when a gain was changed while listening, so the
+  // control worked and then undid itself on the next connect. The band chooses
+  // the default, and a value someone has actually chosen is theirs.
+  it('keeps a stored gain on mediumwave rather than overriding it', () => {
     const s = resolveDeviceSettings(V4, cfg({ fmGain: 6 }), RX_MODE.DSB, MW);
-    expect(s.gainIndex).toBe(RTL_MW_GAIN_INDEX);
+    expect(s.gainIndex).toBe(6);
   });
   it('keeps that same stored gain on shortwave', () => {
     const s = resolveDeviceSettings(V4, cfg({ fmGain: 6 }), RX_MODE.DSB, HF);
     expect(s.gainIndex).toBe(6);
   });
-  it('caps AM on mediumwave too, whatever was stored', () => {
-    const s = resolveDeviceSettings(V4, cfg({ amGain: 12 }), RX_MODE.AM, MW);
-    expect(s.gainIndex).toBe(RTL_MW_GAIN_INDEX);
+  it('still clamps a stored gain to what the device has', () => {
+    const s = resolveDeviceSettings(V4, cfg({ amGain: 99 }), RX_MODE.AM, MW);
+    expect(s.gainIndex).toBe(V4.maxGainIndex);
   });
   it('does not cap a receiver that is not an 8 bit stick', () => {
     const s = resolveDeviceSettings(HFP, cfg({ amGain: 6 }), RX_MODE.AM, MW);

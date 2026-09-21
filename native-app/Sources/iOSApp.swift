@@ -1712,7 +1712,13 @@ final class OptionsViewController: UITableViewController {
                 // the other (spyService.ts:1214). Shown resolved, so a value
                 // never set here reads as the device maximum it is running at
                 // rather than as a blank.
-                Row(title: "Gain", kind: .list(values: [0, 1, 2, 3, 4, 5, 6, 7, 8], unit: "",
+                // The list follows the device, not the Airspy HF+ it was
+                // written for. Nine steps is that receiver's range; an RTL-SDR
+                // Blog V4 has twenty-nine, and two thirds of them were out of
+                // reach here — which from the chair is a gain control that does
+                // not go anywhere.
+                Row(title: "Gain", kind: .list(values: (0...Int(r.maxGainIndex)).map { Double($0) },
+                                               unit: "",
                     get: { Double(r.gain) },
                     set: { v in
                         let g = UInt32(max(0, v))

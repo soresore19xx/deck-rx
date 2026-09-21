@@ -16,7 +16,8 @@ import { describe, it, expect } from 'vitest';
 import {
   RX_MODE, MAX_AUTO_IQ_RATE, minIQRate, minAudioRate, deviceKey, iqRateFor,
   decimationOffset, audioDecimation, defaultGainIndex,
-  resolveDeviceSettings, adoptDeviceSettings, type DeviceProfile,
+  resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig,
+  type DeviceProfile,
 } from '../src/deviceSettings.js';
 import type { DeviceInfo } from '../src/SpyClient.js';
 
@@ -258,4 +259,55 @@ describe('odd shapes', () => {
     expect(s.gainIndex).toBe(0);           // RTL-SDR default
     expect(s.audioDecimate).toBeGreaterThanOrEqual(1);
   });
+});
+
+// The field failure of 2026-09-21, which none of the above caught because they
+// all stop at the resolver: filing a profile has to leave the other receivers'
+// profiles alone. Writing this process's whole config back does not.
+describe('filing a profile into the config on disk', () => {
+  const v4: DeviceProfile = { iqDecimation: 4, amGain: 1, fmGain: 4, audioDecimate: 4 };
+  const hf: DeviceProfile = { iqDecimation: 3, amGain: 1, fmGain: 4, audioDecimate: 4 };
+
+  it('keeps the profiles it does not know about', () => {
+    const onDisk: Record<string, unknown> = { host: 'x', devices: { '3:00000000': v4 } };
+    mergeProfileIntoConfig(onDisk, '2:31313038', hf);
+    expect(onDisk.devices).toEqual({ '3:00000000': v4, '2:31313038': hf });
+  });
+  it('survives a round trip in both directions', () => {
+    const onDisk: Record<string, unknown> = {};
+    mergeProfileIntoConfig(onDisk, '3:00000000', v4);
+    mergeProfileIntoConfig(onDisk, '2:31313038', hf);
+    mergeProfileIntoConfig(onDisk, '3:00000000', v4);
+    expect(Object.keys(onDisk.devices as object).sort())
+      .toEqual(['2:31313038', '3:00000000']);
+  });
+  it('leaves every other setting in the file untouched', () => {
+    const onDisk: Record<string, unknown> = {
+      host: '192.168.0.143', port: 8888, volume: 0.41, presets: [1, 2, 3],
+    };
+    mergeProfileIntoConfig(onDisk, '2:31313038', hf);
+    expect(onDisk.host).toBe('192.168.0.143');
+    expect(onDisk.port).toBe(8888);
+    expect(onDisk.volume).toBe(0.41);
+    expect(onDisk.presets).toEqual([1, 2, 3]);
+  });
+  it('applies the top-level values it is given', () => {
+    const onDisk: Record<string, unknown> = { iqDecimation: 1, amGain: 7 };
+    mergeProfileIntoConfig(onDisk, '3:00000000', v4, { iqDecimation: 4, amGain: 1 });
+    expect(onDisk.iqDecimation).toBe(4);
+    expect(onDisk.amGain).toBe(1);
+  });
+  it('creates the map when the file has none', () => {
+    const onDisk: Record<string, unknown> = { host: 'x' };
+    mergeProfileIntoConfig(onDisk, '2:31313038', hf);
+    expect(onDisk.devices).toEqual({ '2:31313038': hf });
+  });
+  // A config is a file a human can edit, so `devices` can be anything.
+  for (const junk of [null, 'nonsense', 42, [1, 2], true] as unknown[]) {
+    it(`replaces a devices field that is ${JSON.stringify(junk)}`, () => {
+      const onDisk: Record<string, unknown> = { devices: junk };
+      mergeProfileIntoConfig(onDisk, '2:31313038', hf);
+      expect(onDisk.devices).toEqual({ '2:31313038': hf });
+    });
+  }
 });

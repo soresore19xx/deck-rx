@@ -183,3 +183,33 @@ export function adoptDeviceSettings(
     audioDecimate: s.audioDecimate,
   };
 }
+
+/**
+ * Merge one receiver's profile into the config as it sits on disk.
+ *
+ * The point is the word merge. Writing this process's whole config back —
+ * which is what the first version of this did — replaces the `devices` map
+ * with whatever this process happens to hold, and every profile it does not
+ * know about is lost. Measured on the deck on 2026-09-21: connect to the V4,
+ * which files `3:00000000`, reconnect to the HF+, and the V4's entry was gone.
+ *
+ * `onDisk` is mutated and returned, so the caller can write it straight out.
+ * A `devices` that is missing, null, or not an object at all (a config is a
+ * file a human can edit) is replaced by a fresh map rather than crashing.
+ */
+export function mergeProfileIntoConfig(
+  onDisk: Record<string, unknown>,
+  key: string,
+  profile: DeviceProfile,
+  top: Record<string, unknown> = {},
+): Record<string, unknown> {
+  Object.assign(onDisk, top);
+  const existing = onDisk.devices;
+  const devices: Record<string, unknown> =
+    existing !== null && typeof existing === 'object' && !Array.isArray(existing)
+      ? existing as Record<string, unknown>
+      : {};
+  devices[key] = profile;
+  onDisk.devices = devices;
+  return onDisk;
+}

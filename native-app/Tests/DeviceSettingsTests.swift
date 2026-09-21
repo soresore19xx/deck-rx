@@ -274,4 +274,38 @@ func runDeviceSettingsTests() {
     let s6 = DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(iqDec: 99), mode: RxMode.am)
     check("an absurd stored offset is replaced, not passed through",
           s6.iqDecimationOffset <= Rx.v4.decimationStages, "offset \(s6.iqDecimationOffset)")
+
+    print("\ndevice settings — the profile carries every field")
+
+    // Found on the deck 2026-09-21, not here: two places built a DeviceProfile
+    // and one of them left `audioDecimate` out, so the value `adopt` had just
+    // filed was overwritten with nothing and the audio divisor stopped being
+    // per-receiver. There is one builder now, and these pin it.
+    var p = cfg(iqDec: 4, audioDec: 8, amGain: 1, fmGain: 6)
+    let inForce = p.profileInForce()
+    check("every field of the profile is filled",
+          inForce.iqDecimation == 4 && inForce.audioDecimate == 8
+            && inForce.amGain == 1 && inForce.fmGain == 6,
+          "\(String(describing: inForce))")
+
+    p.captureProfile(for: "3:00000000")
+    check("capturing files exactly what is in force",
+          p.devices["3:00000000"] == inForce)
+
+    // The round trip that matters: file one receiver, move to another, come
+    // back, and every field returns — audioDecimate included.
+    p.iqDecimation = 3; p.audioDecimate = 2; p.amGain = 7; p.fmGain = 2
+    p.captureProfile(for: "2:31313038")
+    check("both receivers are on file", p.devices.count == 2)
+    check("the other receiver restores all four values",
+          p.applyProfile(for: "3:00000000")
+            && p.iqDecimation == 4 && p.audioDecimate == 8
+            && p.amGain == 1 && p.fmGain == 6,
+          "iqDec \(p.iqDecimation) audioDec \(p.audioDecimate) "
+            + "am \(String(describing: p.amGain)) fm \(String(describing: p.fmGain))")
+    check("filing one receiver leaves the other alone",
+          p.devices["2:31313038"]?.audioDecimate == 2
+            && p.devices["2:31313038"]?.iqDecimation == 3)
+    check("a receiver never seen restores nothing",
+          p.applyProfile(for: "9:DEADBEEF") == false)
 }

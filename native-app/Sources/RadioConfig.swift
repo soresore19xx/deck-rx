@@ -85,10 +85,23 @@ struct RadioConfig: Codable, Equatable {
         return true
     }
 
+    /// The profile that the values in force describe.
+    ///
+    /// One place builds it, so that a caller comparing against what is stored
+    /// cannot quietly leave a field out. LocalRadio's reconcile did exactly
+    /// that — it built a profile from three of the four fields — and the
+    /// `audioDecimate` that `adopt` had just filed was overwritten with
+    /// nothing on the next settings change. Measured on 2026-09-21: the V4's
+    /// stored profile came back as three keys, so its audio divisor was not
+    /// per-receiver at all.
+    func profileInForce() -> DeviceProfile {
+        DeviceProfile(iqDecimation: iqDecimation, amGain: amGain,
+                      fmGain: fmGain, audioDecimate: audioDecimate)
+    }
+
     /// Record the values in force as this receiver's profile.
     mutating func captureProfile(for key: String) {
-        devices[key] = DeviceProfile(iqDecimation: iqDecimation, amGain: amGain,
-                                     fmGain: fmGain, audioDecimate: audioDecimate)
+        devices[key] = profileInForce()
     }
 
     var jpRegion = "kanto"

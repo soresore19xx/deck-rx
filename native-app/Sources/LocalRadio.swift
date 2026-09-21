@@ -952,7 +952,11 @@ final class LocalRadio {
         // is 912 kHz there and 2.4 MHz on an RTL-SDR Blog V4, where the server
         // then never tunes and the band is silent.
         activeDeviceKey = RadioConfig.deviceKey(type: info.deviceType, serial: info.deviceSerial)
-        let settings = DeviceSettingsResolver.resolve(info: info, config: config, mode: mode)
+        // The gain an 8 bit front end can stand depends on the band, not on the
+        // demod mode: mediumwave saturates it and shortwave does not.
+        let settings = DeviceSettingsResolver.resolve(info: info, config: config,
+                                                      mode: mode,
+                                                      freqHz: Double(frequency))
         // A new stream is centred on where we are listening; any offset the
         // last one ended on belongs to a window that no longer exists.
         deviceCenterHz = frequency

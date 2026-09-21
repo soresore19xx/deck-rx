@@ -15,7 +15,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   RX_MODE, MAX_AUTO_IQ_RATE, minIQRate, minAudioRate, deviceKey, iqRateFor,
-  decimationOffset, audioDecimation, defaultGainIndex,
+  decimationOffset, audioDecimation, defaultGainIndex, gainCeiling, isMediumwave,
+  RTL_MW_GAIN_INDEX, RTL_HF_GAIN_INDEX,
   resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig,
   type DeviceProfile,
 } from '../src/deviceSettings.js';
@@ -152,7 +153,9 @@ describe('audio decimation', () => {
 
 describe('default gain', () => {
   it('RTL-SDR starts at the bottom of its 29 steps', () => {
-    expect(defaultGainIndex(V4)).toBe(0);
+    // With no frequency to go on this is the mediumwave answer, which is the
+    // safe one: see "gain by band" below.
+    expect(defaultGainIndex(V4)).toBe(RTL_MW_GAIN_INDEX);
   });
   it('Airspy HF+ still starts at its maximum', () => {
     expect(defaultGainIndex(HFP)).toBe(HFP.maxGainIndex);
@@ -162,7 +165,9 @@ describe('default gain', () => {
     expect(defaultGainIndex(UNKNOWN)).toBe(UNKNOWN.maxGainIndex);
   });
   it('a stored gain beats the default', () => {
-    expect(resolveDeviceSettings(V4, cfg({ amGain: 12 }), RX_MODE.AM).gainIndex).toBe(12);
+    // On shortwave, where nothing caps it. Mediumwave has its own rule.
+    expect(resolveDeviceSettings(V4, cfg({ amGain: 12 }), RX_MODE.AM, 6_030_000)
+      .gainIndex).toBe(12);
   });
   it('a stored gain above the range is clamped, not rejected', () => {
     expect(resolveDeviceSettings(HFP, cfg({ amGain: 99 }), RX_MODE.AM).gainIndex)
@@ -170,8 +175,8 @@ describe('default gain', () => {
   });
   it('AM and FM gains stay separate', () => {
     const c = cfg({ amGain: 3, fmGain: 17 });
-    expect(resolveDeviceSettings(V4, c, RX_MODE.AM).gainIndex).toBe(3);
-    expect(resolveDeviceSettings(V4, c, RX_MODE.WFM).gainIndex).toBe(17);
+    expect(resolveDeviceSettings(V4, c, RX_MODE.AM, 6_030_000).gainIndex).toBe(3);
+    expect(resolveDeviceSettings(V4, c, RX_MODE.WFM, 100_100_000).gainIndex).toBe(17);
   });
 });
 
@@ -256,8 +261,66 @@ describe('odd shapes', () => {
   it('an empty config resolves to something usable', () => {
     const s = resolveDeviceSettings(V4, {}, RX_MODE.AM);
     expect(s.iqRate).toBeGreaterThanOrEqual(96_000);
-    expect(s.gainIndex).toBe(0);           // RTL-SDR default
+    expect(s.gainIndex).toBe(RTL_MW_GAIN_INDEX);   // no frequency: the safe end
     expect(s.audioDecimate).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// Reported from the listening chair on 2026-09-21: strong stations audible on
+// frequencies they are not on. Measured cause is gain, and the gain an 8 bit
+// front end can stand is a property of the band, not of the demod mode.
+describe('gain by band on an 8 bit front end', () => {
+  const MW = 594_000, HF = 6_030_000;
+
+  it('starts mediumwave at the bottom of the list and shortwave well up it', () => {
+    expect(defaultGainIndex(V4, MW)).toBe(RTL_MW_GAIN_INDEX);
+    expect(defaultGainIndex(V4, HF)).toBe(RTL_HF_GAIN_INDEX);
+  });
+  it('leaves every other receiver starting at its maximum', () => {
+    for (const f of [MW, HF, 0]) {
+      expect(defaultGainIndex(HFP, f)).toBe(HFP.maxGainIndex);
+      expect(defaultGainIndex(AIRSPY_ONE, f)).toBe(AIRSPY_ONE.maxGainIndex);
+    }
+  });
+  it('never asks for an index the device does not have', () => {
+    const small = info({ deviceType: 3, maxGainIndex: 3 });
+    expect(defaultGainIndex(small, HF)).toBe(3);
+    expect(gainCeiling(small, MW)).toBeLessThanOrEqual(3);
+  });
+  it('treats an unknown frequency as mediumwave', () => {
+    // Overload is the worse mistake: it hides stations rather than costing dB.
+    expect(isMediumwave(0)).toBe(true);
+    expect(defaultGainIndex(V4, 0)).toBe(RTL_MW_GAIN_INDEX);
+  });
+  it('puts the boundary at 2 MHz', () => {
+    expect(isMediumwave(1_999_999)).toBe(true);
+    expect(isMediumwave(2_000_000)).toBe(false);
+  });
+
+  it('caps a gain stored for another band — the reported fault', () => {
+    // deck-rx keeps one gain per demod mode, so SSB on mediumwave reaches for
+    // the value last used on shortwave. On the V4 that is destructive.
+    const s = resolveDeviceSettings(V4, cfg({ fmGain: 6 }), RX_MODE.DSB, MW);
+    expect(s.gainIndex).toBe(RTL_MW_GAIN_INDEX);
+  });
+  it('keeps that same stored gain on shortwave', () => {
+    const s = resolveDeviceSettings(V4, cfg({ fmGain: 6 }), RX_MODE.DSB, HF);
+    expect(s.gainIndex).toBe(6);
+  });
+  it('caps AM on mediumwave too, whatever was stored', () => {
+    const s = resolveDeviceSettings(V4, cfg({ amGain: 12 }), RX_MODE.AM, MW);
+    expect(s.gainIndex).toBe(RTL_MW_GAIN_INDEX);
+  });
+  it('does not cap a receiver that is not an 8 bit stick', () => {
+    const s = resolveDeviceSettings(HFP, cfg({ amGain: 6 }), RX_MODE.AM, MW);
+    expect(s.gainIndex).toBe(6);
+  });
+  it('changes nothing else about the resolution', () => {
+    const a = resolveDeviceSettings(V4, cfg({ iqDecimation: 4 }), RX_MODE.AM, MW);
+    const b = resolveDeviceSettings(V4, cfg({ iqDecimation: 4 }), RX_MODE.AM, HF);
+    expect(a.iqRate).toBe(b.iqRate);
+    expect(a.audioDecimate).toBe(b.audioDecimate);
+    expect(a.decStage).toBe(b.decStage);
   });
 });
 

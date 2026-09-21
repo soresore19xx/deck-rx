@@ -177,23 +177,30 @@ func runDeviceSettingsTests() {
 
     // An 8 bit front end must not start at the top; everything else keeps the
     // behaviour it has always had.
+    // With no frequency to go on this is the mediumwave answer, which is the
+    // safe one: see "gain by band" below.
     check("RTL-SDR starts at the bottom of its 29 steps",
-          DeviceSettingsResolver.defaultGainIndex(for: Rx.v4) == 0)
+          DeviceSettingsResolver.defaultGainIndex(for: Rx.v4)
+            == DeviceSettingsResolver.rtlMWGainIndex)
     check("Airspy HF+ still starts at its maximum",
           DeviceSettingsResolver.defaultGainIndex(for: Rx.hfp) == Rx.hfp.maxGainIndex)
     check("Airspy R2 is unaffected too",
           DeviceSettingsResolver.defaultGainIndex(for: Rx.airspyOne) == Rx.airspyOne.maxGainIndex)
     check("an unknown device keeps the old default",
           DeviceSettingsResolver.defaultGainIndex(for: Rx.unknown) == Rx.unknown.maxGainIndex)
+    // On shortwave, where nothing caps it. Mediumwave has its own rule.
     check("a stored gain beats the default on the V4",
-          DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(amGain: 12), mode: RxMode.am)
+          DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(amGain: 12),
+                                         mode: RxMode.am, freqHz: 6_030_000)
             .gainIndex == 12)
     check("a stored gain above the device's range is clamped, not rejected",
           DeviceSettingsResolver.resolve(info: Rx.hfp, config: cfg(amGain: 99), mode: RxMode.am)
             .gainIndex == Rx.hfp.maxGainIndex)
     check("AM and FM gains stay separate",
-          DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(amGain: 3, fmGain: 17), mode: RxMode.am).gainIndex == 3
-          && DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(amGain: 3, fmGain: 17), mode: RxMode.wfm).gainIndex == 17)
+          DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(amGain: 3, fmGain: 17),
+                                         mode: RxMode.am, freqHz: 6_030_000).gainIndex == 3
+          && DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(amGain: 3, fmGain: 17),
+                                            mode: RxMode.wfm, freqHz: 100_100_000).gainIndex == 17)
 
     print("\ndevice settings — profiles and switching receivers")
 
@@ -274,6 +281,53 @@ func runDeviceSettingsTests() {
     let s6 = DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(iqDec: 99), mode: RxMode.am)
     check("an absurd stored offset is replaced, not passed through",
           s6.iqDecimationOffset <= Rx.v4.decimationStages, "offset \(s6.iqDecimationOffset)")
+
+    print("\ndevice settings — gain by band on an 8 bit front end")
+
+    // Reported from the listening chair 2026-09-21: strong stations audible on
+    // frequencies they are not on. The gain such a front end can stand is a
+    // property of the band, not of the demod mode deck-rx files it under.
+    let mw = 594_000.0, hf = 6_030_000.0
+    check("mediumwave starts at the bottom of the list",
+          DeviceSettingsResolver.defaultGainIndex(for: Rx.v4, freqHz: mw)
+            == DeviceSettingsResolver.rtlMWGainIndex)
+    check("shortwave starts well up it",
+          DeviceSettingsResolver.defaultGainIndex(for: Rx.v4, freqHz: hf)
+            == DeviceSettingsResolver.rtlHFGainIndex)
+    check("every other receiver still starts at its maximum",
+          DeviceSettingsResolver.defaultGainIndex(for: Rx.hfp, freqHz: mw)
+            == Rx.hfp.maxGainIndex
+            && DeviceSettingsResolver.defaultGainIndex(for: Rx.hfp, freqHz: hf)
+            == Rx.hfp.maxGainIndex)
+    check("an unknown frequency counts as mediumwave",
+          DeviceSettingsResolver.isMediumwave(0)
+            && DeviceSettingsResolver.defaultGainIndex(for: Rx.v4)
+            == DeviceSettingsResolver.rtlMWGainIndex)
+    check("the boundary is 2 MHz",
+          DeviceSettingsResolver.isMediumwave(1_999_999)
+            && !DeviceSettingsResolver.isMediumwave(2_000_000))
+
+    // The reported fault: one gain per demod mode means SSB on mediumwave
+    // reaches for the value last used on shortwave.
+    let capped = DeviceSettingsResolver.resolve(
+        info: Rx.v4, config: cfg(fmGain: 6), mode: RxMode.dsb, freqHz: mw)
+    check("a gain stored for another band is capped on mediumwave",
+          capped.gainIndex == DeviceSettingsResolver.rtlMWGainIndex,
+          "gain \(capped.gainIndex)")
+    let keptHF = DeviceSettingsResolver.resolve(
+        info: Rx.v4, config: cfg(fmGain: 6), mode: RxMode.dsb, freqHz: hf)
+    check("and kept on shortwave", keptHF.gainIndex == 6, "gain \(keptHF.gainIndex)")
+    let hfpMW = DeviceSettingsResolver.resolve(
+        info: Rx.hfp, config: cfg(amGain: 6), mode: RxMode.am, freqHz: mw)
+    check("a receiver that is not an 8 bit stick is not capped",
+          hfpMW.gainIndex == 6, "gain \(hfpMW.gainIndex)")
+    let bandA = DeviceSettingsResolver.resolve(
+        info: Rx.v4, config: cfg(iqDec: 4), mode: RxMode.am, freqHz: mw)
+    let bandB = DeviceSettingsResolver.resolve(
+        info: Rx.v4, config: cfg(iqDec: 4), mode: RxMode.am, freqHz: hf)
+    check("the band changes the gain and nothing else",
+          bandA.iqRate == bandB.iqRate && bandA.decStage == bandB.decStage
+            && bandA.audioDecimate == bandB.audioDecimate)
 
     print("\ndevice settings — the profile carries every field")
 

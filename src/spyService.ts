@@ -1286,7 +1286,10 @@ class SpyService {
       info,
       { iqDecimation: cfg.iqDecimation, audioDecimate: cfg.audioDecimate,
         amGain: this.amGain, fmGain: this.fmGain, devices: cfg.devices },
-      this.currentDemodMode);
+      this.currentDemodMode,
+      // The gain an 8 bit front end can stand depends on the band, not on the
+      // demod mode: mediumwave saturates it and shortwave does not.
+      this.currentFreq || cfg.lastFrequency || 0);
     const decStage = resolved.decStage;
     const iqRate = resolved.iqRate;
     const audioDecimate = resolved.audioDecimate;

@@ -133,8 +133,47 @@ export function audioDecimation(iqRate: number, mode: number, stored: number): n
  * at index 0, 11.6 at 1, 3.1 at 2 — while the strong locals (594/810/954/1134/
  * 1242, all powerful in central Tokyo) barely moved and hid the collapse.
  */
-export function defaultGainIndex(info: DeviceInfo): number {
-  return info.deviceType === DEVICE_RTLSDR ? 0 : info.maxGainIndex;
+export function defaultGainIndex(info: DeviceInfo, freqHz = 0): number {
+  if (info.deviceType !== DEVICE_RTLSDR) return info.maxGainIndex;
+  const idx = isMediumwave(freqHz) ? RTL_MW_GAIN_INDEX : RTL_HF_GAIN_INDEX;
+  return Math.min(idx, info.maxGainIndex);
+}
+
+/**
+ * Where mediumwave stops mattering for this decision. Below it sit the local
+ * transmitters that saturate an 8 bit front end; above it the band is quiet
+ * enough that the same setting throws away sensitivity.
+ */
+export const RTL_MW_TOP_HZ = 2_000_000;
+/** ~0.9 dB on the tuner's 29 step list: 0.00% clipped, and within 0.7 dB of
+ *  the HF+ on the same antenna (594 kHz, 2026-09-21). */
+export const RTL_MW_GAIN_INDEX = 1;
+/** ~32.8 dB, the same list. Nothing saturates on shortwave and the floor of
+ *  the list throws about 6 dB of SNR away (measured the same day). */
+export const RTL_HF_GAIN_INDEX = 17;
+
+/** An unknown frequency counts as mediumwave: overload is the worse mistake. */
+export function isMediumwave(freqHz: number): boolean {
+  return !(freqHz >= RTL_MW_TOP_HZ);
+}
+
+/**
+ * The highest gain index worth allowing here — a ceiling, not a preference.
+ *
+ * On an 8 bit front end tuned to mediumwave, gain is not a trade: it is
+ * destructive. Measured 2026-09-21 on the V4 through the same antenna, index 0
+ * against index 5: the 594 kHz carrier fell from 51 to 32 dB over the floor,
+ * the noise floor at 1100 kHz rose by 39 dB, the count of stations visible
+ * around 750 kHz went from 11 to 3, and the band filled with narrow peaks off
+ * the 9 kHz raster — stations that are not there. A stored gain from another
+ * band (deck-rx keeps one per demod mode, so SSB on mediumwave would reach for
+ * the shortwave value) must not be able to do that.
+ */
+export function gainCeiling(info: DeviceInfo, freqHz: number): number {
+  if (info.deviceType === DEVICE_RTLSDR && isMediumwave(freqHz)) {
+    return Math.min(RTL_MW_GAIN_INDEX, info.maxGainIndex);
+  }
+  return info.maxGainIndex;
 }
 
 /** Everything above, applied in order, for one connection. */
@@ -143,6 +182,7 @@ export function resolveDeviceSettings(
   cfg: { iqDecimation?: number; audioDecimate?: number; amGain?: number; fmGain?: number;
          devices?: Record<string, DeviceProfile> },
   mode: number,
+  freqHz = 0,
 ): DeviceSettings {
   const profile = cfg.devices?.[deviceKey(info.deviceType, info.deviceSerial)];
 
@@ -152,7 +192,8 @@ export function resolveDeviceSettings(
 
   const storedGain = mode === RX_MODE.AM ? (profile?.amGain ?? cfg.amGain)
                                          : (profile?.fmGain ?? cfg.fmGain);
-  const gainIndex = Math.min(storedGain ?? defaultGainIndex(info), info.maxGainIndex);
+  const gainIndex = Math.min(storedGain ?? defaultGainIndex(info, freqHz),
+                             gainCeiling(info, freqHz));
 
   const audioDecimate = audioDecimation(
     iqRate, mode, profile?.audioDecimate ?? cfg.audioDecimate ?? 1);

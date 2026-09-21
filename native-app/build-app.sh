@@ -188,7 +188,7 @@ SHARED="Sources/main.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
         Sources/SpectrumView.swift Sources/OptionsPanel.swift Sources/FreqView.swift \
         Sources/Platform.swift Sources/RadioConfig.swift Sources/SignalMeter.swift \
         Sources/PresetStore.swift Sources/StationLabel.swift"
-RECEIVER="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
+RECEIVER="Sources/LocalRadio.swift Sources/DeviceSettings.swift Sources/AppServer.swift Sources/SpyClient.swift \
           Sources/IQSource.swift \
           Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift \
           Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \

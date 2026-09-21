@@ -90,6 +90,13 @@ final class LocalRadio {
     private(set) var snrDb: Double = 0
     private(set) var lastError: String?
     private(set) var deviceInfo: SpyClient.DeviceInfo?
+    /// Which entry in `config.devices` the settings in force belong to. Set on
+    /// connect, cleared on disconnect, so nothing is filed under the wrong
+    /// receiver while the app sits unconnected.
+    private(set) var activeDeviceKey: String?
+    /// Guards the `config.devices` write in applyConfig against the `didSet`
+    /// that write itself fires.
+    private var isCapturingProfile = false
 
     var onFrame: ((SpectrumFeed.Frame) -> Void)?
     var onState: (() -> Void)?
@@ -565,6 +572,9 @@ final class LocalRadio {
         client.stopStreaming()
         client.disconnect()
         isConnected = false
+        // Settings changed while nothing is connected belong to no receiver in
+        // particular, so stop filing them under the one that just left.
+        activeDeviceKey = nil
         stopFrameTimer()
         iq.removeAll(keepingCapacity: false)
         DispatchQueue.main.async { self.onState?() }
@@ -925,15 +935,36 @@ final class LocalRadio {
 
     // MARK: start-up
 
+    // Settings that depend on which receiver is connected now live in
+    // DeviceSettings.swift, resolved without sockets or app state so they can
+    // be tested exhaustively.
+
     private func start(with info: SpyClient.DeviceInfo) {
         deviceInfo = info
+        // This receiver's own settings, READ but not yet written back. Writing
+        // to `config` here fires its didSet, and applyConfig then rebuilds the
+        // demodulators from an `iqRate` this function has not computed yet —
+        // which segfaulted in ComplexFirLpf on the first attempt (2026-09-21).
+        // The store happens once the stream is up, at the end of this function.
+        //
+        // Why per receiver at all: `iqDecimation` is a number of halvings, so
+        // one value means different rates on different frontends. The HF+'s 0
+        // is 912 kHz there and 2.4 MHz on an RTL-SDR Blog V4, where the server
+        // then never tunes and the band is silent.
+        activeDeviceKey = RadioConfig.deviceKey(type: info.deviceType, serial: info.deviceSerial)
+        let settings = DeviceSettingsResolver.resolve(info: info, config: config, mode: mode)
         // A new stream is centred on where we are listening; any offset the
         // last one ended on belongs to a window that no longer exists.
         deviceCenterHz = frequency
         vfoOffsetHz = 0
-        let decStage = decimationOffset + info.minIQDecimation
-        iqRate = UInt32(Double(info.maxSampleRate) / Double(1 << decStage))
-        let g = min(gain, info.maxGainIndex)
+        let decStage = settings.decStage
+        iqRate = settings.iqRate
+        let g = settings.gainIndex
+        // Safe to assign now: iqRate is already correct, so the didSet rebuilds
+        // the demodulators with the rate they will actually be fed.
+        if settings.audioDecimate != config.audioDecimate {
+            config.audioDecimate = settings.audioDecimate
+        }
         let digital = computeDigitalGain(deviceType: info.deviceType, deviceGain: g,
                                          decimationStage: decStage, maxGainIndex: info.maxGainIndex)
 
@@ -954,6 +985,21 @@ final class LocalRadio {
         reconnectDelay = 1        // a good connection earns a fast first retry
         reconnectTimer?.cancel(); reconnectTimer = nil
         configureDemods()
+        // Now that the stream is up and iqRate is real, it is safe to let the
+        // config's didSet run. Restoring a stored profile makes the UI agree
+        // with what was just sent; a receiver seen for the first time keeps
+        // what is in force and is filed under its own key, so the receiver that
+        // predates this feature carries on unchanged.
+        //
+        // What is adopted is what was USED, not what was stored: the resolver
+        // may have overridden a value that could not work here, and filing the
+        // old one would repeat the fallback on every connect while leaving the
+        // UI disagreeing with the stream.
+        let hadProfile = config.devices[activeDeviceKey ?? ""] != nil
+        DeviceSettingsResolver.adopt(settings, into: &config, info: info, mode: mode)
+        // Saved only for a receiver seen for the first time: that changes no
+        // setting the user touched, so nothing else would ever write it out.
+        if !hadProfile { config.save() }
         // spyService.ts:1265 — covers the device's own start-up pop and the
         // demodulator's first samples (atan2 on a near-zero previous I/Q, AM's
         // DC settling).
@@ -1035,6 +1081,19 @@ final class LocalRadio {
     /// everything, for a caller who changed something outside `config`.
     func applyConfig(changedFrom previous: RadioConfig? = nil) {
         if let p = previous, p == config { return }
+        // Keep the connected receiver's profile in step with what is in force,
+        // so a gain or decimation chosen here is what comes back next time this
+        // receiver is selected — and is not carried onto a different one.
+        if let key = activeDeviceKey, !isCapturingProfile {
+            let wanted = RadioConfig.DeviceProfile(iqDecimation: config.iqDecimation,
+                                                   amGain: config.amGain,
+                                                   fmGain: config.fmGain)
+            if config.devices[key] != wanted {
+                isCapturingProfile = true
+                config.devices[key] = wanted
+                isCapturingProfile = false
+            }
+        }
         let gainChanged = previous.map {
             $0.amGain != config.amGain || $0.fmGain != config.fmGain
         } ?? true

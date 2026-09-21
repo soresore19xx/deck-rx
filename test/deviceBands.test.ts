@@ -17,9 +17,26 @@ describe('bandsForDevice', () => {
     expect(b[0].lo).toBe(24_000_000);
     expect(b[0].hi).toBe(1_800_000_000);
   });
-  it('RTL-SDR returns its 24 MHz – 1.766 GHz band', () => {
+  it('RTL-SDR with no reported range falls back to 24 MHz – 1.766 GHz', () => {
     const b = bandsForDevice(DEVICE_RTLSDR);
     expect(b[0].hi).toBe(1_766_000_000);
+  });
+  // "RTL-SDR" is not one frontend: a classic R820T stick starts near 24 MHz,
+  // an RTL-SDR Blog V4 upconverts and reaches 500 kHz, and the protocol has no
+  // field that distinguishes them. The server does know, so its reported range
+  // has to win — otherwise a V4 silently refuses to tune to mediumwave.
+  it('RTL-SDR prefers the reported range over the table (Blog V4 reaches 500 kHz)', () => {
+    const b = bandsForDevice(DEVICE_RTLSDR, 500_000, 1_766_000_000);
+    expect(b).toEqual([{ lo: 500_000, hi: 1_766_000_000 }]);
+    expect(isFreqReceivable(594_000, DEVICE_RTLSDR, 500_000, 1_766_000_000)).toBe(true);
+  });
+  it('RTL-SDR still rejects below a reported floor (classic stick at 24 MHz)', () => {
+    expect(isFreqReceivable(594_000, DEVICE_RTLSDR, 24_000_000, 1_766_000_000)).toBe(false);
+  });
+  it('Airspy HF+ keeps its table even when a range is reported (31–60 MHz gap survives)', () => {
+    const b = bandsForDevice(DEVICE_AIRSPY_HF, 0, 1_700_000_000);
+    expect(b).toHaveLength(2);
+    expect(isFreqReceivable(45_000_000, DEVICE_AIRSPY_HF, 0, 1_700_000_000)).toBe(false);
   });
   it('unknown deviceType + protocol fallback (min,max) → single-band list', () => {
     expect(bandsForDevice(999, 1_000, 2_000_000)).toEqual([{ lo: 1_000, hi: 2_000_000 }]);

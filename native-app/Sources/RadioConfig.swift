@@ -38,7 +38,59 @@ struct RadioConfig: Codable, Equatable {
     var volume: Double = 0.9
     var muted = false
     /// Offset from the device's MinimumIQDecimation, SDR++'s srId.
+    ///
+    /// A NUMBER OF HALVINGS, not a rate — so one value means different things
+    /// on different frontends: 0 is 912 kHz on an Airspy HF+ and 2.4 MHz on an
+    /// RTL-SDR Blog V4. Hence `devices` below.
     var iqDecimation: UInt32 = 1
+
+    /// Per-receiver overrides, keyed `deviceType:deviceSerial`.
+    ///
+    /// SDR++ keys a `devices` map by name and serial in every source config it
+    /// writes (spyserver_config.json, rtl_sdr_config.json, airspyhf_config.json).
+    /// deck-rx borrowed `srId` from it but not this, and on 2026-09-21 that cost
+    /// an afternoon: pointing Solo at a second SpyServer carrying a V4 reused the
+    /// HF+'s `iqDecimation: 0`, asked the server for 2.4 MHz, never tuned at all
+    /// (`deviceFreqHz` stayed at its default) and produced nothing but noise.
+    var devices: [String: DeviceProfile] = [:]
+
+    /// What differs per receiver. Everything absolute — frequency, bandwidth,
+    /// volume — stays at the top level, because it means the same thing
+    /// wherever it is applied.
+    struct DeviceProfile: Codable, Equatable {
+        var iqDecimation: UInt32?
+        var amGain: UInt32?
+        var fmGain: UInt32?
+        /// Also a divisor rather than a rate, so it travels badly for exactly
+        /// the same reason `iqDecimation` does: 4 gives 228 kHz of audio on an
+        /// HF+ at full rate and 37.5 kHz on a V4 at 150 kHz — and 37.5 kHz
+        /// cannot carry FM stereo's 38 kHz subcarrier at all.
+        var audioDecimate: Int?
+    }
+
+    /// Stable identity for a connected receiver. The type alone will not do:
+    /// two RTL-SDR dongles on one host are both type 3.
+    static func deviceKey(type: UInt32, serial: UInt32) -> String {
+        String(format: "%u:%08X", type, serial)
+    }
+
+    /// Adopt a stored profile. Returns what changed, so the caller can tell a
+    /// first sighting (nothing stored) from a restore.
+    mutating func applyProfile(for key: String) -> Bool {
+        guard let p = devices[key] else { return false }
+        if let v = p.iqDecimation  { iqDecimation = v }
+        if let v = p.amGain        { amGain = v }
+        if let v = p.fmGain        { fmGain = v }
+        if let v = p.audioDecimate { audioDecimate = v }
+        return true
+    }
+
+    /// Record the values in force as this receiver's profile.
+    mutating func captureProfile(for key: String) {
+        devices[key] = DeviceProfile(iqDecimation: iqDecimation, amGain: amGain,
+                                     fmGain: fmGain, audioDecimate: audioDecimate)
+    }
+
     var jpRegion = "kanto"
 
     var tuneStepHz: Double = 9000
@@ -250,6 +302,7 @@ struct RadioConfig: Codable, Equatable {
         volume = (try? c.decodeIfPresent(Double.self, forKey: .volume)) .flatMap { $0 } ?? d.volume
         muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) .flatMap { $0 } ?? d.muted
         iqDecimation = (try? c.decodeIfPresent(UInt32.self, forKey: .iqDecimation)) .flatMap { $0 } ?? d.iqDecimation
+        devices = (try? c.decodeIfPresent([String: DeviceProfile].self, forKey: .devices)) .flatMap { $0 } ?? d.devices
         jpRegion = (try? c.decodeIfPresent(String.self, forKey: .jpRegion)) .flatMap { $0 } ?? d.jpRegion
         tuneStepHz = (try? c.decodeIfPresent(Double.self, forKey: .tuneStepHz)) .flatMap { $0 } ?? d.tuneStepHz
         tuneStepByMode = (try? c.decodeIfPresent([String: Double].self, forKey: .tuneStepByMode)) .flatMap { $0 } ?? d.tuneStepByMode

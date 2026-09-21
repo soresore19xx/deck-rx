@@ -31,7 +31,7 @@ SRC="Sources/Platform.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
      Sources/IQSource.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
-     Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift \
+     Sources/StationLabel.swift Sources/RadioConfig.swift Sources/DeviceSettings.swift Sources/PresetStore.swift \
      Sources/WefaxDecode.swift \
      Sources/SpectrumView.swift Sources/FreqView.swift Sources/SignalMeter.swift"
 

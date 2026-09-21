@@ -16,7 +16,8 @@ const AIRSPY_HF_BANDS:  DeviceBand[] = [
 ];
 // Airspy R2 / Mini: 24 MHz – 1.8 GHz contiguous.
 const AIRSPY_ONE_BANDS: DeviceBand[] = [{ lo: 24_000_000, hi: 1_800_000_000 }];
-// Rafael R820T-class RTL-SDR dongles: 24 MHz – 1.766 GHz typical.
+// Rafael R820T-class RTL-SDR dongles: 24 MHz – 1.766 GHz typical. Only a
+// fallback — see bandsForDevice for why the reported range wins for this type.
 const RTLSDR_BANDS:     DeviceBand[] = [{ lo: 24_000_000, hi: 1_766_000_000 }];
 
 /**
@@ -24,15 +25,26 @@ const RTLSDR_BANDS:     DeviceBand[] = [{ lo: 24_000_000, hi: 1_766_000_000 }];
  * Falls back to the protocol-reported single (min, max) range when the
  * deviceType is unrecognised so a future device still gets at least a
  * one-band clamp instead of unbounded VFO.
+ *
+ * RTL-SDR is the one type where the reported range wins over the table.
+ * "RTL-SDR" covers dongles with different tuner floors and the protocol has no
+ * field to tell them apart: a classic R820T stick starts near 24 MHz, while an
+ * RTL-SDR Blog V4 has its own upconverter and receives from 500 kHz (and a V3
+ * in direct-sampling mode reaches HF by a third route again). The server knows
+ * which one it opened — spyserver reports whatever its minimum_frequency /
+ * maximum_frequency say — so trusting it covers all three, while the table
+ * silently refuses to tune below 24 MHz. Measured 2026-09-21: a V4 behind
+ * spyserver reports 500000..1766000000 and receives mediumwave fine.
  */
 export function bandsForDevice(deviceType: number, fallbackMin?: number, fallbackMax?: number): DeviceBand[] {
   if (deviceType === DEVICE_AIRSPY_HF)  return AIRSPY_HF_BANDS;
   if (deviceType === DEVICE_AIRSPY_ONE) return AIRSPY_ONE_BANDS;
-  if (deviceType === DEVICE_RTLSDR)     return RTLSDR_BANDS;
-  if (typeof fallbackMin === 'number' && typeof fallbackMax === 'number' && fallbackMax > fallbackMin) {
-    return [{ lo: fallbackMin, hi: fallbackMax }];
-  }
-  return [];
+  const reported = (typeof fallbackMin === 'number' && typeof fallbackMax === 'number'
+                    && fallbackMax > fallbackMin)
+    ? [{ lo: fallbackMin, hi: fallbackMax }]
+    : null;
+  if (deviceType === DEVICE_RTLSDR)     return reported ?? RTLSDR_BANDS;
+  return reported ?? [];
 }
 
 /** True iff hz lies inside any covered band. */

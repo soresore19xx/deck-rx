@@ -58,7 +58,11 @@ build_variant() {
   # at all on an Intel Mac, and the failure reads as a broken app rather than a
   # wrong architecture. Both target the macOS floor the Info.plist declares.
   local DEPLOY_TARGET="12.0"
-  local SLICE_ARM="$HERE/.slice-arm64" SLICE_X86="$HERE/.slice-x86_64"
+  # Per run, not a fixed name: two builds at once used to share these paths, and
+  # the one that finished first deleted the other's slices mid-lipo. The bundle
+  # that came out was thin x86_64 and said so only in one word of the deploy
+  # line (2026-09-22). Nothing stops two builds being started.
+  local SLICE_ARM="$HERE/.slice-arm64.$$" SLICE_X86="$HERE/.slice-x86_64.$$"
   rm -f "$SLICE_ARM" "$SLICE_X86"
 
   # ARM_ONLY_* carry what only the arm64 slice can have: the USB device source
@@ -158,7 +162,19 @@ PLIST
   touch "$APP"
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
     -f "$APP" 2>/dev/null || true
-  echo "deployed: $EXE  ($(lipo -archs "$EXE"))"
+  # Say it loudly rather than in one word of the line below: a bundle missing
+  # the slice for the machine it is on does not run, and "deployed" reads like
+  # success either way.
+  local ARCHS; ARCHS="$(lipo -archs "$EXE")"
+  case " $ARCHS " in
+    *" arm64 "*) ;;
+    *) echo "WARN: $NAME has no arm64 slice - it will run under Rosetta here" ;;
+  esac
+  case " $ARCHS " in
+    *" x86_64 "*) ;;
+    *) echo "WARN: $NAME has no x86_64 slice - it will not launch on an Intel Mac" ;;
+  esac
+  echo "deployed: $EXE  ($ARCHS)"
 }
 
 # Version. CFBundleVersion is the build date rather than a counter: it has to

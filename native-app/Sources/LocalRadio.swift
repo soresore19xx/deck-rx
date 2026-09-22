@@ -612,17 +612,37 @@ final class LocalRadio {
     ///
     /// The float samples are the sink's own domain (-1..1); they go out as
     /// int16 because that is what every analysis tool reads.
+    /// Where the flag and the recording live.
+    ///
+    /// `/tmp` is the Mac's answer and not the iPad's: an app there cannot write
+    /// outside its container, so the tap was silently dead on iOS — which is
+    /// the one platform where the audio cannot be listened to from here. The
+    /// sandbox's own tmp is reachable both ways:
+    ///
+    ///   xcrun devicectl device copy to --device <id> \
+    ///     --domain-type appDataContainer --domain-identifier com.hogehoge.deckrx.ipad \
+    ///     --source /dev/null --destination tmp/deck-rx-solo-audio-record
+    ///   ... and `copy from` with tmp/deck-rx-solo-audio-<stamp>.wav to fetch it.
+    static let tapDir: String = {
+#if os(iOS)
+        NSTemporaryDirectory()
+#else
+        "/tmp/"
+#endif
+    }()
+
     private func tapAudio(_ pcm: [Float]) {
         let now = Date()
         if now.timeIntervalSince(tapLastCheck) > 0.5 {
             tapLastCheck = now
-            let wanted = FileManager.default.fileExists(atPath: "/tmp/deck-rx-solo-audio-record")
+            let wanted = FileManager.default
+                .fileExists(atPath: Self.tapDir + "deck-rx-solo-audio-record")
             if wanted, tapFd < 0 {
                 let stamp = ISO8601DateFormatter().string(from: now)
                     .replacingOccurrences(of: ":", with: "-")
                     .replacingOccurrences(of: "T", with: "-")
                     .replacingOccurrences(of: "Z", with: "")
-                let path = "/tmp/deck-rx-solo-audio-\(stamp).wav"
+                let path = Self.tapDir + "deck-rx-solo-audio-\(stamp).wav"
                 let ch = isStereoMode ? 2 : 1
                 let rate = Int(audioRate)
                 var h = Data(count: 44)

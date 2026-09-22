@@ -1114,6 +1114,18 @@ final class LocalRadio {
                 isCapturingProfile = true
                 config.devices[key] = wanted
                 isCapturingProfile = false
+                // And write it out. Updating the map in memory is not enough:
+                // the profile is what the resolver reads FIRST on the next
+                // connect, so a gain changed while listening came back as the
+                // old one and took the top-level value with it — the control
+                // worked for as long as the session lasted and then undid
+                // itself. Measured 2026-09-22 through Solo's control port:
+                // amGain 6 on disk, profile still 0.
+                //
+                // Not every writer saves afterwards, and one of them saves
+                // BEFORE assigning (AppServer.applyOption), so this is the only
+                // place that sees the reconciled config.
+                config.save()
             }
         }
         let gainChanged = previous.map {
@@ -1165,6 +1177,11 @@ final class LocalRadio {
             self.muteUntil = max(self.muteUntil, Date().addingTimeInterval(0.15))
             self.am.reset()
             self.other.reset()
+            // Reported from the chair as "the gain does nothing", and the same
+            // code demonstrably works on the Mac. Say what was sent and under
+            // what authority, because a setting sent without control is
+            // accepted by the socket and ignored by the server.
+            NSLog("[gain] sent index \(g) digital \(digital) canControl \(self.canControl)")
             self.client.setSetting(.gain, g)
             self.client.setSetting(.iqDigitalGain, digital)
         }

@@ -542,11 +542,13 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         action: 'serverConfig',
         host: cfg.host,
         port: cfg.port,
+        source: cfg.source,
       });
     }
     if (ev.payload['action'] === 'setServerConfig') {
-      const { host, port } = ev.payload as { host?: string; port?: number };
-      await spyService.updateServerConfig({ host, port })
+      const { host, port, source } = ev.payload as
+        { host?: string; port?: number; source?: string };
+      await spyService.updateServerConfig({ host, port, source })
         .catch((e) => streamDeck.logger.error(`[spyDialTune] updateServerConfig: ${e}`));
     }
     if (ev.payload['action'] === 'getEibiStatus') {

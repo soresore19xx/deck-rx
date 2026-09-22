@@ -177,6 +177,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
           enabled: spyService.isEnabled(),
           host: cfg.host,
           port: cfg.port,
+          source: cfg.source,
         }));
       }).catch(() => {
         // The address is an extra, not the point of /health.

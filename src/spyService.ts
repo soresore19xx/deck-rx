@@ -6,6 +6,8 @@ import {
   STREAM_MODE_IQ_ONLY, STREAM_FORMAT_INT16,
   computeDigitalGain,
 } from './SpyClient.js';
+import { RtlTcpClient } from './RtlTcpClient.js';
+import { asIQSource, type IQClient, type IQSource } from './iqClient.js';
 import {
   resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig, deviceKey,
   type DeviceProfile,
@@ -113,6 +115,12 @@ const DEFAULT_SSB_OPTIONS: SSBOptions = {
 interface Config {
   host: string;
   port: number;
+  /// Which protocol `host:port` speaks. SpyServer unless said otherwise, so
+  /// every config written before rtl_tcp existed keeps working untouched.
+  /// The RTL-SDR Blog V4 is served over rtl_tcp: SpyServer's RTL support
+  /// never leaves the tuner's AGC, which is how a gain index set from the
+  /// dial ended up having no effect at all. See src/RtlTcpClient.ts.
+  source?: IQSource;
   enabled?: boolean;      // master ON/OFF (user-toggled via 2-second long press on the Tune dial)
   audioEnabled?: boolean;
   demodMode?: number;     // 0=NFM 1=WFM 2=AM (last-used)
@@ -281,7 +289,10 @@ export function snapTuneStepToList(stepHz: number, list: number[]): number {
 }
 
 class SpyService {
-  private client = new SpyClient();
+  private client: IQClient = new SpyClient();
+  /// The protocol `client` speaks. Set from the config on every connect, so a
+  /// source change in the PI takes effect on the reconnect that follows it.
+  private clientSource: IQSource = 'spyserver';
   private connected = false;
   private connecting = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -333,6 +344,11 @@ class SpyService {
   private ssbOptions: SSBOptions = { ...DEFAULT_SSB_OPTIONS };
   private host = '';
   private port = 0;
+
+  /** A fresh client for the source in force. Callers hookClient() after. */
+  private makeClient(): IQClient {
+    return this.clientSource === 'rtltcp' ? new RtlTcpClient() : new SpyClient();
+  }
   private volume = 1.0;   // 0..1.0 (1.0 = full leveled output; trims down from there)
   // Output-stage loudness leveling (see audioLeveling.ts). Layered: per-mode
   // makeup → output AGC → soft limiter, applied to the final PCM before
@@ -680,7 +696,19 @@ class SpyService {
       }
       this.host = cfg.host;
       this.port = cfg.port;
-      log.info(`[spyService] connecting ${cfg.host}:${cfg.port}`);
+      // The source can change under us (PI edit, or a config written by hand).
+      // Swapping the client here rather than in updateServerConfig keeps every
+      // path that reconnects — including the 5-second retry loop — honest about
+      // which protocol the endpoint speaks.
+      const wantSource = asIQSource(cfg.source);
+      if (wantSource !== this.clientSource) {
+        log.info(`[spyService] source ${this.clientSource} -> ${wantSource}`);
+        this.clientSource = wantSource;
+        try { this.client.disconnect(); } catch { /* replacing it either way */ }
+        this.client = this.makeClient();
+        this.hookClient();
+      }
+      log.info(`[spyService] connecting ${cfg.host}:${cfg.port} (${wantSource})`);
       await this.client.connect(cfg.host, cfg.port);
       log.info('[spyService] tcp connected, awaiting deviceInfo');
       await this.waitForDeviceInfo(3000);
@@ -708,7 +736,7 @@ class SpyService {
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       this.client.disconnect();
-      this.client = new SpyClient();
+      this.client = this.makeClient();
       this.hookClient();
       await this.connect();
     }, 5000);
@@ -751,7 +779,7 @@ class SpyService {
     } else {
       // Going ON: kick off a fresh connect (existing client already disconnected
       // or never opened — replace to drop any stale listeners cleanly).
-      this.client = new SpyClient();
+      this.client = this.makeClient();
       this.hookClient();
       await this.connect();
     }
@@ -1638,6 +1666,7 @@ class SpyService {
     return {
       host:          cfg.host          ?? '192.168.1.100',
       port:          cfg.port          ?? 8888,
+      source:        asIQSource(cfg.source),
       enabled:       cfg.enabled       ?? true,
       audioEnabled:  cfg.audioEnabled  ?? false,
       demodMode:     cfg.demodMode     ?? 1,
@@ -1776,10 +1805,10 @@ class SpyService {
     };
   }
 
-  /** Persisted SpyServer host + port (used by PI to populate the form fields). */
-  async getServerConfigPersisted(): Promise<{ host: string; port: number }> {
+  /** Persisted receiver endpoint (used by PI to populate the form fields). */
+  async getServerConfigPersisted(): Promise<{ host: string; port: number; source: IQSource }> {
     const cfg = await this.loadConfig();
-    return { host: cfg.host, port: cfg.port };
+    return { host: cfg.host, port: cfg.port, source: asIQSource(cfg.source) };
   }
 
   /**
@@ -1788,10 +1817,13 @@ class SpyService {
    * reconnect (unless the master switch is OFF, in which case only the
    * persisted value is updated). Validates port is in 1..65535.
    */
-  async updateServerConfig({ host, port }: { host?: string; port?: number }): Promise<void> {
+  async updateServerConfig(
+    { host, port, source }: { host?: string; port?: number; source?: string },
+  ): Promise<void> {
     const updates: Record<string, unknown> = {};
     if (typeof host === 'string' && host.trim().length > 0) updates.host = host.trim();
     if (typeof port === 'number' && port >= 1 && port <= 65535) updates.port = port;
+    if (source === 'spyserver' || source === 'rtltcp') updates.source = source;
     if (Object.keys(updates).length === 0) return;
     await this.persistFields(updates);
     // Apply live: only re-establish if there was an active or pending connection.
@@ -1804,7 +1836,7 @@ class SpyService {
     this.deviceInfo = null;
     log.info(`[spyService] updateServerConfig ${JSON.stringify(updates)}`);
     if (wasActive && this.enabled) {
-      this.client = new SpyClient();
+      this.client = this.makeClient();
       this.hookClient();
       await this.connect();
     }

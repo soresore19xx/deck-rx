@@ -93,9 +93,45 @@ On the sserv VM (`/usr/local/bin/spyserver`, Ubuntu 24.04 aarch64):
 
 ![Second receiver — target layout](second-receiver.png)
 
-## Two ways, and why one wins
+## Two ways, and why the first one won in the end
 
-### Rejected: an rtl_tcp client in the plugin and in Solo
+> **Reversed on 2026-09-22.** The plugin now speaks rtl_tcp, through
+> `src/RtlTcpClient.ts` and a `source` field beside `host`/`port`. What follows
+> is kept as written, because the reasoning is still worth reading and only one
+> of its four objections survived contact.
+>
+> **What decided it was not a preference.** SpyServer's RTL-SDR support never
+> takes the tuner out of AGC: its binary contains neither `set_tuner_gain_mode`
+> nor `set_agc_mode`. A gain index set from the dial therefore did nothing at
+> all — measured across indices 0, 4, 8 and 16 with no change in the spectrum —
+> while the V4 sat saturated on the mediumwave band and threw third-order
+> products across it. The same path also needed a `minimum_frequency` line
+> in the spyserver config before it would tune below 24 MHz. Neither is
+> something this side can fix.
+>
+> How the four objections held up:
+>
+> - **Decimation on the client** — real, and smaller than feared. The rate model
+>   here is already `iqRate = maxSampleRate / 2^stage`, so the client claims
+>   2.4 MS/s, asks the device for the lowest *native* rate that is a
+>   power-of-two multiple of the target, and halves the rest through a cascade
+>   of low-pass stages. No resampler in front of any demodulator. This
+>   receiver's stored profile lands on 300 kS/s, which is native — nothing is
+>   filtered at all in normal use.
+> - **8-bit samples widened at the door** — real, and it is one function. The
+>   plugin only ever consumed `int16`, so converting inside the client left
+>   everything downstream untouched, including the digital gain that keeps a
+>   stored gain index sounding the same through either client.
+> - **One client at a time** — **still true, and the real remaining cost.**
+>   Listening on the iPad while the Mac watches the V4's spectrum does not work.
+>   SpyServer serves three. This is the price paid for a gain control that works.
+> - **Three codebases** — only the TypeScript one has grown it. Solo and the
+>   iPad app still speak SpyServer, so the V4 is plugin-only until they follow.
+>
+> The spyserver-rtlsdr service is disabled rather than deleted, so the old path
+> is one `systemctl enable --now` away if the trade turns out wrong.
+
+### Rejected at the time: an rtl_tcp client in the plugin and in Solo
 
 Write `src/RtlTcpClient.ts` next to `SpyClient.ts`, and an `RtlTcpSource` in the
 Swift app, speaking `rtl_tcp` to a daemon on whichever host holds the V4.
@@ -113,13 +149,16 @@ around it is not:
 - Three codebases (TS, Swift, and the iPad app sharing the Swift core) each grow
   a second transport that has to stay in step with the first.
 
-### Chosen: a second spyserver instance, with the V4 on the Linux VM
+### Chosen at the time: a second spyserver instance, with the V4 on the Linux VM
 
 Put the V4 where the HF+ already is — passed through to the sserv VM — and run a
 second `spyserver` process for it on its own port.
 
-See the diagram above: one antenna, the SMA T, both receivers on USB into mini4,
-and two `spyserver` processes inside the VirtualBuddy VM on separate ports.
+See the diagram above: one antenna, the splitter, both receivers on USB into
+mini4, and two `spyserver` processes inside the VirtualBuddy VM on separate
+ports. (The diagram shows an SMA T. That was replaced by a proper 2-way
+distributor on 2026-09-22 — a T has no isolation between the two receivers and
+presents 25 Ω to the source.)
 
 Every client already knows how to talk to this. Changing receiver becomes
 changing a host and port, and `deviceType` in the protocol handshake tells the
@@ -265,3 +304,32 @@ down before touching the cable. This now applies to two receivers instead of one
 There is no macOS spyserver, so this design does not apply. The fallback is the
 rejected rtl_tcp path, or simply using SDR++ on studio — which works today, with
 two settings: `directSampling` 0 and the gain at the bottom of the list.
+
+## How it is wired today (2026-09-22)
+
+On the VM, `rtl_tcp.service` replaces `spyserver-rtlsdr.service`. The old unit is
+disabled, not removed.
+
+```
+ExecStart=/usr/bin/rtl_tcp -a 0.0.0.0 -p 1234 -d 0 -f 810000 -s 2400000 -g 0
+```
+
+`-g 0` reads like "0.0 dB" and means **automatic** — that is rtl_tcp's own
+convention, and it is why `RtlTcpClient` sends `SET_GAIN_MODE 1` and
+`SET_AGC_MODE 0` before every gain index rather than trusting the startup flag.
+
+In the plugin, the receiver is chosen in the Tune dial's Property Inspector:
+
+| | Airspy HF+ | RTL-SDR Blog V4 |
+|---|---|---|
+| Server | `192.168.0.143` | `192.168.0.143` |
+| Port | `8888` | `1234` |
+| Protocol | SpyServer | rtl_tcp |
+
+The per-receiver profile is keyed on `deviceType:deviceSerial`. rtl_tcp carries
+no serial and SpyServer reported zero for this hardware, so both clients land on
+`3:00000000` and the gain, decimation and audio-decimation saved under spyserver
+carry over unchanged. `test/rtlTcp.test.ts` pins that.
+
+Solo, the iPad app and the unattended capture jobs still speak SpyServer, so
+they reach the HF+ on 8888 and cannot see the V4 while it is on rtl_tcp.

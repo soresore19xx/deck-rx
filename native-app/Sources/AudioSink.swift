@@ -411,7 +411,11 @@ final class AudioSink {
         let now = Date()
         guard now.timeIntervalSince(mixTapLastCheck) > 0.5 else { return }
         mixTapLastCheck = now
-        let wanted = FileManager.default.fileExists(atPath: "/tmp/deck-rx-solo-postmix-record")
+        // Sandbox-aware for the same reason the demodulator-side tap is: on iOS
+        // a literal /tmp is not the app's to read or write, so this flag could
+        // never be set there. See LocalRadio.tapDir.
+        let wanted = FileManager.default
+            .fileExists(atPath: LocalRadio.tapDir + "deck-rx-solo-postmix-record")
         if wanted, !mixTapInstalled, engine.isRunning {
             let bus = engine.mainMixerNode.outputFormat(forBus: 0)
             guard bus.sampleRate > 0, bus.channelCount > 0 else { return }
@@ -420,7 +424,7 @@ final class AudioSink {
                 .replacingOccurrences(of: ":", with: "-")
                 .replacingOccurrences(of: "T", with: "-")
                 .replacingOccurrences(of: "Z", with: "")
-            let path = "/tmp/deck-rx-solo-postmix-\(stamp).wav"
+            let path = LocalRadio.tapDir + "deck-rx-solo-postmix-\(stamp).wav"
             var h = Data(count: 44)
             func put32(_ o: Int, _ v: Int) {
                 var le = UInt32(truncatingIfNeeded: v).littleEndian

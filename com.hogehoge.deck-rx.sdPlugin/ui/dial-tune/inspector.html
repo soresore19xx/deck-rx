@@ -65,6 +65,12 @@
     <input type="text" id="hostInput" placeholder="192.168.1.100" />
     <input type="number" id="portInput" placeholder="8888" min="1" max="65535" />
   </div>
+  <div class="row"><label>Protocol</label>
+    <select id="sourceInput">
+      <option value="spyserver">SpyServer</option>
+      <option value="rtltcp">rtl_tcp</option>
+    </select>
+  </div>
   <div class="row"><label>EIBI</label>
     <button type="button" id="eibiUpdateBtn">Update Now</button>
     <span class="status" id="eibiStatus"></span>
@@ -141,6 +147,7 @@
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'serverConfig') {
         document.getElementById('hostInput').value = msg.payload.host || '';
         document.getElementById('portInput').value = msg.payload.port ? String(msg.payload.port) : '';
+        document.getElementById('sourceInput').value = msg.payload.source || 'spyserver';
       }
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'eibiStatus') {
         renderEibiStatus(msg.payload.when, msg.payload.count, null);
@@ -295,11 +302,15 @@
       var payload = { action: 'setServerConfig' };
       if (host) payload.host = host;
       if (port >= 1 && port <= 65535) payload.port = port;
+      payload.source = document.getElementById('sourceInput').value;
       if (payload.host || payload.port) sendToPlugin(payload);
     }, 800);
   }
   document.getElementById('hostInput').addEventListener('input', scheduleSaveServer);
   document.getElementById('portInput').addEventListener('input', scheduleSaveServer);
+  // The protocol decides which client is built, so it applies on the next
+  // connect rather than on the 800 ms keystroke debounce the fields use.
+  document.getElementById('sourceInput').addEventListener('change', scheduleSaveServer);
 
   function renderEibiStatus(whenIso, count, errMsg) {
     var el = document.getElementById('eibiStatus');

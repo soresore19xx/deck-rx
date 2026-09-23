@@ -18,6 +18,7 @@ import {
   decimationOffset, audioDecimation, defaultGainIndex, gainCeiling, isMediumwave,
   RTL_MW_GAIN_INDEX, RTL_HF_GAIN_INDEX,
   resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig,
+  gainBand, gainScope, withBandGain,
   type DeviceProfile,
 } from '../src/deviceSettings.js';
 import type { DeviceInfo } from '../src/SpyClient.js';
@@ -375,4 +376,106 @@ describe('filing a profile into the config on disk', () => {
       expect(onDisk.devices).toEqual({ '2:31313038': hf });
     });
   }
+});
+
+// Gain is kept per band, and inside a band per AM / the rest. Measured on
+// 2026-09-23 with the V4 behind a 6 dB pad: mediumwave wants index 3, and one
+// value per mode made mediumwave and shortwave AM fight over it.
+describe('gain per band', () => {
+  const MW = 594_000, HF = 6_030_000, VHF = 80_000_000;
+  const key = deviceKey(V4.deviceType, V4.deviceSerial);
+  const withGains = (gains: DeviceProfile['gains'], extra: DeviceProfile = {}) =>
+    cfg({ devices: { [key]: { iqDecimation: 3, audioDecimate: 4, ...extra, gains } } });
+
+  it('draws the band lines at 2 MHz and 30 MHz', () => {
+    expect(gainBand(0)).toBe('mw');
+    expect(gainBand(1_999_999)).toBe('mw');
+    expect(gainBand(2_000_000)).toBe('hf');
+    expect(gainBand(29_999_999)).toBe('hf');
+    expect(gainBand(30_000_000)).toBe('vhf');
+    expect(gainBand(1_700_000_000)).toBe('vhf');
+  });
+  it('splits AM from every other mode', () => {
+    expect(gainScope(RX_MODE.AM)).toBe('am');
+    for (const m of [RX_MODE.NFM, RX_MODE.WFM, RX_MODE.DSB, 4, 5, 6]) expect(gainScope(m)).toBe('fm');
+  });
+
+  const c = withGains({ mw: { am: 3, fm: 5 }, hf: { am: 17, fm: 18 }, vhf: { am: 9, fm: 4 } });
+  const cases: [string, number, number, number][] = [
+    ['AM on mediumwave', RX_MODE.AM, MW, 3],
+    ['SSB on mediumwave', 4, MW, 5],
+    ['AM on shortwave', RX_MODE.AM, HF, 17],
+    ['SSB on shortwave', 4, HF, 18],
+    ['AM on VHF (airband)', RX_MODE.AM, VHF, 9],
+    ['WFM on VHF', RX_MODE.WFM, VHF, 4],
+    ['an unknown frequency, as mediumwave', RX_MODE.AM, 0, 3],
+  ];
+  for (const [name, mode, f, want] of cases) {
+    it(`uses the slot for ${name}`, () => {
+      expect(resolveDeviceSettings(V4, c, mode, f).gainIndex).toBe(want);
+    });
+  }
+
+  it('a band slot beats the per-mode value in the same profile', () => {
+    const c2 = withGains({ mw: { am: 3 } }, { amGain: 12 });
+    expect(resolveDeviceSettings(V4, c2, RX_MODE.AM, MW).gainIndex).toBe(3);
+  });
+  it('a band with nothing filed falls back to the per-mode value, as before', () => {
+    // A profile written before gains existed, and a band not visited since.
+    const c2 = withGains({ mw: { am: 3 } }, { amGain: 12, fmGain: 6 });
+    expect(resolveDeviceSettings(V4, c2, RX_MODE.AM, HF).gainIndex).toBe(12);
+    expect(resolveDeviceSettings(V4, c2, 4, MW).gainIndex).toBe(6);
+  });
+  it('a band with nothing filed anywhere takes the band default', () => {
+    const c2 = cfg({ devices: { [key]: { gains: { mw: { am: 3 } } } } });
+    expect(resolveDeviceSettings(V4, c2, RX_MODE.AM, HF).gainIndex).toBe(RTL_HF_GAIN_INDEX);
+  });
+  it('still clamps a slot to what the device has', () => {
+    expect(resolveDeviceSettings(V4, withGains({ mw: { am: 99 } }), RX_MODE.AM, MW).gainIndex)
+      .toBe(V4.maxGainIndex);
+  });
+  it('another receiver does not see these slots', () => {
+    expect(resolveDeviceSettings(HFP, c, RX_MODE.AM, MW).gainIndex).toBe(HFP.maxGainIndex);
+  });
+
+  it('adopt files both gains into the band it was used in and nowhere else', () => {
+    const c2 = withGains({ hf: { am: 17, fm: 18 } });
+    const s = resolveDeviceSettings(V4, cfg({ amGain: 3 }), RX_MODE.AM, MW);
+    adoptDeviceSettings(s, c2, V4, RX_MODE.AM, MW);
+    // fm: nothing filed for mw and no per-mode value, so the mediumwave default.
+    expect(c2.devices![key].gains).toEqual({
+      hf: { am: 17, fm: 18 }, mw: { am: s.gainIndex, fm: RTL_MW_GAIN_INDEX },
+    });
+    expect(c2.amGain).toBe(s.gainIndex);
+    expect(c2.fmGain).toBe(RTL_MW_GAIN_INDEX);
+  });
+  it('adopt keeps the other scope of the same band', () => {
+    const c2 = withGains({ mw: { fm: 5 } });
+    const s = resolveDeviceSettings(V4, c2, RX_MODE.AM, MW);
+    adoptDeviceSettings(s, c2, V4, RX_MODE.AM, MW);
+    expect(c2.devices![key].gains!.mw).toEqual({ am: s.gainIndex, fm: 5 });
+  });
+  it('adopt then resolve gives back the same gain in every band', () => {
+    const c2 = cfg();
+    for (const [f, g] of [[MW, 3], [HF, 17], [VHF, 4]] as const) {
+      const s = { ...resolveDeviceSettings(V4, c2, RX_MODE.AM, f), gainIndex: g };
+      adoptDeviceSettings(s, c2, V4, RX_MODE.AM, f);
+    }
+    expect(resolveDeviceSettings(V4, c2, RX_MODE.AM, MW).gainIndex).toBe(3);
+    expect(resolveDeviceSettings(V4, c2, RX_MODE.AM, HF).gainIndex).toBe(17);
+    expect(resolveDeviceSettings(V4, c2, RX_MODE.AM, VHF).gainIndex).toBe(4);
+  });
+  it('withBandGain does not touch the map it is given', () => {
+    const g = { mw: { am: 3 } };
+    const out = withBandGain(g, 'mw', 'fm', 5);
+    expect(g).toEqual({ mw: { am: 3 } });
+    expect(out).toEqual({ mw: { am: 3, fm: 5 } });
+  });
+  it('a profile with gains survives the merge onto disk intact', () => {
+    const prof: DeviceProfile = { iqDecimation: 3, gains: { mw: { am: 3, fm: 3 }, hf: { am: 17 } } };
+    const onDisk: Record<string, unknown> = { devices: { '2:31313038': { amGain: 1 } } };
+    mergeProfileIntoConfig(onDisk, key, prof);
+    expect((onDisk.devices as Record<string, DeviceProfile>)[key]).toEqual(prof);
+    expect((onDisk.devices as Record<string, DeviceProfile>)['2:31313038']).toEqual({ amGain: 1 });
+  });
 });

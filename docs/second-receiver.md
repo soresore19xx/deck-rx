@@ -38,8 +38,26 @@ antenna, index 0 against index 5 — the 594 kHz carrier fell from 51 to 32 dB
 over the floor, the noise floor at 1100 kHz rose 39 dB, the stations visible
 around 750 kHz went from 11 to 3, and the band filled with narrow peaks off the
 9 kHz raster. So for RTL devices the resolver picks its default by frequency
-(index 1, about 0.9 dB, below 2 MHz; index 17, about 32.8 dB, above it) and
-also caps a stored value on mediumwave. Other receivers are untouched.
+(index 1, about 0.9 dB, below 2 MHz; index 17, about 32.8 dB, above it).
+(The mediumwave cap it also had for a day is gone — it undid a gain set while
+listening on the next connect.)
+
+**Since 2026-09-23 the stored gain is per band as well.** Each receiver's
+profile carries `gains: { mw, hf, vhf }` (split at 2 MHz and 30 MHz), and each
+band holds `am` and `fm` — AM against the rest stays because the non-AM value
+is also the post-demod level for FM, SSB and CW. A retune that crosses a band
+loads that band's pair and sends the live one; a gain changed while listening
+goes into the slot for the band being listened to. A band with nothing filed
+falls back to the profile's `amGain` / `fmGain`, then the band default, so a
+profile written before slots existed behaves as it did. What prompted it: with
+a 6 dB pad on the V4's splitter port, a sweep of indices 0-7 on mediumwave put
+the best at 3 (peak -6.3 dBFS, 1026 kHz at the level of the empty 693 kHz; from
+6 up the 2x810-594 product stands 6-8 dB above it), while shortwave wants 17 —
+and with one value per mode, mediumwave and shortwave AM shared `amGain`.
+Rules: `gainBand` / `resolveDeviceSettings` in `src/deviceSettings.ts` and
+`GainBand` / `DeviceSettingsResolver` in `native-app/Sources/DeviceSettings.swift`,
+with the same numbers in both test suites and the file round trip in
+`test/bandGain.test.ts`.
 
 ## What the V4 is for
 

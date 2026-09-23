@@ -336,20 +336,21 @@ func runDeviceSettingsTests() {
     // filed was overwritten with nothing and the audio divisor stopped being
     // per-receiver. There is one builder now, and these pin it.
     var p = cfg(iqDec: 4, audioDec: 8, amGain: 1, fmGain: 6)
-    let inForce = p.profileInForce()
+    let inForce = p.profileInForce(for: "3:00000000", freqHz: 594_000)
     check("every field of the profile is filled",
           inForce.iqDecimation == 4 && inForce.audioDecimate == 8
-            && inForce.amGain == 1 && inForce.fmGain == 6,
+            && inForce.amGain == 1 && inForce.fmGain == 6
+            && inForce.gains == ["mw": .init(am: 1, fm: 6)],
           "\(String(describing: inForce))")
 
-    p.captureProfile(for: "3:00000000")
+    p.captureProfile(for: "3:00000000", freqHz: 594_000)
     check("capturing files exactly what is in force",
           p.devices["3:00000000"] == inForce)
 
     // The round trip that matters: file one receiver, move to another, come
     // back, and every field returns — audioDecimate included.
     p.iqDecimation = 3; p.audioDecimate = 2; p.amGain = 7; p.fmGain = 2
-    p.captureProfile(for: "2:31313038")
+    p.captureProfile(for: "2:31313038", freqHz: 594_000)
     check("both receivers are on file", p.devices.count == 2)
     check("the other receiver restores all four values",
           p.applyProfile(for: "3:00000000")
@@ -362,4 +363,102 @@ func runDeviceSettingsTests() {
             && p.devices["2:31313038"]?.iqDecimation == 3)
     check("a receiver never seen restores nothing",
           p.applyProfile(for: "9:DEADBEEF") == false)
+
+    runBandGainTests()
+}
+
+/// Gain per band, and inside a band per AM / the rest. The same numbers as the
+/// `gain per band` block of test/deviceSettings.test.ts. Measured on 2026-09-23
+/// with the V4 behind a 6 dB pad: mediumwave wants index 3, and one value per
+/// mode made mediumwave and shortwave AM fight over it.
+func runBandGainTests() {
+    print("\ndevice settings — gain per band")
+    let mw = 594_000.0, hf = 6_030_000.0, vhf = 80_000_000.0
+    let key = RadioConfig.deviceKey(type: Rx.v4.deviceType, serial: Rx.v4.deviceSerial)
+    typealias BG = RadioConfig.BandGain
+    func withGains(_ g: [String: BG], amGain: UInt32? = nil, fmGain: UInt32? = nil) -> RadioConfig {
+        cfg(devices: [key: .init(iqDecimation: 3, amGain: amGain, fmGain: fmGain,
+                                 audioDecimate: 4, gains: g)])
+    }
+    func gain(_ c: RadioConfig, _ mode: Int, _ f: Double,
+              _ info: SpyClient.DeviceInfo = Rx.v4) -> UInt32 {
+        DeviceSettingsResolver.resolve(info: info, config: c, mode: mode, freqHz: f).gainIndex
+    }
+
+    check("band lines at 2 MHz and 30 MHz",
+          GainBand.of(0) == .mw && GainBand.of(1_999_999) == .mw
+            && GainBand.of(2_000_000) == .hf && GainBand.of(29_999_999) == .hf
+            && GainBand.of(30_000_000) == .vhf && GainBand.of(1_700_000_000) == .vhf)
+
+    let c = withGains(["mw": BG(am: 3, fm: 5), "hf": BG(am: 17, fm: 18), "vhf": BG(am: 9, fm: 4)])
+    let cases: [(String, Int, Double, UInt32)] = [
+        ("AM on mediumwave", RxMode.am, mw, 3),
+        ("SSB on mediumwave", 4, mw, 5),
+        ("AM on shortwave", RxMode.am, hf, 17),
+        ("SSB on shortwave", 4, hf, 18),
+        ("AM on VHF (airband)", RxMode.am, vhf, 9),
+        ("WFM on VHF", RxMode.wfm, vhf, 4),
+        ("an unknown frequency, as mediumwave", RxMode.am, 0, 3),
+    ]
+    for (name, mode, f, want) in cases {
+        let got = gain(c, mode, f)
+        check("uses the slot for \(name)", got == want, "got \(got) want \(want)")
+    }
+
+    check("a band slot beats the per-mode value in the same profile",
+          gain(withGains(["mw": BG(am: 3)], amGain: 12), RxMode.am, mw) == 3)
+    let legacy = withGains(["mw": BG(am: 3)], amGain: 12, fmGain: 6)
+    check("a band with nothing filed falls back to the per-mode value, as before",
+          gain(legacy, RxMode.am, hf) == 12 && gain(legacy, 4, mw) == 6)
+    check("a band with nothing filed anywhere takes the band default",
+          gain(cfg(devices: [key: .init(gains: ["mw": BG(am: 3)])]), RxMode.am, hf)
+            == DeviceSettingsResolver.rtlHFGainIndex)
+    check("still clamps a slot to what the device has",
+          gain(withGains(["mw": BG(am: 99)]), RxMode.am, mw) == Rx.v4.maxGainIndex)
+    check("another receiver does not see these slots",
+          gain(c, RxMode.am, mw, Rx.hfp) == Rx.hfp.maxGainIndex)
+
+    // adopt: both gains, into the band in use, and nowhere else.
+    var c2 = withGains(["hf": BG(am: 17, fm: 18)])
+    let s = DeviceSettingsResolver.resolve(info: Rx.v4, config: cfg(amGain: 3),
+                                           mode: RxMode.am, freqHz: mw)
+    DeviceSettingsResolver.adopt(s, into: &c2, info: Rx.v4, mode: RxMode.am, freqHz: mw)
+    let mwDefault = DeviceSettingsResolver.rtlMWGainIndex
+    check("adopt files both gains into the band it was used in and nowhere else",
+          c2.devices[key]?.gains == ["hf": BG(am: 17, fm: 18),
+                                     "mw": BG(am: s.gainIndex, fm: mwDefault)]
+            && c2.amGain == s.gainIndex && c2.fmGain == mwDefault,
+          "\(String(describing: c2.devices[key]?.gains))")
+
+    var c3 = withGains(["mw": BG(fm: 5)])
+    let s3 = DeviceSettingsResolver.resolve(info: Rx.v4, config: c3, mode: RxMode.am, freqHz: mw)
+    DeviceSettingsResolver.adopt(s3, into: &c3, info: Rx.v4, mode: RxMode.am, freqHz: mw)
+    check("adopt keeps the other scope of the same band",
+          c3.devices[key]?.gains?["mw"] == BG(am: s3.gainIndex, fm: 5))
+
+    var c4 = cfg()
+    for (f, g) in [(mw, UInt32(3)), (hf, 17), (vhf, 4)] {
+        var s4 = DeviceSettingsResolver.resolve(info: Rx.v4, config: c4, mode: RxMode.am, freqHz: f)
+        s4.gainIndex = g
+        DeviceSettingsResolver.adopt(s4, into: &c4, info: Rx.v4, mode: RxMode.am, freqHz: f)
+    }
+    check("adopt then resolve gives back the same gain in every band",
+          gain(c4, RxMode.am, mw) == 3 && gain(c4, RxMode.am, hf) == 17
+            && gain(c4, RxMode.am, vhf) == 4)
+
+    let bg = DeviceSettingsResolver.bandGains(info: Rx.v4, config: c, freqHz: hf)
+    check("bandGains reads both scopes of the band", bg.am == 17 && bg.fm == 18)
+
+    // What the plugin writes, read by the app, and back: the two share a file
+    // shape, so a profile with slots has to survive Codable both ways.
+    let json = #"{"iqDecimation":3,"gains":{"mw":{"am":3,"fm":3},"hf":{"am":17}}}"#
+    let decoded = try? JSONDecoder().decode(RadioConfig.DeviceProfile.self, from: Data(json.utf8))
+    check("reads the plugin's gains shape",
+          decoded?.gains == ["mw": BG(am: 3, fm: 3), "hf": BG(am: 17)] && decoded?.iqDecimation == 3)
+    let again = decoded.flatMap { try? JSONEncoder().encode($0) }
+        .flatMap { try? JSONDecoder().decode(RadioConfig.DeviceProfile.self, from: $0) }
+    check("and writes it back unchanged", again == decoded)
+    let old = #"{"iqDecimation":3,"amGain":1,"fmGain":4,"audioDecimate":4}"#
+    let oldDecoded = try? JSONDecoder().decode(RadioConfig.DeviceProfile.self, from: Data(old.utf8))
+    check("a profile from before slots still reads", oldDecoded?.amGain == 1 && oldDecoded?.gains == nil)
 }

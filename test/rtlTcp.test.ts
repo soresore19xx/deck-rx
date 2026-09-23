@@ -297,7 +297,8 @@ describe('source selection', () => {
   });
 
   it('knows each protocol default port', () => {
-    expect(defaultPort('rtltcp')).toBe(1234);
+    // Not rtl_tcp's own 1234: the V4 is served on 8890, next to the HF+'s 8888.
+    expect(defaultPort('rtltcp')).toBe(8890);
     expect(defaultPort('spyserver')).toBe(5555);
   });
 });

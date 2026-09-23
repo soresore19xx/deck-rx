@@ -419,30 +419,39 @@ final class LocalRadio {
         // so it needs no library and is in every build (src/iqClient.ts's
         // `source: 'rtltcp'`, the same spelling the plugin writes).
         if config.source == "rtltcp" {
-            if !(client is RtlTcpClient) {
-                client.disconnect()
-                client = RtlTcpClient()
-            }
+            if !(client is RtlTcpClient) { replaceClient(with: RtlTcpClient()) }
             return
         }
-        if client is RtlTcpClient {
-            client.disconnect()
-            client = SpyClient()
-        }
+        if client is RtlTcpClient { replaceClient(with: SpyClient()) }
         let wantDevice = config.source == "usb"
 #if AIRSPYHF_ENABLED
         if wantDevice, !(client is AirspyDevice) {
-            client.disconnect()
-            client = AirspyDevice()
+            replaceClient(with: AirspyDevice())
         } else if !wantDevice, !(client is SpyClient) {
-            client.disconnect()
-            client = SpyClient()
+            replaceClient(with: SpyClient())
         }
 #else
         if wantDevice, lastError == nil {
             lastError = "built without USB device support - using the server"
         }
 #endif
+    }
+
+    /// Retire the source in force and put `new` in its place. The old one is
+    /// deafened before it is closed: its queue can still hand up a packet, a
+    /// sync or a disconnect after this returns — the rtl_tcp client's pacer
+    /// holds up to half a second of IQ — and those belong to a connection that
+    /// no longer describes the receiver. A late disconnect from it would even
+    /// start a reconnect of the new one.
+    private func replaceClient(with new: IQSource) {
+        let old = client
+        old.onIQ = nil
+        old.onSync = nil
+        old.onDeviceInfo = nil
+        old.onDisconnect = nil
+        old.onError = nil
+        old.disconnect()
+        client = new
     }
 
     /// The connection attempt itself, separated from `connect` so a retry does
@@ -1047,7 +1056,15 @@ final class LocalRadio {
         lastError = nil
         reconnectDelay = 1        // a good connection earns a fast first retry
         reconnectTimer?.cancel(); reconnectTimer = nil
-        configureDemods()
+        // On the demodulators' own queue. This runs on the IQ source's queue
+        // (it is the DeviceInfo callback), and the filters it rebuilds are the
+        // ones `absorb` is stepping on `queue` — with packets from the previous
+        // connection still in flight. Rebuilding them from here crashed Solo on
+        // the first switch from the HF+ to the V4 (2026-09-24 07:11, an index
+        // out of range in ComplexFirLpf.step under processWFMStereo): the two
+        // rates need different tap counts, so the arrays changed length under
+        // the other thread. Sync, so the stream below starts on the new filters.
+        queue.sync { self.configureDemods() }
         // Now that the stream is up and iqRate is real, it is safe to let the
         // config's didSet run. Restoring a stored profile makes the UI agree
         // with what was just sent; a receiver seen for the first time keeps

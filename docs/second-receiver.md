@@ -151,6 +151,10 @@ On the sserv VM (`/usr/local/bin/spyserver`, Ubuntu 24.04 aarch64):
 
 ### Rejected at the time: an rtl_tcp client in the plugin and in Solo
 
+(Later adopted in both — see "How it is wired today". The costs below were real;
+what changed was that SpyServer's RTL path turned out to leave the gain control
+dead, which no amount of configuration fixed.)
+
 Write `src/RtlTcpClient.ts` next to `SpyClient.ts`, and an `RtlTcpSource` in the
 Swift app, speaking `rtl_tcp` to a daemon on whichever host holds the V4.
 
@@ -355,5 +359,19 @@ no serial and SpyServer reported zero for this hardware, so both clients land on
 `3:00000000` and the gain, decimation and audio-decimation saved under spyserver
 carry over unchanged. `test/rtlTcp.test.ts` pins that.
 
-Solo, the iPad app and the unattended capture jobs still speak SpyServer, so
-they reach the HF+ on 8888 and cannot see the V4 while it is on rtl_tcp.
+**The Swift apps speak it too (2026-09-23).** `native-app/Sources/RtlTcpClient.swift`
+is a rule-for-rule port of `src/RtlTcpClient.ts`, plugged in behind the same
+`IQSource` protocol as `SpyClient` and `AirspyDevice`, so nothing downstream of
+`LocalRadio.selectSource` knows which one is running. `Tests/RtlTcpTests.swift`
+carries the cases and numbers of `test/rtlTcp.test.ts`. Deck RX Solo offers it as
+`rtltcp` in the Source row of its options panel (the same spelling the plugin
+writes into `source`). Verified on the hardware through a scratch config: Solo on
+`192.168.0.143:8890` came up at 300 kS/s on 594 kHz with index 3 sent, the audio
+had the voice band 90 dB above 6-15 kHz, and a retune to 6030 kHz and back sent
+17 and then 3 — the per-band gains above, through rtl_tcp.
+
+The unattended capture jobs are pinned to the HF+ on 8888 (`hf_arm.sh` adds the
+address unless a row names one), so pointing the deck or Solo at the V4 does not
+take the charts and DRM sweeps with it, and the "someone is listening" check
+compares receivers, so a job on the HF+ runs while the V4 is in use.
+`drm_probe.js` itself can capture from the V4 with `DRM_SOURCE=rtl`.

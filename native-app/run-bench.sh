@@ -13,7 +13,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 export DECK_RX_RECEIVER_CONFIG="$(mktemp -d)/receiver.json"
 OUT="$HERE/.bench-bin"
 SRC="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
-     Sources/IQSource.swift \
+     Sources/IQSource.swift Sources/RtlTcpClient.swift Sources/DeviceSettings.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
      Sources/StationLabel.swift Sources/RadioConfig.swift Sources/PresetStore.swift \

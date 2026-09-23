@@ -23,10 +23,10 @@ SRC="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
      Sources/StationLabel.swift Sources/RadioConfig.swift Sources/DeviceSettings.swift Sources/PresetStore.swift \
      Sources/Receiver.swift Sources/SpectrumFeed.swift Sources/Platform.swift \
      Sources/FreqView.swift Sources/SpectrumView.swift \
-     Sources/IQSource.swift Sources/WefaxDecode.swift"
+     Sources/IQSource.swift Sources/RtlTcpClient.swift Sources/WefaxDecode.swift"
 
 echo "==> building tests ..."
-if ! ( cd "$HERE" && swiftc $SRC Tests/DeviceSettingsTests.swift Tests/main.swift -o "$OUT" \
+if ! ( cd "$HERE" && swiftc $SRC Tests/DeviceSettingsTests.swift Tests/RtlTcpTests.swift Tests/main.swift -o "$OUT" \
         -framework AppKit -framework Network -framework AVFoundation -framework Accelerate ); then
   echo "ERROR: test build failed"; exit 1
 fi

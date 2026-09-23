@@ -480,3 +480,35 @@ struct RadioConfig: Codable, Equatable {
         try? d.write(to: URL(fileURLWithPath: Self.ownPath), options: .atomic)
     }
 }
+
+/// The bands a gain is kept for (`gainBand` in src/deviceSettings.ts).
+///
+/// Here rather than in DeviceSettings.swift because `RadioConfig` files profiles
+/// by band, and this file is also built into the front-end app, which has no
+/// resolver.
+///
+/// What overloads a front end is what the antenna delivers, so the band decides
+/// the gain, not the demod mode: on 2026-09-23 the V4 behind a 6 dB pad wanted
+/// index 3 on mediumwave (intermod at 1026 kHz appears from 6 up), while
+/// shortwave wants it far higher. With one value per mode, mediumwave and
+/// shortwave AM fought over `amGain`, and SSB on mediumwave borrowed the FM
+/// value. AM and the rest stay apart inside a band because the non-AM value is
+/// also the post-demod level for FM, SSB and CW (LocalRadio's fmScale).
+enum GainBand: String, CaseIterable {
+    case mw, hf, vhf
+
+    /// Where mediumwave stops: below it sit the local transmitters that
+    /// saturate an 8 bit front end.
+    static let mediumwaveTopHz: Double = 2_000_000
+    /// Top of shortwave. Above it: VHF, FM broadcast and up.
+    static let hfTopHz: Double = 30_000_000
+
+    /// An unknown frequency counts as mediumwave: overload is the worse mistake.
+    static func isMediumwave(_ freqHz: Double) -> Bool { !(freqHz >= mediumwaveTopHz) }
+
+    /// mw below 2 MHz (and when the frequency is unknown), hf to 30 MHz, vhf above.
+    static func of(_ freqHz: Double) -> GainBand {
+        if isMediumwave(freqHz) { return .mw }
+        return freqHz < hfTopHz ? .hf : .vhf
+    }
+}

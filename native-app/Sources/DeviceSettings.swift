@@ -30,28 +30,6 @@ enum RxMode {
     static func isWideFM(_ mode: Int) -> Bool { mode == wfm }
 }
 
-/// The bands a gain is kept for (`gainBand` in src/deviceSettings.ts).
-///
-/// What overloads a front end is what the antenna delivers, so the band decides
-/// the gain, not the demod mode: on 2026-09-23 the V4 behind a 6 dB pad wanted
-/// index 3 on mediumwave (intermod at 1026 kHz appears from 6 up), while
-/// shortwave wants it far higher. With one value per mode, mediumwave and
-/// shortwave AM fought over `amGain`, and SSB on mediumwave borrowed the FM
-/// value. AM and the rest stay apart inside a band because the non-AM value is
-/// also the post-demod level for FM, SSB and CW (LocalRadio's fmScale).
-enum GainBand: String, CaseIterable {
-    case mw, hf, vhf
-
-    /// Top of shortwave. Above it: VHF, FM broadcast and up.
-    static let hfTopHz: Double = 30_000_000
-
-    /// mw below 2 MHz (and when the frequency is unknown), hf to 30 MHz, vhf above.
-    static func of(_ freqHz: Double) -> GainBand {
-        if DeviceSettingsResolver.isMediumwave(freqHz) { return .mw }
-        return freqHz < hfTopHz ? .hf : .vhf
-    }
-}
-
 /// What a receiver needs to be told, once its identity is known.
 struct DeviceSettings: Equatable {
     /// Absolute stage sent to the server: the stored offset plus the device's
@@ -152,7 +130,9 @@ enum DeviceSettingsResolver {
     }
 
     /// Where mediumwave stops mattering for this decision.
-    static let mediumwaveTopHz: Double = 2_000_000
+    /// One value, kept with `GainBand` in RadioConfig.swift: that file is built
+    /// into the front-end too, which has no resolver.
+    static let mediumwaveTopHz: Double = GainBand.mediumwaveTopHz
     /// ~0.9 dB on the tuner's 29 step list: 0.00% clipped, and within 0.7 dB of
     /// the HF+ on the same antenna (594 kHz, 2026-09-21).
     static let rtlMWGainIndex: UInt32 = 1
@@ -162,7 +142,7 @@ enum DeviceSettingsResolver {
 
     /// An unknown frequency counts as mediumwave: overload is the worse mistake.
     static func isMediumwave(_ freqHz: Double) -> Bool {
-        !(freqHz >= mediumwaveTopHz)
+        GainBand.isMediumwave(freqHz)
     }
 
     /// The highest gain index this device has. Nothing narrower.

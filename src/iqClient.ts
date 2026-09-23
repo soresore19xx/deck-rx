@@ -29,9 +29,17 @@ export interface IQClient extends EventEmitter {
 
 export type IQSource = 'spyserver' | 'rtltcp';
 
-/** Default port per source, used when the config carries no port. */
+/**
+ * Default port per source, used when the config carries no port.
+ *
+ * rtl_tcp's own default is 1234, but this receiver is not served on it: the V4
+ * was moved to 8890 on 2026-09-23 so both receivers sit in one block next to
+ * the SpyServer (8888 HF+, 8890 V4) rather than in unrelated parts of the port
+ * range. A default that points at a port nothing listens on is worse than no
+ * default — the connection is refused with nothing to explain why.
+ */
 export function defaultPort(source: IQSource): number {
-  return source === 'rtltcp' ? 1234 : 5555;
+  return source === 'rtltcp' ? 8890 : 5555;
 }
 
 /** Narrow an arbitrary config value to a source, defaulting to SpyServer. */

@@ -70,16 +70,26 @@ export function isValidRtlRate(hz: number): boolean {
 
 /**
  * Pick a native device rate for a requested IQ rate, plus the power-of-two
- * decimation left to do here. Prefers the lowest native rate that works, so
- * the LAN carries as little as possible: a 300 kS/s stream is 600 kB/s where
- * 2.4 MS/s is 4.8 MB/s.
+ * decimation left to do here.
+ *
+ * The lowest rate in the *upper* window (900 kS/s and up), not the lowest rate
+ * overall. This first chose the lowest rate that worked, to keep the LAN light
+ * (300 kS/s is 600 kB/s), and that was the wrong economy: rtl_tcp forwards
+ * librtlsdr's 256 KB buffers whole, so at 300 kS/s the stream arrives as one
+ * 0.44 s lurch every 0.44 s. Downstream that meant a spectrum updating twice a
+ * second, audio running dry between lurches, and — once the client smoothed
+ * them — a retune that took half a second to be heard (2026-09-24). At
+ * 1.2 MS/s the same buffer is 0.11 s. SDR++'s rtl_tcp source defaults to
+ * 2.4 MS/s for the same reason; 2.4 MB/s is nothing on a wired LAN.
  */
+export const RTL_MIN_DEVICE_RATE = 900001;
+
 export function planRtlRate(targetRate: number): { deviceRate: number; decimation: number } {
   if (targetRate >= 3200000) return { deviceRate: 3200000, decimation: 1 };
   for (let m = 1; m <= 64; m *= 2) {
     const rate = targetRate * m;
     if (rate > 3200000) break;
-    if (isValidRtlRate(rate)) return { deviceRate: rate, decimation: m };
+    if (rate >= RTL_MIN_DEVICE_RATE && isValidRtlRate(rate)) return { deviceRate: rate, decimation: m };
   }
   // Nothing lands on a native rate (a target that is not a clean divisor of
   // one). Take the lowest window and decimate to the nearest whole factor —
@@ -106,14 +116,23 @@ class HalvingDecimator {
     this.stages = [];
     this.counters = [];
     const n = Math.max(0, Math.round(Math.log2(Math.max(1, factor))));
+    // The band the last stage keeps. Earlier stages only have to stop what
+    // would fold INTO it, which leaves them a wide transition and a short
+    // filter — the difference between 31 taps and 70-odd at 1.2 MS/s.
+    const pass = (deviceRate / Math.pow(2, n)) * 0.40;
     let rate = deviceRate;
     for (let s = 0; s < n; s++) {
       const out = rate / 2;
       const f = new ComplexFirLpf();
-      // Passband to 0.40 of the stage's output rate, stopband from 0.475 —
-      // aliasing folds at 0.5, and the demodulator only ever uses the middle
-      // of the band, so there is no reason to pay for a sharper skirt.
-      f.setLowPass(rate, out * 0.40, out * 0.15);
+      if (s === n - 1) {
+        // Passband to 0.40 of the output rate, stopband from 0.475 — aliasing
+        // folds at 0.5, and the demodulator only ever uses the middle of the
+        // band, so there is no reason to pay for a sharper skirt.
+        f.setLowPass(rate, out * 0.40, out * 0.15);
+      } else {
+        // Flat to `pass`, stopped from `out - pass` (what folds onto ±pass).
+        f.setLowPass(rate, out / 2, Math.max(out * 0.15, out - 2 * pass));
+      }
       this.stages.push(f);
       this.counters.push(0);
       rate = out;

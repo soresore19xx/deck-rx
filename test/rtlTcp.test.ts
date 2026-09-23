@@ -72,11 +72,17 @@ describe('RTL sample-rate windows', () => {
 });
 
 describe('planRtlRate', () => {
-  // The stage the plugin's stored profile for this receiver lands on. It must
-  // come out native: any decimation here would be filtering work done in JS
-  // for nothing.
-  it('meets 300 kS/s natively, with no client-side decimation', () => {
-    expect(planRtlRate(300000)).toEqual({ deviceRate: 300000, decimation: 1 });
+  // Not natively any more: at 300 kS/s rtl_tcp's 256 KB buffers arrive as one
+  // 0.44 s lurch every 0.44 s (2026-09-24). The device runs in the upper
+  // window and the rest is halved here.
+  it('meets 300 kS/s from 1.2 MS/s, not natively', () => {
+    expect(planRtlRate(300000)).toEqual({ deviceRate: 1200000, decimation: 4 });
+  });
+  it('never runs the device below the upper window', () => {
+    for (let stage = 0; stage <= 7; stage++) {
+      const target = Math.round(RtlTcpClient.MAX_SAMPLE_RATE / Math.pow(2, stage));
+      expect(planRtlRate(target).deviceRate).toBeGreaterThanOrEqual(900001);
+    }
   });
 
   it('covers every decimation stage the client advertises', () => {
@@ -93,12 +99,12 @@ describe('planRtlRate', () => {
     }
     // Rates in the gap between the two windows are reached from above.
     expect(seen.get(2)).toEqual({ deviceRate: 1200000, decimation: 2 });
-    expect(seen.get(4)).toEqual({ deviceRate: 300000, decimation: 2 });
+    expect(seen.get(4)).toEqual({ deviceRate: 1200000, decimation: 8 });
   });
 
-  it('prefers the lowest native rate, to keep the stream off the LAN', () => {
-    // 150 kS/s is reachable from 300 k (×2) or 1.2 M (×8). The cheap one wins.
-    expect(planRtlRate(150000).deviceRate).toBe(300000);
+  it('takes the lowest rate in the upper window', () => {
+    // 150 kS/s is reachable from 1.2 M (×8) or 2.4 M (×16). The lighter wins.
+    expect(planRtlRate(150000).deviceRate).toBe(1200000);
   });
 
   it('clamps above the device maximum', () => {
@@ -186,7 +192,7 @@ describe('settings translation', () => {
     c.setSetting(SETTING_IQ_DECIMATION, 3);     // 2.4 MS/s >> 3 = 300 kS/s
     c.setSetting(SETTING_IQ_FREQUENCY, 810000);
     c.setSetting(SETTING_STREAMING_ENABLED, 1);
-    expect(sock.last(RTL_SET_SAMPLE_RATE)).toBe(300000);
+    expect(sock.last(RTL_SET_SAMPLE_RATE)).toBe(1200000);   // then ÷4 here
     expect(sock.last(RTL_SET_FREQ)).toBe(810000);
   });
 
@@ -223,7 +229,7 @@ describe('IQ conversion', () => {
 
   it('maps 8-bit unsigned to int16, centred and scaled', () => {
     // 0 dB digital gain so the mapping is the bare 8-to-16 bit scaling.
-    const p = stream(3, 0, Buffer.from([255, 0, 128, 127]));
+    const p = stream(1,0, Buffer.from([255, 0, 128, 127]));
     expect(p).toHaveLength(1);
     const v = p[0].body;
     expect(p[0].format).toBe('int16');
@@ -238,13 +244,13 @@ describe('IQ conversion', () => {
     // is what makes a stored gain index sound the same through either client.
     // A small sample, well clear of the rail: at 9 dB a near-full-scale one
     // clamps, which is correct behaviour but measures nothing here.
-    const plain = stream(3, 0, Buffer.from([140, 128]))[0].body.readInt16LE(0);
-    const lifted = stream(3, 9, Buffer.from([140, 128]))[0].body.readInt16LE(0);
+    const plain = stream(1,0, Buffer.from([140, 128]))[0].body.readInt16LE(0);
+    const lifted = stream(1,9, Buffer.from([140, 128]))[0].body.readInt16LE(0);
     expect(lifted / plain).toBeCloseTo(Math.pow(10, 9 / 20), 2);
   });
 
   it('clamps rather than wrapping when the digital gain overdrives int16', () => {
-    const v = stream(3, 20, Buffer.from([255, 0]))[0].body;
+    const v = stream(1,20, Buffer.from([255, 0]))[0].body;
     expect(v.readInt16LE(0)).toBe(32767);
     expect(v.readInt16LE(2)).toBe(-32768);
   });
@@ -257,7 +263,7 @@ describe('IQ conversion', () => {
     c.on('iqData', (p: IQPacket) => out.push(p));
     attach(c);
     feed(c, header(6, 29));
-    c.setSetting(SETTING_IQ_DECIMATION, 3);
+    c.setSetting(SETTING_IQ_DECIMATION, 1);     // 1.2 MS/s, native: no filter
     c.setSetting(SETTING_IQ_DIGITAL_GAIN, 0);
     c.setSetting(SETTING_STREAMING_ENABLED, 1);
     feed(c, Buffer.from([255]));          // I only
@@ -279,12 +285,42 @@ describe('IQ conversion', () => {
   });
 
   it('decimates by the planned factor', () => {
-    // Stage 4 is 150 kS/s, reached from a 300 kS/s device rate by halving once,
-    // so half as many pairs come out as go in (after the filter fills).
+    // Stage 4 is 150 kS/s, reached from a 1.2 MS/s device rate by halving
+    // three times, so an eighth as many pairs come out as go in.
     const body = Buffer.alloc(4096, 128);
     const p = stream(4, 0, body);
     const pairsOut = p.reduce((n, x) => n + x.body.length / 4, 0);
-    expect(pairsOut).toBe(body.length / 2 / 2);
+    expect(pairsOut).toBe(body.length / 2 / 8);
+  });
+
+  it('passes the wanted band and stops what would fold into it', () => {
+    // A tone well inside the final band survives the three halvings at full
+    // level; one that would alias onto it is gone. Measured through the whole
+    // client, 1.2 MS/s in, 150 kS/s out.
+    const tone = (hz: number): number => {
+      const n = 1_200_000 / 4;            // a quarter second of device samples
+      const b = Buffer.alloc(n * 2);
+      for (let i = 0; i < n; i++) {
+        const ph = 2 * Math.PI * hz * i / 1_200_000;
+        b[i * 2] = Math.round(127.5 + 60 * Math.cos(ph));
+        b[i * 2 + 1] = Math.round(127.5 + 60 * Math.sin(ph));
+      }
+      const out = Buffer.concat(stream(4, 0, b).map((x) => x.body));
+      let sq = 0, k = 0;
+      for (let o = out.length / 2; o + 4 <= out.length; o += 4) {   // skip the fill
+        const i = out.readInt16LE(o), q = out.readInt16LE(o + 2);
+        sq += i * i + q * q; k++;
+      }
+      return Math.sqrt(sq / k);
+    };
+    const inBand = tone(30_000);
+    const folds = tone(120_000);          // 150 k - 30 k: would land on -30 kHz
+    expect(inBand).toBeGreaterThan(60 * 256 * 0.9);
+    // 50 dB, not the filters' ~74: the input is 8-bit, and a tone of amplitude
+    // 60 carries its own quantisation noise about 52 dB down once decimated
+    // to 150 kS/s (43 dB over 1.2 MHz, plus 9 dB for ÷8). Measured 53.8 dB —
+    // the folded tone is below that floor, which is as far as this can see.
+    expect(20 * Math.log10(inBand / Math.max(folds, 1e-9))).toBeGreaterThan(50);
   });
 });
 
@@ -315,7 +351,7 @@ describe('rate-change settling', () => {
     c.on('iqData', (p: IQPacket) => out.push(p));
     attach(c);
     feed(c, header(6, 29));
-    c.setSetting(SETTING_IQ_DECIMATION, 3);
+    c.setSetting(SETTING_IQ_DECIMATION, 1);     // 1.2 MS/s, native: no filter
     c.setSetting(SETTING_STREAMING_ENABLED, 1);
     feed(c, Buffer.from([255, 0, 128, 128]));
     expect(out).toHaveLength(0);
@@ -328,7 +364,7 @@ describe('rate-change settling', () => {
     const out: IQPacket[] = [];
     attach(c);
     feed(c, header(6, 29));
-    c.setSetting(SETTING_IQ_DECIMATION, 3);
+    c.setSetting(SETTING_IQ_DECIMATION, 1);     // 1.2 MS/s, native: no filter
     c.setSetting(SETTING_STREAMING_ENABLED, 1);   // first start: settles
     c.stopStreaming();
     c.on('iqData', (p: IQPacket) => out.push(p));

@@ -305,14 +305,20 @@ There is no macOS spyserver, so this design does not apply. The fallback is the
 rejected rtl_tcp path, or simply using SDR++ on studio — which works today, with
 two settings: `directSampling` 0 and the gain at the bottom of the list.
 
-## How it is wired today (2026-09-22)
+## How it is wired today (2026-09-23)
 
 On the VM, `rtl_tcp.service` replaces `spyserver-rtlsdr.service`. The old unit is
 disabled, not removed.
 
 ```
-ExecStart=/usr/bin/rtl_tcp -a 0.0.0.0 -p 1234 -d 0 -f 810000 -s 2400000 -g 0
+ExecStart=/usr/bin/rtl_tcp -a 0.0.0.0 -p 8890 -d 0 -f 810000 -s 2400000 -g 0
 ```
+
+The port is not rtl_tcp's own default of 1234: on 2026-09-23 it was moved to
+8890 so both receivers sit in one block beside the SpyServer — 8888 for the HF+,
+8890 for the V4 — instead of in unrelated parts of the range. 8889 is the old
+`spyserver-rtlsdr` port and stays free, so a client left pointing at it fails
+loudly rather than reaching a receiver whose gain control does not work.
 
 `-g 0` reads like "0.0 dB" and means **automatic** — that is rtl_tcp's own
 convention, and it is why `RtlTcpClient` sends `SET_GAIN_MODE 1` and
@@ -323,7 +329,7 @@ In the plugin, the receiver is chosen in the Tune dial's Property Inspector:
 | | Airspy HF+ | RTL-SDR Blog V4 |
 |---|---|---|
 | Server | `192.168.0.143` | `192.168.0.143` |
-| Port | `8888` | `1234` |
+| Port | `8888` | `8890` |
 | Protocol | SpyServer | rtl_tcp |
 
 The per-receiver profile is keyed on `deviceType:deviceSerial`. rtl_tcp carries

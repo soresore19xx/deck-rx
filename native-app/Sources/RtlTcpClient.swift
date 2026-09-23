@@ -53,7 +53,7 @@ final class RtlTcpClient: IQSource {
     /// Default port for this protocol when the config carries none. Not rtl_tcp's
     /// own 1234: the V4 is served on 8890, next to the HF+'s 8888
     /// (`defaultPort` in src/iqClient.ts).
-    static let defaultPort: UInt16 = 8890
+    static let defaultPort: UInt16 = RadioConfig.rtlTcpDefaultPort
 
     // MARK: rate planning
 

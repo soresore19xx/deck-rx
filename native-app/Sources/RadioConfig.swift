@@ -25,6 +25,58 @@ struct RadioConfig: Codable, Equatable {
     /// takes it from anything else holding it — the plugin's own receiver
     /// included — rather than sharing it the way a SpyServer shares a stream.
     var source = "spyserver"
+    /// The address each network source was last used with, the way SDR++ keeps
+    /// one per source module. `host` / `port` above are the one in force;
+    /// choosing a source through `selectSource` files them here and brings that
+    /// source's own back. With one address for all sources, going from the HF+
+    /// (SpyServer, 8888) to the V4 (rtl_tcp, 8890) meant retyping the port each
+    /// way — and a SpyServer handshake sent at rtl_tcp is not refused but read
+    /// as commands, one of which retunes the device to 0 Hz.
+    var sourceAddrs: [String: SourceAddr] = [:]
+
+    struct SourceAddr: Codable, Equatable {
+        var host: String
+        var port: Int
+    }
+
+    /// The sources in the order a list shows them, with the names shown.
+    /// "usb" needs the Airspy library and is offered only by builds that have it.
+    static let sourceNames: [(id: String, name: String)] = [
+        ("spyserver", "SpyServer"), ("rtltcp", "RTL-TCP"), ("usb", "Airspy HF+ (USB)"),
+    ]
+    static func sourceName(_ id: String) -> String {
+        sourceNames.first { $0.id == id }?.name ?? id
+    }
+
+    /// Switch source, carrying each one's address with it. A source never used
+    /// before keeps the host (both receivers usually sit on the same machine)
+    /// and takes its protocol's port: 8890 for rtl_tcp (`defaultPort` in
+    /// src/iqClient.ts). "usb" has no address; the network one stays in the
+    /// fields, dormant, for coming back to.
+    mutating func selectSource(_ s: String) {
+        guard s != source else { return }
+        if source != "usb" { sourceAddrs[source] = SourceAddr(host: host, port: port) }
+        source = s
+        guard s != "usb" else { return }
+        if let a = sourceAddrs[s] {
+            host = a.host
+            port = a.port
+        } else if s == "rtltcp" {
+            port = Int(RadioConfig.rtlTcpDefaultPort)
+        }
+    }
+
+    /// Set the address of the source in force, and remember it as that
+    /// source's. Every place an address is typed goes through here.
+    mutating func setAddress(host h: String? = nil, port p: Int? = nil) {
+        if let h { host = h }
+        if let p { port = p }
+        if source != "usb" { sourceAddrs[source] = SourceAddr(host: host, port: port) }
+    }
+
+    /// rtl_tcp's port here: the V4 is served on 8890, next to the HF+'s 8888,
+    /// not on rtl_tcp's own 1234.
+    static let rtlTcpDefaultPort: UInt16 = 8890
     var frequencyHz: Double = 1_134_000
     var mode = 2
     /// RF gain index, kept per demod family the way the plugin keeps it
@@ -317,6 +369,7 @@ struct RadioConfig: Codable, Equatable {
         host = (try? c.decodeIfPresent(String.self, forKey: .host)) .flatMap { $0 } ?? d.host
         port = (try? c.decodeIfPresent(Int.self, forKey: .port)) .flatMap { $0 } ?? d.port
         source = (try? c.decodeIfPresent(String.self, forKey: .source)) .flatMap { $0 } ?? d.source
+        sourceAddrs = (try? c.decodeIfPresent([String: SourceAddr].self, forKey: .sourceAddrs)) .flatMap { $0 } ?? d.sourceAddrs
         frequencyHz = (try? c.decodeIfPresent(Double.self, forKey: .frequencyHz)) .flatMap { $0 } ?? d.frequencyHz
         mode = (try? c.decodeIfPresent(Int.self, forKey: .mode)) .flatMap { $0 } ?? d.mode
         // A file written before AM and FM were told apart carries one `gain`.

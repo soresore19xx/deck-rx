@@ -473,14 +473,15 @@ final class AppServer {
             scaleChanged = true
         case "source":
             guard raw == "spyserver" || raw == "rtltcp" || raw == "usb" else { return false }
-            c.source = raw
+            // Each source brings its own address back (RadioConfig.sourceAddrs).
+            c.selectSource(raw)
         case "host":
             let h = raw.trimmingCharacters(in: .whitespaces)
             guard !h.isEmpty else { return false }
-            c.host = h
+            c.setAddress(host: h)
         case "port":
             guard let p = Int(raw), p > 0, p < 65536 else { return false }
-            c.port = p
+            c.setAddress(port: p)
         default: return false
         }
         c.save()

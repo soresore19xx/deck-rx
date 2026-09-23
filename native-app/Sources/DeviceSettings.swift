@@ -30,6 +30,28 @@ enum RxMode {
     static func isWideFM(_ mode: Int) -> Bool { mode == wfm }
 }
 
+/// The bands a gain is kept for (`gainBand` in src/deviceSettings.ts).
+///
+/// What overloads a front end is what the antenna delivers, so the band decides
+/// the gain, not the demod mode: on 2026-09-23 the V4 behind a 6 dB pad wanted
+/// index 3 on mediumwave (intermod at 1026 kHz appears from 6 up), while
+/// shortwave wants it far higher. With one value per mode, mediumwave and
+/// shortwave AM fought over `amGain`, and SSB on mediumwave borrowed the FM
+/// value. AM and the rest stay apart inside a band because the non-AM value is
+/// also the post-demod level for FM, SSB and CW (LocalRadio's fmScale).
+enum GainBand: String, CaseIterable {
+    case mw, hf, vhf
+
+    /// Top of shortwave. Above it: VHF, FM broadcast and up.
+    static let hfTopHz: Double = 30_000_000
+
+    /// mw below 2 MHz (and when the frequency is unknown), hf to 30 MHz, vhf above.
+    static func of(_ freqHz: Double) -> GainBand {
+        if DeviceSettingsResolver.isMediumwave(freqHz) { return .mw }
+        return freqHz < hfTopHz ? .hf : .vhf
+    }
+}
+
 /// What a receiver needs to be told, once its identity is known.
 struct DeviceSettings: Equatable {
     /// Absolute stage sent to the server: the stored offset plus the device's
@@ -179,8 +201,12 @@ enum DeviceSettingsResolver {
         let stage = offset + info.minIQDecimation
         let rate = UInt32(Double(info.maxSampleRate) / Double(1 << stage))
 
-        let storedGain = mode == RxMode.am ? (profile?.amGain ?? config.amGain)
-                                           : (profile?.fmGain ?? config.fmGain)
+        // The band's slot first; a band with nothing filed falls back to the
+        // per-mode value, which is how a profile written before slots existed
+        // keeps behaving the way it did.
+        let slot = profile?.gains?[GainBand.of(freqHz).rawValue]
+        let storedGain = mode == RxMode.am ? (slot?.am ?? profile?.amGain ?? config.amGain)
+                                           : (slot?.fm ?? profile?.fmGain ?? config.fmGain)
         let fallback: UInt32 = defaultGainIndex(for: info, freqHz: freqHz)
         let ceiling: UInt32 = gainCeiling(for: info, freqHz: freqHz)
         let gain: UInt32 = min(storedGain ?? fallback, ceiling)
@@ -195,12 +221,30 @@ enum DeviceSettingsResolver {
     /// Fold resolved settings back into the config and file them under this
     /// receiver, so the next connection to it restores them rather than
     /// re-deriving them — and so the UI agrees with what was sent.
+    ///
+    /// Both gains are set for the band being tuned — the one in use from `s`,
+    /// the other resolved the same way — so a later mode switch finds this
+    /// band's value rather than whatever band was used last.
     static func adopt(_ s: DeviceSettings, into config: inout RadioConfig,
-                      info: SpyClient.DeviceInfo, mode: Int) {
+                      info: SpyClient.DeviceInfo, mode: Int, freqHz: Double = 0) {
         let key = RadioConfig.deviceKey(type: info.deviceType, serial: info.deviceSerial)
+        let other = resolve(info: info, config: config,
+                            mode: mode == RxMode.am ? RxMode.nfm : RxMode.am,
+                            freqHz: freqHz).gainIndex
         config.iqDecimation = s.iqDecimationOffset
         config.audioDecimate = s.audioDecimate
-        if mode == RxMode.am { config.amGain = s.gainIndex } else { config.fmGain = s.gainIndex }
-        config.captureProfile(for: key)
+        if mode == RxMode.am {
+            config.amGain = s.gainIndex; config.fmGain = other
+        } else {
+            config.fmGain = s.gainIndex; config.amGain = other
+        }
+        config.captureProfile(for: key, freqHz: freqHz)
+    }
+
+    /// Both gains for the band `freqHz` falls in, as a retune into it resolves them.
+    static func bandGains(info: SpyClient.DeviceInfo, config: RadioConfig,
+                          freqHz: Double) -> (am: UInt32, fm: UInt32) {
+        (resolve(info: info, config: config, mode: RxMode.am, freqHz: freqHz).gainIndex,
+         resolve(info: info, config: config, mode: RxMode.nfm, freqHz: freqHz).gainIndex)
     }
 }

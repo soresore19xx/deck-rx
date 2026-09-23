@@ -10,7 +10,7 @@ import { RtlTcpClient } from './RtlTcpClient.js';
 import { asIQSource, type IQClient, type IQSource } from './iqClient.js';
 import {
   resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig, deviceKey,
-  type DeviceProfile,
+  gainBand, withBandGain, RX_MODE, type DeviceProfile, type GainBand, type GainScope,
 } from './deviceSettings.js';
 import { Demodulator } from './demodulator.js';
 import { OutputLeveler, MODE_MAKEUP, softLimit, DEFAULT_LEVELER_CFG } from './audioLeveling.js';
@@ -416,6 +416,9 @@ class SpyService {
   // the most recent startAudio so set*Gain() can recompute digital gain.
   private amGain: number | undefined = undefined;
   private fmGain: number | undefined = undefined;
+  // The per-receiver profiles as last read or written, so a retune that
+  // crosses a band can pick up that band's gains without a disk read.
+  private devices: Record<string, DeviceProfile> | undefined = undefined;
   private maxGain = 0;
   private currentDecStage = 0;
   private amGainListeners = new Set<GainListener>();
@@ -512,6 +515,9 @@ class SpyService {
       if (this.fmGain === undefined) this.fmGain = info.maxGainIndex;
       this.amGain = Math.max(0, Math.min(this.maxGain, this.amGain));
       this.fmGain = Math.max(0, Math.min(this.maxGain, this.fmGain));
+      // The top-level values are whatever band was used last; the profile
+      // knows this receiver's gains for the band actually tuned.
+      this.applyBandGains(this._currentFreq);
       for (const fn of this.amGainListeners) fn(this.amGain, this.maxGain);
       for (const fn of this.fmGainListeners) fn(this.fmGain, this.maxGain);
       const waiters = this.deviceInfoWaiters.splice(0);
@@ -694,6 +700,7 @@ class SpyService {
       if (typeof cfg.fmGain === 'number') {
         this.fmGain = Math.max(0, cfg.fmGain);
       }
+      this.devices = cfg.devices;
       this.host = cfg.host;
       this.port = cfg.port;
       // The source can change under us (PI edit, or a config written by hand).
@@ -842,14 +849,69 @@ class SpyService {
         log.info(`[spyService] set${sc === 'am' ? 'Am' : 'Fm'}Gain ${finalGain} digitalGain=${digitalGain}`);
       }, 80);
     }
-    await this.persistField(scope === 'am' ? 'amGain' : 'fmGain', clamped).catch(() => {});
+    // Into this receiver's slot for the band being listened to. The resolver
+    // reads the profile before the top-level value, so writing only the top
+    // level meant a gain changed while listening came back on the next connect.
+    const info = this.deviceInfo;
+    if (info) {
+      const key = deviceKey(info.deviceType, info.deviceSerial);
+      const band = gainBand(this.currentFreq);
+      const prof = this.devices?.[key] ?? {};
+      this.devices = { ...(this.devices ?? {}), [key]: {
+        ...prof,
+        ...(scope === 'am' ? { amGain: clamped } : { fmGain: clamped }),
+        gains: withBandGain(prof.gains, band, scope, clamped),
+      } };
+      await this.persistBandGain(key, band, scope, clamped).catch(() => {});
+    } else {
+      await this.persistField(scope === 'am' ? 'amGain' : 'fmGain', clamped).catch(() => {});
+    }
+  }
+
+  /**
+   * Pick up the gains filed for the band `hz` falls in, and apply the live
+   * one. Called when a retune crosses a band; a band with nothing filed yet
+   * resolves to what is in force now, so crossing into it changes nothing.
+   */
+  private applyBandGains(hz: number): void {
+    const info = this.deviceInfo;
+    if (!info) return;
+    const c = { amGain: this.amGain, fmGain: this.fmGain, devices: this.devices };
+    const am = resolveDeviceSettings(info, c, RX_MODE.AM, hz).gainIndex;
+    const fm = resolveDeviceSettings(info, c, RX_MODE.NFM, hz).gainIndex;
+    const amMoved = am !== this.amGain, fmMoved = fm !== this.fmGain;
+    if (!amMoved && !fmMoved) return;
+    this.amGain = am;
+    this.fmGain = fm;
+    if (amMoved) for (const fn of this.amGainListeners) fn(am, this.maxGain);
+    if (fmMoved) for (const fn of this.fmGainListeners) fn(fm, this.maxGain);
+    const liveMoved = this.currentDemodMode === RX_MODE.AM ? amMoved : fmMoved;
+    if (liveMoved) this.sendLiveGain(`band ${gainBand(hz)}`);
+  }
+
+  /** Send the gain the current demod mode uses, muting over the step. */
+  private sendLiveGain(why: string): void {
+    if (!this.connected || !this.audioRunning || !this.deviceInfo) return;
+    // The LNA step plus SpyServer-side AGC settling is the loudest pop in
+    // the system.
+    this.muteUntil = Math.max(this.muteUntil, Date.now() + 250);
+    const isAm = this.currentDemodMode === RX_MODE.AM;
+    const g = (isAm ? this.amGain : this.fmGain) ?? this.deviceInfo.maxGainIndex;
+    const digitalGain = computeDigitalGain(
+      this.deviceInfo.deviceType, g, this.currentDecStage, this.deviceInfo.maxGainIndex,
+    );
+    this.client.setSetting(SETTING_GAIN, g);
+    this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
+    log.info(`[spyService] ${why}→gain ${isAm ? 'AM' : 'FM'} ${g} digitalGain=${digitalGain}`);
   }
 
   private freqDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingFreq = 0;
   private persistFreqTimer: ReturnType<typeof setTimeout> | null = null;
   setFrequency(hz: number, opts: { smooth?: boolean } = {}): void {
+    const bandChanged = gainBand(hz) !== gainBand(this._currentFreq);
     this._currentFreq = hz;
+    if (bandChanged) this.applyBandGains(hz);
     this.applyStepForBand(hz);
     // Two retune flavours:
     //   smooth=false (default) — preset PUSH, band fallback, connect
@@ -927,6 +989,24 @@ class SpyService {
    *  first version of this feature did exactly that with a bare writeFile.
    *  Measured on the deck 2026-09-21: connect to the V4, file `3:00000000`,
    *  reconnect to the HF+, and the V4's profile was gone. Merge at the key. */
+  /** One band's gain, merged into the profile on disk. Everything else in the
+   *  profile — other bands, decimation — is read from the file, not from this
+   *  process's copy, for the same reason as persistDeviceProfile. */
+  private persistBandGain(key: string, band: GainBand, scope: GainScope,
+                          value: number): Promise<void> {
+    const next = this.configWriteChain.then(async () => {
+      const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
+      const cfg = JSON.parse(raw) as Record<string, unknown>;
+      const devices = cfg.devices as Record<string, DeviceProfile> | undefined;
+      const prof: DeviceProfile = { ...(devices?.[key] ?? {}) };
+      prof.gains = withBandGain(prof.gains, band, scope, value);
+      if (scope === 'am') prof.amGain = value; else prof.fmGain = value;
+      mergeProfileIntoConfig(cfg, key, prof, scope === 'am' ? { amGain: value } : { fmGain: value });
+      await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    });
+    this.configWriteChain = next.catch(() => {});
+    return next;
+  }
   private persistDeviceProfile(key: string, profile: DeviceProfile,
                                top: Record<string, unknown>): Promise<void> {
     const next = this.configWriteChain.then(async () => {
@@ -1264,19 +1344,8 @@ class SpyService {
     // If we crossed the AM ↔ non-AM boundary, the gain to send changes too.
     const wasAm = prevMode === 2;
     const isAm = mode === 2;
-    if (wasAm !== isAm && this.connected && this.audioRunning && this.deviceInfo) {
-      // Extend the existing mode-change mute (set to +100 above) for the
-      // gain transient too — the LNA step plus SpyServer-side AGC settling
-      // is the loudest pop in the system.
-      this.muteUntil = Math.max(this.muteUntil, Date.now() + 250);
-      const newGain = (isAm ? this.amGain : this.fmGain) ?? this.deviceInfo.maxGainIndex;
-      const digitalGain = computeDigitalGain(
-        this.deviceInfo.deviceType, newGain, this.currentDecStage, this.deviceInfo.maxGainIndex,
-      );
-      this.client.setSetting(SETTING_GAIN, newGain);
-      this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
-      log.info(`[spyService] mode→gain ${isAm ? 'AM' : 'FM'} ${newGain} digitalGain=${digitalGain}`);
-    }
+    // Extends the mode-change mute (set to +100 above) for the gain transient.
+    if (wasAm !== isAm) this.sendLiveGain('mode');
   }
 
   async startAudio(cfg?: Config): Promise<void> {
@@ -1328,8 +1397,20 @@ class SpyService {
     this.currentAudioDecimate = audioDecimate;
     // The gain index for the current demod mode. AM uses amGain (typically
     // lowered to dodge IMD from strong MW stations), other modes use fmGain.
+    // Both, for the band being tuned: the dial rows show both, and a mode
+    // switch later must find the other scope's value for this band too.
     const gain = resolved.gainIndex;
-    if (useAm) this.amGain = gain; else this.fmGain = gain;
+    const tunedHz = this.currentFreq || cfg.lastFrequency || 0;
+    const other = resolveDeviceSettings(
+      info,
+      { amGain: this.amGain, fmGain: this.fmGain, devices: cfg.devices },
+      useAm ? RX_MODE.NFM : RX_MODE.AM, tunedHz).gainIndex;
+    const [am, fm] = useAm ? [gain, other] : [other, gain];
+    const amMoved = am !== this.amGain, fmMoved = fm !== this.fmGain;
+    this.amGain = am;
+    this.fmGain = fm;
+    if (amMoved) for (const fn of this.amGainListeners) fn(am, this.maxGain);
+    if (fmMoved) for (const fn of this.fmGainListeners) fn(fm, this.maxGain);
     this.currentDecStage = decStage;
     const channels = 2; // always stereo PCM (mono modes duplicate L=R)
     this.currentAudioRate = audioRate;
@@ -1341,7 +1422,8 @@ class SpyService {
     {
       const key = deviceKey(info.deviceType, info.deviceSerial);
       const hadProfile = !!cfg.devices?.[key];
-      adoptDeviceSettings(resolved, cfg, info, this.currentDemodMode);
+      adoptDeviceSettings(resolved, cfg, info, this.currentDemodMode, tunedHz);
+      this.devices = cfg.devices;
       if (!hadProfile) {
         this.persistDeviceProfile(key, cfg.devices![key], {
           iqDecimation: cfg.iqDecimation, audioDecimate: cfg.audioDecimate,

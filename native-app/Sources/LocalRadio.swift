@@ -715,6 +715,23 @@ final class LocalRadio {
         stopFrameTimer()
     }
 
+    /// Pick up the gains filed for the band `frequency` is now in, when a
+    /// retune has crossed out of the band `old` was in (spyService.ts
+    /// applyBandGains). Assigning `config` sends the gain through its didSet.
+    /// A band with nothing filed resolves to what is in force now, so crossing
+    /// into it changes nothing.
+    private func followBand(from old: UInt32) {
+        guard let info = deviceInfo,
+              GainBand.of(Double(old)) != GainBand.of(Double(frequency)) else { return }
+        let g = DeviceSettingsResolver.bandGains(info: info, config: config,
+                                                 freqHz: Double(frequency))
+        guard g.am != config.amGain || g.fm != config.fmGain else { return }
+        var c = config
+        c.amGain = g.am
+        c.fmGain = g.fm
+        config = c
+    }
+
     func tune(ticks: Int) {
         let delta = Double(ticks) * tuneStepHz
         let next = max(0, Double(frequency) + delta)
@@ -751,7 +768,12 @@ final class LocalRadio {
         // the server without a word, so accepting it here would leave the
         // window showing a frequency nothing is receiving.
         guard canControl else { return }
+        let was = frequency
         frequency = hz
+        // Before the frequency is written: that write reconciles the profile
+        // against `frequency`, and must not file the old band's gains under
+        // the new band.
+        followBand(from: was)
         config.frequencyHz = Double(hz)
         config.save()
         guard isConnected else { deviceCenterHz = hz; setVfo(0); return }
@@ -810,7 +832,9 @@ final class LocalRadio {
                                        center + limit).rounded()))
         deviceCenterHz = UInt32(center)
         if listen != frequency {
+            let was = frequency
             frequency = listen
+            followBand(from: was)
             if persist {
                 config.frequencyHz = Double(listen)
                 config.save()
@@ -1020,7 +1044,8 @@ final class LocalRadio {
         // old one would repeat the fallback on every connect while leaving the
         // UI disagreeing with the stream.
         let hadProfile = config.devices[activeDeviceKey ?? ""] != nil
-        DeviceSettingsResolver.adopt(settings, into: &config, info: info, mode: mode)
+        DeviceSettingsResolver.adopt(settings, into: &config, info: info, mode: mode,
+                                     freqHz: Double(frequency))
         // Saved only for a receiver seen for the first time: that changes no
         // setting the user touched, so nothing else would ever write it out.
         if !hadProfile { config.save() }
@@ -1109,7 +1134,7 @@ final class LocalRadio {
         // so a gain or decimation chosen here is what comes back next time this
         // receiver is selected — and is not carried onto a different one.
         if let key = activeDeviceKey, !isCapturingProfile {
-            let wanted = config.profileInForce()
+            let wanted = config.profileInForce(for: key, freqHz: Double(frequency))
             if config.devices[key] != wanted {
                 isCapturingProfile = true
                 config.devices[key] = wanted

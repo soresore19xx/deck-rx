@@ -66,6 +66,15 @@ struct RadioConfig: Codable, Equatable {
         /// HF+ at full rate and 37.5 kHz on a V4 at 150 kHz — and 37.5 kHz
         /// cannot carry FM stereo's 38 kHz subcarrier at all.
         var audioDecimate: Int?
+        /// Gain per band (`GainBand` raw values), and within a band per AM /
+        /// the rest. `amGain` / `fmGain` above stay as the fallback for a band
+        /// with nothing filed yet. The plugin writes the same shape.
+        var gains: [String: BandGain]?
+    }
+
+    struct BandGain: Codable, Equatable {
+        var am: UInt32?
+        var fm: UInt32?
     }
 
     /// Stable identity for a connected receiver. The type alone will not do:
@@ -94,14 +103,19 @@ struct RadioConfig: Codable, Equatable {
     /// nothing on the next settings change. Measured on 2026-09-21: the V4's
     /// stored profile came back as three keys, so its audio divisor was not
     /// per-receiver at all.
-    func profileInForce() -> DeviceProfile {
-        DeviceProfile(iqDecimation: iqDecimation, amGain: amGain,
-                      fmGain: fmGain, audioDecimate: audioDecimate)
+    ///
+    /// The gains in force are filed under the band `freqHz` falls in; the other
+    /// bands' slots are carried over from what is stored for `key`.
+    func profileInForce(for key: String, freqHz: Double) -> DeviceProfile {
+        var gains = devices[key]?.gains ?? [:]
+        gains[GainBand.of(freqHz).rawValue] = BandGain(am: amGain, fm: fmGain)
+        return DeviceProfile(iqDecimation: iqDecimation, amGain: amGain,
+                             fmGain: fmGain, audioDecimate: audioDecimate, gains: gains)
     }
 
     /// Record the values in force as this receiver's profile.
-    mutating func captureProfile(for key: String) {
-        devices[key] = profileInForce()
+    mutating func captureProfile(for key: String, freqHz: Double) {
+        devices[key] = profileInForce(for: key, freqHz: freqHz)
     }
 
     var jpRegion = "kanto"

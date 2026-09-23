@@ -31,9 +31,43 @@ export function isWideFM(mode: number): boolean { return mode === RX_MODE.WFM; }
 /** What differs per receiver. Absolutes (frequency, bandwidth, volume) do not. */
 export interface DeviceProfile {
   iqDecimation?: number;
+  /** Last gain used, whatever the band. Kept as the fallback for a band that
+   *  has no entry in `gains` yet, which is how a profile written before
+   *  `gains` existed keeps behaving the way it did. */
   amGain?: number;
   fmGain?: number;
   audioDecimate?: number;
+  /** Gain per band, and within a band per AM / everything else. */
+  gains?: BandGains;
+}
+
+/**
+ * The bands a gain is kept for.
+ *
+ * What overloads a front end is what the antenna delivers, so the band decides
+ * the gain, not the demod mode: on 2026-09-23 the V4 behind a 6 dB pad wanted
+ * index 3 on mediumwave (intermod at 1026 kHz appears from 6 up), while
+ * shortwave wants it far higher. With one value per mode, mediumwave and
+ * shortwave AM fought over `amGain`, and SSB on mediumwave borrowed the FM
+ * value. AM and the rest stay apart inside a band because the non-AM value is
+ * also the post-demod level for FM, SSB and CW (see spyService's audio path).
+ */
+export type GainBand = 'mw' | 'hf' | 'vhf';
+export type GainScope = 'am' | 'fm';
+export type BandGains = Partial<Record<GainBand, { am?: number; fm?: number }>>;
+
+/** Top of shortwave. Above it: VHF, FM broadcast and up. */
+export const HF_TOP_HZ = 30_000_000;
+
+/** mw below 2 MHz (and when the frequency is unknown), hf to 30 MHz, vhf above. */
+export function gainBand(freqHz: number): GainBand {
+  if (isMediumwave(freqHz)) return 'mw';
+  return freqHz < HF_TOP_HZ ? 'hf' : 'vhf';
+}
+
+/** AM against everything else — the split the audio path makes. */
+export function gainScope(mode: number): GainScope {
+  return mode === RX_MODE.AM ? 'am' : 'fm';
 }
 
 export interface DeviceSettings {
@@ -188,8 +222,10 @@ export function resolveDeviceSettings(
   const decStage = offset + info.minIQDecimation;
   const iqRate = Math.round(info.maxSampleRate / Math.pow(2, decStage));
 
-  const storedGain = mode === RX_MODE.AM ? (profile?.amGain ?? cfg.amGain)
-                                         : (profile?.fmGain ?? cfg.fmGain);
+  const scope = gainScope(mode);
+  const storedGain = profile?.gains?.[gainBand(freqHz)]?.[scope]
+    ?? (scope === 'am' ? (profile?.amGain ?? cfg.amGain)
+                       : (profile?.fmGain ?? cfg.fmGain));
   const gainIndex = Math.min(storedGain ?? defaultGainIndex(info, freqHz),
                              gainCeiling(info, freqHz));
 
@@ -210,17 +246,40 @@ export function adoptDeviceSettings(
          devices?: Record<string, DeviceProfile> },
   info: DeviceInfo,
   mode: number,
+  freqHz = 0,
 ): void {
+  // Both gains for the band being tuned — the one in use from `s`, the other
+  // resolved the same way — so a later mode switch finds this band's value
+  // rather than whatever band was used last. Resolved before anything below
+  // is written, since it reads the same config.
+  const other = resolveDeviceSettings(
+    info, cfg, mode === RX_MODE.AM ? RX_MODE.NFM : RX_MODE.AM, freqHz).gainIndex;
   cfg.iqDecimation = s.iqDecimationOffset;
   cfg.audioDecimate = s.audioDecimate;
-  if (mode === RX_MODE.AM) cfg.amGain = s.gainIndex; else cfg.fmGain = s.gainIndex;
+  if (mode === RX_MODE.AM) { cfg.amGain = s.gainIndex; cfg.fmGain = other; }
+  else { cfg.fmGain = s.gainIndex; cfg.amGain = other; }
   if (!cfg.devices) cfg.devices = {};
-  cfg.devices[deviceKey(info.deviceType, info.deviceSerial)] = {
+  const key = deviceKey(info.deviceType, info.deviceSerial);
+  // The other bands' gains are not ours to drop: only this band's slot moves.
+  const band = gainBand(freqHz);
+  const gains = withBandGain(
+    withBandGain(cfg.devices[key]?.gains, band, 'am', cfg.amGain), band, 'fm', cfg.fmGain);
+  cfg.devices[key] = {
     iqDecimation: s.iqDecimationOffset,
     amGain: cfg.amGain,
     fmGain: cfg.fmGain,
     audioDecimate: s.audioDecimate,
+    gains,
   };
+}
+
+/** A copy of `gains` with one slot set. The input is not touched. */
+export function withBandGain(gains: BandGains | undefined, band: GainBand,
+                             scope: GainScope, value: number): BandGains {
+  const out: BandGains = {};
+  for (const [b, v] of Object.entries(gains ?? {})) out[b as GainBand] = { ...v };
+  out[band] = { ...out[band], [scope]: value };
+  return out;
 }
 
 /**

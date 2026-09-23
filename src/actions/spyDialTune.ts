@@ -548,8 +548,15 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     if (ev.payload['action'] === 'setServerConfig') {
       const { host, port, source } = ev.payload as
         { host?: string; port?: number; source?: string };
-      await spyService.updateServerConfig({ host, port, source })
-        .catch((e) => streamDeck.logger.error(`[spyDialTune] updateServerConfig: ${e}`));
+      const now = await spyService.updateServerConfig({ host, port, source })
+        .catch((e) => { streamDeck.logger.error(`[spyDialTune] updateServerConfig: ${e}`); return null; });
+      // A source switch changes the address too (each source keeps its own),
+      // so the fields have to be told what is there now.
+      if (now && source !== undefined) {
+        await streamDeck.ui.sendToPropertyInspector({
+          action: 'serverConfig', host: now.host, port: now.port, source: now.source,
+        });
+      }
     }
     if (ev.payload['action'] === 'getEibiStatus') {
       const st = await spyService.getEibiStatus();

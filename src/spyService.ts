@@ -7,7 +7,10 @@ import {
   computeDigitalGain,
 } from './SpyClient.js';
 import { RtlTcpClient } from './RtlTcpClient.js';
-import { asIQSource, type IQClient, type IQSource } from './iqClient.js';
+import {
+  asIQSource, defaultPort, switchSource, fileAddress,
+  type IQClient, type IQSource, type ServerAddress, type SourceAddrs,
+} from './iqClient.js';
 import {
   resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig, deviceKey,
   gainBand, withBandGain, RX_MODE, type DeviceProfile, type GainBand, type GainScope,
@@ -1898,16 +1901,41 @@ class SpyService {
    * client, replace it with a fresh one pointing at the new endpoint, and
    * reconnect (unless the master switch is OFF, in which case only the
    * persisted value is updated). Validates port is in 1..65535.
+   *
+   * A source change brings that source's own address back (`switchSource`),
+   * and a typed host or port is filed as the address of the source in force
+   * (`fileAddress`) — the SDR++ arrangement. Returns the address now in force,
+   * so the Property Inspector can show what the source switch put there.
    */
   async updateServerConfig(
     { host, port, source }: { host?: string; port?: number; source?: string },
-  ): Promise<void> {
+  ): Promise<ServerAddress | null> {
+    const h = typeof host === 'string' && host.trim().length > 0 ? host.trim() : undefined;
+    const p = typeof port === 'number' && port >= 1 && port <= 65535 ? port : undefined;
+    const s = source === 'spyserver' || source === 'rtltcp' ? source : undefined;
+    if (h === undefined && p === undefined && s === undefined) return null;
+    let result: ServerAddress | null = null;
     const updates: Record<string, unknown> = {};
-    if (typeof host === 'string' && host.trim().length > 0) updates.host = host.trim();
-    if (typeof port === 'number' && port >= 1 && port <= 65535) updates.port = port;
-    if (source === 'spyserver' || source === 'rtltcp') updates.source = source;
-    if (Object.keys(updates).length === 0) return;
-    await this.persistFields(updates);
+    const next = this.configWriteChain.then(async () => {
+      const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
+      const cfg = JSON.parse(raw) as Record<string, unknown>;
+      const src = asIQSource(cfg.source);
+      let cur: ServerAddress = {
+        host: typeof cfg.host === 'string' ? cfg.host : '',
+        port: typeof cfg.port === 'number' ? cfg.port : defaultPort(src),
+        source: src,
+        sourceAddrs: (cfg.sourceAddrs && typeof cfg.sourceAddrs === 'object')
+          ? cfg.sourceAddrs as SourceAddrs : {},
+      };
+      if (s !== undefined && s !== cur.source) cur = switchSource(cur, s);
+      if (h !== undefined || p !== undefined) cur = fileAddress(cur, h, p);
+      Object.assign(cfg, cur);
+      Object.assign(updates, cur);
+      result = cur;
+      await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    });
+    this.configWriteChain = next.catch(() => {});
+    await next;
     // Apply live: only re-establish if there was an active or pending connection.
     const wasActive = this.connected || this.connecting || !!this.reconnectTimer;
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
@@ -1922,6 +1950,7 @@ class SpyService {
       this.hookClient();
       await this.connect();
     }
+    return result;
   }
 
   /**

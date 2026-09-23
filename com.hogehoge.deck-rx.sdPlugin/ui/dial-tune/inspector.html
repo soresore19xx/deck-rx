@@ -61,15 +61,17 @@
     <input type="text" id="icecastBitrate" placeholder="128k" style="flex:0 0 80px" />
   </div>
   <hr style="border-color:#444;margin:8px 0"/>
+  <!-- Source first, the way SDR++ lays it out: each source keeps its own
+       address, so choosing one fills the Server fields below. -->
+  <div class="row"><label>Source</label>
+    <select id="sourceInput">
+      <option value="spyserver">SpyServer</option>
+      <option value="rtltcp">RTL-TCP</option>
+    </select>
+  </div>
   <div class="row"><label>Server</label>
     <input type="text" id="hostInput" placeholder="192.168.1.100" />
     <input type="number" id="portInput" placeholder="8888" min="1" max="65535" />
-  </div>
-  <div class="row"><label>Protocol</label>
-    <select id="sourceInput">
-      <option value="spyserver">SpyServer</option>
-      <option value="rtltcp">rtl_tcp</option>
-    </select>
   </div>
   <div class="row"><label>EIBI</label>
     <button type="button" id="eibiUpdateBtn">Update Now</button>
@@ -302,15 +304,29 @@
       var payload = { action: 'setServerConfig' };
       if (host) payload.host = host;
       if (port >= 1 && port <= 65535) payload.port = port;
-      payload.source = document.getElementById('sourceInput').value;
+      // No source here: a typed address belongs to the source in force, and
+      // the plugin files it under that one.
       if (payload.host || payload.port) sendToPlugin(payload);
     }, 800);
   }
   document.getElementById('hostInput').addEventListener('input', scheduleSaveServer);
   document.getElementById('portInput').addEventListener('input', scheduleSaveServer);
-  // The protocol decides which client is built, so it applies on the next
-  // connect rather than on the 800 ms keystroke debounce the fields use.
-  document.getElementById('sourceInput').addEventListener('change', scheduleSaveServer);
+  // A source change is sent at once and on its own: the plugin brings that
+  // source's address back and answers with a serverConfig that refills the
+  // fields. A pending field edit is sent first so it lands on the old source.
+  document.getElementById('sourceInput').addEventListener('change', function() {
+    if (serverTimer) {
+      clearTimeout(serverTimer);
+      serverTimer = null;
+      var host = document.getElementById('hostInput').value.trim();
+      var port = parseInt(document.getElementById('portInput').value, 10);
+      var pending = { action: 'setServerConfig' };
+      if (host) pending.host = host;
+      if (port >= 1 && port <= 65535) pending.port = port;
+      if (pending.host || pending.port) sendToPlugin(pending);
+    }
+    sendToPlugin({ action: 'setServerConfig', source: this.value });
+  });
 
   function renderEibiStatus(whenIso, count, errMsg) {
     var el = document.getElementById('eibiStatus');

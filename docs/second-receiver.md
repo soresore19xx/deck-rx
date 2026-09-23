@@ -346,13 +346,23 @@ loudly rather than reaching a receiver whose gain control does not work.
 convention, and it is why `RtlTcpClient` sends `SET_GAIN_MODE 1` and
 `SET_AGC_MODE 0` before every gain index rather than trusting the startup flag.
 
-In the plugin, the receiver is chosen in the Tune dial's Property Inspector:
+The receiver is chosen by **Source**, from a list, the way SDR++ does it — in
+the Tune dial's Property Inspector, in Solo's Source row, and in the pull-down at
+the head of the iPad's SERVER row:
 
-| | Airspy HF+ | RTL-SDR Blog V4 |
-|---|---|---|
-| Server | `192.168.0.143` | `192.168.0.143` |
-| Port | `8888` | `8890` |
-| Protocol | SpyServer | rtl_tcp |
+| Source | Server | Port | Receiver |
+|---|---|---|---|
+| SpyServer | `192.168.0.143` | `8888` | Airspy HF+ |
+| RTL-TCP | `192.168.0.143` | `8890` | RTL-SDR Blog V4 |
+
+Each source keeps its own address (`sourceAddrs` in the config — the same key
+and shape on both sides; `switchSource` / `fileAddress` in `src/iqClient.ts`,
+`RadioConfig.selectSource` / `setAddress` in Swift). Choosing a source brings its
+address back; a source never used keeps the host and takes 8890 for rtl_tcp; a
+typed host or port is filed under the source in force. Before this there was one
+address for both and a Protocol field beside it, so switching meant retyping the
+port — and a SpyServer handshake sent at rtl_tcp is not refused but read as
+commands, one of which retunes the device to 0 Hz.
 
 The per-receiver profile is keyed on `deviceType:deviceSerial`. rtl_tcp carries
 no serial and SpyServer reported zero for this hardware, so both clients land on

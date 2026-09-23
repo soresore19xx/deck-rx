@@ -274,4 +274,33 @@ func runRtlTcpTests() {
     print("\nrtl_tcp — source selection")
     check("default port is 8890, the V4's, not rtl_tcp's own 1234",
           RtlTcpClient.defaultPort == 8890)
+
+    // Each source keeps its own address, the way SDR++ keeps one per source.
+    var c = RadioConfig()
+    c.setAddress(host: "192.168.0.143", port: 8888)
+    c.selectSource("rtltcp")
+    check("a source never used keeps the host and takes rtl_tcp's port",
+          c.source == "rtltcp" && c.host == "192.168.0.143" && c.port == 8890,
+          "\(c.host):\(c.port)")
+    c.selectSource("spyserver")
+    check("going back brings SpyServer's own address back",
+          c.host == "192.168.0.143" && c.port == 8888, "\(c.host):\(c.port)")
+    c.setAddress(port: 5555)
+    c.selectSource("rtltcp")
+    c.selectSource("spyserver")
+    check("an address typed while on a source is that source's",
+          c.port == 5555 && c.sourceAddrs["rtltcp"]?.port == 8890)
+    c.selectSource("usb")
+    check("usb has no address and leaves the network one in place",
+          c.source == "usb" && c.port == 5555)
+    c.selectSource("rtltcp")
+    check("and coming back from usb restores that source's",
+          c.port == 8890)
+    let enc = try? JSONEncoder().encode(c)
+    let dec = enc.flatMap { try? JSONDecoder().decode(RadioConfig.self, from: $0) }
+    check("the addresses survive a save and load",
+          dec?.sourceAddrs == c.sourceAddrs && dec?.source == "rtltcp")
+    check("a config from before this reads with no addresses filed",
+          (try? JSONDecoder().decode(RadioConfig.self,
+                                     from: Data(#"{"host":"h","port":8888}"#.utf8)))?.sourceAddrs == [:])
 }

@@ -64,6 +64,13 @@ final class RadioViewController: UIViewController {
 
     private let hostField = UITextField()
     private let portField = UITextField()
+    /// Where the IQ comes from, picked from a list the way SDR++'s Source menu
+    /// works: SpyServer (the HF+) or RTL-TCP (the V4, docs/second-receiver.md).
+    /// Each source keeps its own address (RadioConfig.sourceAddrs), so picking
+    /// one puts its host and port back in the boxes.
+    private let sourceButton = UIButton(type: .system)
+    /// What the iPad can open. No "usb": an iPad has no Airspy library.
+    private static let sources = ["spyserver", "rtltcp"]
     private let connectButton = UIButton(type: .system)
     private let statusLabel = UILabel()
     /// The same views the Mac window draws. Not UIKit copies of them: a second
@@ -236,6 +243,11 @@ final class RadioViewController: UIViewController {
         // the button pushed the first digit of "5555" out of the box, so the
         // number being typed was the one thing the box did not show.
         portField.widthAnchor.constraint(equalToConstant: S(92)).isActive = true
+        styleAsKey(sourceButton, font: xMono(S(15), .medium), height: S(40))
+        sourceButton.widthAnchor.constraint(equalToConstant: S(130)).isActive = true
+        sourceButton.setContentHuggingPriority(.required, for: .horizontal)
+        sourceButton.showsMenuAsPrimaryAction = true
+        refreshSourceMenu()
         // Return connects and puts the keyboard away, which is the whole
         // reason the field is being typed into.
         optionsButton.setTitle("Options", for: .normal)
@@ -1069,7 +1081,7 @@ final class RadioViewController: UIViewController {
     /// decoder is built in. A function rather than an inline literal because
     /// Swift will not accept #if between the elements of one.
     private func serverRow() -> UIStackView {
-        let server = boxed("SERVER", row([hostField, portField, connectButton]))
+        let server = boxed("SERVER", row([sourceButton, hostField, portField, connectButton]))
         var items: [UIView] = [server, optionsButton]
 #if DRM_ENABLED
         items.append(drmButton)
@@ -1170,6 +1182,33 @@ final class RadioViewController: UIViewController {
     }
 #endif
 
+    /// The source list, with the one in force ticked and named on the button.
+    private func refreshSourceMenu() {
+        let current = radio.config.source
+        sourceButton.setTitle(RadioConfig.sourceName(current) + " ▾", for: .normal)
+        sourceButton.menu = UIMenu(children: Self.sources.map { id in
+            UIAction(title: RadioConfig.sourceName(id),
+                     state: id == current ? .on : .off) { [weak self] _ in
+                self?.chooseSource(id)
+            }
+        })
+    }
+
+    /// Picking a source brings its own address back, so the boxes change with
+    /// it; a source never used takes rtl_tcp's port (8890) or keeps the one in
+    /// the box. When connected it reconnects at once to the new one.
+    private func chooseSource(_ id: String) {
+        guard id != radio.config.source else { return }
+        var c = radio.config
+        c.selectSource(id)
+        c.save()
+        radio.config = c
+        hostField.text = c.host
+        portField.text = String(c.port)
+        refreshSourceMenu()
+        if radio.isConnected { radio.disconnect(); connectNow() }
+    }
+
     @objc private func toggleConnection() {
         guard !radio.isConnected else { radio.disconnect(); return }
         connectNow()
@@ -1189,8 +1228,9 @@ final class RadioViewController: UIViewController {
         // Persisted before connecting, not after: a server that refuses the
         // connection is still the one to try again on the next launch, and
         // retyping an address after every failure is its own punishment.
-        radio.config.host = host
-        if let p = port { radio.config.port = Int(p) }
+        // Filed as the address of the source in force, so choosing the other
+        // source and coming back returns to it.
+        radio.config.setAddress(host: host, port: port.map { Int($0) })
         radio.config.save()
         // Written back, so the boxes show what was actually used rather than
         // what was typed at them.

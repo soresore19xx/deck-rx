@@ -47,4 +47,50 @@ export function asIQSource(v: unknown): IQSource {
   return v === 'rtltcp' ? 'rtltcp' : 'spyserver';
 }
 
+/**
+ * The address each source was last used with, the way SDR++ keeps one per
+ * source module (RadioConfig.sourceAddrs on the Swift side, same shape in the
+ * same file key). `host` / `port` at the top of the config are the one in
+ * force. With one address for both, going from the HF+ (SpyServer, 8888) to
+ * the V4 (rtl_tcp, 8890) meant retyping the port each way, and a SpyServer
+ * handshake sent at rtl_tcp is not refused but read as commands — one of them
+ * retunes the device to 0 Hz.
+ */
+export type SourceAddrs = Partial<Record<IQSource, { host: string; port: number }>>;
+
+export interface ServerAddress {
+  host: string;
+  port: number;
+  source: IQSource;
+  sourceAddrs: SourceAddrs;
+}
+
+/**
+ * Switch source, carrying each one's address with it: the one in force is
+ * filed under the old source and the new source's comes back. A source never
+ * used keeps the host (both receivers usually sit on one machine) and takes
+ * rtl_tcp's port if it is rtl_tcp; SpyServer keeps the port in force.
+ * Returns a new value; the input is not touched.
+ */
+export function switchSource(cur: ServerAddress, next: IQSource): ServerAddress {
+  if (next === cur.source) return { ...cur, sourceAddrs: { ...cur.sourceAddrs } };
+  const sourceAddrs: SourceAddrs = { ...cur.sourceAddrs, [cur.source]: { host: cur.host, port: cur.port } };
+  const back = sourceAddrs[next];
+  if (back) return { host: back.host, port: back.port, source: next, sourceAddrs };
+  return {
+    host: cur.host,
+    port: next === 'rtltcp' ? defaultPort('rtltcp') : cur.port,
+    source: next,
+    sourceAddrs,
+  };
+}
+
+/** Set the address of the source in force, and file it as that source's. */
+export function fileAddress(cur: ServerAddress, host?: string, port?: number): ServerAddress {
+  const h = host ?? cur.host;
+  const p = port ?? cur.port;
+  return { host: h, port: p, source: cur.source,
+           sourceAddrs: { ...cur.sourceAddrs, [cur.source]: { host: h, port: p } } };
+}
+
 export type { DeviceInfo, IQPacket, SyncInfo };

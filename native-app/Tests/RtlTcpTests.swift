@@ -63,8 +63,10 @@ func runRtlTcpTests() {
             && RtlTcpClient.isValidRate(2_400_000) && !RtlTcpClient.isValidRate(3_300_000))
 
     let p300 = RtlTcpClient.planRate(300_000)
-    check("meets 300 kS/s natively, with no client-side decimation",
-          p300.deviceRate == 300_000 && p300.decimation == 1)
+    // Not natively: at 300 kS/s rtl_tcp's 256 KB buffers came as one 0.44 s
+    // lurch every 0.44 s (2026-09-24). The device runs in the upper window.
+    check("meets 300 kS/s from 1.2 MS/s, not natively",
+          p300.deviceRate == 1_200_000 && p300.decimation == 4)
 
     var everyStage = true
     var plans = [Int: (deviceRate: UInt32, decimation: Int)]()
@@ -78,10 +80,12 @@ func runRtlTcpTests() {
     }
     check("covers every decimation stage the client advertises", everyStage)
     check("rates in the gap between the windows are reached from above",
-          plans[2]! == (1_200_000, 2) && plans[4]! == (300_000, 2),
+          plans[2]! == (1_200_000, 2) && plans[4]! == (1_200_000, 8),
           "stage 2 \(plans[2]!) stage 4 \(plans[4]!)")
-    check("prefers the lowest native rate, to keep the stream off the LAN",
-          RtlTcpClient.planRate(150_000).deviceRate == 300_000)
+    check("takes the lowest rate in the upper window",
+          RtlTcpClient.planRate(150_000).deviceRate == 1_200_000)
+    check("never runs the device below the upper window",
+          plans.values.allSatisfy { Double($0.deviceRate) >= RtlTcpClient.minDeviceRate })
     let big = RtlTcpClient.planRate(4_000_000)
     check("clamps above the device maximum", big.deviceRate == 3_200_000 && big.decimation == 1)
 
@@ -155,7 +159,7 @@ func runRtlTcpTests() {
         r.c.setSetting(.iqFrequency, 810_000)
         r.c.setSetting(.streamingEnabled, 1)
         check("turns a decimation stage into a device sample rate on stream start",
-              r.last(RtlTcpClient.cmdSetSampleRate) == 300_000
+              r.last(RtlTcpClient.cmdSetSampleRate) == 1_200_000
                 && r.last(RtlTcpClient.cmdSetFreq) == 810_000)
     }
     do {
@@ -190,7 +194,7 @@ func runRtlTcpTests() {
     }
 
     do {
-        let r = stream(3, 0, [255, 0, 128, 127])
+        let r = stream(1,0, [255, 0, 128, 127])
         let v = r.samples
         check("maps 8-bit unsigned to int16, centred and scaled",
               r.packets.count == 1 && r.packets[0].format == .int16
@@ -198,13 +202,13 @@ func runRtlTcpTests() {
               "\(v)")
     }
     do {
-        let plain = Double(stream(3, 0, [140, 128]).samples[0])
-        let lifted = Double(stream(3, 9, [140, 128]).samples[0])
+        let plain = Double(stream(1,0, [140, 128]).samples[0])
+        let lifted = Double(stream(1,9, [140, 128]).samples[0])
         check("applies the same decimation digital gain SpyServer would have",
               abs(lifted / plain - pow(10, 9.0 / 20)) < 0.01, "\(lifted / plain)")
     }
     do {
-        let v = stream(3, 20, [255, 0]).samples
+        let v = stream(1,20, [255, 0]).samples
         check("clamps rather than wrapping when the digital gain overdrives int16",
               v == [32767, -32768], "\(v)")
     }
@@ -213,7 +217,7 @@ func runRtlTcpTests() {
         // would swap I and Q for the rest of the stream.
         let r = Rig()
         r.handshake()
-        r.c.setSetting(.iqDecimation, 3)
+        r.c.setSetting(.iqDecimation, 1)      // 1.2 MS/s, native: no filter
         r.c.setSetting(.iqDigitalGain, 0)
         r.c.setSetting(.streamingEnabled, 1)
         r.c.feed(Data([255]))
@@ -236,12 +240,12 @@ func runRtlTcpTests() {
         let body = [UInt8](repeating: 128, count: 4096)
         let r = stream(4, 0, body)
         let pairsOut = r.samples.count / 2
-        check("decimates by the planned factor", pairsOut == body.count / 2 / 2, "\(pairsOut)")
+        check("decimates by the planned factor", pairsOut == body.count / 2 / 8, "\(pairsOut)")
     }
     do {
         // Bytes that arrive together with the header are IQ, not lost.
         let r = Rig()
-        r.c.setSetting(.iqDecimation, 3)
+        r.c.setSetting(.iqDecimation, 1)      // 1.2 MS/s, native: no filter
         r.c.setSetting(.streamingEnabled, 1)
         r.c.feed(Rig.header(tuner: 6, gains: 29) + Data([255, 0]))
         check("keeps IQ that arrives in the same read as the header", r.samples.count == 2)
@@ -252,7 +256,7 @@ func runRtlTcpTests() {
     do {
         let r = Rig(settle: 10)
         r.handshake()
-        r.c.setSetting(.iqDecimation, 3)
+        r.c.setSetting(.iqDecimation, 1)      // 1.2 MS/s, native: no filter
         r.c.setSetting(.streamingEnabled, 1)
         r.c.feed(Data([255, 0, 128, 128]))
         check("drops the samples still in flight at the previous rate", r.packets.isEmpty)
@@ -260,7 +264,7 @@ func runRtlTcpTests() {
     do {
         let r = Rig(settle: 0)
         r.handshake()
-        r.c.setSetting(.iqDecimation, 3)
+        r.c.setSetting(.iqDecimation, 1)      // 1.2 MS/s, native: no filter
         r.c.setSetting(.streamingEnabled, 1)
         r.c.stopStreaming()
         r.sent = []
@@ -269,6 +273,78 @@ func runRtlTcpTests() {
               r.last(RtlTcpClient.cmdSetSampleRate) == nil)
         r.c.feed(Data([255, 0, 128, 128]))
         check("and streams straight away on restart", r.packets.count == 1)
+    }
+
+    print("\nrtl_tcp — pacing the lurches")
+
+    // What the server actually does at 300 kS/s: 256 KB every 0.437 s, which is
+    // 131072 pairs, halved to 65536 at 150 kS/s. Driven with a clock of our own.
+    do {
+        let rate = 150_000.0, lurch = 65536, period = Double(lurch) / rate
+        let p = IQPacer()
+        p.rate = rate
+        let block = [Int16](repeating: 1, count: lurch * 2)
+        var t = 0.0, nextLurch = 0.0, releasedAfterStart = 0, ticks = 0, emptyTicks = 0
+        var startedAt: Double?
+        p.push(block, now: 0); nextLurch = period
+        // Seed the observed gap the way a live stream does before release.
+        while t < 20 {
+            t += 0.010
+            if t >= nextLurch { p.push(block, now: nextLurch); nextLurch += period }
+            let got = p.take(now: t).count / 2
+            if startedAt == nil, got > 0 { startedAt = t }
+            if startedAt != nil {
+                ticks += 1
+                releasedAfterStart += got
+                if got == 0 { emptyTicks += 1 }
+            }
+        }
+        let expected = rate * (t - (startedAt ?? t))
+        check("releases at the rate the samples represent",
+              abs(Double(releasedAfterStart) - expected) / expected < 0.02,
+              "released \(releasedAfterStart) expected \(Int(expected))")
+        check("a steady stream: no empty ticks once released, no underruns",
+              emptyTicks == 0 && p.underruns == 0,
+              "empty \(emptyTicks)/\(ticks) underruns \(p.underruns)")
+        check("learns the delivery gap and prefills a little more than it",
+              abs(p.maxGap - period) < 0.001 && p.prefill > period && p.prefill < period * 1.3,
+              "gap \(p.maxGap) prefill \(p.prefill)")
+        check("latency stays bounded", Double(p.held) / rate <= p.prefill + 1.0,
+              "held \(Double(p.held) / rate) s")
+    }
+    do {
+        // One long stall early on must not hold the prefill up for good: it is
+        // paid again on every retune.
+        let p = IQPacer()
+        p.rate = 1000
+        var t = 0.0
+        p.push([0, 0], now: t); t += 3; p.push([0, 0], now: t)      // a 3 s stall
+        let afterStall = p.prefill
+        for _ in 0..<20 { t += 0.11; p.push([0, 0], now: t) }       // then 1.2 MS/s lurches
+        check("forgets an old stall once recent deliveries are regular",
+              afterStall == 0.5 && abs(p.prefill - 0.1375) < 0.001,
+              "after stall \(afterStall) now \(p.prefill)")
+    }
+    do {
+        // A device clock faster than ours, or a stall followed by a flood:
+        // the store is cut back rather than let latency creep.
+        let p = IQPacer()
+        p.rate = 1000
+        p.push([Int16](repeating: 0, count: 200), now: 0)
+        p.push([Int16](repeating: 0, count: 200), now: 0.1)
+        p.push([Int16](repeating: 0, count: 5000 * 2), now: 0.2)
+        check("cuts a runaway store back to the prefill",
+              p.trims == 1 && abs(Double(p.held) / 1000 - p.prefill) < 0.01,
+              "held \(p.held) prefill \(p.prefill)")
+    }
+    do {
+        let p = IQPacer()
+        p.rate = 1000
+        p.push([Int16](repeating: 7, count: 2000), now: 0)
+        p.clear()
+        check("clear drops what is held (a retune makes it the wrong station)", p.held == 0)
+        check("and nothing is released until a new prefill is held",
+              p.take(now: 1).isEmpty && p.take(now: 2).isEmpty)
     }
 
     print("\nrtl_tcp — source selection")

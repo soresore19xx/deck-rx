@@ -64,16 +64,22 @@ final class RtlTcpClient: IQSource {
     }
 
     /// A native device rate for a requested IQ rate, plus the power-of-two
-    /// decimation left to do here. Prefers the lowest native rate that works,
-    /// so the LAN carries as little as possible: 300 kS/s is 600 kB/s where
-    /// 2.4 MS/s is 4.8 MB/s.
+    /// decimation left to do here.
+    ///
+    /// The lowest rate in the *upper* window, not the lowest overall
+    /// (`RTL_MIN_DEVICE_RATE` in src/RtlTcpClient.ts). rtl_tcp forwards
+    /// librtlsdr's 256 KB buffers whole, so at 300 kS/s the stream came as one
+    /// 0.44 s lurch every 0.44 s, and smoothing it cost every retune half a
+    /// second (2026-09-24). At 1.2 MS/s the buffer is 0.11 s.
+    static let minDeviceRate: Double = 900_001
+
     static func planRate(_ target: Double) -> (deviceRate: UInt32, decimation: Int) {
         if target >= 3_200_000 { return (3_200_000, 1) }
         var m = 1
         while m <= 64 {
             let rate = target * Double(m)
             if rate > 3_200_000 { break }
-            if isValidRate(rate) { return (UInt32(rate), m) }
+            if rate >= minDeviceRate && isValidRate(rate) { return (UInt32(rate), m) }
             m *= 2
         }
         // Nothing lands on a native rate (a target that is not a clean divisor
@@ -150,12 +156,33 @@ final class RtlTcpClient: IQSource {
     /// Where commands go. The socket in normal use; a recorder in the tests.
     var send: ((Data) -> Void)?
 
+    /// rtl_tcp does not stream, it lurches. It forwards whatever librtlsdr
+    /// hands it, and librtlsdr hands over 256 KB at a time (the library's
+    /// default buffer, which rtl_tcp has no option to change). At the 300 kS/s
+    /// this receiver runs at that is one delivery every 0.44 s, each carrying
+    /// 0.44 s of signal. SpyServer sends small messages continuously, and the
+    /// spectrum and the audio sink downstream are built for that: fed in
+    /// lurches, the trace updated twice a second and the audio ran dry between
+    /// deliveries. Worse, handling a whole lurch in one go held up the socket,
+    /// rtl_tcp queued what it could not send ("ll+, now N" in its log, 361 times
+    /// in three hours on 2026-09-24), and at 19 it gave up on the client.
+    ///
+    /// So the socket side only converts and stores, and a timer releases the
+    /// samples at the rate they represent — the stream SpyServer would have
+    /// sent, at the cost of about one delivery's worth of latency.
+    private let pacer = IQPacer()
+    private var paceTimer: DispatchSourceTimer?
+    private let pace: Bool
+    static let paceInterval: TimeInterval = 0.010
+
     /// `inline` runs every entry point on the caller's thread instead of the
-    /// client's queue. It exists for the tests, which drive `feed` and
-    /// `setSetting` directly and look at the result on the next line.
+    /// client's queue, and hands IQ up as it is converted rather than paced.
+    /// It exists for the tests, which drive `feed` and `setSetting` directly
+    /// and look at the result on the next line; the pacer has its own tests.
     init(rateSettle: TimeInterval = RtlTcpClient.rateSettle, inline: Bool = false) {
         self.rateSettleTime = rateSettle
         self.inline = inline
+        self.pace = !inline
     }
 
     private func onQueue(_ f: @escaping () -> Void) {
@@ -242,6 +269,7 @@ final class RtlTcpClient: IQSource {
             intentionalClose = true
             streaming = false
             stopWatchdog()
+            stopPacing()
             conn?.cancel()
             conn = nil
             send = nil
@@ -274,6 +302,9 @@ final class RtlTcpClient: IQSource {
 
     private func applyFrequency(_ hz: UInt32) {
         freqHz = hz
+        // What is held was received on the old frequency; releasing it after
+        // the retune would play the previous station for up to a second.
+        pacer.clear()
         sendCmd(Self.cmdSetFreq, freqHz)
         emitSync()
     }
@@ -311,6 +342,8 @@ final class RtlTcpClient: IQSource {
         sendCmd(Self.cmdSetTunerGainIndex, gainIndex)
         streaming = true
         streamedOnce = true
+        pacer.clear()
+        startPacing()
     }
 
     private func sendCmd(_ cmd: UInt8, _ param: UInt32) {
@@ -474,9 +507,133 @@ final class RtlTcpClient: IQSource {
             // little-endian, so the in-memory layout is already the wire layout.
             Data(buffer: ptr)
         }
-        // SpyServer reports the gain the stream was produced at in the message
-        // header; rtl_tcp has no such field, so report what was asked for.
+        if pace {
+            pacer.push(out, now: ProcessInfo.processInfo.systemUptime)
+            return
+        }
+        deliver(body)
+    }
+
+    /// SpyServer reports the gain the stream was produced at in the message
+    /// header; rtl_tcp has no such field, so report what was asked for.
+    private func deliver(_ body: Data) {
         onIQ?(SpyClient.IQPacket(format: .int16, body: body, gainDb: UInt16(truncatingIfNeeded: gainIndex)))
+    }
+
+    // MARK: pacing
+
+    private func startPacing() {
+        guard pace else { return }
+        pacer.rate = Double(deviceRate) / Double(decimation)
+        guard paceTimer == nil else { return }
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + Self.paceInterval, repeating: Self.paceInterval,
+                   leeway: .milliseconds(2))
+        t.setEventHandler { [weak self] in
+            guard let self, self.streaming else { return }
+            let s = self.pacer.take(now: ProcessInfo.processInfo.systemUptime)
+            guard !s.isEmpty else { return }
+            self.deliver(s.withUnsafeBufferPointer { Data(buffer: $0) })
+        }
+        paceTimer = t
+        t.resume()
+    }
+
+    private func stopPacing() {
+        paceTimer?.cancel()
+        paceTimer = nil
+        pacer.clear()
+    }
+}
+
+/// Turns deliveries that arrive in lurches into a steady stream at the rate
+/// they represent (see `RtlTcpClient.pacer`). Pure bookkeeping on interleaved
+/// int16 IQ with the clock passed in, so it is tested without waiting.
+///
+/// Release starts once a prefill is held — the longest of the recent delivery
+/// gaps and a quarter, so the next lurch lands before the store runs dry — and
+/// goes back to prefilling if it does run dry. A store that grows past the
+/// prefill plus a second (the device clock running faster than ours, or a
+/// stall) is cut back to the prefill from the old end, so latency cannot creep.
+///
+/// Recent gaps, not the longest ever: the prefill is paid again on every
+/// retune, and one stall remembered forever held it at the one-second cap —
+/// every preset jump then took a second to be heard (2026-09-24).
+final class IQPacer {
+    /// IQ pairs per second to release.
+    var rate: Double = 0
+    private var store = [Int16]()
+    private var head = 0
+    private var releasing = false
+    private var lastTake: TimeInterval?
+    private var owed: Double = 0
+    private var lastPush: TimeInterval?
+    private var gaps = [TimeInterval]()
+    private static let gapWindow = 16
+    private(set) var underruns = 0
+    private(set) var trims = 0
+
+    /// Pairs held and not yet released.
+    var held: Int { (store.count - head) / 2 }
+
+    /// The longest of the last few delivery gaps.
+    var maxGap: TimeInterval { gaps.max() ?? 0 }
+    var prefill: TimeInterval { min(0.5, max(0.03, maxGap * 1.25)) }
+
+    func push(_ iq: [Int16], now: TimeInterval) {
+        if let last = lastPush {
+            gaps.append(now - last)
+            if gaps.count > Self.gapWindow { gaps.removeFirst() }
+        }
+        lastPush = now
+        if head > 0 && head * 2 > store.count {
+            store.removeFirst(head)
+            head = 0
+        }
+        store.append(contentsOf: iq)
+        let cap = Int((prefill + 1.0) * rate)
+        if rate > 0, held > cap {
+            let keep = Int(prefill * rate)
+            head += (held - keep) * 2
+            trims += 1
+        }
+    }
+
+    /// What is due since the last call, as interleaved IQ. Empty while
+    /// prefilling.
+    func take(now: TimeInterval) -> [Int16] {
+        guard rate > 0 else { return [] }
+        if !releasing {
+            guard Double(held) >= prefill * rate else { return [] }
+            releasing = true
+            lastTake = now
+            owed = 0
+            return []
+        }
+        owed += (now - (lastTake ?? now)) * rate
+        lastTake = now
+        var n = Int(owed)
+        owed -= Double(n)
+        if n > held {
+            n = held
+            releasing = false
+            underruns += 1
+        }
+        guard n > 0 else { return [] }
+        let out = Array(store[head ..< head + n * 2])
+        head += n * 2
+        return out
+    }
+
+    /// Forget what is held: it belongs to a frequency or a rate no longer in
+    /// force. The observed gap is kept — it is a property of the server.
+    func clear() {
+        store.removeAll(keepingCapacity: true)
+        head = 0
+        releasing = false
+        lastTake = nil
+        owed = 0
+        lastPush = nil
     }
 }
 
@@ -491,14 +648,23 @@ final class HalvingDecimator {
         stages = []
         counters = []
         let n = max(0, Int(log2(Double(max(1, factor))).rounded()))
+        // The band the last stage keeps. Earlier stages only have to stop what
+        // would fold INTO it, which leaves them a wide transition and a short
+        // filter — 31 taps instead of 70-odd at 1.2 MS/s.
+        let pass = deviceRate / pow(2, Double(n)) * 0.40
         var rate = deviceRate
-        for _ in 0..<n {
+        for s in 0..<n {
             let out = rate / 2
             let f = ComplexFirLpf()
-            // Passband to 0.40 of the stage's output rate, stopband from 0.475 —
-            // aliasing folds at 0.5, and the demodulator only ever uses the
-            // middle of the band, so a sharper skirt buys nothing.
-            f.setLowPass(fs: rate, fc: out * 0.40, transBw: out * 0.15)
+            if s == n - 1 {
+                // Passband to 0.40 of the output rate, stopband from 0.475 —
+                // aliasing folds at 0.5, and the demodulator only ever uses the
+                // middle of the band, so a sharper skirt buys nothing.
+                f.setLowPass(fs: rate, fc: out * 0.40, transBw: out * 0.15)
+            } else {
+                // Flat to `pass`, stopped from `out - pass` (what folds onto ±pass).
+                f.setLowPass(fs: rate, fc: out / 2, transBw: max(out * 0.15, out - 2 * pass))
+            }
             stages.append(f)
             counters.append(0)
             rate = out

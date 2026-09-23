@@ -202,6 +202,7 @@ final class LocalRadio {
     var deviceLabel: String {
         guard let info = deviceInfo else { return "" }
         if config.source == "usb" { return "Airspy HF+ (USB)" }
+        if config.source == "rtltcp" { return "rtl_tcp (RTL-SDR)" }
         return "SpyServer type \(info.deviceType)"
     }
     var amGainIndex: UInt32 { min(config.amGain ?? maxGainIndex, maxGainIndex) }
@@ -414,6 +415,20 @@ final class LocalRadio {
     /// that does not, and a receiver that refuses to start over a spelling is
     /// worse than one that connects to the server it also knows about.
     private func selectSource() {
+        // rtl_tcp is a second network protocol, not a device on this machine,
+        // so it needs no library and is in every build (src/iqClient.ts's
+        // `source: 'rtltcp'`, the same spelling the plugin writes).
+        if config.source == "rtltcp" {
+            if !(client is RtlTcpClient) {
+                client.disconnect()
+                client = RtlTcpClient()
+            }
+            return
+        }
+        if client is RtlTcpClient {
+            client.disconnect()
+            client = SpyClient()
+        }
         let wantDevice = config.source == "usb"
 #if AIRSPYHF_ENABLED
         if wantDevice, !(client is AirspyDevice) {

@@ -1065,6 +1065,7 @@ do {
 
 
 runDeviceSettingsTests()
+runRtlTcpTests()
 
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 {

@@ -352,10 +352,12 @@ final class AppServer {
         let c = radio.config
         // "usb" is offered only by a build that can actually open the device,
         // so the row never lists a source that would be silently ignored.
+        // rtl_tcp is a network protocol like SpyServer and needs no library,
+        // so every build offers it.
 #if AIRSPYHF_ENABLED
-        let sources = ["spyserver", "usb"]
+        let sources = ["spyserver", "rtltcp", "usb"]
 #else
-        let sources = ["spyserver"]
+        let sources = ["spyserver", "rtltcp"]
 #endif
         return [
             "tuneMode": c.tuneMode,
@@ -470,7 +472,7 @@ final class AppServer {
             c.uiScale = raw
             scaleChanged = true
         case "source":
-            guard raw == "spyserver" || raw == "usb" else { return false }
+            guard raw == "spyserver" || raw == "rtltcp" || raw == "usb" else { return false }
             c.source = raw
         case "host":
             let h = raw.trimmingCharacters(in: .whitespaces)

@@ -257,7 +257,25 @@ final class LocalRadio {
                 // that crosses mono/stereo has to rebuild it.
                 if self.audioEnabled { self.restartAudio() }
             }
+            restartIfRateChanged()
         }
+    }
+
+    /// The IQ rate is resolved per mode (WFM needs 200 kS/s, the rest 96), but
+    /// only in `start(with:)`. A connection that came up in AM kept the AM rate
+    /// through a switch to WFM: on the V4 that is 150 kS/s, too narrow for a
+    /// broadcast FM signal, and it was heard as a harsh buzz whatever the gain
+    /// (2026-09-24, iPad). Restart the stream when the mode now wants a
+    /// different rate (spyService.ts restartIfRateChanged). Streaming is
+    /// stopped first: servers have been seen to ignore a decimation sent while
+    /// they stream.
+    private func restartIfRateChanged() {
+        guard isConnected, let info = deviceInfo else { return }
+        let want = DeviceSettingsResolver.resolve(info: info, config: config,
+                                                  mode: mode, freqHz: Double(frequency))
+        guard want.iqRate != iqRate else { return }
+        client.stopStreaming()
+        start(with: info)
     }
     var audioEnabled = false {
         didSet { if !audioEnabled { sink.stop() } else { restartAudio() } }

@@ -1349,6 +1349,31 @@ class SpyService {
     const isAm = mode === 2;
     // Extends the mode-change mute (set to +100 above) for the gain transient.
     if (wasAm !== isAm) this.sendLiveGain('mode');
+    this.restartIfRateChanged().catch((e) =>
+      log.error(`[spyService] rate change on mode switch: ${e}`));
+  }
+
+  /**
+   * The IQ rate is resolved per mode (WFM needs 200 kS/s, the rest 96), but
+   * only when a stream starts. Switching from AM to WFM on a connection that
+   * came up in AM kept the AM rate: on the V4 that is 150 kS/s, too narrow for
+   * a broadcast FM signal, and it was heard as a harsh buzz whatever the gain
+   * (2026-09-24, iPad on the V4). Restart the stream when the mode now wants a
+   * different rate; leave it alone when it does not.
+   */
+  private async restartIfRateChanged(): Promise<void> {
+    const info = this.deviceInfo;
+    if (!info || !this.connected || !this.audioRunning) return;
+    const cfg = await this.loadConfig();
+    const want = resolveDeviceSettings(
+      info,
+      { iqDecimation: cfg.iqDecimation, audioDecimate: cfg.audioDecimate,
+        amGain: this.amGain, fmGain: this.fmGain, devices: cfg.devices },
+      this.currentDemodMode, this.currentFreq || cfg.lastFrequency || 0);
+    if (want.iqRate === this.currentIQRate) return;
+    log.info(`[spyService] mode ${this.currentDemodMode} wants ${want.iqRate} S/s, ` +
+             `stream is at ${this.currentIQRate}: restarting it`);
+    await this.startAudio(cfg);
   }
 
   async startAudio(cfg?: Config): Promise<void> {

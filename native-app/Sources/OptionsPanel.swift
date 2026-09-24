@@ -415,7 +415,10 @@ final class OptionsPanel: NSView {
         // opens the device on this machine and the host and port are dormant
         // (kept, not cleared — the server is usually still there to go back to).
         if let list = rx["sources"] as? [String], list.count > 1 {
-            views.append(row("Source", "rx.source", .text(list)))
+            // Opened as a list rather than cycled: each step of a cycle is a
+            // reconnect to a different kind of server, so walking past one to
+            // reach another dropped the link on the way (asked 2026-09-25).
+            views.append(row("Source", "rx.source", .menu({ list })))
         }
         // The link's address. Changing either dials the new server, so these
         // are typed and applied on Enter rather than cycled by accident.

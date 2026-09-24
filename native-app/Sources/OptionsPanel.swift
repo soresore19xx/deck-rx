@@ -152,6 +152,13 @@ final class OptionsPanel: NSView {
     private func jpRegions() -> [String] {
         (rx["regions"] as? [String]) ?? ["kanto"]
     }
+    /// Gain indices 0...max of the receiver in force (8 on the HF+, 28 on the V4).
+    private func gainChoices() -> [String] {
+        let g = live["gain"] as? [String: Any]
+        let top = (g?["max"] as? Int) ?? (g?["max"] as? Double).map(Int.init) ?? 8
+        return (0...max(0, top)).map(String.init)
+    }
+
     /// "" is the system default, the same blank the deck's device list offers.
     private func audioDevices() -> [String] {
         [""] + ((rx["audioDevices"] as? [String]) ?? [])
@@ -368,7 +375,10 @@ final class OptionsPanel: NSView {
             views.append(row("BFO pitch", "ssb.bfo", .list([400, 500, 600, 700, 800, 1_000], "Hz")))
         }
         views.append(header("RF"))
-        views.append(row("Gain", "gain", .list([0, 1, 2, 3, 4, 5, 6, 7, 8], "")))
+        // A list to pick from, up to what the connected receiver has. It was a
+        // cycle over 0-8, the HF+'s range: on the V4 (0-28) nothing above 8
+        // could be reached, and getting from 8 to 3 meant going round.
+        views.append(row("Gain", "gain", .menu({ [weak self] in self?.gainChoices() ?? [] })))
 
         // Receiver-wide settings, the ones the deck keeps in its Property
         // Inspector. Without them the window can drive the radio but not
@@ -499,7 +509,9 @@ final class OptionsPanel: NSView {
                 }
             case .text, .menu:
                 r.value.textColor = P.text
-                let t = (v as? String) ?? "—"
+                // A menu can carry numbers (the gain index) as well as names.
+                let t = (v as? String) ?? (v as? Int).map(String.init)
+                    ?? (v as? Double).map { String(format: "%g", $0) } ?? "—"
                 r.value.stringValue = t.isEmpty ? "system default" : t
             case .action:
                 r.value.textColor = P.accent
@@ -549,7 +561,9 @@ final class OptionsPanel: NSView {
         case .menu(let choices):
             let options = choices()
             guard !options.isEmpty, let anchor else { return }
-            let cur = (value(for: name) as? String) ?? ""
+            let live = value(for: name)
+            let cur = (live as? String) ?? (live as? Int).map(String.init)
+                ?? (live as? Double).map { String(format: "%g", $0) } ?? ""
             let picker = MenuPick { v in send(v) }
             let m = NSMenu()
             m.font = mono(13)

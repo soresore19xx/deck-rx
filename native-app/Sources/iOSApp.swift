@@ -131,6 +131,13 @@ final class RadioViewController: UIViewController {
     /// window is spoken for by fixed heights — the number that decides
     /// whether the keyboard fits.
     private var controlsBlock: UIStackView?
+    /// Rows put away while the host or port box is being typed into, so the
+    /// SERVER row can sit on top of the software keyboard. With the keyboard
+    /// up the column is roughly half the window, and the header, the rail and
+    /// the whole block did not fit in it: UIKit broke a constraint of its own
+    /// choosing and the SERVER row stayed under the keyboard, the number being
+    /// typed out of sight (2026-09-25, on the iPad and in the simulator).
+    private var foldedWhileTyping: [UIView] = []
 
     /// The modes worth a segment on a receiver this size. RAW and DSB exist in
     /// the mode list but are not what anyone reaches for on an iPad, and eight
@@ -172,6 +179,14 @@ final class RadioViewController: UIViewController {
         UI.scale = UI.from(radio.config.uiScale)
         view.backgroundColor = Pal.bg
         buildUI()
+        // Layout check for the software keyboard, which the simulator cannot be
+        // tapped into from a script: DECK_RX_FOCUS=host|port puts the cursor in
+        // that box a moment after launch, so the keyboard comes up on its own.
+        if let f = ProcessInfo.processInfo.environment["DECK_RX_FOCUS"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                _ = (f == "port" ? self?.portField : self?.hostField)?.becomeFirstResponder()
+            }
+        }
 
         radio.onState = { [weak self] in self?.refresh() }
         // The same 4 Hz the Mac window runs on. RSSI and SNR move with the
@@ -233,6 +248,8 @@ final class RadioViewController: UIViewController {
             f.returnKeyType = .go
             f.clearButtonMode = .whileEditing
             f.addTarget(self, action: #selector(hostEntered), for: .editingDidEndOnExit)
+            f.addTarget(self, action: #selector(serverEditing(_:)), for: .editingDidBegin)
+            f.addTarget(self, action: #selector(serverEditing(_:)), for: .editingDidEnd)
             f.setContentHuggingPriority(.required, for: .horizontal)
         }
         hostField.keyboardType = .URL
@@ -493,14 +510,19 @@ final class RadioViewController: UIViewController {
         // spare height to — and the answer was the group boxes, a few points
         // each, which is what left the column spread out instead of packed
         // down.
+        let bandBox = boxed("BAND", bandRow())
+        // The keys are multiples of the step, and nothing said so: -100 on
+        // medium wave is 900 kHz and on FM it is 10 MHz. The step goes in the
+        // box with them, where it is the unit of what is beside it, rather than
+        // under the readout where it was a number on its own.
+        let tuneBox = boxed("TUNE", row([tuneRow(), stepButton]))
+        let modeBox = boxed("MODE", modeKeys())
+        let displayBox = boxed("DISPLAY", displayRow())
+        foldedWhileTyping = [displayBox, bandBox, tuneBox, modeBox]
         let controls = UIStackView(arrangedSubviews: [
-            boxed("BAND", bandRow()),
-            // The keys are multiples of the step, and nothing said so: -100 on
-            // medium wave is 900 kHz and on FM it is 10 MHz. The step goes in
-            // the box with them, where it is the unit of what is beside it,
-            // rather than under the readout where it was a number on its own.
-            boxed("TUNE", row([tuneRow(), stepButton])),
-            boxed("MODE", modeKeys()),
+            bandBox,
+            tuneBox,
+            modeBox,
             // AUDIO at the far right of the last row of controls, where the
             // width the server group does not use was going to waste. Mute is
             // not a seventh mode, so it does not go in the MODE box either.
@@ -514,7 +536,7 @@ final class RadioViewController: UIViewController {
         controls.translatesAutoresizingMaskIntoConstraints = false
         controlsBlock = controls
 
-        let right = UIStackView(arrangedSubviews: [header, plot, boxed("DISPLAY", displayRow())])
+        let right = UIStackView(arrangedSubviews: [header, plot, displayBox])
         right.axis = .vertical
         right.spacing = S(10)
         right.translatesAutoresizingMaskIntoConstraints = false
@@ -1207,6 +1229,22 @@ final class RadioViewController: UIViewController {
         portField.text = String(c.port)
         refreshSourceMenu()
         if radio.isConnected { radio.disconnect(); connectNow() }
+    }
+
+    /// Fold the rows above SERVER while an address is typed, unfold after.
+    /// Checked on the next turn of the run loop: moving from the host box to
+    /// the port box ends one edit and begins the other, and the rows should
+    /// not bounce in between.
+    @objc private func serverEditing(_ sender: UITextField) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let typing = self.hostField.isFirstResponder || self.portField.isFirstResponder
+            guard self.foldedWhileTyping.first?.isHidden != typing else { return }
+            UIView.animate(withDuration: 0.2) {
+                for v in self.foldedWhileTyping { v.isHidden = typing }
+                self.view.layoutIfNeeded()
+            }
+        }
     }
 
     @objc private func toggleConnection() {

@@ -331,6 +331,10 @@ final class LocalRadio {
     /// to before while it is zero.
     private(set) var vfoOffsetHz: Double = 0
     private var shifter = IQShift()
+    /// Where a SpyServer will accept an IQ centre for the current stream, or
+    /// nil when nothing is known or the source is not a SpyServer. See
+    /// `iqCenterRange`.
+    private var iqCenterLimits: ClosedRange<UInt32>?
 
     /// How far from the centre the demodulator may sit.
     ///
@@ -375,6 +379,38 @@ final class LocalRadio {
         guard !recenter else { return nil }
         let offset = target - center
         return abs(offset) <= maxOffset ? offset : nil
+    }
+
+    /// The IQ centres a SpyServer accepts at a decimation stage.
+    ///
+    /// The server keeps the whole window inside [minFrequency, maxFrequency],
+    /// so the centre is held half a window in from each end, and a request
+    /// outside that is dropped without a word — the stream stays wherever it
+    /// was. On the V4 with `minimum_frequency = 500000` the lowest centre at
+    /// 300 kS/s was 625 kHz, so 594 kHz played whatever had been tuned before
+    /// (2026-09-26, the same audio on 594 and 810). The window is the device
+    /// bandwidth halved per stage: measured 625000 with a 500 kHz minimum and
+    /// 125000 with 0, both at stage 3 of a 2 MHz device.
+    static func iqCenterRange(minFrequency: UInt32, maxFrequency: UInt32,
+                              maxBandwidth: UInt32, decStage: UInt32) -> ClosedRange<UInt32>? {
+        let half = (decStage < 32 ? maxBandwidth >> decStage : 0) / 2
+        let lo = UInt64(minFrequency) + UInt64(half)
+        guard maxFrequency > half, UInt64(maxFrequency - half) > lo else { return nil }
+        return UInt32(lo)...(maxFrequency - half)
+    }
+
+    /// Where the device centre goes for `target`, and what is actually heard.
+    ///
+    /// The centre is the target pulled into `limits`; the demodulator makes up
+    /// the difference with its offset. A target further out than the offset
+    /// can reach is heard at the nearest point it can, which the caller shows
+    /// instead of the frequency it was asked for.
+    static func placement(target: UInt32, limits: ClosedRange<UInt32>?,
+                          maxOffset: Double) -> (center: UInt32, listen: UInt32) {
+        guard let r = limits else { return (target, target) }
+        let center = Swift.min(Swift.max(target, r.lowerBound), r.upperBound)
+        let offset = Swift.max(-maxOffset, Swift.min(maxOffset, Double(target) - Double(center)))
+        return (center, UInt32(Swift.max(0, (Double(center) + offset).rounded())))
     }
     private(set) var iqRate: UInt32 = 0
     var iqRateHz: UInt32 { iqRate }
@@ -799,9 +835,15 @@ final class LocalRadio {
     }
 
     func setFrequency(_ hz: UInt32, recenter: Bool = false) {
-        let hz = deviceInfo.map {
+        var hz = deviceInfo.map {
             Self.clampToDevice(hz, min: $0.minFrequency, max: $0.maxFrequency)
         } ?? hz
+        // Near the ends of the range the centre cannot follow the target; what
+        // the offset cannot reach either is not promised in the readout.
+        if iqRate > 0 {
+            hz = Self.placement(target: hz, limits: iqCenterLimits,
+                                maxOffset: maxVfoOffsetHz).listen
+        }
         // Where we were asked to go, recorded before the refusal below: a tune
         // made while another client owns the device is not forgotten, it is
         // owed. `onSync` pays it back the moment control arrives.
@@ -837,9 +879,11 @@ final class LocalRadio {
             setVfo(offset)
             return
         }
-        deviceCenterHz = hz
-        setVfo(0)
-        client.setFrequency(hz)
+        let place = Self.placement(target: hz, limits: iqCenterLimits,
+                                   maxOffset: maxVfoOffsetHz)
+        deviceCenterHz = place.center
+        setVfo(Double(hz) - Double(place.center))
+        client.setFrequency(place.center)
         // The bins are about to describe a different part of the spectrum; the
         // old ones are not a smaller version of the new ones.
         auxQueue.async { self.iq.removeAll(keepingCapacity: true) }
@@ -864,7 +908,9 @@ final class LocalRadio {
     func setDeviceCenter(_ hz: Double, persist: Bool = true) {
         guard canControl, isConnected, iqRate > 0 else { return }
         var center = hz
-        if let info = deviceInfo, info.maxFrequency > info.minFrequency {
+        if let r = iqCenterLimits {
+            center = min(max(center, Double(r.lowerBound)), Double(r.upperBound))
+        } else if let info = deviceInfo, info.maxFrequency > info.minFrequency {
             center = min(max(center, Double(info.minFrequency)), Double(info.maxFrequency))
         }
         center = max(0, center.rounded())
@@ -1043,12 +1089,26 @@ final class LocalRadio {
         let settings = DeviceSettingsResolver.resolve(info: info, config: config,
                                                       mode: mode,
                                                       freqHz: Double(frequency))
-        // A new stream is centred on where we are listening; any offset the
-        // last one ended on belongs to a window that no longer exists.
-        deviceCenterHz = frequency
-        vfoOffsetHz = 0
+        // A new stream is centred on where we are listening, as far as the
+        // server allows; any offset the last one ended on belongs to a window
+        // that no longer exists.
         let decStage = settings.decStage
         iqRate = settings.iqRate
+        // Only a SpyServer refuses a centre; rtl_tcp and the USB device tune
+        // wherever they are told, so nothing is moved for them.
+        iqCenterLimits = config.source == "spyserver"
+            ? Self.iqCenterRange(minFrequency: info.minFrequency, maxFrequency: info.maxFrequency,
+                                 maxBandwidth: info.maxBandwidth, decStage: decStage)
+            : nil
+        let place = Self.placement(target: frequency, limits: iqCenterLimits,
+                                   maxOffset: maxVfoOffsetHz)
+        if place.listen != frequency {
+            frequency = place.listen
+            wantedFrequency = place.listen
+        }
+        deviceCenterHz = place.center
+        // Picked up by configureDemods below, which re-derives the mixer.
+        vfoOffsetHz = Double(frequency) - Double(place.center)
         let g = settings.gainIndex
         // Safe to assign now: iqRate is already correct, so the didSet rebuilds
         // the demodulators with the rate they will actually be fed.

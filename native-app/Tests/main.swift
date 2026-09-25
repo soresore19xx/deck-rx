@@ -953,6 +953,38 @@ do {
           LocalRadio.clampToDevice(42, min: 0, max: 0) == 42)
 }
 
+section("a centre the SpyServer would refuse is moved, and the offset makes up the rest")
+// The server holds the IQ centre half a window in from its frequency limits and
+// drops anything outside without a word. With the V4's old 500 kHz minimum the
+// lowest centre was 625 kHz, so 594 kHz kept playing the 810 kHz tuned before
+// (2026-09-26). Values are the ones the server reported for a 2 MHz device.
+do {
+    let old = LocalRadio.iqCenterRange(minFrequency: 500_000, maxFrequency: 1_766_000_000,
+                                       maxBandwidth: 2_000_000, decStage: 3)
+    check("500 kHz minimum at stage 3 starts at the 625 kHz the server reported",
+          old?.lowerBound == 625_000)
+    let now = LocalRadio.iqCenterRange(minFrequency: 0, maxFrequency: 1_766_000_000,
+                                       maxBandwidth: 2_000_000, decStage: 3)
+    check("0 minimum at stage 3 starts at the 125 kHz the server reported",
+          now?.lowerBound == 125_000)
+    check("a device reporting no range gives no limits",
+          LocalRadio.iqCenterRange(minFrequency: 0, maxFrequency: 0,
+                                   maxBandwidth: 2_000_000, decStage: 3) == nil)
+
+    let maxOff = 300_000 * 0.42 - 9_000 / 2.0      // 121.5 kHz at 300 kS/s AM
+    let p = LocalRadio.placement(target: 594_000, limits: old, maxOffset: maxOff)
+    check("594 kHz sits the centre on the lowest one allowed",  p.center == 625_000)
+    check("and is still what is heard",                         p.listen == 594_000)
+    let far = LocalRadio.placement(target: 500_000, limits: old, maxOffset: maxOff)
+    check("past the offset's reach the readout says where it really is",
+          far.center == 625_000 && far.listen == 503_500)
+    let inside = LocalRadio.placement(target: 810_000, limits: old, maxOffset: maxOff)
+    check("inside the limits nothing moves", inside.center == 810_000 && inside.listen == 810_000)
+    let none = LocalRadio.placement(target: 594_000, limits: nil, maxOffset: maxOff)
+    check("with no limits (rtl_tcp, USB) the centre is the target",
+          none.center == 594_000 && none.listen == 594_000)
+}
+
 section("stereo separation across the IQ rates the receiver actually runs")
 // The separation checks above all run at 456 kHz, which is one of the rates the
 // device offers and not the one a listener is necessarily on. A decoder whose

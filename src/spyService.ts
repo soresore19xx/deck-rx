@@ -15,7 +15,7 @@ import {
   resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig, deviceKey,
   gainBand, withBandGain, RX_MODE, type DeviceProfile, type GainBand, type GainScope,
 } from './deviceSettings.js';
-import { Demodulator } from './demodulator.js';
+import { Demodulator, AM_AGC_OFF_SCALE, SSB_GAIN, CW_GAIN } from './demodulator.js';
 import { OutputLeveler, MODE_MAKEUP, softLimit, DEFAULT_LEVELER_CFG } from './audioLeveling.js';
 import { Ifnr } from './ifnr.js';
 import { IqNr, DemodMode } from './iqnr.js';
@@ -1593,11 +1593,9 @@ class SpyService {
       const fmAudioScale = 1;
       let pcm: Int16Array;
       if (this.currentDemodMode === 2) {
-        // With the carrier AGC off, AM runs a fixed gain of 32 x this. A
-        // constant, not the gain ratio: 1 made it 32x and a local station
-        // clipped hard (2026-09-25, iPad on the V4, AGC off). 1/8 gives 4x,
-        // what the HF+ ran at amGain 1 for months without clipping (8x did).
-        pcm = this.demod.processAM(iqBody, dec, 1 / 8);
+        // Constants, not the gain ratio; why and how they were chosen is at
+        // their definition in demodulator.ts (test/audioLevels.test.ts).
+        pcm = this.demod.processAM(iqBody, dec, AM_AGC_OFF_SCALE);
       } else if (this.currentDemodMode === 1) {
         pcm = this.fmOptions.stereo
           ? this.demod.processWFMStereo(iqBody, dec, 2000 * fmAudioScale)
@@ -1606,11 +1604,11 @@ class SpyService {
         // USB (mode 4) / LSB (mode 6) — Weaver SSB demod. f_off = bandwidth/2
         // so the audio band ends up 0..bandwidth (default 2.4 kHz).
         this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
-        pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB', 48000 * fmAudioScale);
+        pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB', SSB_GAIN * fmAudioScale);
       } else if (this.currentDemodMode === 5) {
         // CW (mode 5) — direct frequency-shift by BFO (default 700 Hz).
         this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
-        pcm = this.demod.processCW(iqBody, dec, 96000 * fmAudioScale);
+        pcm = this.demod.processCW(iqBody, dec, CW_GAIN * fmAudioScale);
       } else {
         // NFM (mode 0) — also catches DSB (3) and RAW (7) which fall through
         // to FM until proper demod is implemented.

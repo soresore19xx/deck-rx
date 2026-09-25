@@ -1308,12 +1308,9 @@ final class LocalRadio {
         // attenuation" and the usual setting; on the V4's 29-step tuner gain,
         // run low to stay out of overload, it made the audio quiet or, at 0,
         // silent (2026-09-25). Gain sets sensitivity; the volume sets loudness.
+        // Constants, not the gain ratio (OutputScale in Demods.swift has why).
         let fmScale = 1.0
-        // AM with its carrier AGC off runs a fixed gain of 32 x this. It is a
-        // constant now, not the gain ratio: 1.0 made it 32x and a local station
-        // clipped hard (2026-09-25, iPad on the V4, AGC off). 1/8 gives 4x, what
-        // the HF+ ran at amGain 1 for months without clipping (8x did clip).
-        let amScale = 1.0 / 8.0
+        let amScale = OutputScale.amAgcOff
         switch mode {
         case 0:  return other.processFM(int16IQ: body, decimate: audioDecimate,
                                         gain: 6000 * fmScale)
@@ -1324,11 +1321,11 @@ final class LocalRadio {
                     : other.processWFM(int16IQ: body, decimate: audioDecimate,
                                        gain: 3000 * fmScale)
         case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
-                                         upperSideband: true, gain: 48000 * fmScale)
+                                         upperSideband: true, gain: OutputScale.ssb * fmScale)
         case 6:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
-                                         upperSideband: false, gain: 48000 * fmScale)
+                                         upperSideband: false, gain: OutputScale.ssb * fmScale)
         case 5:  return other.processCW(int16IQ: body, decimate: audioDecimate,
-                                        gain: 96000 * fmScale)
+                                        gain: OutputScale.cw * fmScale)
         default: return am.process(int16IQ: body, decimate: audioDecimate, gainScale: amScale)
         }
     }

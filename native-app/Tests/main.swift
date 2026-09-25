@@ -210,9 +210,11 @@ func demodOutput(mode: Int, iq: Data,
     switch mode {
     case NFM: return d.processFM(int16IQ: iq, decimate: dec)
     case WFM: return d.processWFM(int16IQ: iq, decimate: dec)
-    case USB: return d.processSSB(int16IQ: iq, decimate: dec, upperSideband: true)
-    case LSB: return d.processSSB(int16IQ: iq, decimate: dec, upperSideband: false)
-    case CW:  return d.processCW(int16IQ: iq, decimate: dec)
+    // At the gains LocalRadio passes, so the comparison is about routing and
+    // not about which default a caller happened to use.
+    case USB: return d.processSSB(int16IQ: iq, decimate: dec, upperSideband: true, gain: OutputScale.ssb)
+    case LSB: return d.processSSB(int16IQ: iq, decimate: dec, upperSideband: false, gain: OutputScale.ssb)
+    case CW:  return d.processCW(int16IQ: iq, decimate: dec, gain: OutputScale.cw)
     default:  return []
     }
 }
@@ -297,6 +299,47 @@ let amDemod = AMDemod()
 amDemod.setBandwidth(audioRate: audioRate, bandwidthHz: 9_000, iqRate: rate)
 let amOut = amDemod.process(int16IQ: amIQ, decimate: audioDec, gainScale: 0.5)
 check("AM produces audio", rms(amOut) > 0.01, "rms \(rms(amOut))")
+
+section("output scales in use keep a strong signal off the rail")
+// The same cases as test/audioLevels.test.ts, at the values LocalRadio hands
+// over (OutputScale), not values the test picks — that gap is how c8314d9's AM
+// clipping got past the suite. Amplitude 16000 is 6 dB above the strong locals.
+do {
+    let aRate = rate / Double(audioDec)
+    func peakAndRail(_ x: [Float]) -> (Double, Double) {
+        let s = x[(x.count / 2)...]
+        let peak = s.map { abs(Double($0)) }.max() ?? 0
+        let rail = Double(s.filter { abs($0) >= 0.98 }.count) / Double(max(1, s.count)) * 100
+        return (peak, rail)
+    }
+    for amp in [8000.0, 16000.0] {
+        let a = amp / 32767
+        let am = AMDemod()
+        am.setBandwidth(audioRate: aRate, bandwidthHz: 9_000, iqRate: rate)
+        am.agcEnabled = false
+        // makeIQ modulates at 0.6 x the closure; this asks for 80%.
+        let amIn = makeIQ(rate: rate, count: 68_400, amplitude: a, am: { 0.8 / 0.6 * sin(2 * .pi * 1000 * $0) })
+        let (ap, ar) = peakAndRail(am.process(int16IQ: amIn, decimate: audioDec, gainScale: OutputScale.amAgcOff))
+        check("AM, carrier AGC off, amplitude \(Int(amp)): off the rail and audible",
+              ar == 0 && ap > 0.05, "peak \(ap) rail \(ar)%")
+
+        let d = Demods()
+        d.setupSSB(iqRate: rate, audioRate: aRate, offsetHz: 1200)
+        let ssbIn = makeIQ(rate: rate, count: 68_400, carrierOffsetHz: 1000, amplitude: a)
+        let (sp, sr) = peakAndRail(d.processSSB(int16IQ: ssbIn, decimate: audioDec, upperSideband: true,
+                                               gain: OutputScale.ssb))
+        check("USB, amplitude \(Int(amp)): off the rail and audible",
+              sr == 0 && sp > 0.05, "peak \(sp) rail \(sr)%")
+
+        let c = Demods()
+        c.setupCW(iqRate: rate, bfoHz: 700)
+        c.cwAgcEnabled = false
+        let cwIn = makeIQ(rate: rate, count: 68_400, carrierOffsetHz: 700, amplitude: a)
+        let (cp, cr) = peakAndRail(c.processCW(int16IQ: cwIn, decimate: audioDec, gain: OutputScale.cw))
+        check("CW, AGC off, amplitude \(Int(amp)): off the rail and audible",
+              cr == 0 && cp > 0.05, "peak \(cp) rail \(cr)%")
+    }
+}
 
 section("FM stereo locks on a real pilot")
 // 19 kHz pilot plus an L-R subcarrier at 38 kHz, which is what a stereo

@@ -31,6 +31,29 @@ const AM_AGC_LOOK_AHEAD_SAMPLES = 256;
 const CW_AGC_SET_POINT = 12000;
 const CW_AGC_MAX_GAIN  = 5000;
 
+/**
+ * The output scales the service hands the demodulators. Kept here, next to
+ * what they scale, so test/audioLevels.test.ts checks the values the app
+ * actually uses (the demodulator tests pass scales of their own, which is how
+ * c8314d9's AM clipping got past them). None of these follow the RF gain any
+ * more (0ee600c): the gain is sensitivity, the volume control is loudness.
+ *
+ * Each is set so a very strong signal — an IQ amplitude of 16000, 6 dB above
+ * what the strong locals measure at (RMS -12 to -14 dBFS, 2026-09-24/25) —
+ * does not reach the rail. The first values after 0ee600c did not: AM with its
+ * AGC off at 32x (scale 1) clipped a local on the V4, and at 4x still clipped
+ * 57% of that test input; SSB at 48000 and CW (AGC off) at 96000 clipped
+ * 53-78% of it. A weak station comes out quieter and the volume control lifts
+ * it; a clipped one cannot be fixed downstream.
+ *
+ * AM_AGC_OFF_SCALE: with the carrier AGC off, processAM runs 32 x this (2x).
+ * SSB_GAIN: the level SSB had on the HF+ at fmGain 4 of 8.
+ * CW_GAIN: used with the CW AGC off only; with it on, the set point decides.
+ */
+export const AM_AGC_OFF_SCALE = 1 / 16;
+export const SSB_GAIN = 24000;
+export const CW_GAIN = 24000;
+
 export class Demodulator {
   private prevI = 0;
   private prevQ = 0;

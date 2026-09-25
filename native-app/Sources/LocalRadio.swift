@@ -1303,9 +1303,13 @@ final class LocalRadio {
         // demodulator's own output gain is what makes the Gain row an
         // attenuator for them — 8/8 full, 0/8 silent — instead of an inert
         // control. This was the whole of "FM gain does nothing".
-        let maxG = Double(maxGainIndex)
-        let fmScale = maxG > 0 ? Double(fmGainIndex) / maxG : 1
-        let amScale = maxG > 0 ? Double(amGainIndex) / maxG : 1
+        // No longer: the RF gain is not a volume control (spyService.ts, the
+        // same change). The ratio assumed the HF+, where 8 of 8 is "no
+        // attenuation" and the usual setting; on the V4's 29-step tuner gain,
+        // run low to stay out of overload, it made the audio quiet or, at 0,
+        // silent (2026-09-25). Gain sets sensitivity; the volume sets loudness.
+        let fmScale = 1.0
+        let amScale = 1.0
         switch mode {
         case 0:  return other.processFM(int16IQ: body, decimate: audioDecimate,
                                         gain: 6000 * fmScale)

@@ -1581,20 +1581,19 @@ class SpyService {
       // new Buffer of the same length / format that we feed into the
       // existing demod functions unchanged.
       const iqBody = this.fmOptions.ifnr ? this.iqnr.processBuffer(p.body) : p.body;
-      // Audio-level scale derived from the per-mode RF Gain index. AM is
-      // already amplitude-driven so the gain affects audio naturally; FM
-      // (atan2) is amplitude-invariant so the RF gain alone does NOT
-      // change audio level — repurpose fmGain as a post-demod multiplier
-      // so the user-facing dial actually attenuates FM/NFM/SSB/CW audio
-      // (8/8 = full level, 0/8 = silent), not just RSSI. This gives the
-      // user the attenuator control they expect from the Gain row.
-      const maxG = this.deviceInfo?.maxGainIndex ?? 0;
-      const fmAudioScale = maxG > 0 ? (this.fmGain ?? maxG) / maxG : 1;
+      // The RF gain is not a volume control any more. It used to be carried
+      // into the audio as gain/maxGain so that the Gain row audibly did
+      // something on FM, which is amplitude-invariant. That assumed one kind
+      // of receiver: on the HF+ index 8 is "no attenuation" and it is usually
+      // run there, so the ratio was 1. The V4's index is tuner gain on a
+      // 29-step list, run low to stay out of overload, so the same ratio made
+      // it quiet (3/29, about -20 dB) or silent at 0 (2026-09-25, Solo on the
+      // V4 at FM gain 0: peak 0). Gain sets sensitivity per receiver;
+      // loudness is the volume control's.
+      const fmAudioScale = 1;
       let pcm: Int16Array;
       if (this.currentDemodMode === 2) {
-        const amG = this.amGain ?? 0;
-        const gainScale = maxG > 0 ? amG / maxG : 1;
-        pcm = this.demod.processAM(iqBody, dec, gainScale);
+        pcm = this.demod.processAM(iqBody, dec, 1);
       } else if (this.currentDemodMode === 1) {
         pcm = this.fmOptions.stereo
           ? this.demod.processWFMStereo(iqBody, dec, 2000 * fmAudioScale)

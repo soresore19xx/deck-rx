@@ -552,6 +552,18 @@ class SpyService {
                  + `(device was on ${s.iqCenterFreq})`);
         this.setFrequency(this._currentFreq);
       }
+      // A centre outside [minIQ, maxIQ] is dropped by the server without a
+      // word and the stream stays where it was, so the dial reads one station
+      // while another plays (the V4 with a 500 kHz minimum: 594 kHz played the
+      // 810 kHz tuned before, 2026-09-26). The plugin has no offset mixer to
+      // reach round it, so the least it owes is saying so. Checked against the
+      // range, not against iqCenterFreq alone: the first sync after a retune
+      // still echoes the old centre and would read as a refusal.
+      if (s.canControl && this._currentFreq > 0 && s.maxIQCenterFreq > s.minIQCenterFreq
+          && (this._currentFreq < s.minIQCenterFreq || this._currentFreq > s.maxIQCenterFreq)) {
+        log.warn(`[spyService] server refuses centre ${this._currentFreq}: accepts `
+                 + `${s.minIQCenterFreq}-${s.maxIQCenterFreq}, still on ${s.iqCenterFreq}`);
+      }
       if (hadControl !== s.canControl) {
         for (const fn of this.controlListeners) fn(s.canControl);
       }

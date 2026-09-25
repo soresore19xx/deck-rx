@@ -209,6 +209,18 @@ for 2.4 MHz, `/health` reported `iqRateHz: 2400000`, and `deviceFreqHz` stayed
 at its 100 MHz default — it never tuned. With `iqDecimation: 4` the same build
 reports 150000 / 594000 and the station is clean.
 
+> **2026-09-26: the 500 kHz minimum was itself a trap.** SpyServer keeps the
+> whole IQ window inside `[minFrequency, maxFrequency]`, so the lowest centre it
+> accepts is the minimum plus half a window (`maxBandwidth >> stage` / 2). At
+> stage 4 that is 562.5 kHz and 594 kHz works; at stage 3, which the iPad uses,
+> it is 625 kHz, and a request below it is dropped without a word — the stream
+> stayed on the 810 kHz tuned before, so both frequencies played the same
+> station. The config now says `minimum_frequency = 0` (lowest centre 125 kHz at
+> stage 3). The apps no longer depend on it: `LocalRadio` puts the centre inside
+> the accepted range and reaches the rest with the VFO offset
+> (`iqCenterRange` / `placement`), and the plugin, which has no offset mixer,
+> logs `server refuses centre` when it happens.
+
 So the receivers need **their own settings**, and today deck-rx keeps one set
 (`receiver.json`, `config.json`). Switching receivers is not just host and port.
 That is a design question still open — a per-host settings profile, or at

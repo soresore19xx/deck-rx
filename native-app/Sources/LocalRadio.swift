@@ -1309,7 +1309,11 @@ final class LocalRadio {
         // run low to stay out of overload, it made the audio quiet or, at 0,
         // silent (2026-09-25). Gain sets sensitivity; the volume sets loudness.
         let fmScale = 1.0
-        let amScale = 1.0
+        // AM with its carrier AGC off runs a fixed gain of 32 x this. It is a
+        // constant now, not the gain ratio: 1.0 made it 32x and a local station
+        // clipped hard (2026-09-25, iPad on the V4, AGC off). 1/8 gives 4x, what
+        // the HF+ ran at amGain 1 for months without clipping (8x did clip).
+        let amScale = 1.0 / 8.0
         switch mode {
         case 0:  return other.processFM(int16IQ: body, decimate: audioDecimate,
                                         gain: 6000 * fmScale)

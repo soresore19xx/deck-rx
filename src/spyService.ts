@@ -1593,7 +1593,11 @@ class SpyService {
       const fmAudioScale = 1;
       let pcm: Int16Array;
       if (this.currentDemodMode === 2) {
-        pcm = this.demod.processAM(iqBody, dec, 1);
+        // With the carrier AGC off, AM runs a fixed gain of 32 x this. A
+        // constant, not the gain ratio: 1 made it 32x and a local station
+        // clipped hard (2026-09-25, iPad on the V4, AGC off). 1/8 gives 4x,
+        // what the HF+ ran at amGain 1 for months without clipping (8x did).
+        pcm = this.demod.processAM(iqBody, dec, 1 / 8);
       } else if (this.currentDemodMode === 1) {
         pcm = this.fmOptions.stereo
           ? this.demod.processWFMStereo(iqBody, dec, 2000 * fmAudioScale)

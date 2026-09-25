@@ -134,6 +134,19 @@ final class ComplexFirLpf {
     }
 }
 
+/// The output scales LocalRadio hands the demodulators — `AM_AGC_OFF_SCALE`,
+/// `SSB_GAIN` and `CW_GAIN` in src/demodulator.ts, same values, same reasons
+/// (the comment there has the measurements). Each keeps an IQ amplitude of
+/// 16000, 6 dB above the strong locals, off the rail; Tests/main.swift checks
+/// them at that input. None follows the RF gain (0ee600c).
+enum OutputScale {
+    /// With the carrier AGC off, AMDemod runs 32 x this: 2x.
+    static let amAgcOff = 1.0 / 16.0
+    static let ssb = 24_000.0
+    /// CW with its AGC off only; with it on, the set point decides.
+    static let cw = 24_000.0
+}
+
 /// Everything except AM: narrow FM, wide FM (mono and stereo), SSB and CW.
 ///
 /// Ports of `processFM`, `processWFM`, `processWFMStereo`, `processSSB` and

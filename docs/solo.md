@@ -411,6 +411,17 @@ being louder is the volume control", was how it went unfixed. If the two sound
 different at the same settings, the arithmetic is comparable and should be
 compared before the knobs are.
 
+The same chain did not mean the same loudness across settings, though. The FM
+detectors return the phase step per IQ sample, so with fixed gains FM came out
+louder the lower the IQ rate ran: this app at iqDecimation 2 on the HF+
+(228 kHz) played FM 6-8 dB above AM at the same modulation depth, where the
+plugin at 456 kHz sits 0-3 dB apart (2026-09-30). The FM gains are now scaled
+by `iqRate / 456 kHz` in both chains (`fmOutputScale` / `OutputScale.fm`), so
+the decimation and the receiver no longer move FM's level; SSB and CW detect
+an amplitude and are not scaled. `test/audioLevels.test.ts` and the section of
+the same name in `native-app/Tests/main.swift` pin it at 228, 456, 600 and
+912 kHz.
+
 One trap when measuring it: `/tmp/deck-rx-solo-audio-record` is written before
 the volume control *and* before the limiter, while the plugin's
 `/tmp/deck-rx-audio-record` is after both. Two WAVs taken that way differ by the

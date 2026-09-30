@@ -1369,23 +1369,25 @@ final class LocalRadio {
         // run low to stay out of overload, it made the audio quiet or, at 0,
         // silent (2026-09-25). Gain sets sensitivity; the volume sets loudness.
         // Constants, not the gain ratio (OutputScale in Demods.swift has why).
-        let fmScale = 1.0
+        // The FM detectors follow the IQ rate, so their gains are scaled back
+        // to the reference rate; SSB and CW are amplitudes and are not.
+        let fmScale = OutputScale.fm(iqRate: Double(iqRate))
         let amScale = OutputScale.amAgcOff
         switch mode {
         case 0:  return other.processFM(int16IQ: body, decimate: audioDecimate,
-                                        gain: 6000 * fmScale)
+                                        gain: OutputScale.nfm * fmScale)
         case 1, 3:
                  return config.fmStereo && mode == 1
                     ? other.processWFMStereo(int16IQ: body, decimate: audioDecimate,
-                                             gain: 2000 * fmScale)
+                                             gain: OutputScale.wfmStereo * fmScale)
                     : other.processWFM(int16IQ: body, decimate: audioDecimate,
-                                       gain: 3000 * fmScale)
+                                       gain: OutputScale.wfm * fmScale)
         case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
-                                         upperSideband: true, gain: OutputScale.ssb * fmScale)
+                                         upperSideband: true, gain: OutputScale.ssb)
         case 6:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
-                                         upperSideband: false, gain: OutputScale.ssb * fmScale)
+                                         upperSideband: false, gain: OutputScale.ssb)
         case 5:  return other.processCW(int16IQ: body, decimate: audioDecimate,
-                                        gain: OutputScale.cw * fmScale)
+                                        gain: OutputScale.cw)
         default: return am.process(int16IQ: body, decimate: audioDecimate, gainScale: amScale)
         }
     }

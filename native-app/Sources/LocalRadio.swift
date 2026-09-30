@@ -1391,6 +1391,11 @@ final class LocalRadio {
                                          upperSideband: false, gain: OutputScale.ssb)
         case 5:  return other.processCW(int16IQ: body, decimate: audioDecimate,
                                         gain: OutputScale.cw)
+        // RAW (7) is SDR++'s "no demodulation": the IQ itself goes out as
+        // audio, for an external decoder. Nothing here consumes that, and a
+        // stand-in detector only made it sound like something it is not, so
+        // it plays silence — as in the plugin.
+        case 7:  return [Float](repeating: 0, count: (body.count / 4) / max(1, audioDecimate))
         default: return am.process(int16IQ: body, decimate: audioDecimate, gainScale: amScale)
         }
     }

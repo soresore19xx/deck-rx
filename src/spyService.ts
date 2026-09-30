@@ -1628,9 +1628,15 @@ class SpyService {
         // CW (mode 5) — direct frequency-shift by BFO (default 700 Hz).
         this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
         pcm = this.demod.processCW(iqBody, dec, CW_GAIN);
+      } else if (this.currentDemodMode === 7) {
+        // RAW is SDR++'s "no demodulation": the IQ itself goes out as audio,
+        // for an external decoder. Nothing here consumes that, and a stand-in
+        // detector (it used to fall to NFM) only made it sound like something
+        // it is not, so it plays silence. Stereo-interleaved like the rest.
+        pcm = new Int16Array(Math.floor((iqBody.length >> 2) / dec) * 2);
       } else {
-        // NFM (mode 0) — also catches DSB (3) and RAW (7) which fall through
-        // to FM until proper demod is implemented.
+        // NFM (mode 0) — also catches DSB (3), which has no detector of its
+        // own and falls through to narrow FM.
         pcm = this.demod.processFM(iqBody, dec, NFM_GAIN * fmScale);
       }
       // Diagnostic log every 3 s: detect silent output from DSP issues.

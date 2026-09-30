@@ -248,6 +248,29 @@ for (m, name) in [(NFM, "NFM"), (WFM, "WFM"), (USB, "USB"), (LSB, "LSB"), (CW, "
     check("mode \(m) routes to \(name)", same,
           "radio rms \(rms(viaRadio)) vs \(name) rms \(rms(direct))")
 }
+// DSB and RAW have no detector of their own. DSB falls to narrow FM, as in the
+// plugin (it fell to WFM here until 2026-09-30); RAW, SDR++'s "no
+// demodulation", plays silence rather than a stand-in detector.
+do {
+    let lr = LocalRadio()
+    lr.config = lrCfg
+    lr.mode = DSB
+    let viaRadio = lr.demodulateForTesting(wideIQ, iqRate: UInt32(rate))
+    let direct = demodOutput(mode: NFM, iq: wideIQ,
+                             ifCutoff: lrCfg.fmBandwidthHz / 2, tau: lrCfg.deemphasisTau)
+    let n = min(viaRadio.count, direct.count)
+    check("mode \(DSB) (DSB) routes to NFM",
+          n > 0 && zip(viaRadio.prefix(n), direct.prefix(n)).allSatisfy { abs($0 - $1) < 1e-6 },
+          "radio rms \(rms(viaRadio)) vs NFM rms \(rms(direct))")
+
+    let raw = LocalRadio()
+    raw.config = lrCfg
+    raw.mode = RAW
+    let rawOut = raw.demodulateForTesting(wideIQ, iqRate: UInt32(rate))
+    check("mode \(RAW) (RAW) plays silence, one sample per decimated IQ sample",
+          rawOut.count == (wideIQ.count / 4) / lrCfg.audioDecimate && rawOut.allSatisfy { $0 == 0 },
+          "count \(rawOut.count) rms \(rms(rawOut))")
+}
 
 section("FM audio comes back at the frequency it went in at")
 // The bug this catches: FM ran at the AM audio rate (9.5 kHz) while its

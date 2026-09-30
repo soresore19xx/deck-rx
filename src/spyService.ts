@@ -15,7 +15,10 @@ import {
   resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig, deviceKey,
   gainBand, withBandGain, RX_MODE, type DeviceProfile, type GainBand, type GainScope,
 } from './deviceSettings.js';
-import { Demodulator, AM_AGC_OFF_SCALE, SSB_GAIN, CW_GAIN } from './demodulator.js';
+import {
+  Demodulator, AM_AGC_OFF_SCALE, SSB_GAIN, CW_GAIN,
+  WFM_GAIN, WFM_STEREO_GAIN, NFM_GAIN, fmOutputScale,
+} from './demodulator.js';
 import { OutputLeveler, MODE_MAKEUP, softLimit, DEFAULT_LEVELER_CFG } from './audioLeveling.js';
 import { Ifnr } from './ifnr.js';
 import { IqNr, DemodMode } from './iqnr.js';
@@ -1602,7 +1605,11 @@ class SpyService {
       // it quiet (3/29, about -20 dB) or silent at 0 (2026-09-25, Solo on the
       // V4 at FM gain 0: peak 0). Gain sets sensitivity per receiver;
       // loudness is the volume control's.
-      const fmAudioScale = 1;
+      // The FM detectors do follow the IQ rate, though: their output is the
+      // phase step per sample, so it is scaled back to the reference rate
+      // (fmOutputScale in demodulator.ts). SSB and CW are amplitudes and are
+      // not scaled.
+      const fmScale = fmOutputScale(this.currentIQRate);
       let pcm: Int16Array;
       if (this.currentDemodMode === 2) {
         // Constants, not the gain ratio; why and how they were chosen is at
@@ -1610,21 +1617,21 @@ class SpyService {
         pcm = this.demod.processAM(iqBody, dec, AM_AGC_OFF_SCALE);
       } else if (this.currentDemodMode === 1) {
         pcm = this.fmOptions.stereo
-          ? this.demod.processWFMStereo(iqBody, dec, 2000 * fmAudioScale)
-          : this.demod.processWFM(iqBody, dec, 3000 * fmAudioScale);
+          ? this.demod.processWFMStereo(iqBody, dec, WFM_STEREO_GAIN * fmScale)
+          : this.demod.processWFM(iqBody, dec, WFM_GAIN * fmScale);
       } else if (this.currentDemodMode === 4 || this.currentDemodMode === 6) {
         // USB (mode 4) / LSB (mode 6) — Weaver SSB demod. f_off = bandwidth/2
         // so the audio band ends up 0..bandwidth (default 2.4 kHz).
         this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
-        pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB', SSB_GAIN * fmAudioScale);
+        pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB', SSB_GAIN);
       } else if (this.currentDemodMode === 5) {
         // CW (mode 5) — direct frequency-shift by BFO (default 700 Hz).
         this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
-        pcm = this.demod.processCW(iqBody, dec, CW_GAIN * fmAudioScale);
+        pcm = this.demod.processCW(iqBody, dec, CW_GAIN);
       } else {
         // NFM (mode 0) — also catches DSB (3) and RAW (7) which fall through
         // to FM until proper demod is implemented.
-        pcm = this.demod.processFM(iqBody, dec, 6000 * fmAudioScale);
+        pcm = this.demod.processFM(iqBody, dec, NFM_GAIN * fmScale);
       }
       // Diagnostic log every 3 s: detect silent output from DSP issues.
       const _now = Date.now();

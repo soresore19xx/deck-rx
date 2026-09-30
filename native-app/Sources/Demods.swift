@@ -145,6 +145,19 @@ enum OutputScale {
     static let ssb = 24_000.0
     /// CW with its AGC off only; with it on, the set point decides.
     static let cw = 24_000.0
+
+    /// FM gains at `fmReferenceIQRate` — `WFM_GAIN`, `WFM_STEREO_GAIN`,
+    /// `NFM_GAIN` and `fmOutputScale` in src/demodulator.ts. The detectors
+    /// return the phase step per IQ sample, so a fixed gain made FM louder the
+    /// lower the IQ rate: at iqDecimation 2 on the HF+ (228 kHz) this app
+    /// played FM 6-8 dB above AM at the same depth (2026-09-30).
+    static let wfm = 3_000.0
+    static let wfmStereo = 2_000.0
+    static let nfm = 6_000.0
+    static let fmReferenceIQRate = 456_000.0
+    static func fm(iqRate: Double) -> Double {
+        iqRate > 0 ? iqRate / fmReferenceIQRate : 1
+    }
 }
 
 /// Everything except AM: narrow FM, wide FM (mono and stereo), SSB and CW.

@@ -341,6 +341,56 @@ do {
     }
 }
 
+section("FM loudness does not depend on the IQ rate")
+// The same cases as the block of that name in test/audioLevels.test.ts. The
+// detectors return the phase step per IQ sample; at iqDecimation 2 on the HF+
+// (228 kHz) this app played FM 6-8 dB above AM at the same depth (2026-09-30).
+do {
+    let depth = 0.5
+    let amp = 8000.0 / 32767
+    func db(_ x: [Float], _ makeup: Double) -> Double {
+        20 * log10(max(1e-12, rms(Array(x[(x.count / 2)...])) * makeup))
+    }
+    func wfm(_ r: Double, stereo: Bool) -> Double {
+        let dec = Int((r / 57_000).rounded())
+        let d = Demods()
+        d.setWfmAudioBand(iqRate: r)
+        d.setWfmIfBandwidth(iqRate: r, cutoffHz: 80_000)
+        d.setDeemphasis(audioRate: r / Double(dec), tau: 50e-6)
+        let iq = makeIQ(rate: r, count: Int(r * 0.6), deviationHz: 75_000 * depth, amplitude: amp,
+                        noise: 0, mpx: { sin(2 * .pi * 1000 * $0) })
+        let s = OutputScale.fm(iqRate: r)
+        return db(stereo ? d.processWFMStereo(int16IQ: iq, decimate: dec, gain: OutputScale.wfmStereo * s)
+                         : d.processWFM(int16IQ: iq, decimate: dec, gain: OutputScale.wfm * s),
+                  AudioLeveling.modeMakeup[WFM]!)
+    }
+    func nfm(_ r: Double) -> Double {
+        let dec = Int((r / 57_000).rounded())
+        let iq = makeIQ(rate: r, count: Int(r * 0.6), deviationHz: 2_500, amplitude: amp,
+                        noise: 0, mpx: { sin(2 * .pi * 1000 * $0) })
+        return db(Demods().processFM(int16IQ: iq, decimate: dec, gain: OutputScale.nfm * OutputScale.fm(iqRate: r)),
+                  AudioLeveling.modeMakeup[NFM]!)
+    }
+    let a = AMDemod()
+    a.setBandwidth(audioRate: audioRate, bandwidthHz: 9_000, iqRate: rate)
+    a.agcEnabled = true
+    // makeIQ modulates at 0.6 x the closure.
+    let amIn = makeIQ(rate: rate, count: 68_400, amplitude: amp, noise: 0,
+                      am: { depth / 0.6 * sin(2 * .pi * 1000 * $0) })
+    let amDb = db(a.process(int16IQ: amIn, decimate: audioDec, gainScale: OutputScale.amAgcOff),
+                  AudioLeveling.modeMakeup[AM]!)
+    let refMono = wfm(456_000, stereo: false), refStereo = wfm(456_000, stereo: true), refNfm = nfm(456_000)
+    for r in [228_000.0, 456_000, 600_000, 912_000] {
+        let mono = wfm(r, stereo: false), st = wfm(r, stereo: true), n = nfm(r)
+        check("WFM mono, stereo and NFM at \(Int(r / 1000)) kHz come out as at 456 kHz",
+              abs(mono - refMono) < 0.5 && abs(st - refStereo) < 0.5 && abs(n - refNfm) < 0.5,
+              "mono \(mono - refMono) stereo \(st - refStereo) nfm \(n - refNfm) dB")
+        check("WFM at \(Int(r / 1000)) kHz within 5 dB of AM (carrier AGC on) at the same depth",
+              abs(mono - amDb) < 5 && abs(st - amDb) < 5,
+              "mono \(mono) stereo \(st) AM \(amDb) dB")
+    }
+}
+
 section("FM stereo locks on a real pilot")
 // 19 kHz pilot plus an L-R subcarrier at 38 kHz, which is what a stereo
 // broadcast is. This is the test the live check could not settle: on air the

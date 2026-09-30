@@ -54,6 +54,25 @@ export const AM_AGC_OFF_SCALE = 1 / 16;
 export const SSB_GAIN = 24000;
 export const CW_GAIN = 24000;
 
+/**
+ * FM output gains, at FM_REFERENCE_IQ_RATE. The discriminator returns the
+ * phase step per IQ sample, 2*pi*deviation/iqRate, so the same deviation comes
+ * out louder the lower the IQ rate runs. With fixed gains the Mac app at
+ * iqDecimation 2 (228 kHz on the HF+) played FM 6-8 dB above AM at the same
+ * modulation depth (2026-09-30), where the plugin at 456 kHz sits 0-3 dB
+ * apart; the makeup (MODE_MAKEUP) was set against the plugin's rate.
+ * fmOutputScale() brings every rate back to the reference, so the loudness of
+ * FM no longer depends on the decimation or the receiver.
+ */
+export const WFM_GAIN = 3000;
+export const WFM_STEREO_GAIN = 2000;
+export const NFM_GAIN = 6000;
+/** The HF+ at the plugin's default decimation offset: 912 kHz / 2. */
+export const FM_REFERENCE_IQ_RATE = 456_000;
+export function fmOutputScale(iqRate: number): number {
+  return iqRate > 0 ? iqRate / FM_REFERENCE_IQ_RATE : 1;
+}
+
 export class Demodulator {
   private prevI = 0;
   private prevQ = 0;

@@ -113,6 +113,10 @@ On the sserv VM (`/usr/local/bin/spyserver`, Ubuntu 24.04 aarch64):
 
 ## Two ways, and why the first one won in the end
 
+> **And back again on 2026-09-24** — the V4 is on SpyServer (8889) once more;
+> see [How it is wired today](#how-it-is-wired-today). The note below records
+> why it left, and that reason turned out to be a wiring fault.
+>
 > **Reversed on 2026-09-22.** The plugin now speaks rtl_tcp, through
 > `src/RtlTcpClient.ts` and a `source` field beside `host`/`port`. What follows
 > is kept as written, because the reasoning is still worth reading and only one
@@ -339,7 +343,18 @@ There is no macOS spyserver, so this design does not apply. The fallback is the
 rejected rtl_tcp path, or simply using SDR++ on studio — which works today, with
 two settings: `directSampling` 0 and the gain at the bottom of the list.
 
-## How it is wired today (2026-09-23)
+## How it is wired today
+
+> **2026-09-24: the V4 is back on SpyServer**, `spyserver-rtlsdr` on **8889**,
+> and `rtl_tcp.service` is disabled. The reason for leaving — "SpyServer's RTL
+> path never leaves the tuner's AGC, so the gain does nothing" — did not hold:
+> it was measured while the splitter in front of the two receivers was wired
+> wrongly, and a repeat that evening, wired correctly, showed the gain index
+> moving the V4's level through SpyServer. The rtl_tcp clients in all three
+> code bases are kept, so the section below still describes a working path;
+> it is just not the one in use.
+
+### The rtl_tcp path (2026-09-23 to 2026-09-24)
 
 On the VM, `rtl_tcp.service` replaces `spyserver-rtlsdr.service`. The old unit is
 disabled, not removed.

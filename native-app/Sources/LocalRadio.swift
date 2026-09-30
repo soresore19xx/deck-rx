@@ -1374,10 +1374,13 @@ final class LocalRadio {
         let fmScale = OutputScale.fm(iqRate: Double(iqRate))
         let amScale = OutputScale.amAgcOff
         switch mode {
-        case 0:  return other.processFM(int16IQ: body, decimate: audioDecimate,
+        // DSB (3) has no detector of its own; it falls to narrow FM, as in
+        // the plugin (spyService.ts). It used to fall to WFM here.
+        case 0, 3:
+                 return other.processFM(int16IQ: body, decimate: audioDecimate,
                                         gain: OutputScale.nfm * fmScale)
-        case 1, 3:
-                 return config.fmStereo && mode == 1
+        case 1:
+                 return config.fmStereo
                     ? other.processWFMStereo(int16IQ: body, decimate: audioDecimate,
                                              gain: OutputScale.wfmStereo * fmScale)
                     : other.processWFM(int16IQ: body, decimate: audioDecimate,

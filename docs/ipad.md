@@ -6,6 +6,8 @@ connection to the SpyServer, demodulates on the iPad and plays through
 
 Part of [deck-rx](../README.md).
 
+![Deck RX for iPadOS](ipad-window.png)
+
 ```sh
 native-app/build-ios.sh sim install    # simulator, no signing needed
 native-app/build-ios.sh device         # signed, installed over the network

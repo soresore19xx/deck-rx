@@ -7,6 +7,8 @@ differ in what is holding the radio.
 
 ![Deck RX Solo](docs/solo-window.png)
 
+![Deck RX for iPadOS](docs/ipad-window.png)
+
 ## Which one do you want
 
 | | What it is | Needs |

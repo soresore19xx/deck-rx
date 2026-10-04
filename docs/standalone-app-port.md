@@ -427,11 +427,12 @@ ends when a frame arrives from the centre the view is waiting for — or from an
 other centre, since a preset chosen while the pan is still settling sends the
 device to a third frequency and the one the view is holding is never coming
 (`SpectrumView.overrideDone`); without the second half the window sat parked on
-a piece of band nothing was receiving any more. And the
-waterfall's bitmap is shifted by the same amount the centre moved, so a row
-measured before the pan still sits under the frequencies it was measured at
-— without that, every row drawn before a retune is a lie about where its
-signals were, and a pan smears the history sideways.
+a piece of band nothing was receiving any more. The waterfall's history is not
+moved by a retune or a pan: it keeps scrolling down where it is, as in every
+other SDR waterfall. (Until 2026-10-05 the bitmap was shifted by the amount the
+centre moved, to keep old rows under the frequencies they were measured at; on a
+preset jump that left a black staircase down the vacated side, which no other
+SDR application shows, so it was removed.)
 
 What is being listened to does not change unless the pan would leave the
 demodulator outside the window, in which case it is dragged along at the edge,

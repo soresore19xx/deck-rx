@@ -282,17 +282,10 @@ final class SpectrumView: XView {
             if hold.count != bins.count { hold = bins }
             for i in 0..<bins.count { hold[i] = max(bins[i], hold[i] - holdDecayDbPerFrame) }
         }
-        // The receiver moving does not move what was already measured: every
-        // row drawn before it belongs to the frequencies it was measured at, so
-        // the bitmap slides to keep them there. Without this a pan leaves the
-        // whole history lying about where its signals were.
-        if centerFreq != 0, frame.centerFreq != centerFreq, iqRate > 0, fallWidth > 0 {
-            let hzPerColumn = Double(iqRate) / max(1, zoom) / Double(fallWidth)
-            if hzPerColumn > 0 {
-                shiftWaterfall(byColumns: Int(((Double(frame.centerFreq) - Double(centerFreq))
-                                               / hzPerColumn).rounded()))
-            }
-        }
+        // A retune does not move the rows already drawn: the history keeps
+        // scrolling down where it is, as in every other SDR waterfall. Sliding
+        // it to stay frequency-true (1f63d80) left a black staircase on every
+        // preset jump (removed 2026-10-05 at the user's request).
         let previousCenter = centerFreq
         iqRate = frame.iqRate
         centerFreq = frame.centerFreq
@@ -381,33 +374,6 @@ final class SpectrumView: XView {
         guard width > 0, height > 0, width != fallWidth || height != fallHeight else { return }
         fallWidth = width; fallHeight = height
         fallPixels = [UInt8](repeating: 0, count: width * height * 4)
-    }
-
-    /// Slide the history sideways by whole columns. Positive means the window
-    /// moved up in frequency, so the picture moves left by that much and the
-    /// vacated edge is left empty — nothing has been measured there yet.
-    private func shiftWaterfall(byColumns cols: Int) {
-        guard cols != 0, fallWidth > 0, fallHeight > 0,
-              fallPixels.count >= fallWidth * fallHeight * 4 else { return }
-        if abs(cols) >= fallWidth {
-            for i in 0..<fallPixels.count { fallPixels[i] = 0 }
-            return
-        }
-        let rowBytes = fallWidth * 4
-        let move = abs(cols) * 4
-        fallPixels.withUnsafeMutableBytes { raw in
-            guard let base = raw.baseAddress else { return }
-            for r in 0..<fallHeight {
-                let row = base.advanced(by: r * rowBytes)
-                if cols > 0 {
-                    memmove(row, row.advanced(by: move), rowBytes - move)
-                    memset(row.advanced(by: rowBytes - move), 0, move)
-                } else {
-                    memmove(row.advanced(by: move), row, rowBytes - move)
-                    memset(row, 0, move)
-                }
-            }
-        }
     }
 
     private func pushWaterfallRow() {
@@ -641,14 +607,6 @@ final class SpectrumView: XView {
             beyond(Double(centerFreq) + Double(leftover) * hzPerBin)
         }
         guard panBins != before else { return }
-        // The history belongs to the frequencies it was measured at, so it
-        // slides with the window — the same reason `accept` slides it when the
-        // receiver moves. Positive columns move the picture left, which is what
-        // going up the band looks like.
-        if fallWidth > 0 {
-            shiftWaterfall(byColumns: Int((Double(panBins - before) * Double(fallWidth)
-                                          / Double(width)).rounded()))
-        }
         redraw()
     }
 
@@ -1086,11 +1044,13 @@ final class SpectrumView: XView {
         // Clipped to the plot the same way the trace and the waterfall are: the
         // band is a width in Hz, so zooming in widens it in pixels until it runs
         // off both ends — over the dB gutter on the left and past the right edge.
+        // Spectrum only (height specH): shading the waterfall too hid the rows
+        // under the tuned signal (user, 2026-10-05).
         if bandwidthHz > 0, span > 0 {
             let half = bandwidthHz / 2
             let r = CGRect(x: x(forHz: tunedHz - half), y: 0,
                            width: max(2, x(forHz: tunedHz + half) - x(forHz: tunedHz - half)),
-                           height: h)
+                           height: specH)
             ctx.saveGState()
             ctx.clip(to: CGRect(x: plotX, y: 0, width: plotW, height: h))
             ctx.setFillColor(XColor(red: 0.85, green: 0.35, blue: 0.30, alpha: 0.16).cgColor)

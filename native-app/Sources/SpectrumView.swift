@@ -303,12 +303,12 @@ final class SpectrumView: XView {
         // Waterfall rows come from the unsmoothed frame when there is one (SDR++
         // smooths the trace only); building them from the smoothed bins smeared
         // the waterfall in time (user, 2026-10-06).
-        let wfSrc = (frame.rawBins?.count == bins.count) ? frame.rawBins! : bins
-        if wfAccum.count != wfSrc.count {
-            wfAccum = wfSrc
-        } else {
-            for i in 0..<wfSrc.count where wfSrc[i] > wfAccum[i] { wfAccum[i] = wfSrc[i] }
-        }
+        // When several frames go to one row (TIME), the row is the newest frame
+        // as it is, the way SDR++ puts one FFT on one line. Taking each bin's
+        // maximum over the skipped frames (17aeb17, so a short burst could not
+        // fall between rows) painted every modulated station several dB hot and
+        // saturated it red against SDR++ (user, 2026-10-06).
+        wfAccum = (frame.rawBins?.count == bins.count) ? frame.rawBins! : bins
         wfSkipCount += 1
         if wfSkipCount >= wfFrameSkip {
             wfSkipCount = 0

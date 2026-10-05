@@ -424,32 +424,30 @@ final class SpectrumView: XView {
         }
     }
 
-    /// The classic SDR waterfall ramp — near-black, blue, cyan, green, yellow,
-    /// red. A monochrome ramp reads as prettier next to the rest of the UI but
-    /// costs the thing a waterfall is for: with one hue you cannot tell a
-    /// moderate signal from a strong one at a glance, and every band of
-    /// interference looks alike.
-    private static let ramp: [(CGFloat, (Double, Double, Double))] = [
-        (0.00, (0, 0, 12)),
-        (0.18, (0, 20, 130)),
-        (0.38, (0, 160, 220)),
-        (0.55, (0, 200, 90)),
-        (0.72, (230, 220, 0)),
-        (0.88, (240, 110, 0)),
-        (1.00, (255, 40, 40)),
+    /// SDR++'s "Classic Green" colormap (root/res/colormaps/classic_green.json),
+    /// the one the user's SDR++ is set to (config.json colorMap). Until
+    /// 2026-10-06 this was a 7-stop black-blue-cyan-green-yellow-red ramp of our
+    /// own, which changed colour far faster per dB than SDR++ does.
+    private static let palette: [(Double, Double, Double)] = [
+        (0x00, 0x00, 0x00), (0x00, 0x00, 0x30), (0x00, 0x28, 0x51), (0x00, 0x49, 0x93),
+        (0x00, 0x9B, 0xE6), (0x80, 0xFF, 0x80), (0x80, 0xFF, 0x80), (0xFF, 0xA0, 0x42),
+        (0xFF, 0x00, 0x00), (0xC6, 0x00, 0x00), (0x9F, 0x00, 0x00), (0x75, 0x00, 0x00),
+        (0x4A, 0x00, 0x00),
     ]
 
+    /// Same interpolation as SDR++ WaterFall::updatePallette: the 0..1 range is
+    /// cut into `count` segments (not count - 1), each blending colour i into
+    /// i + 1, the top segment clamped to the last colour.
     private func color(for v: CGFloat) -> (UInt8, UInt8, UInt8) {
-        let t = max(0, min(1, v))
-        var lo = Self.ramp[0], hi = Self.ramp[Self.ramp.count - 1]
-        for i in 0..<(Self.ramp.count - 1) where t >= Self.ramp[i].0 && t <= Self.ramp[i + 1].0 {
-            lo = Self.ramp[i]; hi = Self.ramp[i + 1]; break
-        }
-        let span = max(0.0001, hi.0 - lo.0)
-        let k = Double((t - lo.0) / span)
-        return (UInt8(lo.1.0 + (hi.1.0 - lo.1.0) * k),
-                UInt8(lo.1.1 + (hi.1.1 - lo.1.1) * k),
-                UInt8(lo.1.2 + (hi.1.2 - lo.1.2) * k))
+        let p = Self.palette
+        let x = Double(max(0, min(1, v))) * Double(p.count)
+        let lower = max(0, min(p.count - 1, Int(x.rounded(.down))))
+        let upper = max(0, min(p.count - 1, Int(x.rounded(.up))))
+        let k = x - Double(lower)
+        let a = p[lower], b = p[upper]
+        return (UInt8(max(0, min(255, a.0 * (1 - k) + b.0 * k))),
+                UInt8(max(0, min(255, a.1 * (1 - k) + b.1 * k))),
+                UInt8(max(0, min(255, a.2 * (1 - k) + b.2 * k))))
     }
 
     /// The aim mark. Dashed and white against the tuned marker's solid red, so

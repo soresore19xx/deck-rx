@@ -36,7 +36,8 @@ Landscape, and the width goes to the spectrum.
   is never offered de-emphasis. Anything with more than two values is a
   pull-down showing the whole list.
 - **a display rail**: zoom and waterfall depth as sliders, the dB ceiling and
-  floor as rails beside the trace.
+  floor as rails beside the trace. The ceiling and floor also set the
+  waterfall's colour range (as in SDR++), and moving them recolours its history.
 
 Controls sit in named, framed groups — DISPLAY, BAND, TUNE, MODE, AUDIO, SERVER
 — the way a panel is silkscreened.

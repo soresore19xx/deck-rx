@@ -11,18 +11,14 @@ import AppKit
 final class SpectrumView: XView {
     /// dBFS window. Matches the FFT dial's default floor/ceiling so the same
     /// signal looks the same on the deck and on screen.
-    var dbFloor: Float = -160
-    var dbCeil: Float = -1
-    /// The waterfall maps colour over its own dB window, tracked from the data
-    /// rather than shared with the trace. Sharing looked reasonable and was the
-    /// reason the ramp read as two flat tones: with the trace window set wide
-    /// enough to see the noise floor and the peaks at once, everything on air
-    /// lands in the bottom third of the ramp, so blue and cyan are the only
-    /// colours that ever appear and the greens through reds are dead weight.
-    /// Anchoring the window on the measured noise floor keeps the whole ramp in
-    /// use on any band, at any gain.
-    var wfRangeDb: Float = 55 { didSet { redraw() } }
-    private var wfFloorEst: Float = -100
+    /// The waterfall shares this window with the trace, as SDR++ does
+    /// (main_window.cpp sets fftMin/Max and waterfallMin/Max to the same values):
+    /// MIN / MAX set both, and moving either recolours the whole history from the
+    /// stored dB rows (SDR++ WaterFall::updateWaterfallFb). Until 2026-10-05 the
+    /// waterfall tracked its own window from the noise floor and ignored MIN/MAX;
+    /// changed at the user's request to match SDR++.
+    var dbFloor: Float = -160 { didSet { if dbFloor != oldValue { repaintWaterfall(); redraw() } } }
+    var dbCeil: Float = -1 { didSet { if dbCeil != oldValue { repaintWaterfall(); redraw() } } }
 
     /// Waterfall history depth, asked for in seconds. Frames per row is the
     /// mechanism, but it is the wrong thing to set: it makes the time on screen
@@ -97,7 +93,7 @@ final class SpectrumView: XView {
     /// centred slice of it. Zooming is done here rather than on the receiver
     /// because every frame already carries all the bins — asking for a narrower
     /// FFT would cost resolution, which is the opposite of what zooming is for.
-    var zoom: Double = 1 { didSet { hold = []; panBins = 0; redraw() } }
+    var zoom: Double = 1 { didSet { hold = []; panBins = 0; repaintWaterfall(); redraw() } }
 
     /// How far the window is panned from the receiver's centre, in bins.
     ///
@@ -110,7 +106,10 @@ final class SpectrumView: XView {
     /// The consequence is that at zoom 1 there is nothing to pan: the whole span
     /// is already on screen. Zooming re-centres, which is why the setter above
     /// clears this.
-    private var panBins = 0
+    /// A pan within the IQ span re-samples the stored history at the new view,
+    /// as SDR++ does when its view offset changes. A retune does not (the rows
+    /// stay where they are).
+    private var panBins = 0 { didSet { if panBins != oldValue { repaintWaterfall() } } }
 
     /// Fractional notches not yet spent. A precise device sends many small
     /// deltas and a wheel sends whole lines; carrying the remainder makes one
@@ -374,11 +373,20 @@ final class SpectrumView: XView {
         guard width > 0, height > 0, width != fallWidth || height != fallHeight else { return }
         fallWidth = width; fallHeight = height
         fallPixels = [UInt8](repeating: 0, count: width * height * 4)
+        if fallRaw.count > height { fallRaw.removeLast(fallRaw.count - height) }
+        repaintWaterfall()
     }
+
+    /// The measured dB rows behind the bitmap, newest first, one per waterfall
+    /// row (SDR++ keeps the same in rawFFTs). Colour is applied when a row is
+    /// painted, so a MIN / MAX / zoom / pan change can repaint the whole history.
+    private var fallRaw: [[Float]] = []
 
     private func pushWaterfallRow() {
         guard fallWidth > 0, fallHeight > 0, !bins.isEmpty else { return }
         let src = wfAccum.count == bins.count ? wfAccum : bins
+        fallRaw.insert(src, at: 0)
+        if fallRaw.count > fallHeight { fallRaw.removeLast(fallRaw.count - fallHeight) }
         // Scroll down by one row, then paint the new row at the top.
         let rowBytes = fallWidth * 4
         if fallHeight > 1 {
@@ -387,33 +395,32 @@ final class SpectrumView: XView {
                 memmove(base.advanced(by: rowBytes), base, rowBytes * (fallHeight - 1))
             }
         }
-        let win = visible(bins.count)
-        let winCount = max(1, win.end - win.start)
+        paintFallRow(0, src)
+    }
 
-        // Noise floor for this frame, as a low percentile of the visible bins.
-        // A percentile rather than the minimum: one dead bin would otherwise
-        // anchor the whole ramp. Sampled every 8th bin — the floor is a bulk
-        // property, and sorting the full FFT every frame is not worth it.
-        var sample: [Float] = []
-        sample.reserveCapacity(winCount / 8 + 1)
-        var i = win.start
-        while i < win.end { sample.append(src[i]); i += 8 }
-        if sample.count > 4 {
-            sample.sort()
-            let p15 = sample[max(0, min(sample.count - 1, sample.count * 15 / 100))]
-            // Ease toward the estimate so a burst of noise does not make the
-            // whole waterfall change colour for one row and back again.
-            wfFloorEst = frameInterval > 0 && wfFloorEst > -300 ? wfFloorEst * 0.92 + p15 * 0.08 : p15
-        }
-        let lo = wfFloorEst - 4
-        let hi = lo + max(10, wfRangeDb)
+    /// One row: the visible bins mapped linearly between MIN and MAX onto the
+    /// ramp, clamped at both ends (SDR++: clamp(v, min, max) - min) / range).
+    private func paintFallRow(_ y: Int, _ src: [Float]) {
+        guard y < fallHeight, !src.isEmpty else { return }
+        let win = visible(src.count)
+        let lo = dbFloor, hi = max(dbFloor + 1, dbCeil)
         let cols = columns(from: src, win.start, win.end, fallWidth)
+        let base = y * fallWidth * 4
         for x in 0..<fallWidth {
-            let b = cols[x]
-            let t = CGFloat(max(0, min(1, (b - lo) / (hi - lo))))
+            let t = CGFloat(max(0, min(1, (cols[x] - lo) / (hi - lo))))
             let (r, g, bl) = color(for: t)
-            let o = x * 4
+            let o = base + x * 4
             fallPixels[o] = r; fallPixels[o + 1] = g; fallPixels[o + 2] = bl; fallPixels[o + 3] = 255
+        }
+    }
+
+    /// Recolour the whole history from `fallRaw` (SDR++ updateWaterfallFb):
+    /// called when MIN / MAX, the zoom or the pan change, and on a resize.
+    private func repaintWaterfall() {
+        guard fallWidth > 0, fallHeight > 0, fallPixels.count == fallWidth * fallHeight * 4 else { return }
+        for (y, row) in fallRaw.enumerated() where y < fallHeight { paintFallRow(y, row) }
+        if fallRaw.count < fallHeight {
+            for i in (fallRaw.count * fallWidth * 4)..<fallPixels.count { fallPixels[i] = 0 }
         }
     }
 

@@ -39,7 +39,7 @@ That is all of it. The rest, briefly:
 | **NR / LVL** | noise reduction, and the output leveller |
 | **IMPORT** | pulls SDR++'s bookmarks into the preset list |
 | **+ Add / Edit** (above the list) | Add puts what is tuned on the list, named from the station database when it knows the frequency. Edit turns a click on a row into a sheet — name, kHz, mode, and a Delete button — until Done. The same two buttons the iPad has, writing the same file |
-| **ZOOM / MAX / MIN / TIME** (right edge) | span, the dB window top and bottom, and how much history the waterfall holds |
+| **ZOOM / MAX / MIN / TIME** (right edge) | span, the dB window top and bottom, and how much history the waterfall holds. MAX / MIN set the waterfall's colour range too, as in SDR++: moving them recolours the whole history, not only the rows that follow |
 | **POWER** | disconnects and stops the audio |
 
 Click anywhere on the spectrum or the waterfall to tune there, SDR++'s

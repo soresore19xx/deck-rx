@@ -1616,7 +1616,8 @@ final class LocalRadio {
         // one FFT frame's peak-over-median and it flickers with the modulation.
         snrDb = snrDb * 0.9 + max(0, peak - median) * 0.1
         let frame = SpectrumFeed.Frame(bins: bins, iqRate: iqRate,
-                                       centerFreq: deviceCenterHz, seq: seq)
+                                       centerFreq: deviceCenterHz, seq: seq,
+                                       rawBins: fft.lastRaw)
         DispatchQueue.main.async { self.onFrame?(frame) }
     }
 }

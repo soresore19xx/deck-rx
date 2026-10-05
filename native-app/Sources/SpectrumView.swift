@@ -300,10 +300,14 @@ final class SpectrumView: XView {
             if dt > 0, dt < 2 { frameInterval = frameInterval == 0 ? dt : frameInterval * 0.9 + dt * 0.1 }
         }
         lastFrameAt = now
-        if wfAccum.count != bins.count {
-            wfAccum = bins
+        // Waterfall rows come from the unsmoothed frame when there is one (SDR++
+        // smooths the trace only); building them from the smoothed bins smeared
+        // the waterfall in time (user, 2026-10-06).
+        let wfSrc = (frame.rawBins?.count == bins.count) ? frame.rawBins! : bins
+        if wfAccum.count != wfSrc.count {
+            wfAccum = wfSrc
         } else {
-            for i in 0..<bins.count where bins[i] > wfAccum[i] { wfAccum[i] = bins[i] }
+            for i in 0..<wfSrc.count where wfSrc[i] > wfAccum[i] { wfAccum[i] = wfSrc[i] }
         }
         wfSkipCount += 1
         if wfSkipCount >= wfFrameSkip {

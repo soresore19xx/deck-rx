@@ -35,6 +35,9 @@ final class FFTPipeline {
     private var imagp: [Float]
     private var scratch: [Float]
     private var smoothed: [Float]?
+    /// The last frame before smoothing (what `process` returns when smoothing
+    /// is off). The waterfall draws from this, as SDR++ does.
+    private(set) var lastRaw: [Float] = []
 
     init?(_ size: Int) {
         guard size >= 4, size & (size - 1) == 0 else { return nil }
@@ -133,6 +136,7 @@ final class FFTPipeline {
         let half = n >> 1
         for k in 0..<half { out[k + half] = scratch[k] }
         for k in half..<n { out[k - half] = scratch[k] }
+        lastRaw = out
 
         // EWMA across frames, never across bins.
         // SDR++'s form, by way of the plugin (spectrumFeed.ts:172): the caller

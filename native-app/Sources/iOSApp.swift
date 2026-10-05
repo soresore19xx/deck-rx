@@ -491,9 +491,11 @@ final class RadioViewController: UIViewController {
             h.slider.addTarget(self, action: #selector(displayChanged(_:)), for: .valueChanged)
             displaySliders[tag] = h.slider
         }
-        ceilRail.slider.minimumValue = -60;  ceilRail.slider.maximumValue = 0
+        // Both rails travel 0 .. -160 dB as SDR++'s MAX / MIN do, kept 10 dB
+        // apart by displayChanged (split at -60 until 2026-10-06).
+        ceilRail.slider.minimumValue = -160; ceilRail.slider.maximumValue = 0
         ceilRail.slider.value = Float(radio.config.spectrumDbCeil)
-        floorRail.slider.minimumValue = -160; floorRail.slider.maximumValue = -60
+        floorRail.slider.minimumValue = -160; floorRail.slider.maximumValue = 0
         floorRail.slider.value = Float(radio.config.spectrumDbFloor)
         let rail = UIStackView(arrangedSubviews: [ceilRail, floorRail])
         rail.axis = .vertical

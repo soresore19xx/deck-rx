@@ -715,8 +715,12 @@ final class MainView: NSView {
         // the long end where it is a rounding error.
         wfSlider.minValue = log(5.0); wfSlider.maxValue = log(600.0)
         wfSlider.doubleValue = max(wfSlider.minValue, min(wfSlider.maxValue, log(spectrum.wfTargetSeconds)))
-        maxSlider.minValue = -60; maxSlider.maxValue = 0; maxSlider.doubleValue = Double(spectrum.dbCeil)
-        minSlider.minValue = -160; minSlider.maxValue = -60; minSlider.doubleValue = Double(spectrum.dbFloor)
+        // Both travel the whole 0 .. -160 dB, as SDR++'s MAX / MIN do
+        // (main_window.cpp VSliderFloat(&fftMax / &fftMin, 0.0, -160.0)), kept
+        // 10 dB apart by the handlers. Split at -60 until 2026-10-06, which
+        // stopped the window narrowing anywhere but around -60.
+        maxSlider.minValue = -160; maxSlider.maxValue = 0; maxSlider.doubleValue = Double(spectrum.dbCeil)
+        minSlider.minValue = -160; minSlider.maxValue = 0; minSlider.doubleValue = Double(spectrum.dbFloor)
         for sl in [zoomSlider, wfSlider, maxSlider, minSlider] {
             sl.isVertical = true
             sl.target = ButtonBox.shared

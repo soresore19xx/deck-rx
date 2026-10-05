@@ -16,6 +16,11 @@ final class SpectrumFeed {
         let iqRate: UInt32     // Hz, the span the bins cover
         let centerFreq: UInt32 // Hz, at bins[count/2]
         let seq: UInt32
+        /// The same frame before the across-frames smoothing, for the waterfall:
+        /// SDR++ builds waterfall rows from the raw FFT and smooths only the
+        /// trace (WaterFall::pushFFT). nil where only smoothed bins exist (the
+        /// plugin's feed); the waterfall then uses `bins`.
+        var rawBins: [Float]? = nil
     }
 
     private static let magic: UInt32 = 0x53585244 // 'DRXS'

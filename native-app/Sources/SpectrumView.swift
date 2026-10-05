@@ -488,6 +488,14 @@ final class SpectrumView: XView {
         return (v / p).rounded() * p + p / 2
     }
 
+    /// SDR++ findBestRange: the first step in its 1-2-2.5-5 series that keeps
+    /// `range / step` under `maxSteps`.
+    static func bestStep(_ range: Double, _ maxSteps: Int) -> Double {
+        let series: [Double] = [1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500]
+        for s in series where range / s < Double(maxSteps) { return s }
+        return series[series.count - 1]
+    }
+
     private func axisLabel(_ text: String, at p: CGPoint, size: CGFloat = 13,
                            color: XColor = XColor(white: 0.68, alpha: 1)) {
         NSAttributedString(string: text, attributes: [
@@ -901,12 +909,22 @@ final class SpectrumView: XView {
         // 0.5 pt, not 1: on a Retina display a 1 pt rule is two physical
         // pixels, which reads as a drawn line rather than a graticule.
         ctx.setLineWidth(0.5)
-        var db = (Double(dbCeil) / 10).rounded(.down) * 10
-        while db >= Double(dbFloor) {
+        // The step follows the MIN / MAX window the way SDR++ picks it
+        // (WaterFall: vRange = findBestRange(fftMax - fftMin, maxVSteps), with
+        // maxVSteps = fft height / the height of "000.000"): the first of
+        // 1, 2, 2.5, 5, 10, 20 ... that leaves fewer than maxVSteps lines, so
+        // narrowing the window refines the scale. It was a fixed 10 dB until
+        // 2026-10-06. Lines from floor(max / step) * step down, above MIN.
+        let labelH = NSAttributedString(string: "000.000",
+                                        attributes: [.font: xMono(13, .regular)]).size().height
+        let maxVSteps = max(1, Int(specH / max(1, labelH)))
+        let dbStep = Self.bestStep(Double(dbCeil - dbFloor), maxVSteps)
+        var db = (Double(dbCeil) / dbStep).rounded(.down) * dbStep
+        while db > Double(dbFloor) {
             let y = pixelCentre(specH - norm(Float(db)) * specH)
             ctx.move(to: CGPoint(x: plotX, y: y)); ctx.addLine(to: CGPoint(x: w, y: y))
-            axisLabel(String(format: "%.0f", db), at: CGPoint(x: 8, y: y - 9))
-            db -= 10
+            axisLabel(String(Int(db)), at: CGPoint(x: 8, y: y - 9))
+            db -= dbStep
         }
         ctx.strokePath()
 

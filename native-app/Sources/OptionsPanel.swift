@@ -391,7 +391,10 @@ final class OptionsPanel: NSView {
         // this panel is talking to may not report the scale at all. It applies
         // by rebuilding the view, so the label no longer carries the asterisk
         // it wore back when the change needed a relaunch.
-        views.append(row("UI scale", "rx.uiScale", .text(UI.names)))
+        // A pull-down rather than click-to-advance (user, 2026-10-07): each
+        // step rebuilds the window at a new scale, so walking through the list
+        // to reach one meant several rebuilds on the way.
+        views.append(row("UI scale", "rx.uiScale", .menu({ UI.names })))
         // "Audio" rather than "Audio out": the device names are long and the
         // column is 228 pt. A name that survives beats one that explains.
         //

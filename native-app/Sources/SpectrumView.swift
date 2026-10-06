@@ -404,10 +404,18 @@ final class SpectrumView: XView {
 
     /// One row: the visible bins mapped linearly between MIN and MAX onto the
     /// ramp, clamped at both ends (SDR++: clamp(v, min, max) - min) / range).
+    /// How far above MAX the waterfall's colour range reaches, as a fraction of
+    /// MAX − MIN. 0 is SDR++ exactly; with a narrow window that saturated every
+    /// station red, so the colours are shifted toward the dark end by mapping
+    /// MAX to 1 / (1 + this) of the ramp (user, 2026-10-06). Trace and dB scale
+    /// still use MIN / MAX as they are.
+    static let waterfallHeadroom: Float = 0.25
+
     private func paintFallRow(_ y: Int, _ src: [Float]) {
         guard y < fallHeight, !src.isEmpty else { return }
         let win = visible(src.count)
-        let lo = dbFloor, hi = max(dbFloor + 1, dbCeil)
+        let top = max(dbFloor + 1, dbCeil)
+        let lo = dbFloor, hi = top + (top - dbFloor) * Self.waterfallHeadroom
         let cols = columns(from: src, win.start, win.end, fallWidth)
         let base = y * fallWidth * 4
         for x in 0..<fallWidth {

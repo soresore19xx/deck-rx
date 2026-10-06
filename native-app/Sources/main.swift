@@ -814,13 +814,18 @@ final class MainView: NSView {
             bandGrid.bottomAnchor.constraint(equalTo: bandBar.bottomAnchor, constant: -S(10)),
         ])
 
+        // The rail is added after the options pane so it sits above it: hiding
+        // the pane (H) slides it right, under the rail, instead of over it.
         for (n, v) in [("top", top), ("header", header), ("bottom", bottom),
                        ("presetList", presetList), ("spectrum", spectrum), ("bar", bar),
-                       ("rail", rail), ("options", options), ("bandBar", bandBar)] {
+                       ("options", options), ("rail", rail), ("bandBar", bandBar)] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
             debugPanelRefs.append((n, v))
         }
+        presetLeadingC = presetList.leadingAnchor.constraint(equalTo: leadingAnchor)
+        bandBarLeadingC = bandBar.leadingAnchor.constraint(equalTo: leadingAnchor)
+        optionsTrailingC = options.trailingAnchor.constraint(equalTo: rail.leadingAnchor)
         NSLayoutConstraint.activate([
             top.topAnchor.constraint(equalTo: topAnchor),
             top.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -829,11 +834,11 @@ final class MainView: NSView {
             top.heightAnchor.constraint(equalToConstant: S(58)),
 
             presetList.topAnchor.constraint(equalTo: top.bottomAnchor),
-            presetList.leadingAnchor.constraint(equalTo: leadingAnchor),
+            presetLeadingC,
             presetList.widthAnchor.constraint(equalToConstant: S(306)),
             presetList.bottomAnchor.constraint(equalTo: bandBar.topAnchor),
 
-            bandBar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bandBarLeadingC,
             bandBar.widthAnchor.constraint(equalTo: presetList.widthAnchor),
             bandBar.bottomAnchor.constraint(equalTo: bottom.topAnchor),
 
@@ -854,7 +859,7 @@ final class MainView: NSView {
             spectrum.trailingAnchor.constraint(equalTo: options.leadingAnchor),
 
             options.topAnchor.constraint(equalTo: bar.bottomAnchor),
-            options.trailingAnchor.constraint(equalTo: rail.leadingAnchor),
+            optionsTrailingC,
             options.bottomAnchor.constraint(equalTo: bottom.topAnchor),
             options.widthAnchor.constraint(equalToConstant: S(228)),
 
@@ -1054,6 +1059,31 @@ final class MainView: NSView {
     /// Panels in layout order, for the debug dump. Captured at layout time —
     /// they are locals in the setup, not properties.
     private(set) var debugPanelRefs: [(String, NSView)] = []
+
+    // MARK: side panes (H)
+    // H slides the preset list off to the left and the options pane off to the
+    // right, and back; the spectrum and the bars take the room. Moved by
+    // position, not hidden, the way clip-search's H does it (RootView.layoutPane:
+    // 0.18 s ease-out), so the panes keep their layout while out of sight.
+    private var presetLeadingC: NSLayoutConstraint!
+    private var bandBarLeadingC: NSLayoutConstraint!
+    private var optionsTrailingC: NSLayoutConstraint!
+    private(set) var sidePanesShown = true
+
+    func toggleSidePanes() {
+        sidePanesShown.toggle()
+        let left = sidePanesShown ? 0 : -presetList.frame.width
+        let right = sidePanesShown ? 0 : options.frame.width
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            ctx.allowsImplicitAnimation = true
+            presetLeadingC.animator().constant = left
+            bandBarLeadingC.animator().constant = left
+            optionsTrailingC.animator().constant = right
+            layoutSubtreeIfNeeded()
+        }
+    }
     func debugPanels() -> [(String, NSView)] { debugPanelRefs }
 
     private var displaySaveTimer: Timer?
@@ -1546,6 +1576,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         window.setFrameAutosaveName("deckRxReceiver")
         window.makeKeyAndOrderFront(nil)
+        // H (no modifiers) slides the side panes out and back. Not while text is
+        // being typed: a field's editor is an NSText, and its H is a letter.
+        // ⌘H stays Hide.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            guard let self, e.window === self.window, !e.isARepeat,
+                  e.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+                  (e.charactersIgnoringModifiers ?? "").lowercased() == "h",
+                  !(self.window.firstResponder is NSText) else { return e }
+            self.view.toggleSidePanes()
+            return nil
+        }
         buildMenu()
 #if STANDALONE
         // `open -a "Deck RX Solo" --args -direct` comes up already on its own

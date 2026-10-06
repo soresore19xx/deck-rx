@@ -377,6 +377,16 @@ final class MainView: NSView {
     /// Returns true when the direct path took the change, so it is not also
     /// sent to the plugin.
     var onFftSize: ((Int) -> Bool)?
+    /// RATE and SMOOTH on the same terms as FFT. Without them, in DIRECT the two
+    /// went to the plugin only: the toolbar showed the plugin's answer while the
+    /// window's own receiver kept running at its saved 30 fps / speed 30, and
+    /// nothing was written to receiver.json (2026-10-06).
+    var onFps: ((Int) -> Bool)?
+    var onSmooth: ((Int) -> Bool)?
+    /// Display settings go through the window's own receiver's config when it
+    /// has one, so a later save of that config cannot write back stale values
+    /// (MIN / MAX / zoom were being lost that way). nil: load, edit, save.
+    var commitDisplay: ((_ edit: (inout RadioConfig) -> Void) -> Void)?
     /// Decimation stage 0,1,2,... for the IQ dropdown. Returns true when the
     /// bundle's own receiver took it.
     var onIqDecimation: ((Int) -> Bool)?
@@ -593,6 +603,9 @@ final class MainView: NSView {
         fpsPop.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(fpsPop)] = { [weak self] in
             guard let self, let t = self.fpsPop.titleOfSelectedItem, let v = Int(t) else { return }
+#if STANDALONE
+            if let set = self.onFps, set(v) { return }   // handled by the direct path
+#endif
             Receiver.spectrum(fps: v) { size, rate, avg in self.adoptSpectrum(size, rate, avg) }
         }
         holdPad = TogglePad("HOLD", font: mono(16), onColor: P.warn) { [weak self] in
@@ -626,6 +639,9 @@ final class MainView: NSView {
         smoothField.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(smoothField)] = { [weak self] in
             guard let self, let v = Int(self.smoothField.stringValue) else { return }
+#if STANDALONE
+            if let set = self.onSmooth, set(v) { self.smoothStepper.integerValue = v; return }
+#endif
             Receiver.spectrum(smooth: v) { s, r, a in self.adoptSpectrum(s, r, a) }
         }
         smoothStepper.minValue = 1
@@ -637,7 +653,11 @@ final class MainView: NSView {
         smoothStepper.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(smoothStepper)] = { [weak self] in
             guard let self else { return }
-            Receiver.spectrum(smooth: self.smoothStepper.integerValue) { s, r, a in
+            let v = self.smoothStepper.integerValue
+#if STANDALONE
+            if let set = self.onSmooth, set(v) { self.smoothField.stringValue = String(v); return }
+#endif
+            Receiver.spectrum(smooth: v) { s, r, a in
                 self.adoptSpectrum(s, r, a)
             }
         }
@@ -1094,15 +1114,21 @@ final class MainView: NSView {
         displaySaveTimer?.invalidate()
         displaySaveTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
             guard let self else { return }
+            let edit: (inout RadioConfig) -> Void = { c in
+                c.spectrumDbFloor = Double(self.spectrum.dbFloor)
+                c.spectrumDbCeil = Double(self.spectrum.dbCeil)
+                c.spectrumZoom = self.spectrum.zoom
+                c.waterfallSeconds = self.spectrum.wfTargetSeconds
+                if self.spectrum.idleSpanHz > 0 { c.spectrumSpanHz = self.spectrum.idleSpanHz }
+                // Where the receiver was, so the waiting display places the presets
+                // around it rather than around whatever the config was seeded with.
+                if self.spectrum.idleCenterHz > 0 { c.frequencyHz = self.spectrum.idleCenterHz }
+            }
+#if STANDALONE
+            if let commit = self.commitDisplay { commit(edit); return }
+#endif
             var c = RadioConfig.load()
-            c.spectrumDbFloor = Double(self.spectrum.dbFloor)
-            c.spectrumDbCeil = Double(self.spectrum.dbCeil)
-            c.spectrumZoom = self.spectrum.zoom
-            c.waterfallSeconds = self.spectrum.wfTargetSeconds
-            if self.spectrum.idleSpanHz > 0 { c.spectrumSpanHz = self.spectrum.idleSpanHz }
-            // Where the receiver was, so the waiting display places the presets
-            // around it rather than around whatever the config was seeded with.
-            if self.spectrum.idleCenterHz > 0 { c.frequencyHz = self.spectrum.idleCenterHz }
+            edit(&c)
             c.save()
         }
     }
@@ -1650,7 +1676,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         wire(view)
 #endif
         // Seed the display controls from the receiver's live settings.
-        Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
+        seedSpectrumControls()
         Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
 
         view.refresh()
@@ -1915,6 +1941,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Everything hung off the view. Split out so rebuilding it re-attaches
     /// the same callbacks instead of leaving a live view wired to a dead one.
+    /// FFT / RATE / SMOOTH in the toolbar from the receiver that actually runs
+    /// the transform: this window's own in the standalone bundle (it used to
+    /// show the plugin's numbers there), the plugin's otherwise.
+    private func seedSpectrumControls() {
+#if STANDALONE
+        view.adoptSpectrum(radio.fftSize, radio.fps, Int(radio.smoothSpeed))
+#else
+        Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
+#endif
+    }
+
     private func wire(_ v: MainView) {
 #if STANDALONE
         v.onSourceToggle = { [weak self] in self?.toggleSource() }
@@ -1943,6 +1980,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self, self.direct else { return false }
             self.radio.fftSize = size
             return true
+        }
+        // RATE / SMOOTH to this window's own receiver (it saves them), and the
+        // toolbar shows what it now runs at. Receiver.spectrum would send them
+        // to the plugin's port 8771 instead.
+        v.onFps = { [weak self, weak v] rate in
+            guard let self, self.direct else { return false }
+            self.radio.fps = rate
+            v?.adoptSpectrum(self.radio.fftSize, self.radio.fps, Int(self.radio.smoothSpeed))
+            return true
+        }
+        v.onSmooth = { [weak self, weak v] speed in
+            guard let self, self.direct else { return false }
+            self.radio.smoothSpeed = Double(speed)
+            v?.adoptSpectrum(self.radio.fftSize, self.radio.fps, Int(self.radio.smoothSpeed))
+            return true
+        }
+        // MIN / MAX / zoom / TIME saved through the receiver's in-memory config,
+        // so its own later saves (volume, frequency ...) carry them instead of
+        // writing back the values it loaded at launch.
+        v.commitDisplay = { [weak self] edit in
+            guard let self else { return }
+            var c = self.radio.config
+            edit(&c)
+            self.radio.config = c
+            c.save()
         }
         // Audio-path instrumentation, off unless asked for.
         if ProcessInfo.processInfo.environment["DECKRX_AUDIO_DIAG"] == "1" {
@@ -2157,7 +2219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self.window.contentMinSize.width, self.window.contentMinSize.height).utf8))
             }
         }
-        Receiver.spectrum { [weak self] size, rate, avg in self?.view.adoptSpectrum(size, rate, avg) }
+        seedSpectrumControls()
         Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
         Receiver.stations { [weak self] list in
             self?.view.spectrum.markers = list

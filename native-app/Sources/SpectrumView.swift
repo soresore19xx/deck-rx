@@ -409,7 +409,9 @@ final class SpectrumView: XView {
     /// station red, so the colours are shifted toward the dark end by mapping
     /// MAX to 1 / (1 + this) of the ramp (user, 2026-10-06). Trace and dB scale
     /// still use MIN / MAX as they are.
-    static let waterfallHeadroom: Float = 0.25
+    /// 0.25 at first; 0.10 after comparing with SDR++ at the same FFT size and
+    /// rate (user's pick, 2026-10-06).
+    static let waterfallHeadroom: Float = 0.10
 
     private func paintFallRow(_ y: Int, _ src: [Float]) {
         guard y < fallHeight, !src.isEmpty else { return }

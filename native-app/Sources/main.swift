@@ -1579,6 +1579,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // H (no modifiers) slides the side panes out and back. Not while text is
         // being typed: a field's editor is an NSText, and its H is a letter.
         // ⌘H stays Hide.
+        // Start with no field focused: AppKit hands the first text field the
+        // focus on its own, and while it holds it H is a letter, so H did
+        // nothing from launch (user, 2026-10-06).
+        window.makeFirstResponder(nil)
+        // A click anywhere that is not a control takes the focus out of a
+        // field, so H works again after editing one.
+        NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
+            guard let self, e.window === self.window,
+                  self.window.firstResponder is NSText else { return e }
+            // hitTest takes a point in the superview's coordinates.
+            let p = self.view.superview?.convert(e.locationInWindow, from: nil) ?? e.locationInWindow
+            if !(self.view.hitTest(p) is NSControl) { self.window.makeFirstResponder(nil) }
+            return e
+        }
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             guard let self, e.window === self.window, !e.isARepeat,
                   e.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,

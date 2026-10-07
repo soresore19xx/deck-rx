@@ -153,12 +153,16 @@ function startPipeline(): void {
 
   iqListener = (iq, iqRate, freq) => {
     if (clients.size === 0) return;
+    // Every packet goes into the window, including the ones the rate limit
+    // below skips: a packet is rate/100 samples, often fewer than the FFT
+    // size, so the window is built from several consecutive ones.
+    fft?.push(iq);
     const now = Date.now();
     if (now - lastComputeAt < 1000 / COMPUTE_HZ - 1) return;
     lastComputeAt = now;
     // Raw bins: the averaging below is ours, so the pipeline's own smoother
     // stays out of the way (its time constant is tied to how often we call it).
-    const bins = fft?.process(iq, 0);
+    const bins = fft?.processLatest(0);
     if (!bins) return;
     if (!sum || sum.length !== bins.length) { sum = new Float32Array(bins.length); count = 0; }
     for (let i = 0; i < bins.length; i++) sum[i] += bins[i];

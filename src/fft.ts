@@ -21,6 +21,10 @@ export class FftPipeline {
   private readonly re: Float32Array;
   private readonly im: Float32Array;
   private smoothed: Float32Array | null = null;
+  /** The last N samples pushed, int16 LE I/Q, newest at the end. */
+  private tail: Buffer | null = null;
+  /** How many bytes at the end of `tail` are real samples. */
+  private tailFill = 0;
 
   constructor(n: number) {
     if (n < 4 || (n & (n - 1)) !== 0) {
@@ -60,23 +64,53 @@ export class FftPipeline {
     this.im = new Float32Array(n);
   }
 
-  /** Process the last N IQ samples from an int16-LE I/Q buffer. Returns
+  /** Push an int16-LE I/Q packet and transform the last N samples. Returns
    *  a freshly-allocated Float32Array of fftshift'd dBFS bins (length N).
    *  bin 0 = −fs/2 + Δf, bin N/2 = DC (center freq), bin N-1 = +fs/2.
-   *  Returns null when the buffer doesn't have N complex samples.
+   *  Returns null until N complex samples have arrived, over however many
+   *  packets that takes.
    */
   process(iq: Buffer, smoothingFactor: number): Float32Array | null {
+    this.push(iq);
+    return this.processLatest(smoothingFactor);
+  }
+
+  /** Append one IQ packet to the window of the last N samples.
+   *
+   *  SpyServer sends about 100 packets a second whatever the rate, so a
+   *  packet holds rate/100 samples: 2944 for the V4 at 300 kS/s, 1120 for
+   *  the HF+ at 114 kS/s. Transforming one packet at a time meant any size
+   *  above that never produced a frame and the display froze on the last
+   *  one (V4 at FFT 4096, 2026-10-08). Every packet has to come through
+   *  here, including ones the caller will not transform, or the window
+   *  joins samples that were not adjacent. */
+  push(iq: Buffer): void {
+    const want = this.N * 4;
+    if (!this.tail) this.tail = Buffer.alloc(want);
+    const tail = this.tail;
+    const len = iq.length & ~3;
+    if (len >= want) {
+      iq.copy(tail, 0, len - want, len);
+      this.tailFill = want;
+      return;
+    }
+    // Slide the window left by one packet and put the packet at the end.
+    tail.copyWithin(0, len, want);
+    iq.copy(tail, want - len, 0, len);
+    this.tailFill = Math.min(want, this.tailFill + len);
+  }
+
+  /** Transform the last N samples pushed, or null until N have arrived. */
+  processLatest(smoothingFactor: number): Float32Array | null {
     const N = this.N;
-    const totalIqSamples = iq.length >> 2;        // 4 bytes per (I,Q) pair
-    if (totalIqSamples < N) return null;
-    // Take the most recent N samples — gives the lowest latency between
-    // the IQ arriving and the user seeing it on the LCD.
-    const startSample = totalIqSamples - N;
-    const startByte = startSample * 4;
+    if (!this.tail || this.tailFill < N * 4) return null;
+    // The window holds exactly the most recent N samples — the lowest
+    // latency between the IQ arriving and the user seeing it on the LCD.
+    const iq = this.tail;
     const w = this.window;
     const re = this.re, im = this.im, rev = this.rev;
     for (let i = 0; i < N; i++) {
-      const off = startByte + i * 4;
+      const off = i * 4;
       const I = iq.readInt16LE(off);
       const Q = iq.readInt16LE(off + 2);
       // Normalise to ±1 full-scale and window in one pass.

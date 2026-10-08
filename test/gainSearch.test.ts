@@ -70,6 +70,24 @@ describe('pickGain', () => {
                { gain: 18, cn: 18 }, { gain: 24, cn: 12 }, { gain: 29, cn: 9 }];
     expect(pickGain(r)).toBe(6);
   });
+  it('the best C/N right under overload is passed over for headroom (V4 90.5 MHz)', () => {
+    const r = [{ gain: 0, cn: 30.3, peakDb: -17.4 }, { gain: 3, cn: 39.1, peakDb: -8.6 },
+               { gain: 6, cn: 45.6, peakDb: -1.7 }, { gain: 9, cn: 6.7, peakDb: 0 }];
+    expect(pickGain(r)).toBe(3);
+  });
+  it('a weak station with headroom everywhere is unaffected (V4 79.5 MHz)', () => {
+    const r = [{ gain: 18, cn: 23.5, peakDb: -17.3 }, { gain: 21, cn: 25.3, peakDb: -12.2 },
+               { gain: 24, cn: 26.4, peakDb: -8.7 }, { gain: 27, cn: 26.5, peakDb: -5.2 }];
+    expect(pickGain(r)).toBe(24);
+  });
+  it('every gain over the line: the lowest one tried', () => {
+    expect(pickGain([{ gain: 3, cn: 20, peakDb: -2 }, { gain: 0, cn: 10, peakDb: -4 }])).toBe(0);
+  });
+  it('no station at any gain: nothing picked (V4 92.4 MHz)', () => {
+    const r = [{ gain: 0, cn: 0.6, peakDb: -36.8 }, { gain: 6, cn: 1.2, peakDb: -36.4 },
+               { gain: 12, cn: 0.9, peakDb: -19.5 }, { gain: 29, cn: 1.1, peakDb: -7.4 }];
+    expect(pickGain(r)).toBeNull();
+  });
   it('nothing measured, nothing picked', () => {
     expect(pickGain([])).toBeNull();
   });

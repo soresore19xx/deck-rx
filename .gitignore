@@ -15,6 +15,9 @@ com.hogehoge.deck-rx.sdPlugin/config.json.*
 # host-specific so it must stay out of the shared repo)
 com.hogehoge.deck-rx.sdPlugin/data/presets.json
 com.hogehoge.deck-rx.sdPlugin/data/presets.json.*
+# Per-station RF gain chosen by the automatic search (host-specific)
+com.hogehoge.deck-rx.sdPlugin/data/gain-memory.json
+com.hogehoge.deck-rx.sdPlugin/data/gain-memory.json.*
 
 # Editor / OS
 .DS_Store

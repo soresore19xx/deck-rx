@@ -218,6 +218,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       ok();
       return;
     }
+    // Automatic RF gain (gainSearch.ts): `auto=0|1` switches it, `research=1`
+    // forgets this station's gain and searches again now. Answers the state.
+    case '/autogain': {
+      const a = q.get('auto');
+      if (a === '0' || a === '1') spyService.setAutoGain(a === '1');
+      if (q.get('research') === '1' && !spyService.researchGain()) {
+        res.writeHead(409, { 'Content-Type': 'text/plain' }); res.end('no receiver'); return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ auto: spyService.isAutoGain() }));
+      return;
+    }
     case '/power': {
       if (q.get('toggle') !== '1') { bad(); return; }
       // Same meaning as the Tune dial's long press: tear the SpyServer

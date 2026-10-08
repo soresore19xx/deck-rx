@@ -1029,15 +1029,19 @@ class SpyService {
     // Unknown station under a turning dial: leave the previous station's gain
     // behind (it may be a weak station's high gain, the one that overloads on
     // a strong one) and search once the dial has stopped.
-    const band = resolveDeviceSettings(info,
-      { amGain: this.amGain, fmGain: this.fmGain, devices: this.devices },
-      this.currentDemodMode, this._currentFreq).gainIndex;
-    this.setLiveScopeGain(band, `band (${why})`);
+    this.setLiveScopeGain(this.bandGainNow(info), `band (${why})`);
     if (!searchable) return;
     this.gainDwellTimer = setTimeout(() => {
       this.gainDwellTimer = null;
       this.runGainSearch().catch((e) => log.warn(`[spyService] gain search: ${e}`));
     }, GAIN_DWELL_MS);
+  }
+
+  /** The gain filed for the band being listened to (the pre-auto rule). */
+  private bandGainNow(info: DeviceInfo): number {
+    return resolveDeviceSettings(info,
+      { amGain: this.amGain, fmGain: this.fmGain, devices: this.devices },
+      this.currentDemodMode, this._currentFreq).gainIndex;
   }
 
   /** Forget this station's gain and search again now. */
@@ -1076,16 +1080,26 @@ class SpyService {
     const fft = new FftPipeline(GAIN_SEARCH_FFT);
     let acc: Float64Array | null = null;
     let frames = 0;
+    // Overload check alongside C/N: the largest |I|/|Q| and how many samples
+    // sit within 0.1 dB of int16 full scale during the measurement.
+    let peak = 0, nearFull = 0, samples = 0;
     const tap = (iq: Buffer): void => {
       fft.push(iq);
       if (!acc) return;                         // settling: keep the window filling
+      for (let i = 0; i + 1 < iq.length; i += 2) {
+        const v = Math.abs(iq.readInt16LE(i));
+        if (v > peak) peak = v;
+        if (v >= 32390) nearFull++;
+      }
+      samples += iq.length >> 1;
       const b = fft.processLatest(0);
       if (!b) return;
       for (let i = 0; i < b.length; i++) acc[i] += Math.pow(10, b[i] / 10);
       frames++;
     };
     const stale = () => token !== this.gainSearchToken || !this.audioRunning;
-    const results: Array<{ gain: number; cn: number }> = [];
+    const results: Array<{ gain: number; cn: number; peakDb: number }> = [];
+    const overload: string[] = [];
     const settleMs: string[] = [];   // "*" = ran to the ceiling
     const startedAt = Date.now();
     const measure = async (g: number): Promise<boolean> => {
@@ -1104,6 +1118,7 @@ class SpyService {
       if (stale()) return false;
       settleMs.push(`${Date.now() - sentAt}${seen ? '' : '*'}`);
       acc = new Float64Array(GAIN_SEARCH_FFT); frames = 0;
+      peak = 0; nearFull = 0; samples = 0;
       await new Promise(r => setTimeout(r, GAIN_MEASURE_MS));
       if (stale()) return false;
       const sum = acc as Float64Array | null;
@@ -1112,7 +1127,9 @@ class SpyService {
       const avg = new Float32Array(sum.length);
       for (let i = 0; i < sum.length; i++) avg[i] = 10 * Math.log10(sum[i] / frames + 1e-30);
       const cn = channelCnDb(avg, this.currentIQRate, 0, mode);
-      if (cn !== null) results.push({ gain: g, cn });
+      const peakDb = peak > 0 ? 20 * Math.log10(peak / 32767) : -120;
+      if (cn !== null) results.push({ gain: g, cn, peakDb });
+      overload.push(`${g}:${peakDb.toFixed(1)}/${(nearFull / Math.max(1, samples) * 100).toFixed(2)}%`);
       return true;
     };
     this.gainSearching = true;
@@ -1121,14 +1138,23 @@ class SpyService {
       const coarse = coarseGains(this.maxGain);
       for (const g of coarse) if (!(await measure(g))) return;
       const first = pickGain(results);
-      if (first === null) { log.warn(`[spyService] gain search ${freq}: no usable spectrum`); return; }
+      if (first === null) {
+        // Nothing on the channel to judge by: file nothing.
+        const t = results.map(r => `${r.gain}:${r.cn.toFixed(1)}`).join(' ');
+        log.info(`[spyService] gain search ${freq} mode=${mode}: no station to judge (C/N dB ${t}) — band gain`);
+        // Not the gain in force before the search: on a preset jump that is
+        // the previous station's, maybe a weak station's high one.
+        this.setLiveScopeGain(this.bandGainNow(info), 'band (no station)');
+        return;
+      }
       for (const g of refineGains(first, this.maxGain, coarse)) if (!(await measure(g))) return;
       const best = pickGain(results)!;
       rememberGain(key, best);
       const table = [...results].sort((a, b) => a.gain - b.gain)
         .map(r => `${r.gain}:${r.cn.toFixed(1)}`).join(' ');
       log.info(`[spyService] gain search ${freq} mode=${mode} → ${best}  (C/N dB ${table})` +
-               `  ${Date.now() - startedAt} ms, settle ${settleMs.join('/')}`);
+               `  ${Date.now() - startedAt} ms, settle ${settleMs.join('/')}` +
+               `  peak dBFS/full ${overload.join(' ')}`);
       this.setLiveScopeGain(best, 'auto');
     } finally {
       this.unsubscribeIqStream(tap);

@@ -82,11 +82,30 @@ export function channelCnDb(bins: ArrayLike<number>, iqRate: number,
   return 10 * Math.log10(sum / count) - floorDb;
 }
 
-/** The lowest gain whose C/N is within `toleranceDb` of the best. */
-export function pickGain(results: Array<{ gain: number; cn: number }>, toleranceDb = 1): number | null {
+/** IQ peak allowed at the chosen gain. C/N peaks on the step just below the
+ *  one that overloads, so the best-C/N gain sits at the edge: on the V4
+ *  90.5 MHz peaked at -1.7 dBFS and 82.5 MHz at -0.3 on the gains C/N chose
+ *  (2026-10-09), one step under 1-7 % of samples at full scale. A strong
+ *  station's level moves with fading and the rest of the band, so keep 6 dB. */
+export const GAIN_MAX_PEAK_DBFS = -6;
+
+/** Below this best C/N there is no station to judge by (V4 92.4 MHz read
+ *  0.6-1.2 dB at every gain and the search filed 0, 2026-10-09). Then nothing
+ *  is chosen and the band's gain stays. */
+export const GAIN_MIN_CN_DB = 6;
+
+/** The lowest gain whose C/N is within `toleranceDb` of the best, among the
+ *  gains whose IQ peak leaves the headroom. If none does, the lowest gain
+ *  tried (the least overloaded). Results without a peak are not filtered.
+ *  null when nothing was measured or no gain shows a station at all. */
+export function pickGain(results: Array<{ gain: number; cn: number; peakDb?: number }>,
+                         toleranceDb = 1, maxPeakDb = GAIN_MAX_PEAK_DBFS): number | null {
   if (results.length === 0) return null;
-  const best = Math.max(...results.map(r => r.cn));
-  const ok = results.filter(r => r.cn >= best - toleranceDb).map(r => r.gain);
+  if (Math.max(...results.map(r => r.cn)) < GAIN_MIN_CN_DB) return null;
+  const clean = results.filter(r => r.peakDb === undefined || r.peakDb <= maxPeakDb);
+  if (clean.length === 0) return Math.min(...results.map(r => r.gain));
+  const best = Math.max(...clean.map(r => r.cn));
+  const ok = clean.filter(r => r.cn >= best - toleranceDb).map(r => r.gain);
   return Math.min(...ok);
 }
 

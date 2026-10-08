@@ -66,7 +66,13 @@ low enough for those loses 79.5. So on landing on a station the plugin steps
 the gain, reads carrier-to-noise in the channel at each step and keeps the
 lowest gain within 1 dB of the best; C/N rises with gain, plateaus, then drops
 sharply once the front end overloads (1242 kHz: 27.4 dB at 9, 9.8 at 12;
-82.5 MHz: 35.0 at 9, 21.8 at 12). The choice is filed per receiver, channel
+82.5 MHz: 35.0 at 9, 21.8 at 12). The peak itself sits at the edge of
+overload, though: the strong wide-FM stations peaked at -1.7 (90.5 MHz) and
+-0.3 dBFS (82.5 MHz) on the gain C/N chose, one step under 1-7 % of samples
+at full scale. So only gains whose IQ peak stays at or below -6 dBFS are
+candidates — 90.5 now gets 3 (C/N 38.8 dB) where it got 6 — and a channel
+with no station at any gain (best C/N under 6 dB) files nothing and keeps the
+band's gain. The choice is filed per receiver, channel
 and mode in `data/gain-memory.json`, ahead of the band slot, and a gain set by
 hand overwrites it. Each step waits until the whole-band power of the incoming
 packets jumps (the V4's packet header reports the same gain throughout), which

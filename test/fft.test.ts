@@ -6,7 +6,7 @@
 // spectrum on the V4 at FFT 4096 (2026-10-08).
 
 import { describe, it, expect } from 'vitest';
-import { FftPipeline } from '../src/fft.js';
+import { FftPipeline, pacedSmoothing } from '../src/fft.js';
 
 /** A complex tone at `bin` of an N-point transform, int16 LE I/Q. */
 function tone(samples: number, n: number, bin: number, startAt = 0): Buffer {
@@ -57,6 +57,29 @@ describe('FftPipeline with packets smaller than N', () => {
     const once = b.process(whole.subarray(whole.length - n * 4), 0);
     expect(last).not.toBeNull();
     expect(Array.from(last!)).toEqual(Array.from(once!));
+  });
+
+  it('processPaced transforms at most once per interval, from every packet', () => {
+    const n = 4096, pkt = 2944;
+    const fft = new FftPipeline(n);
+    let frames = 0;
+    // 100 packets a second for one second, display at 16 fps.
+    for (let p = 0; p < 100; p++) {
+      if (fft.processPaced(tone(pkt, n, 50, p * pkt), 0, 1000 / 16, p * 10)) frames++;
+    }
+    expect(frames).toBeGreaterThanOrEqual(14);
+    expect(frames).toBeLessThanOrEqual(16);
+    // The window was fed by every packet, so it is still contiguous.
+    expect(peakIndex(fft.processLatest(0)!)).toBe(n / 2 + 50);
+  });
+
+  it('pacedSmoothing keeps the averaging time, not the per-frame factor', () => {
+    // Applying alpha = 1/16 four times leaves (15/16)^4 of the old value.
+    const s = pacedSmoothing(16, 4);
+    expect(1 - 1 / s).toBeCloseTo(Math.pow(15 / 16, 4), 12);
+    expect(pacedSmoothing(16, 1)).toBe(16);
+    expect(pacedSmoothing(1, 10)).toBe(1);   // off stays off
+    expect(pacedSmoothing(0, 10)).toBe(0);
   });
 
   it('push without a transform still advances the window', () => {

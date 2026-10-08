@@ -97,7 +97,9 @@ export class SpyDialFft extends SingletonAction<Settings> {
     this.connected = spyService.isConnected();
     this.iqListener = (iq, iqRate, freq) => {
       if (!this.fft) return;
-      const bins = this.fft.process(iq, this.smoothing);
+      // Paced to the display: a large N transformed on every packet costs
+      // far more than an LCD redrawn 16 times a second can show.
+      const bins = this.fft.processPaced(iq, this.smoothing, 1000 / this.frameRate);
       if (!bins) return;
       this.latestBins = bins;
       this.latestIqRate = iqRate;
@@ -147,7 +149,7 @@ export class SpyDialFft extends SingletonAction<Settings> {
   private applySettings(s: Settings): void {
     const fr = clampInt(s.frameRate ?? 16, 1, 120);
     const sm = clampInt(s.smoothing ?? 16, 1, 64);
-    const fz = nearestPow2(clampInt(s.fftSize ?? 512, 64, 4096));
+    const fz = nearestPow2(clampInt(s.fftSize ?? 512, 64, 65536));
     const floor = clampInt(s.dbFloor ?? -160, -160, -20);
     const ceil  = clampInt(s.dbCeil  ?? -1,   -60,  0);
     this.frameRate = fr;

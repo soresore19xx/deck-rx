@@ -107,8 +107,13 @@ Little-endian throughout. A reader syncs on the magic and derives the frame
 length from `binCount`, so a mid-stream connect recovers on the next frame.
 Defaults: 1024 bins at 30 fps, seeded from `DECK_RX_SPECTRUM_FFT` /
 `DECK_RX_SPECTRUM_FPS` and changeable at runtime through `/spectrum` (FFT size
-256–4096, framerate 1–60, smoothing speed 1–1000). A size change rebuilds the
+64–65536, framerate 1–60, smoothing speed 1–1000). A size change rebuilds the
 FFT and drops the smoothing history, which belonged to the old bin count.
+Sizes above one SpyServer packet (IQ rate / 100 samples) are built from
+consecutive packets; the transform runs at most every 1/60 s and backs off
+to ten times its own cost, so 65536 (about 3 ms in JS) arrives at about
+18 fps on the V4 at 300 kS/s rather than taking a third of a core
+(measured 2026-10-08).
 
 **Smoothing is a speed, not an amount** — SDR++'s wording and SDR++'s formula:
 `alpha = min(1, speed / (fps * 10))`, so a **larger** number follows the trace

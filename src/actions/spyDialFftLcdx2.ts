@@ -85,7 +85,7 @@ const V_ZOOM_DEFAULT_INDEX = V_ZOOM_FACTORS.indexOf(1.0);
 
 // FFT sizes exposed via the long-touch dial-side cycle. Must match the
 // values listed in the PI dropdown. Order = cycle order.
-const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192, 16384] as const;
+const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536] as const;
 
 const LONG_PRESS_MS = 600;
 
@@ -127,11 +127,6 @@ type CtxState = {
   latestBins: Float32Array | null;
   latestIqRate: number;
   latestFreq: number;
-  // Sliding IQ accumulator: SpyServer sends ~4 k-sample chunks, but the
-  // user can request fftSize up to 16 k. We concat incoming chunks and
-  // keep the most recent 2N samples (= 8N bytes); FftPipeline.process()
-  // then uses the last N. Reset on fftSize change.
-  accumBuf: Buffer;
   iqListener: ((iq: Buffer, iqRate: number, freq: number) => void) | null;
   connStateListener: ((c: boolean) => void) | null;
   connected: boolean;
@@ -189,7 +184,6 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
       st.fftSize = next;
       st.fft = new FftPipeline(next);
       st.latestBins = null;
-      st.accumBuf = Buffer.alloc(0);
       st.act.setSettings(buildSettings(st)).catch(() => {});
       this.render(st);
     }
@@ -271,7 +265,6 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
       latestBins: null,
       latestIqRate: 0,
       latestFreq: 0,
-      accumBuf: Buffer.alloc(0),
       iqListener: null,
       connStateListener: null,
       connected: spyService.isConnected(),
@@ -295,13 +288,11 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     }
     st.iqListener = (iq, iqRate, freq) => {
       if (!st.fft) return;
-      // Accumulate so FFT sizes that exceed a single SpyServer chunk still
-      // collect enough samples. Cap at 2N to bound memory; process() uses
-      // only the most recent N samples regardless of buffer length.
-      const maxBytes = st.fftSize * 4 * 2;
-      const combined = st.accumBuf.length === 0 ? iq : Buffer.concat([st.accumBuf, iq]);
-      st.accumBuf = combined.length > maxBytes ? combined.subarray(combined.length - maxBytes) : combined;
-      const bins = st.fft.process(st.accumBuf, st.smoothing);
+      // The pipeline keeps the last N samples across packets (a packet is
+      // rate/100 samples, often fewer than N), and transforms at the
+      // display's pace rather than on every packet: at N=65536 every
+      // packet would be a third of a core, per panel.
+      const bins = st.fft.processPaced(iq, st.smoothing, 1000 / st.frameRate);
       if (!bins) return;
       st.latestBins = bins;
       st.latestIqRate = iqRate;
@@ -381,7 +372,6 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
       st.fftSize = next;
       st.fft = new FftPipeline(next);
       st.latestBins = null;
-      st.accumBuf = Buffer.alloc(0);
       const patch: Partial<Settings> = { fftSize: next };
       await ev.action.setSettings({ ...ev.payload.settings, ...patch });
       this.applyToSibling(sibBefore, patch);
@@ -409,7 +399,7 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
   private applySettings(st: CtxState, s: Settings): void {
     const fr = clampInt(s.frameRate ?? 16, 1, 120);
     const sm = clampInt(s.smoothing ?? 16, 1, 64);
-    const fz = nearestPow2(clampInt(s.fftSize ?? 512, 64, 16384));
+    const fz = nearestPow2(clampInt(s.fftSize ?? 512, 64, 65536));
     const floor = clampInt(s.dbFloor ?? -160, -160, -20);
     const ceil  = clampInt(s.dbCeil  ?? -1,   -60,  0);
     st.frameRate = fr;
@@ -424,7 +414,6 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
       st.fftSize = fz;
       st.fft = new FftPipeline(fz);
       st.latestBins = null;
-      st.accumBuf = Buffer.alloc(0);     // restart accumulation for new N
     }
   }
 
@@ -557,7 +546,6 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
       sib.fftSize = patch.fftSize;
       sib.fft = new FftPipeline(patch.fftSize);
       sib.latestBins = null;
-      sib.accumBuf = Buffer.alloc(0);
       changed = true;
     }
     if (patch.lcdMode    !== undefined && sib.lcdMode    !== patch.lcdMode)    { sib.lcdMode    = patch.lcdMode;    changed = true; }

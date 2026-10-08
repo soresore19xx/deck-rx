@@ -33,6 +33,11 @@ import {
   type JpRegion, type JpStation,
 } from './japanStations.js';
 import { scrapeJpStations } from './japanStationsScraper.js';
+import { FftPipeline } from './fft.js';
+import {
+  measureChannel, coarseGains, refineGains, channelCnDb, pickGain, gainMemoryKey,
+} from './gainSearch.js';
+import { recallGain, rememberGain, forgetGain } from './gainMemory.js';
 
 declare const __dirname: string;
 // CONFIG_PATH defaults to the bundled config.json (sibling of bin/) for the
@@ -40,6 +45,21 @@ declare const __dirname: string;
 // integration-test harness can point at a sandboxed config without touching
 // the user-edited production config.
 const CONFIG_PATH = process.env.DECK_RX_CONFIG_PATH ?? join(__dirname, '..', 'config.json');
+
+// Automatic RF gain (gainSearch.ts). A station is searched once it has been
+// sat on for GAIN_DWELL_MS (VFO) or GAIN_JUMP_DELAY_MS (preset jump). Each
+// step waits until the whole-band packet power jumps by GAIN_STEP_DB (at most
+// GAIN_SETTLE_MS, plus GAIN_AFTER_STEP_MS so the FFT window is all new
+// samples), then averages spectra for GAIN_MEASURE_MS.
+// The first cut waited a flat 150 ms and measured 120: 2.1 s of silence per
+// station, too long (user, 2026-10-08).
+const GAIN_DWELL_MS = 1000;      // VFO: the dial has stopped
+const GAIN_JUMP_DELAY_MS = 150;  // preset / jump: the retune has reached the server
+const GAIN_SETTLE_MS = 150;
+const GAIN_AFTER_STEP_MS = 15;
+const GAIN_STEP_DB = 1.5;        // packet power jump that says the new gain has landed
+const GAIN_MEASURE_MS = 60;
+const GAIN_SEARCH_FFT = 4096;
 
 export type DeemphasisOpt = 'off' | '50us' | '75us';
 
@@ -167,6 +187,8 @@ interface Config {
   // makeup only (no dynamic level motion — the default). true → the AGC also
   // tracks within-band signal-strength changes (audible level-riding).
   audioLeveling?: boolean;
+  /** Choose the RF gain per station automatically (gainSearch.ts). Default on. */
+  autoGain?: boolean;
   muted?: boolean;
   tuneMode?: 'preset' | 'vfo';
   tuneStepHz?: number;
@@ -374,6 +396,8 @@ class SpyService {
   // FALSE). Off → static makeup × audioGain × volume + limiter (no dynamic
   // level motion). On → the AGC additionally tracks signal-strength changes.
   private audioLeveling = false;
+  /** cfg.autoGain — see gainSearch.ts. */
+  private autoGainEnabled = true;
   private muted = false;
   private _currentFreq = 0;
 
@@ -641,6 +665,7 @@ class SpyService {
       if (typeof cfg.volume === 'number') this.volume = Math.max(0, Math.min(1.0, cfg.volume));
       if (typeof cfg.audioGain === 'number') this.audioGain = Math.max(0.1, Math.min(4, cfg.audioGain));
       if (typeof cfg.audioLeveling === 'boolean') this.audioLeveling = cfg.audioLeveling;
+      if (typeof cfg.autoGain === 'boolean') this.autoGainEnabled = cfg.autoGain;
       // Merge per-mode makeup overrides over the built-in defaults.
       this.modeMakeup = { ...MODE_MAKEUP };
       if (cfg.audioMakeup && typeof cfg.audioMakeup === 'object') {
@@ -839,6 +864,14 @@ class SpyService {
     for (const fn of listeners) fn(clamped, this.maxGain);
     // Only push to SpyServer if THIS scope matches the active demod mode.
     const isActive = scope === 'am' ? this.currentDemodMode === 2 : this.currentDemodMode !== 2;
+    // A hand-set gain is this station's gain from now on, and it ends any
+    // search in progress — the user has decided.
+    if (isActive) {
+      this.gainSearchToken++;
+      if (this.gainDwellTimer) { clearTimeout(this.gainDwellTimer); this.gainDwellTimer = null; }
+      const key = this.gainKeyNow();
+      if (key) rememberGain(key, clamped);
+    }
     if (isActive && this.connected && this.audioRunning && this.deviceInfo) {
       // Changing LNA gain causes an IQ-amplitude step + SpyServer-side AGC
       // settling: without masking, a loud pop punches through. We mute for
@@ -864,6 +897,7 @@ class SpyService {
         this.demod.reset();
         this.client.setSetting(SETTING_GAIN, finalGain);
         this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
+        this.gainHwDirty = false;
         log.info(`[spyService] set${sc === 'am' ? 'Am' : 'Fm'}Gain ${finalGain} digitalGain=${digitalGain}`);
       }, 80);
     }
@@ -907,6 +941,204 @@ class SpyService {
     if (liveMoved) this.sendLiveGain(`band ${gainBand(hz)}`);
   }
 
+  // ---- automatic RF gain (gainSearch.ts / gainMemory.ts) ----
+  /** Bumped by every landing and every manual gain change; a search in
+   *  progress checks it after each wait and gives up when it moved. */
+  private gainSearchToken = 0;
+  private gainDwellTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while the device may hold a gain other than the live scope's
+   *  value — during and after a search's test steps, or a fresh stream —
+   *  so the next apply sends even when the number looks unchanged. */
+  private gainHwDirty = false;
+  private gainSearching = false;
+  /** Whole-band power of the newest IQ packet (dBFS) and when it arrived. */
+  private packetPowerDb = -120;
+  private packetPowerAt = 0;
+
+  /**
+   * Wait until packets taken at the new gain arrive, or `maxMs`. Seen as the
+   * whole-band packet power jumping by GAIN_STEP_DB from where it was when
+   * the gain was sent — adjacent V4 indices differ by 2.5 dB or more. The
+   * packet header's gain field was the first idea and does not move on the
+   * V4: every step ran to the ceiling (2026-10-09 log, settle 150-158 ms).
+   * The ceiling stays for steps the power cannot show (two indices deep in
+   * overload can read alike).
+   */
+  private async waitForGainStep(since: number, baseDb: number, maxMs: number): Promise<boolean> {
+    const until = since + maxMs;
+    while (Date.now() < until) {
+      if (this.packetPowerAt > since && Math.abs(this.packetPowerDb - baseDb) >= GAIN_STEP_DB) {
+        await new Promise(r => setTimeout(r, GAIN_AFTER_STEP_MS));
+        return true;
+      }
+      await new Promise(r => setTimeout(r, 3));
+    }
+    return false;
+  }
+
+  private gainKeyNow(): string | null {
+    const info = this.deviceInfo;
+    if (!info) return null;
+    return gainMemoryKey(deviceKey(info.deviceType, info.deviceSerial),
+                         this._currentFreq, this.currentDemodMode);
+  }
+
+  /** Make `g` the live mode's gain and send it if the device needs it. */
+  private setLiveScopeGain(g: number, why: string): void {
+    const v = Math.max(0, Math.min(this.maxGain, Math.round(g)));
+    const isAm = this.currentDemodMode === RX_MODE.AM;
+    if (v === (isAm ? this.amGain : this.fmGain) && !this.gainHwDirty) return;
+    if (isAm) this.amGain = v; else this.fmGain = v;
+    for (const fn of (isAm ? this.amGainListeners : this.fmGainListeners)) fn(v, this.maxGain);
+    this.sendLiveGain(why);
+  }
+
+  /**
+   * The receiver arrived somewhere (retune, mode change, stream start). Use
+   * the gain remembered for this station; failing that, the band's gain now
+   * and a search once the receiver has stayed put for a moment — so turning
+   * the VFO through a band does not start a search at every step.
+   */
+  private onGainLanding(why: string, immediate = true): void {
+    this.gainSearchToken++;
+    if (this.gainSearching) this.gainHwDirty = true;
+    if (this.gainDwellTimer) { clearTimeout(this.gainDwellTimer); this.gainDwellTimer = null; }
+    if (!this.autoGainEnabled) return;
+    const info = this.deviceInfo;
+    const key = this.gainKeyNow();
+    if (!info || !key || this.maxGain <= 0) return;
+    const known = recallGain(key);
+    if (known !== undefined) { this.setLiveScopeGain(known, `remembered (${why})`); return; }
+    const searchable = measureChannel(this.currentDemodMode) !== null
+      && this.connected && this.audioRunning && this.canControl;
+    if (immediate && searchable) {
+      // Silent from the switch to the result. Letting the band's gain play
+      // for the dwell first gave "a burst of sound, silence, then the
+      // settled sound" on every new preset (user, 2026-10-09).
+      // Started after GAIN_JUMP_DELAY_MS, not at once: the retune itself is
+      // debounced on its way to the server, and a search begun now would
+      // measure the old station's IQ.
+      this.muteUntil = Math.max(this.muteUntil,
+        Date.now() + GAIN_JUMP_DELAY_MS + GAIN_SETTLE_MS + GAIN_MEASURE_MS + 100);
+      this.gainDwellTimer = setTimeout(() => {
+        this.gainDwellTimer = null;
+        this.runGainSearch().catch((e) => log.warn(`[spyService] gain search: ${e}`));
+      }, GAIN_JUMP_DELAY_MS);
+      return;
+    }
+    // Unknown station under a turning dial: leave the previous station's gain
+    // behind (it may be a weak station's high gain, the one that overloads on
+    // a strong one) and search once the dial has stopped.
+    const band = resolveDeviceSettings(info,
+      { amGain: this.amGain, fmGain: this.fmGain, devices: this.devices },
+      this.currentDemodMode, this._currentFreq).gainIndex;
+    this.setLiveScopeGain(band, `band (${why})`);
+    if (!searchable) return;
+    this.gainDwellTimer = setTimeout(() => {
+      this.gainDwellTimer = null;
+      this.runGainSearch().catch((e) => log.warn(`[spyService] gain search: ${e}`));
+    }, GAIN_DWELL_MS);
+  }
+
+  /** Forget this station's gain and search again now. */
+  researchGain(): boolean {
+    const key = this.gainKeyNow();
+    if (!key) return false;
+    forgetGain(key);
+    this.gainSearchToken++;
+    this.runGainSearch().catch((e) => log.warn(`[spyService] gain search: ${e}`));
+    return true;
+  }
+
+  isAutoGain(): boolean { return this.autoGainEnabled; }
+  setAutoGain(on: boolean): void {
+    if (on === this.autoGainEnabled) return;
+    this.autoGainEnabled = on;
+    this.persistField('autoGain', on).catch(() => {});
+    if (on) this.onGainLanding('auto on');
+    else { this.gainSearchToken++; if (this.gainDwellTimer) { clearTimeout(this.gainDwellTimer); this.gainDwellTimer = null; } }
+  }
+
+  /**
+   * Try gains on the station the receiver sits on and keep the best C/N
+   * (gainSearch.ts). Coarse pass over the whole range, then the midpoints
+   * either side of the winner. Audio is muted throughout: each step is a
+   * level jump and a pop.
+   */
+  private async runGainSearch(): Promise<void> {
+    const token = this.gainSearchToken;
+    const info = this.deviceInfo;
+    const key = this.gainKeyNow();
+    const mode = this.currentDemodMode;
+    if (!info || !key || this.maxGain <= 0 || !measureChannel(mode)) return;
+    if (!this.connected || !this.audioRunning || !this.canControl) return;
+    const freq = this._currentFreq;
+    const fft = new FftPipeline(GAIN_SEARCH_FFT);
+    let acc: Float64Array | null = null;
+    let frames = 0;
+    const tap = (iq: Buffer): void => {
+      fft.push(iq);
+      if (!acc) return;                         // settling: keep the window filling
+      const b = fft.processLatest(0);
+      if (!b) return;
+      for (let i = 0; i < b.length; i++) acc[i] += Math.pow(10, b[i] / 10);
+      frames++;
+    };
+    const stale = () => token !== this.gainSearchToken || !this.audioRunning;
+    const results: Array<{ gain: number; cn: number }> = [];
+    const settleMs: string[] = [];   // "*" = ran to the ceiling
+    const startedAt = Date.now();
+    const measure = async (g: number): Promise<boolean> => {
+      if (stale()) return false;
+      const digital = computeDigitalGain(info.deviceType, g, this.currentDecStage, info.maxGainIndex);
+      this.gainHwDirty = true;
+      this.muteUntil = Math.max(this.muteUntil, Date.now() + GAIN_SETTLE_MS + GAIN_MEASURE_MS + 100);
+      const sentAt = Date.now();
+      const baseDb = this.packetPowerDb;
+      this.client.setSetting(SETTING_GAIN, g);
+      this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digital);
+      acc = null; frames = 0;
+      // The first step may not change the gain at all (it can equal the one
+      // in force): nothing to wait for then but the ceiling.
+      const seen = await this.waitForGainStep(sentAt, baseDb, GAIN_SETTLE_MS);
+      if (stale()) return false;
+      settleMs.push(`${Date.now() - sentAt}${seen ? '' : '*'}`);
+      acc = new Float64Array(GAIN_SEARCH_FFT); frames = 0;
+      await new Promise(r => setTimeout(r, GAIN_MEASURE_MS));
+      if (stale()) return false;
+      const sum = acc as Float64Array | null;
+      acc = null;
+      if (!sum || frames < 2) return true;
+      const avg = new Float32Array(sum.length);
+      for (let i = 0; i < sum.length; i++) avg[i] = 10 * Math.log10(sum[i] / frames + 1e-30);
+      const cn = channelCnDb(avg, this.currentIQRate, 0, mode);
+      if (cn !== null) results.push({ gain: g, cn });
+      return true;
+    };
+    this.gainSearching = true;
+    this.subscribeIqStream(tap);
+    try {
+      const coarse = coarseGains(this.maxGain);
+      for (const g of coarse) if (!(await measure(g))) return;
+      const first = pickGain(results);
+      if (first === null) { log.warn(`[spyService] gain search ${freq}: no usable spectrum`); return; }
+      for (const g of refineGains(first, this.maxGain, coarse)) if (!(await measure(g))) return;
+      const best = pickGain(results)!;
+      rememberGain(key, best);
+      const table = [...results].sort((a, b) => a.gain - b.gain)
+        .map(r => `${r.gain}:${r.cn.toFixed(1)}`).join(' ');
+      log.info(`[spyService] gain search ${freq} mode=${mode} → ${best}  (C/N dB ${table})` +
+               `  ${Date.now() - startedAt} ms, settle ${settleMs.join('/')}`);
+      this.setLiveScopeGain(best, 'auto');
+    } finally {
+      this.unsubscribeIqStream(tap);
+      this.gainSearching = false;
+      // Abandoned by a retune: that landing already sent its own gain (dirty
+      // made sure). Abandoned by a stop: nothing to restore.
+      if (!stale() && this.gainHwDirty) this.sendLiveGain('search end');
+    }
+  }
+
   /** Send the gain the current demod mode uses, muting over the step. */
   private sendLiveGain(why: string): void {
     if (!this.connected || !this.audioRunning || !this.deviceInfo) return;
@@ -920,6 +1152,7 @@ class SpyService {
     );
     this.client.setSetting(SETTING_GAIN, g);
     this.client.setSetting(SETTING_IQ_DIGITAL_GAIN, digitalGain);
+    this.gainHwDirty = false;
     log.info(`[spyService] ${why}→gain ${isAm ? 'AM' : 'FM'} ${g} digitalGain=${digitalGain}`);
   }
 
@@ -930,6 +1163,9 @@ class SpyService {
     const bandChanged = gainBand(hz) !== gainBand(this._currentFreq);
     this._currentFreq = hz;
     if (bandChanged) this.applyBandGains(hz);
+    // A jump (preset, band push, knob preset step) searches at once; a VFO
+    // turn waits until the dial has stopped.
+    this.onGainLanding('tune', !opts.smooth);
     this.applyStepForBand(hz);
     // Two retune flavours:
     //   smooth=false (default) — preset PUSH, band fallback, connect
@@ -1364,6 +1600,7 @@ class SpyService {
     const isAm = mode === 2;
     // Extends the mode-change mute (set to +100 above) for the gain transient.
     if (wasAm !== isAm) this.sendLiveGain('mode');
+    this.onGainLanding('mode');
     this.restartIfRateChanged().catch((e) =>
       log.error(`[spyService] rate change on mode switch: ${e}`));
   }
@@ -1566,6 +1803,12 @@ class SpyService {
           ? (this.demod.getWfmInBandMeanP() / NORM)
           : (sumP  / Math.max(1, N));
         const meanP2 = sumP2 / Math.max(1, N);
+        // Whole-band power of this packet, for the gain search to see a gain
+        // step land. Every station in the span together, so one AM station's
+        // modulation barely moves it.
+        const wideP = sumP / Math.max(1, N);
+        this.packetPowerDb = wideP > 0 ? 10 * Math.log10(wideP) : -120;
+        this.packetPowerAt = Date.now();
         // RSSI: RMS power → dBFS, gain-compensated
         const dbfs = meanP > 0 ? 10 * Math.log10(meanP) : -120;
         const corrected = dbfs - p.gainDb;
@@ -1776,6 +2019,9 @@ class SpyService {
     this.audioRunning = true;
     log.info(`[spyService] audio started mode=${this.currentDemodMode} iqRate=${iqRate} audioRate=${audioRate} freq=${freqHz} digitalGain=${digitalGain}`);
     for (const fn of this.audioStateListeners) fn(true, this.currentAudioDeviceName);
+    // The stream came up on the band's gain; this station may have its own.
+    this.gainHwDirty = true;
+    this.onGainLanding('stream start');
   }
 
   async stopAudio(): Promise<void> {
@@ -1825,6 +2071,7 @@ class SpyService {
       audioGain:     cfg.audioGain,
       audioMakeup:   cfg.audioMakeup,
       audioLeveling: cfg.audioLeveling,
+      autoGain:      cfg.autoGain,
       muted:         cfg.muted,
       tuneMode:      cfg.tuneMode === 'preset' || cfg.tuneMode === 'vfo' ? cfg.tuneMode : undefined,
       tuneStepHz:    typeof cfg.tuneStepHz === 'number' && cfg.tuneStepHz > 0 ? cfg.tuneStepHz : undefined,

@@ -59,6 +59,21 @@ Rules: `gainBand` / `resolveDeviceSettings` in `src/deviceSettings.ts` and
 with the same numbers in both test suites and the file round trip in
 `test/bandGain.test.ts`.
 
+**Since 2026-10-09 the gain is chosen per station.** A band slot still cannot
+serve both ends of FM broadcast on the V4: a gain high enough for a
+neighbouring prefecture's 79.5 MHz overloads the strong Tokyo stations, and one
+low enough for those loses 79.5. So on landing on a station the plugin steps
+the gain, reads carrier-to-noise in the channel at each step and keeps the
+lowest gain within 1 dB of the best; C/N rises with gain, plateaus, then drops
+sharply once the front end overloads (1242 kHz: 27.4 dB at 9, 9.8 at 12;
+82.5 MHz: 35.0 at 9, 21.8 at 12). The choice is filed per receiver, channel
+and mode in `data/gain-memory.json`, ahead of the band slot, and a gain set by
+hand overwrites it. Each step waits until the whole-band power of the incoming
+packets jumps (the V4's packet header reports the same gain throughout), which
+brings a search to about 1 s. Rules: `src/gainSearch.ts` (pure, tested in
+`test/gainSearch.test.ts`), the file in `src/gainMemory.ts`, the driving in
+`spyService.runGainSearch()`.
+
 ## What the V4 is for
 
 Measured against the HF+ on the same antenna on 2026-09-21 (mediumwave, three

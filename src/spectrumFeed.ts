@@ -30,6 +30,7 @@
 
 import net from 'net';
 import fs from 'fs';
+import os from 'os';
 import { spyService } from './spyService.js';
 import { FftPipeline } from './fft.js';
 import { log } from './log.js';
@@ -89,10 +90,13 @@ function clampFps(n: number): number {
 
 export const HEADER_BYTES = 24;
 const MAGIC = 0x53585244; // 'DRXS' little-endian
+const LITTLE_ENDIAN_HOST = os.endianness() === 'LE';
 
 function clampPow2(n: number): number {
   if (!Number.isFinite(n)) return 1024;
-  const c = Math.max(64, Math.min(4096, Math.floor(n)));
+  // 65536 is what SDR++ runs here. The transform paces itself (see the
+  // compute gap below), so the size costs time between frames, not a core.
+  const c = Math.max(64, Math.min(65536, Math.floor(n)));
   return 2 ** Math.round(Math.log2(c));
 }
 
@@ -112,7 +116,13 @@ export function encodeSpectrumFrame(
   buf.writeUInt32LE(Math.max(0, Math.round(iqRate)), 12);
   buf.writeUInt32LE(Math.max(0, Math.round(centerFreq)), 16);
   buf.writeUInt32LE(seq >>> 0, 20);
-  for (let i = 0; i < bins.length; i++) buf.writeFloatLE(bins[i], HEADER_BYTES + i * 4);
+  // One block copy on a little-endian host: at 65536 bins and 30 fps the
+  // per-bin write was two million calls a second.
+  if (LITTLE_ENDIAN_HOST) {
+    Buffer.from(bins.buffer, bins.byteOffset, bins.byteLength).copy(buf, HEADER_BYTES);
+  } else {
+    for (let i = 0; i < bins.length; i++) buf.writeFloatLE(bins[i], HEADER_BYTES + i * 4);
+  }
   return buf;
 }
 
@@ -148,22 +158,20 @@ function startPipeline(): void {
   let sum: Float32Array | null = null;
   let count = 0;
   let smoothed: Float32Array | null = null;
-  let lastComputeAt = 0;
   let lastEmitAt = 0;
 
   iqListener = (iq, iqRate, freq) => {
     if (clients.size === 0) return;
     // Every packet goes into the window, including the ones the rate limit
-    // below skips: a packet is rate/100 samples, often fewer than the FFT
-    // size, so the window is built from several consecutive ones.
-    fft?.push(iq);
-    const now = Date.now();
-    if (now - lastComputeAt < 1000 / COMPUTE_HZ - 1) return;
-    lastComputeAt = now;
+    // skips: a packet is rate/100 samples, often fewer than the FFT size, so
+    // the window is built from several consecutive ones. The pipeline also
+    // stretches the gap to ten times a transform's cost, which is what lets
+    // 65536 run without taking a third of a core.
     // Raw bins: the averaging below is ours, so the pipeline's own smoother
     // stays out of the way (its time constant is tied to how often we call it).
-    const bins = fft?.processLatest(0);
+    const bins = fft?.processPaced(iq, 0, 1000 / COMPUTE_HZ - 1);
     if (!bins) return;
+    const now = Date.now();
     if (!sum || sum.length !== bins.length) { sum = new Float32Array(bins.length); count = 0; }
     for (let i = 0; i < bins.length; i++) sum[i] += bins[i];
     count++;

@@ -25,6 +25,10 @@ export class FftPipeline {
   private tail: Buffer | null = null;
   /** How many bytes at the end of `tail` are real samples. */
   private tailFill = 0;
+  /** processPaced bookkeeping. */
+  private packetsSince = 0;
+  private lastPacedAt = -Infinity;
+  private lastCostMs = 0;
 
   constructor(n: number) {
     if (n < 4 || (n & (n - 1)) !== 0) {
@@ -98,6 +102,34 @@ export class FftPipeline {
     tail.copyWithin(0, len, want);
     iq.copy(tail, want - len, 0, len);
     this.tailFill = Math.min(want, this.tailFill + len);
+  }
+
+  /** Push a packet; transform only when enough time has passed.
+   *
+   *  A packet arrives about 100 times a second, and a JS transform costs
+   *  about 0.15 ms at N=4096 and 3.2 ms at 65536 (M-series, 2026-10-08) —
+   *  a third of a core if every packet were transformed at the top size.
+   *  The gap between transforms is the caller's display period or ten
+   *  times the last transform's cost, whichever is longer, so a large N
+   *  holds itself to about a tenth of a core.
+   *
+   *  `smoothingFactor` keeps its per-packet meaning: the EWMA coefficient
+   *  is raised to the number of packets since the last transform, so the
+   *  averaging lasts as many seconds as it did when every packet was
+   *  transformed. Returns null between transforms. */
+  processPaced(iq: Buffer, smoothingFactor: number, minIntervalMs: number,
+               now: number = performance.now()): Float32Array | null {
+    this.push(iq);
+    this.packetsSince++;
+    const gap = Math.max(minIntervalMs, this.lastCostMs * 10);
+    if (now - this.lastPacedAt < gap) return null;
+    const t0 = performance.now();
+    const out = this.processLatest(pacedSmoothing(smoothingFactor, this.packetsSince));
+    if (!out) return null;
+    this.lastCostMs = performance.now() - t0;
+    this.lastPacedAt = now;
+    this.packetsSince = 0;
+    return out;
   }
 
   /** Transform the last N samples pushed, or null until N have arrived. */
@@ -175,4 +207,13 @@ export class FftPipeline {
   resetSmoothing(): void {
     this.smoothed = null;
   }
+}
+
+/** The smoothing factor that, applied once, averages as much as
+ *  `smoothingFactor` applied `packets` times: α' = 1 − (1 − α)^k with
+ *  α = 1/factor. A factor of 1 or less means no smoothing and stays so. */
+export function pacedSmoothing(smoothingFactor: number, packets: number): number {
+  if (smoothingFactor <= 1 || packets <= 1) return smoothingFactor;
+  const a = 1 - Math.pow(1 - 1 / smoothingFactor, packets);
+  return 1 / a;
 }

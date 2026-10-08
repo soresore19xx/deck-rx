@@ -390,7 +390,7 @@ describe('controlServer — spectrum display settings', () => {
     // Out-of-range asks come back clamped rather than rejected, so a front-end
     // can offer a slider without policing the pipeline's limits itself.
     const clamped = await getJson(port, '/spectrum?fft=99999&fps=500&smooth=99999');
-    expect(clamped.fftSize).toBe(4096);
+    expect(clamped.fftSize).toBe(65536);   // the plugin's ceiling since 2026-10-08
     expect(clamped.fps).toBe(60);
     expect(clamped.smoothSpeed).toBe(1000);
     expect((await getJson(port, '/spectrum?smooth=0')).smoothSpeed).toBe(1);

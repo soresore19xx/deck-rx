@@ -564,17 +564,11 @@ final class MainView: NSView {
 
         // display toolbar, between the header and the spectrum
         let bar = panelView(P.sunken)
-        // Sizes above 4096 are only reachable on the app's own connection. The
-        // plugin's ladder stops where a 200x100 LCD stopped needing more and
-        // where a JS transform stopped being affordable; vDSP has neither
-        // limit, and 65536 is what SDR++ runs here — worth 12 dB of noise
-        // floor against 4096.
-#if STANDALONE
+        // 65536 is what SDR++ runs here — worth 12 dB of noise floor against
+        // 4096. The plugin used to stop at 4096; since 2026-10-08 it paces its
+        // JS transform (fft.ts processPaced) and takes the same ladder.
         fftPop.addItems(withTitles: ["256", "512", "1024", "2048", "4096",
                                      "8192", "16384", "32768", "65536"])
-#else
-        fftPop.addItems(withTitles: ["256", "512", "1024", "2048", "4096"])
-#endif
         fftPop.font = mono(16)
         fftPop.target = ButtonBox.shared
         fftPop.action = #selector(ButtonBox.fire(_:))

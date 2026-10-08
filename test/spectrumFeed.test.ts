@@ -29,7 +29,7 @@ describe('encodeSpectrumFrame', () => {
   });
 
   it('length is header + 4 bytes per bin, so a reader can frame the stream', () => {
-    for (const n of [64, 256, 1024, 4096]) {
+    for (const n of [64, 256, 1024, 4096, 65536]) {
       const f = encodeSpectrumFrame(new Float32Array(n), 384_000, 90_500_000, 0);
       expect(f.length).toBe(HEADER_BYTES + n * 4);
     }
@@ -40,6 +40,15 @@ describe('encodeSpectrumFrame', () => {
     const f = encodeSpectrumFrame(src, 384_000, 90_500_000, 1);
     const out = Array.from({ length: src.length }, (_, i) => f.readFloatLE(HEADER_BYTES + i * 4));
     expect(out).toEqual(Array.from(src));
+  });
+
+  it('bins from a view into a larger array round-trip too (block copy honours the offset)', () => {
+    const backing = Float32Array.from([-1, -2, -3, -4, -5, -6]);
+    const view = backing.subarray(2, 5);
+    const f = encodeSpectrumFrame(view, 384_000, 90_500_000, 1);
+    expect(f.length).toBe(HEADER_BYTES + 12);
+    const out = Array.from({ length: 3 }, (_, i) => f.readFloatLE(HEADER_BYTES + i * 4));
+    expect(out).toEqual([-3, -4, -5]);
   });
 
   it('a wrapped sequence number stays a uint32 instead of throwing', () => {

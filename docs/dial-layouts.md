@@ -88,7 +88,9 @@ Controls:
 - **Short PUSH** — reset the active axis to its default (1× for H, 1.0× for V).
 - **Long PUSH (≥ 600 ms)** — toggle between H ↔ V axis modes.
 
-PI parameters: FFT frame rate (1–120 fps, default 16), smoothing factor (1–64, SDR++ convention α = 1/value, default 16), FFT size (256 / 512 / 1024 / 2048, default 512), dB floor (default -110), dB ceiling (default -20).
+PI parameters: FFT frame rate (1–120 fps, default 16), smoothing factor (1–64, SDR++ convention α = 1/value, default 16), FFT size (256 – 65536 in powers of two, default 512), dB floor (default -110), dB ceiling (default -20).
+
+IQ is kept across SpyServer packets (a packet is IQ rate / 100 samples — 2944 for the V4 at 300 kS/s), so sizes larger than one packet still produce frames; before 2026-10-08 anything above one packet froze the display. The transform runs at the frame rate, not on every packet, and backs off to ten times its own cost — at 65536 a JS transform takes about 3 ms. The smoothing factor keeps its per-packet time constant across that pacing (`pacedSmoothing` in `src/fft.ts`).
 
 Pixel → bin map switches automatically between max-hold (when ≥ 1 bin/pixel, preserves peaks) and linear interpolation (when < 1 bin/pixel at high zoom, smooths the comb pattern that naive nearest-neighbour mapping would otherwise produce).
 
@@ -112,7 +114,7 @@ Pairing rules:
 
 Controls beyond the base FFT dial:
 - **Short LCD tap** — cycle LCDX1 → LCDX2 Wide → LCDX2 Detail → LCDX1 (changes propagate to the paired sibling).
-- **Long LCD tap** — cycle FFT size forward (256 → 512 → 1024 → 2048 → 4096 → 8192 → 16384 → wrap). IQ samples are accumulated across SpyServer chunks so 8 k / 16 k sizes still drive one FFT per render.
+- **Long LCD tap** — cycle FFT size forward (256 → 512 → … → 16384 → 32768 → 65536 → wrap). IQ samples are kept across SpyServer chunks and the transform is paced to the frame rate, as on the base FFT dial.
 - All other rotate / push / long-press semantics are identical to the base FFT dial.
 
 Settings auto-sync between paired panels (dB floor & ceiling, fps, smoothing, fftSize, lcdMode, plus the dial-side zoom / vZoom / axis). Edit either side and the other follows; the loop is broken by a no-op diff check on the echo.
@@ -141,7 +143,7 @@ The PI carries a single dropdown that picks **what this button does**; place the
 | PI Operation | Title format (live) | Effect when pressed |
 |---|---|---|
 | Cycle LCD mode | `Mode` / `LCDX1` \| `Wide` \| `Detail` | Cycle every placed LCDX2 dial through single → Wide → Detail → single. Pair (dis)formation propagates automatically. |
-| Cycle FFT size | `FFT` / `N256` … `N16384` | Cycle every dial through 256 / 512 / 1024 / 2048 / 4096 / 8192 / 16384, then wrap. Same accumulator path as the dial-side long-touch cycle. |
+| Cycle FFT size | `FFT` / `N256` … `N65536` | Cycle every dial through 256 / 512 / 1024 / 2048 / 4096 / 8192 / 16384 / 32768 / 65536, then wrap. Same accumulator path as the dial-side long-touch cycle. |
 | Zoom in | `Zoom` / `+` | Advance the active axis (H or V) by one step on every dial. |
 | Zoom out | `Zoom` / `−` | Recede the active axis by one step. |
 | Reset H zoom | `Reset` / `H zoom` | H zoom → 1× on every dial. |

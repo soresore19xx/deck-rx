@@ -2,7 +2,7 @@
 // receiver, channel and demod mode. Host-specific data, beside presets.json
 // and gitignored like it. See gainSearch.ts for the search itself.
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 
 declare const __dirname: string;   // provided by the bundle, as in presets.ts
@@ -85,6 +85,23 @@ export function forgetGain(key: string): void {
   delete m.gains[key];
   delete m.saved[key];
   writeOut();
+}
+
+/** Copies of both maps, for sync (syncClient.ts). */
+export function gainMaps(): { gains: Record<string, number>; saved: Record<string, number> } {
+  const m = load();
+  return { gains: { ...m.gains }, saved: { ...m.saved } };
+}
+
+/** Replace both maps with what sync settled on, and write it out. */
+export function replaceGainMaps(gains: Record<string, number>, saved: Record<string, number>): void {
+  cache = { gains: { ...gains }, saved: { ...saved } };
+  writeOut();
+}
+
+/** When the file last changed, in ms; 0 when there is none. */
+export function gainMemoryMtime(): number {
+  try { return statSync(memoryPath()).mtimeMs; } catch { return 0; }
 }
 
 /** Tests only: drop the in-process copy so the next read goes to disk. */

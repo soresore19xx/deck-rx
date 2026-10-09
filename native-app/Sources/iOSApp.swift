@@ -56,6 +56,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         w.makeKeyAndVisible()
         window = w
     }
+
+    // Sync only while in front: a backgrounded app is suspended anyway, and
+    // what changed meanwhile is a difference the next round sends.
+    func sceneDidBecomeActive(_ scene: UIScene) { SyncClient.shared.start() }
+    func sceneWillResignActive(_ scene: UIScene) { SyncClient.shared.stop() }
 }
 
 final class RadioViewController: UIViewController {
@@ -173,6 +178,8 @@ final class RadioViewController: UIViewController {
     }
 
     override func viewDidLoad() {
+        // Another device's preset edit, written in by sync.
+        SyncClient.shared.onPresetsChanged = { [weak self] in self?.reloadPresets() }
         super.viewDidLoad()
         // Before anything is built: every constant and font size below is baked
         // in at construction, the way the Mac window bakes them (main.swift:1192).

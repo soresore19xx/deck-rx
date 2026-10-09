@@ -1284,6 +1284,49 @@ do {
     try? FileManager.default.removeItem(at: dir)
 }
 
+section("sync: the same rules as test/syncCore.test.ts")
+do {
+    typealias V = SyncCore.Value
+    let tbs = V.obj(["frequency": 954_000, "bandwidth": 9000, "mode": 2])
+    let qr = V.obj(["frequency": 1_134_000, "bandwidth": 9000, "mode": 2])
+    var local: SyncCore.Snapshot = [SyncCore.presets: ["General::TBS": tbs, "General::QR": qr]]
+    var base: SyncCore.Base = [:]
+    let first = SyncCore.diff(local: local, base: base, t: [SyncCore.presets: 500], first: true)
+    check("a first sync sends everything at t 0", first.count == 2 && first.allSatisfy { $0.t == 0 })
+    // The hub confirms both, then another device deletes QR and edits TBS.
+    SyncCore.apply(local: &local, base: &base, remote: first.enumerated().map {
+        var r = $1; r.s = $0 + 1; return r })
+    check("nothing left to send once confirmed",
+          SyncCore.diff(local: local, base: base, t: [SyncCore.presets: 500], first: false).isEmpty)
+    let tbs6 = V.obj(["frequency": 954_000, "bandwidth": 6000, "mode": 2])
+    let changed = SyncCore.apply(local: &local, base: &base, remote: [
+        .init(c: SyncCore.presets, k: "General::QR", v: nil, t: 900, s: 3),
+        .init(c: SyncCore.presets, k: "General::TBS", v: tbs6, t: 900, s: 4)])
+    check("a deletion and an edit come in", changed == [SyncCore.presets]
+          && local[SyncCore.presets]?["General::QR"] == nil && local[SyncCore.presets]?["General::TBS"] == tbs6)
+    // An edit made offline is still a difference on the next round.
+    local[SyncCore.presets]?["General::NHK"] = .obj(["frequency": 594_000, "bandwidth": 9000, "mode": 2])
+    let off = SyncCore.diff(local: local, base: base, t: [SyncCore.presets: 1000], first: false)
+    check("an offline edit goes up later", off.count == 1 && off[0].k == "General::NHK" && off[0].t == 1000)
+    // A local deletion goes out as an explicit null, which the hub requires.
+    local[SyncCore.presets]?["General::TBS"] = nil
+    let del = SyncCore.diff(local: local, base: base, t: [SyncCore.presets: 1100], first: false)
+        .first { $0.k == "General::TBS" }
+    let json = del.flatMap { try? JSONEncoder().encode($0) }.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    check("a deletion is sent as \"v\":null", json.contains("\"v\":null"), json)
+    // The hub's JSON, as the TS side writes it, decodes.
+    let wire = #"{"seq":7,"records":[{"c":"preset","k":"General::FM BAYFM","v":{"frequency":78000000,"bandwidth":200000,"mode":1},"t":1.5,"s":7},{"c":"gainSaved","k":"3:00000000|79500000|1","v":21,"t":2,"s":6},{"c":"preset","k":"General::X","v":null,"t":3,"s":5}]}"#
+    struct A: Codable { var seq: Int; var records: [SyncCore.Record] }
+    let a = try? JSONDecoder().decode(A.self, from: Data(wire.utf8))
+    check("the hub's answer decodes", a?.records.count == 3 && a?.records[1].v == .num(21) && a?.records[2].v == nil)
+    // Presets map to list::name and back.
+    var lists: [String: [String: PresetStore.Entry]] = ["General": ["FM BAYFM": .init(frequency: 78_000_000, bandwidth: 200_000, mode: 1)]]
+    check("preset key is list::name", SyncCore.snapshot(of: lists).keys.sorted() == ["General::FM BAYFM"])
+    SyncCore.applyPresets(a?.records ?? [], to: &lists)
+    check("presets from the hub land in the lists", lists["General"]?["FM BAYFM"]?.frequency == 78_000_000
+          && lists["General"]?["X"] == nil)
+}
+
 runDeviceSettingsTests()
 runRtlTcpTests()
 

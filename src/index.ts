@@ -3,6 +3,7 @@ import streamDeck from '@elgato/streamdeck';
 import { spyService } from './spyService.js';
 import { startStatusFeed } from './statusFeed.js';
 import { startControlServer } from './controlServer.js';
+import { startSync } from './syncClient.js';
 import { startSpectrumFeed } from './spectrumFeed.js';
 import { setLogger } from './log.js';
 import { importFromSdrpp } from './presets.js';
@@ -107,6 +108,10 @@ startControlServer();
 // Spectrum frames for a native front-end, over a Unix socket. Computes
 // nothing while no one is connected. See src/spectrumFeed.ts.
 startSpectrumFeed();
+
+// Presets and per-station gains kept in step with Solo and the iPad through
+// the hub on mini4; the local files are the cache. See src/syncClient.ts.
+startSync();
 
 // Dial the persisted SpyServer at startup, rather than waiting for a dial to
 // appear. Connecting used to be driven only by an action's willAppear, so a

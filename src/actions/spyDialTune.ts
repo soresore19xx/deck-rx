@@ -9,6 +9,7 @@ import { dumpTuneLcd } from '../dialDisplay.js';
 import { makeHeaderSvg, makeBorderSvg, seg7svg, freqParts, rssiBandSvg, snrBarSvg } from '../dialDisplay.js';
 import { loadPresets, clearPresetsCache, Preset } from './spyTune.js';
 import { importFromSdrpp } from '../presets.js';
+import { subscribePresetsChanged, unsubscribePresetsChanged } from '../presetList.js';
 import { lookupCallsign, isJpRegion, type JpRegion } from '../japanStations.js';
 import { autoStationLabel } from '../stationLabel.js';
 import { bandsForDevice, snapToCoveredFreq, isFreqReceivable } from '../deviceBands.js';
@@ -110,6 +111,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
   private tuneModeListener: ((m: 'preset' | 'vfo') => void) | null = null;
   private tuneStepListener: ((s: number) => void) | null = null;
   private jpRegionListener: ((r: JpRegion) => void) | null = null;
+  private presetsChangedListener: (() => void) | null = null;
   private demodListener: ((mode: number) => void) | null = null;
   // Set true while the Tune dial is the *source* of a setDemodMode call
   // (preset cycle on this dial, or PI Mode dropdown reacting through this
@@ -147,6 +149,17 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
       }).catch(() => {});
     };
     spyService.subscribeJpRegion(this.jpRegionListener);
+    // Another device's preset edit arrived through sync: same rebuild as a
+    // region change, so the dial and the PI list show it at once.
+    this.presetsChangedListener = async () => {
+      this.presets = await loadPresets(spyService.getJpActiveRegion()).catch(() => []);
+      this.updateDisplay(this.lastAction).catch(() => {});
+      streamDeck.ui.sendToPropertyInspector({
+        action: 'presets',
+        presets: this.presets as unknown as JsonObject[],
+      }).catch(() => {});
+    };
+    subscribePresetsChanged(this.presetsChangedListener);
 
     this.syncListener = (s: SyncInfo) => {
       if (this.dialMode === 'vfo') {
@@ -379,6 +392,7 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
     if (this.tuneModeListener) { spyService.unsubscribeTuneMode(this.tuneModeListener); this.tuneModeListener = null; }
     if (this.tuneStepListener) { spyService.unsubscribeTuneStep(this.tuneStepListener); this.tuneStepListener = null; }
     if (this.jpRegionListener) { spyService.unsubscribeJpRegion(this.jpRegionListener); this.jpRegionListener = null; }
+    if (this.presetsChangedListener) { unsubscribePresetsChanged(this.presetsChangedListener); this.presetsChangedListener = null; }
     if (this.demodListener) { spyService.unsubscribeDemodMode(this.demodListener); this.demodListener = null; }
     if (this.tuneTimer) { clearTimeout(this.tuneTimer); this.tuneTimer = null; }
     if (this.footerTimer) { clearInterval(this.footerTimer); this.footerTimer = null; }

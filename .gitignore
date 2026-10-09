@@ -18,6 +18,9 @@ com.hogehoge.deck-rx.sdPlugin/data/presets.json.*
 # Per-station RF gain chosen by the automatic search (host-specific)
 com.hogehoge.deck-rx.sdPlugin/data/gain-memory.json
 com.hogehoge.deck-rx.sdPlugin/data/gain-memory.json.*
+# What the sync hub last confirmed (src/syncClient.ts)
+com.hogehoge.deck-rx.sdPlugin/data/sync-state.json
+com.hogehoge.deck-rx.sdPlugin/data/sync-state.json.*
 
 # Editor / OS
 .DS_Store

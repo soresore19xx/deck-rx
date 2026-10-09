@@ -27,7 +27,7 @@ DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
 # the second is the Stream Deck plugin's control endpoint, which has nothing to
 # answer on an iPad.
 SRC="Sources/Platform.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
-     Sources/iOSApp.swift Sources/LocalRadio.swift Sources/GainSearch.swift Sources/SpyClient.swift \
+     Sources/iOSApp.swift Sources/LocalRadio.swift Sources/GainSearch.swift Sources/Sync.swift Sources/SpyClient.swift \
      Sources/IQSource.swift Sources/RtlTcpClient.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
@@ -176,6 +176,9 @@ cat > "$APP/Info.plist" <<PLIST
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to your SpyServer on the local network.</string>
+	<!-- The sync hub on mini4 is plain HTTP on the LAN (Sync.swift). -->
+	<key>NSAppTransportSecurity</key>
+	<dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict>
 </plist>
 PLIST

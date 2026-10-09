@@ -43,6 +43,16 @@ export async function loadPresets(region?: JpRegion): Promise<Preset[]> {
 
 /** Drop the cached preset list — call after a region switch so the next
  *  getPreset() rebuilds against the new region's JP DB pool. */
+const presetsChangedListeners = new Set<() => void>();
+/** Called when the preset file changed under the plugin (a sync brought in
+ *  another device's edit): whoever holds a copy of the list re-reads it. */
+export function subscribePresetsChanged(fn: () => void): void { presetsChangedListeners.add(fn); }
+export function unsubscribePresetsChanged(fn: () => void): void { presetsChangedListeners.delete(fn); }
+export function notifyPresetsChanged(): void {
+  clearPresetsCache();
+  for (const fn of presetsChangedListeners) { try { fn(); } catch { /* one listener does not stop the rest */ } }
+}
+
 export function clearPresetsCache(): void {
   presetsCache = null;
   presetsCacheRegion = null;

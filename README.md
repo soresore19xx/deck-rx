@@ -52,6 +52,7 @@ The four products, each in full:
 
 - [Deck RX Solo](docs/solo.md) — the standalone Mac receiver
 - [Deck RX plugin](docs/plugin.md) — the Stream Deck + plugin
+- [Sync](docs/sync.md) — presets and per-station gains kept in step across the plugin, Solo and the iPad through a hub on mini4, each device's own files as its cache
 - [Deck RX front-end](docs/native-app.md) — the Mac window onto the plugin
 - [Deck RX for iPadOS](docs/ipad.md)
 

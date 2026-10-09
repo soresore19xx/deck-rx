@@ -170,6 +170,27 @@ final class GainMemory {
         write()
     }
 
+    /// Both maps, for sync (Sync.swift).
+    func maps() -> (gains: [String: Int], saved: [String: Int]) {
+        lock.lock(); defer { lock.unlock() }
+        return (file.gains, file.saved ?? [:])
+    }
+
+    /// Apply what sync settled on: `nil` deletes the key.
+    func apply(gains: [String: Int?], saved: [String: Int?]) {
+        lock.lock(); defer { lock.unlock() }
+        for (k, v) in gains { file.gains[k] = v }
+        if file.saved == nil { file.saved = [:] }
+        for (k, v) in saved { file.saved![k] = v }
+        write()
+    }
+
+    /// When the file last changed, in ms since 1970; 0 when there is none.
+    var mtimeMs: Double {
+        let a = try? FileManager.default.attributesOfItem(atPath: path)
+        return ((a?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) * 1000
+    }
+
     /// Atomic; a lost write costs one more search, nothing else.
     private func write() {
         let enc = JSONEncoder()

@@ -1713,6 +1713,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // mute state it was left on; the AUDIO pad still stops it.
         installDirectControl()
         server.start()
+        // Presets and per-station gains in step with the plugin and the iPad
+        // through the hub on mini4; the local files are the cache (Sync.swift).
+        SyncClient.shared.onPresetsChanged = { [weak self] in self?.view.presetList.reload() }
+        SyncClient.shared.start()
         // The saved demod mode, before the link comes up. `connect()` takes the
         // frequency from the config but never touched the mode, and the source
         // switch that used to do it — `radio.mode = config.mode` on the way

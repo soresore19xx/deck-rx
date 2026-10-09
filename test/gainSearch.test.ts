@@ -115,4 +115,18 @@ describe('gain memory', () => {
     m.resetGainMemoryCache();
     expect(m.recallGain(v4)).toBeUndefined();
   });
+  it('a saved gain wins over the auto one and survives the next search', async () => {
+    const m = await import('../src/gainMemory.js');
+    const k = gainMemoryKey('3:00000000', 90_500_000, 1);
+    m.rememberGain(k, 3);
+    expect(m.gainSource(k)).toBe('auto');
+    m.saveGain(k, 9);
+    m.rememberGain(k, 6);                    // a later search files its own
+    expect(m.recallGain(k)).toBe(9);
+    expect(m.gainSource(k)).toBe('saved');
+    m.resetGainMemoryCache();
+    expect(m.recallGain(k)).toBe(9);         // came back from disk
+    m.forgetGain(k);
+    expect(m.gainSource(k)).toBeUndefined();
+  });
 });

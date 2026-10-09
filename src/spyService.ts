@@ -37,7 +37,7 @@ import { FftPipeline } from './fft.js';
 import {
   measureChannel, coarseGains, refineGains, channelCnDb, pickGain, gainMemoryKey,
 } from './gainSearch.js';
-import { recallGain, rememberGain, forgetGain } from './gainMemory.js';
+import { recallGain, rememberGain, forgetGain, saveGain, gainSource } from './gainMemory.js';
 
 declare const __dirname: string;
 // CONFIG_PATH defaults to the bundled config.json (sibling of bin/) for the
@@ -864,14 +864,14 @@ class SpyService {
     for (const fn of listeners) fn(clamped, this.maxGain);
     // Only push to SpyServer if THIS scope matches the active demod mode.
     const isActive = scope === 'am' ? this.currentDemodMode === 2 : this.currentDemodMode !== 2;
-    // A hand-set gain is this station's gain from now on, and it ends any
-    // search in progress — the user has decided.
+    // A hand-set gain ends any search in progress — the user has decided.
+    // With auto gain on it is for now only: the station keeps it when the
+    // user saves it (saveStationGain), and the band's gain is not touched.
     if (isActive) {
       this.gainSearchToken++;
       if (this.gainDwellTimer) { clearTimeout(this.gainDwellTimer); this.gainDwellTimer = null; }
-      const key = this.gainKeyNow();
-      if (key) rememberGain(key, clamped);
     }
+    const temporary = isActive && this.autoGainEnabled;
     if (isActive && this.connected && this.audioRunning && this.deviceInfo) {
       // Changing LNA gain causes an IQ-amplitude step + SpyServer-side AGC
       // settling: without masking, a loud pop punches through. We mute for
@@ -901,6 +901,7 @@ class SpyService {
         log.info(`[spyService] set${sc === 'am' ? 'Am' : 'Fm'}Gain ${finalGain} digitalGain=${digitalGain}`);
       }, 80);
     }
+    if (temporary) return;
     // Into this receiver's slot for the band being listened to. The resolver
     // reads the profile before the top-level value, so writing only the top
     // level meant a gain changed while listening came back on the next connect.
@@ -1003,10 +1004,19 @@ class SpyService {
     this.gainSearchToken++;
     if (this.gainSearching) this.gainHwDirty = true;
     if (this.gainDwellTimer) { clearTimeout(this.gainDwellTimer); this.gainDwellTimer = null; }
-    if (!this.autoGainEnabled) return;
     const info = this.deviceInfo;
     const key = this.gainKeyNow();
     if (!info || !key || this.maxGain <= 0) return;
+    // A gain the user saved for this station holds whether auto is on or not.
+    if (gainSource(key) === 'saved') {
+      this.setLiveScopeGain(recallGain(key)!, `saved (${why})`);
+      return;
+    }
+    if (!this.autoGainEnabled) {
+      // Leaving a saved station must not carry its gain along.
+      this.setLiveScopeGain(this.bandGainNow(info), `band (${why})`);
+      return;
+    }
     const known = recallGain(key);
     if (known !== undefined) { this.setLiveScopeGain(known, `remembered (${why})`); return; }
     const searchable = measureChannel(this.currentDemodMode) !== null
@@ -1061,6 +1071,40 @@ class SpyService {
     this.persistField('autoGain', on).catch(() => {});
     if (on) this.onGainLanding('auto on');
     else { this.gainSearchToken++; if (this.gainDwellTimer) { clearTimeout(this.gainDwellTimer); this.gainDwellTimer = null; } }
+    this.notifyForceRender();
+  }
+
+  /** Where the station's gain comes from: saved by the user, chosen by the
+   *  search, or neither (the band's gain). */
+  stationGainSource(): 'saved' | 'auto' | null {
+    const key = this.gainKeyNow();
+    return key ? gainSource(key) ?? null : null;
+  }
+
+  /** Keep the gain in force as this station's (preset's) own. */
+  saveStationGain(): boolean {
+    const key = this.gainKeyNow();
+    if (!key || this.maxGain <= 0) return false;
+    const g = this.currentDemodMode === RX_MODE.AM ? this.amGain : this.fmGain;
+    if (g === undefined) return false;
+    saveGain(key, g);
+    log.info(`[spyService] saved gain ${g} for ${key}`);
+    this.notifyForceRender();
+    return true;
+  }
+
+  /** Drop the station's saved (and auto) gain: search again with auto on,
+   *  the band's gain with it off. */
+  clearStationGain(): boolean {
+    const key = this.gainKeyNow();
+    const info = this.deviceInfo;
+    if (!key || !info) return false;
+    forgetGain(key);
+    log.info(`[spyService] cleared gain for ${key}`);
+    if (this.autoGainEnabled) this.researchGain();
+    else this.setLiveScopeGain(this.bandGainNow(info), 'band (cleared)');
+    this.notifyForceRender();
+    return true;
   }
 
   /**
@@ -1075,7 +1119,10 @@ class SpyService {
     const key = this.gainKeyNow();
     const mode = this.currentDemodMode;
     if (!info || !key || this.maxGain <= 0 || !measureChannel(mode)) return;
-    if (!this.connected || !this.audioRunning || !this.canControl) return;
+    if (!this.connected || !this.audioRunning || !this.canControl) {
+      log.info(`[spyService] gain search skipped: connected=${this.connected} audio=${this.audioRunning} control=${this.canControl}`);
+      return;
+    }
     const freq = this._currentFreq;
     const fft = new FftPipeline(GAIN_SEARCH_FFT);
     let acc: Float64Array | null = null;

@@ -554,9 +554,9 @@ export function optionsPanelBandSvg(
         : '');
   };
 
-  const renderOptsRow = (j: number): string => {
+  const renderOptsRow = (j: number, pos = j): string => {
     const r = optsRows[j];
-    const y = HEADER_H + (j + 1) * ROW_H;
+    const y = HEADER_H + (pos + 1) * ROW_H;
     const cursorIdx = BAND_TOTAL + j;
     const isSelected = cursorIdx === selectedIdx;
     const isEdit = isSelected && editMode;
@@ -576,7 +576,23 @@ export function optionsPanelBandSvg(
   };
 
   const bandPart = Array.from({ length: BAND_TOTAL }, (_, i) => renderBandRow(i)).join('\n');
-  const optsPart = Array.from({ length: optsRows.length }, (_, j) => renderOptsRow(j)).join('\n');
+  // The opts column holds as many rows as the band column (7); FM has more
+  // since the auto-gain rows, so it scrolls to keep the cursor in view and
+  // draws a small arrow in the title bar where rows are hidden.
+  const visible = BAND_TOTAL;
+  const selOpt = selectedIdx - BAND_TOTAL;
+  const top = optsRows.length <= visible ? 0
+    : Math.max(0, Math.min(optsRows.length - visible, selOpt - visible + 1));
+  const optsPart = Array.from({ length: Math.min(visible, optsRows.length) },
+    (_, k) => renderOptsRow(top + k, k)).join('\n');
+  const ARROW_C = '#d4b800';
+  const ax = SVG_W - 5;
+  // Both arrows sit in the title bar's right end, clear of every row's value.
+  const arrows =
+    (top > 0
+      ? `<polygon points="${ax - 3},5 ${ax + 3},5 ${ax},2" fill="${ARROW_C}"/>` : '') +
+    (top + visible < optsRows.length
+      ? `<polygon points="${ax - 3},7 ${ax + 3},7 ${ax},10" fill="${ARROW_C}"/>` : '');
   const divider   = `<line x1="${COL_W}" y1="${HEADER_H + 1}" x2="${COL_W}" y2="${SVG_H - 4}" stroke="${DIVIDER_C}" stroke-width="0.6"/>`;
   const frame     = `<rect x="0.5" y="0.5" width="${SVG_W - 1}" height="${SVG_H - 2}" rx="4" ry="4" fill="none" stroke="${FRAME_C}" stroke-width="1"/>`;
 
@@ -585,6 +601,7 @@ export function optionsPanelBandSvg(
 ${header}
 ${bandPart}
 ${optsPart}
+${arrows}
 ${divider}
 ${frame}
 </svg>`;

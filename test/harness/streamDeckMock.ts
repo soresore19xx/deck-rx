@@ -227,6 +227,9 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
     DECK_RX_PID_FILE:           resolve(sandboxDir, 'deck-rx.pid'),
     DECK_RX_CONFIG_PATH:        configPath,
     DECK_RX_JP_STATIONS_PATH:   JP_STATIONS,
+    // The per-station gain file too: without it every harness run filed the
+    // mock receiver's gains into the live plugin's data/gain-memory.json.
+    DECK_RX_GAIN_MEMORY_PATH:   resolve(sandboxDir, 'gain-memory.json'),
   };
   if (opts.presetsPath)   env.DECK_RX_PRESETS_PATH    = opts.presetsPath;
   if (opts.sdrConfigPath) env.DECK_RX_SDR_CONFIG_PATH = opts.sdrConfigPath;

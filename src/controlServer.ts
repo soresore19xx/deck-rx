@@ -223,11 +223,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     case '/autogain': {
       const a = q.get('auto');
       if (a === '0' || a === '1') spyService.setAutoGain(a === '1');
-      if (q.get('research') === '1' && !spyService.researchGain()) {
-        res.writeHead(409, { 'Content-Type': 'text/plain' }); res.end('no receiver'); return;
-      }
+      const noRx = () => { res.writeHead(409, { 'Content-Type': 'text/plain' }); res.end('no receiver'); };
+      if (q.get('research') === '1' && !spyService.researchGain()) { noRx(); return; }
+      // The station's own gain: save the one in force, or drop it.
+      if (q.get('save') === '1' && !spyService.saveStationGain()) { noRx(); return; }
+      if (q.get('clear') === '1' && !spyService.clearStationGain()) { noRx(); return; }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ auto: spyService.isAutoGain() }));
+      res.end(JSON.stringify({ auto: spyService.isAutoGain(), station: spyService.stationGainSource() }));
       return;
     }
     case '/power': {

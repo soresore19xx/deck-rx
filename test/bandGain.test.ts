@@ -60,6 +60,9 @@ describe('gain per band, end to end', () => {
       config: {
         enabled: true, audioEnabled: false, tuneMode: 'vfo', demodMode: 2,
         lastFrequency: 594_000, tuneStepHz: 9_000,
+        // The band rule as it stands without the per-station search: with
+        // auto gain on, a turned gain is for the moment only.
+        autoGain: false,
         // Top-level values that belong to no band in particular, as an older
         // config has them. The slots below must win over them.
         amGain: 5, fmGain: 6,

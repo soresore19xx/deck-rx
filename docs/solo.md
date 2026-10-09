@@ -52,6 +52,18 @@ from under it. The station name of whatever the marker is over appears above
 it, and the picture is drawn where the ear is rather than where the samples
 are, so what is seen and what is heard line up.
 
+Under **Gain** in the options, **Auto gain** and **Station gain** carry the
+plugin's automatic per-station RF gain (`native-app/Sources/GainSearch.swift`,
+a port of `src/gainSearch.ts` with the same numbers in both test suites): on
+landing on a station the receiver tries a handful of gains, keeps the lowest
+within 1 dB of the best carrier-to-noise that leaves 6 dB of IQ headroom, and
+remembers it per receiver, channel and mode in `gain-memory.json` beside
+`receiver.json`. With auto gain on, the Gain control is for the moment only;
+clicking Station gain saves the gain in force as that station's own (it then
+reads SAVED and is never searched over), and clicking it again drops it.
+AUTO means the search chose it, BAND that the band's gain is in force.
+`/autogain` on the control endpoint takes the plugin's parameters.
+
 The meters, the drop count and every row in the options panel describe **this**
 receiver. They used to be read off the loopback control
 endpoint, which belongs to the Stream Deck plugin whenever the plugin is

@@ -262,6 +262,9 @@ struct RadioConfig: Codable, Equatable {
     var audioDecimate = 4
     var audioGain: Double = 1
     var levelingEnabled = false
+    /// Automatic per-station RF gain (GainSearch.swift); the plugin's
+    /// cfg.autoGain, on by default there too.
+    var autoGain = true
     /// Come up receiving instead of waiting for DIRECT to be pressed. A machine
     /// whose job is to be a receiver should not need a click to become one, and
     /// it is the only way to drive the app on a box nobody sits at.
@@ -426,6 +429,7 @@ struct RadioConfig: Codable, Equatable {
         audioDecimate = (try? c.decodeIfPresent(Int.self, forKey: .audioDecimate)) .flatMap { $0 } ?? d.audioDecimate
         audioGain = (try? c.decodeIfPresent(Double.self, forKey: .audioGain)) .flatMap { $0 } ?? d.audioGain
         levelingEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .levelingEnabled)) .flatMap { $0 } ?? d.levelingEnabled
+        autoGain = (try? c.decodeIfPresent(Bool.self, forKey: .autoGain)) .flatMap { $0 } ?? d.autoGain
         autoDirect = (try? c.decodeIfPresent(Bool.self, forKey: .autoDirect)) .flatMap { $0 } ?? d.autoDirect
         autoAudio = (try? c.decodeIfPresent(Bool.self, forKey: .autoAudio)) .flatMap { $0 } ?? d.autoAudio
     }
@@ -497,6 +501,7 @@ struct RadioConfig: Codable, Equatable {
         if let v = j["audioDecimate"] as? Int, v > 0 { c.audioDecimate = v }
         if let v = j["audioGain"] as? Double { c.audioGain = v }
         if let v = j["audioLeveling"] as? Bool { c.levelingEnabled = v }
+        if let v = j["autoGain"] as? Bool { c.autoGain = v }
         if let v = j["tuneMode"] as? String { c.tuneMode = v }
         if let v = j["autoSyncSdrpp"] as? Bool { c.autoSyncSdrpp = v }
         if let nd = j["naudiodon"] as? [String: Any], let v = nd["deviceName"] as? String {

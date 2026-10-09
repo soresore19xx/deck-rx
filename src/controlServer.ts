@@ -148,6 +148,10 @@ async function applyOption(name: string, raw: string, asBool: boolean, asNum: nu
       else await spyService.setFmGain(num);
       return true;
     }
+    // Automatic per-station gain and the station's own gain, for a panel
+    // (Deck RX.app's options) that has rows rather than the dial's PUSH.
+    case 'autoGain':      spyService.setAutoGain(asBool); return true;
+    case 'gainSave':      return asBool ? spyService.saveStationGain() : spyService.clearStationGain();
     default: return false;
   }
 }
@@ -435,6 +439,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         },
         ssb: { bandwidthHz: ssb.bandwidthHz, bfoPitchHz: ssb.bfoPitchHz },
         gain: { am: spyService.getAmGain(), fm: spyService.getFmGain(), max: spyService.getMaxGain() },
+        autoGain: { auto: spyService.isAutoGain(), station: spyService.stationGainSource() },
       }));
       return;
     }

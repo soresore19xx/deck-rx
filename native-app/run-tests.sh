@@ -10,6 +10,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # whose config setter saves, and on 2026-09-10 that twice replaced a working
 # host with the loopback default while the app was in use.
 export DECK_RX_RECEIVER_CONFIG="$(mktemp -d)/receiver.json"
+# Same for the per-station gains (GainSearch.swift).
+export DECK_RX_GAIN_MEMORY_PATH="$(dirname "$DECK_RX_RECEIVER_CONFIG")/gain-memory.json"
 OUT="$HERE/.tests-bin"
 
 # The receiver sources, plus FreqView for its formatting and SpectrumView for
@@ -17,7 +19,7 @@ OUT="$HERE/.tests-bin"
 # main.swift and the rest of the views stay out — they would drag in a second
 # `main`. Neither of these two holds top-level code, and both carry exactly the
 # kind of rule that is cheap to get wrong and silent when it is.
-SRC="Sources/LocalRadio.swift Sources/AppServer.swift Sources/SpyClient.swift \
+SRC="Sources/LocalRadio.swift Sources/GainSearch.swift Sources/AppServer.swift Sources/SpyClient.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
      Sources/StationLabel.swift Sources/RadioConfig.swift Sources/DeviceSettings.swift Sources/PresetStore.swift \

@@ -1212,6 +1212,78 @@ do {
 
 
 
+section("automatic gain: the same rules and numbers as test/gainSearch.test.ts")
+do {
+    typealias R = GainSearch.Result
+    check("coarse ladder, HF+", GainSearch.coarseGains(maxGain: 8) == [0, 2, 4, 6, 8])
+    check("coarse ladder, V4", GainSearch.coarseGains(maxGain: 29) == [0, 6, 12, 18, 24, 29])
+    check("coarse ladder, no range", GainSearch.coarseGains(maxGain: 0) == [0])
+    let c29 = GainSearch.coarseGains(maxGain: 29), c8 = GainSearch.coarseGains(maxGain: 8)
+    check("refine around 12", GainSearch.refineGains(best: 12, maxGain: 29, coarse: c29) == [9, 15])
+    check("refine at the bottom", GainSearch.refineGains(best: 0, maxGain: 29, coarse: c29) == [3])
+    check("refine on the HF+", GainSearch.refineGains(best: 4, maxGain: 8, coarse: c8) == [3, 5])
+
+    func spectrum(_ n: Int, _ rate: Double, _ floorDb: Float, _ sigDb: Float,
+                  _ atHz: Double, _ widthHz: Double) -> [Float] {
+        (0..<n).map { i in
+            let f = (Double(i) - Double(n) / 2) * rate / Double(n)
+            return abs(f - atHz) <= widthHz / 2 ? sigDb : floorDb
+        }
+    }
+    let n = 4096, rate = 300_000.0
+    let wfm = GainSearch.channelCnDb(bins: spectrum(n, rate, -100, -60, 0, 180_000), iqRate: rate, centreOffsetHz: 0, mode: 1)
+    check("WFM channel against the floor", wfm.map { near($0, 40, 0.5) } ?? false, "\(String(describing: wfm))")
+    var b = spectrum(n, rate, -100, -50, 0, 8_000)
+    let nb = spectrum(n, rate, -100, -55, 27_000, 8_000)
+    for i in 0..<n { b[i] = max(b[i], nb[i]) }
+    let am = GainSearch.channelCnDb(bins: b, iqRate: rate, centreOffsetHz: 0, mode: 2)
+    check("AM: a neighbour is floor-side", (am ?? 0) > 45, "\(String(describing: am))")
+    let vfo = GainSearch.channelCnDb(bins: spectrum(n, rate, -100, -70, 40_000, 9_000), iqRate: rate, centreOffsetHz: 40_000, mode: 2)
+    check("follows a VFO offset", vfo.map { near($0, 30, 0.5) } ?? false, "\(String(describing: vfo))")
+    check("USB above, LSB below", (GainSearch.measureChannel(mode: 4)?.offsetHz ?? 0) > 0
+          && (GainSearch.measureChannel(mode: 6)?.offsetHz ?? 0) < 0)
+    check("nothing to say about RAW", GainSearch.channelCnDb(bins: [Float](repeating: 0, count: n), iqRate: rate, centreOffsetHz: 0, mode: 7) == nil)
+
+    check("weak station: the low end of the plateau",
+          GainSearch.pickGain([R(gain: 0, cn: 5), R(gain: 6, cn: 12), R(gain: 12, cn: 19.6),
+                               R(gain: 18, cn: 20), R(gain: 24, cn: 19.8), R(gain: 29, cn: 15)]) == 12)
+    check("strong station: the peak, not the top",
+          GainSearch.pickGain([R(gain: 0, cn: 30), R(gain: 6, cn: 34), R(gain: 12, cn: 26),
+                               R(gain: 18, cn: 18), R(gain: 24, cn: 12), R(gain: 29, cn: 9)]) == 6)
+    check("headroom: V4 90.5 MHz gets 3, not 6",
+          GainSearch.pickGain([R(gain: 0, cn: 30.3, peakDb: -17.4), R(gain: 3, cn: 39.1, peakDb: -8.6),
+                               R(gain: 6, cn: 45.6, peakDb: -1.7), R(gain: 9, cn: 6.7, peakDb: 0)]) == 3)
+    check("headroom everywhere: V4 79.5 MHz unaffected",
+          GainSearch.pickGain([R(gain: 18, cn: 23.5, peakDb: -17.3), R(gain: 21, cn: 25.3, peakDb: -12.2),
+                               R(gain: 24, cn: 26.4, peakDb: -8.7), R(gain: 27, cn: 26.5, peakDb: -5.2)]) == 24)
+    check("every gain over the line: the lowest tried",
+          GainSearch.pickGain([R(gain: 3, cn: 20, peakDb: -2), R(gain: 0, cn: 10, peakDb: -4)]) == 0)
+    check("no station at any gain: nothing (V4 92.4 MHz)",
+          GainSearch.pickGain([R(gain: 0, cn: 0.6, peakDb: -36.8), R(gain: 6, cn: 1.2, peakDb: -36.4),
+                               R(gain: 12, cn: 0.9, peakDb: -19.5), R(gain: 29, cn: 1.1, peakDb: -7.4)]) == nil)
+    check("nothing measured, nothing picked", GainSearch.pickGain([]) == nil)
+
+    let v4 = GainSearch.key(deviceKey: "3:00000000", freqHz: 79_500_000, mode: 1)
+    check("key as the plugin writes it", v4 == "3:00000000|79500000|1", v4)
+    check("key rounds to 100 Hz", GainSearch.key(deviceKey: "3:00000000", freqHz: 79_500_040, mode: 1) == v4)
+
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("gainmem-\(getpid())")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let path = dir.appendingPathComponent("gain-memory.json").path
+    let m = GainMemory(path: path)
+    let k = GainSearch.key(deviceKey: "3:00000000", freqHz: 90_500_000, mode: 1)
+    m.remember(k, 3)
+    check("an auto gain reads as auto", m.source(k) == .auto && m.recall(k) == 3)
+    m.save(k, 9)
+    m.remember(k, 6)
+    check("a saved gain wins over a later search", m.recall(k) == 9 && m.source(k) == .saved)
+    let m2 = GainMemory(path: path)
+    check("and comes back from disk", m2.recall(k) == 9 && m2.source(k) == .saved)
+    m2.forget(k)
+    check("forget drops both", m2.source(k) == nil && GainMemory(path: path).recall(k) == nil)
+    try? FileManager.default.removeItem(at: dir)
+}
+
 runDeviceSettingsTests()
 runRtlTcpTests()
 

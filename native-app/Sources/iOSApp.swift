@@ -1724,6 +1724,8 @@ final class OptionsViewController: UITableViewController {
         case bool(get: () -> Bool, set: (Bool) -> Void)
         case list(values: [Double], unit: String, get: () -> Double, set: (Double) -> Void)
         case text(options: [String], get: () -> String, set: (String) -> Void)
+        /// A word rather than ON/OFF; tapping runs `tap`.
+        case status(get: () -> (text: String, lit: Bool), tap: () -> Void)
     }
     private struct Row { let title: String; let kind: Kind }
     private struct Section { let name: String; let rows: [Row] }
@@ -1800,9 +1802,20 @@ final class OptionsViewController: UITableViewController {
                 Row(title: "Gain", kind: .list(values: (0...Int(r.maxGainIndex)).map { Double($0) },
                                                unit: "",
                     get: { Double(r.gain) },
-                    set: { v in
-                        let g = UInt32(max(0, v))
-                        if r.mode == 2 { r.config.amGain = g } else { r.config.fmGain = g }
+                    // With auto gain on, for this station and for now only;
+                    // LocalRadio.setGainByHand draws that line.
+                    set: { v in r.setGainByHand(UInt32(max(0, v))) })),
+                Row(title: "Auto gain", kind: .bool(get: { r.autoGain }, set: { r.autoGain = $0 })),
+                // Tap saves the gain in force as this station's (preset's)
+                // own; tapping while it reads SAVED drops it.
+                Row(title: "Station gain", kind: .status(get: {
+                        switch r.stationGainSource {
+                        case .saved: return ("SAVED", true)
+                        case .auto:  return ("AUTO", false)
+                        case nil:    return ("BAND", false)
+                        }
+                    }, tap: {
+                        if r.stationGainSource == .saved { r.clearStationGain() } else { r.saveStationGain() }
                     })),
                 Row(title: "IQ NR", kind: .bool(get: { r.iqNrEnabled }, set: { r.iqNrEnabled = $0 })),
                 Row(title: "Levelling", kind: .bool(get: { r.levelingEnabled }, set: { r.levelingEnabled = $0 })),
@@ -1874,6 +1887,11 @@ final class OptionsViewController: UITableViewController {
             }
             // The control is the pull-down, so the row does not offer itself.
             cell.selectionStyle = .none
+        case .status(let get, _):
+            let s = get()
+            cell.detailTextLabel?.text = s.text
+            cell.detailTextLabel?.textColor = s.lit ? Pal.accent : Pal.faint
+            cell.selectionStyle = .default
         case .text(let options, let get, let set):
             cell.accessoryView = pullDown(options,
                                           selected: options.firstIndex(of: get()),
@@ -1929,8 +1947,11 @@ final class OptionsViewController: UITableViewController {
     /// Tap toggles a boolean; the pull-downs carry everything else.
     override func tableView(_ t: UITableView, didSelectRowAt ip: IndexPath) {
         t.deselectRow(at: ip, animated: true)
-        guard case .bool(let get, let set) = sections[ip.section].rows[ip.row].kind else { return }
-        apply { set(!get()) }
+        switch sections[ip.section].rows[ip.row].kind {
+        case .bool(let get, let set): apply { set(!get()) }
+        case .status(_, let tap):     apply { tap() }
+        default: return
+        }
     }
 
     private func apply(_ change: () -> Void) {

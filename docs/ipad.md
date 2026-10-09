@@ -86,6 +86,16 @@ dismissed — a signal takes a while to lock.
 
 The weather fax decoder is compiled in but has no screen yet.
 
+## Relaunching it from a Mac
+
+A launch from another machine passes `DECKRX_LAUNCH_MUTED=1` and the app comes
+up muted, whatever the stored mute says; someone in the room unmutes it.
+
+```
+xcrun devicectl device process launch --device <id> --terminate-existing \
+  -e '{"DECKRX_LAUNCH_MUTED":"1"}' com.hogehoge.deckrx.ipad
+```
+
 ## First run
 
 Connects to `127.0.0.1:5555`, the default the shared `RadioConfig` carries;

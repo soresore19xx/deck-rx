@@ -464,8 +464,17 @@ struct RadioConfig: Codable, Equatable {
     /// user did here. The plugin's config is the seed for a first run, so a
     /// machine that has both does not start from scratch.
     static func load() -> RadioConfig {
-        if let c = loadOwn() { return c }
-        return loadFromPlugin() ?? RadioConfig()
+        var c = loadOwn() ?? loadFromPlugin() ?? RadioConfig()
+        // A launch from another machine (devicectl, the deploy script) passes
+        // DECKRX_LAUNCH_MUTED=1 and comes up muted, and stays so until someone
+        // in the room unmutes. The stored mute is not a safe guess about a
+        // device nobody is next to: on 2026-10-10 it had been cleared since it
+        // was last read, and a remote relaunch played at full volume.
+        if ProcessInfo.processInfo.environment["DECKRX_LAUNCH_MUTED"] == "1", !c.muted {
+            c.muted = true
+            c.save()
+        }
+        return c
     }
 
     private static func loadOwn() -> RadioConfig? {

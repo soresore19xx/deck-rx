@@ -39,6 +39,8 @@ slot instead, so the name comes back and the next rotate cycles from there.
 
 The Tune dial follows the Band PUSH automatically: it jumps to the first matching-mode preset that's actually receivable on the connected SDR; for SSB / CW where presets typically don't exist, it falls back to a band-representative default (USB → 14.200 MHz, LSB → 7.100 MHz, CW → 7.025 MHz, NFM → 145.000 MHz), so a Band PUSH always moves the dial to a sensible freq even in VFO mode. Returning to AM/WFM finds a matching preset and restores attribution.
 
+Under Gain, in every mode, two rows for the per-station gain: **AutoG** (PUSH turns automatic gain on / off) and **GSave** (PUSH saves the gain in force as this station's own, a long PUSH drops it; the value reads `Saved`, `Auto` or `-`). FM then has more rows than the LCD holds, so the Opts column scrolls with the cursor and a small arrow in the title bar shows which way rows are hidden.
+
 ![Combo Options dial](lcd-options-combo.png)
 
 ![Combo dial — all 6 demod modes](lcd-combo-modes.png)

@@ -74,6 +74,22 @@ function applyModeStepEdit(ticks: number): void {
   spyService.setTuneStepHz(list[next]);
 }
 
+// The two rows under Gain: auto gain on/off, and the station's own gain.
+// PUSH on AutoG flips it; PUSH on GSave keeps the gain in force for this
+// station (preset), a long PUSH drops it (auto searches again).
+function stationGainRows(): DialRow[] {
+  const auto = spyService.isAutoGain();
+  const src = spyService.stationGainSource();
+  return [
+    { label: 'AutoG', value: auto ? 'On' : 'Off', skipEditToggle: true,
+      onShortPush: () => spyService.setAutoGain(!auto) },
+    { label: 'GSave', value: src === 'saved' ? 'Saved' : src === 'auto' ? 'Auto' : '-',
+      valueColor: src === 'saved' ? '#aaff00' : undefined, skipEditToggle: true,
+      onShortPush: () => { spyService.saveStationGain(); },
+      onLongPush: () => { spyService.clearStationGain(); } },
+  ];
+}
+
 // Build the unified row list for navigation/edit dispatch. Layout matches
 // the index map in the file-top comment: 0-5 band rows (skip edit on PUSH,
 // fire setDemodMode), 6 Mode/Step row (edit cycles step, long-press
@@ -116,6 +132,7 @@ function buildAllRows(currentMode: number): DialRow[] {
         onEdit: (t) => spyService.setAMOption('agcDecay', adjustLog(am.agcDecay, t, DEC_MIN, DEC_MAX)) },
       { label: 'Gain', value: maxGain > 0 ? `${amGain}/${maxGain}` : '-',
         onEdit: (t) => spyService.setAmGain(spyService.getAmGain() + t) },
+      ...stationGainRows(),
     );
   } else if (cls === 'ssb') {
     const s = spyService.getSSBOptions();
@@ -127,6 +144,7 @@ function buildAllRows(currentMode: number): DialRow[] {
         onEdit: (t) => spyService.setSSBOption('bfoPitchHz', nextInArray(BFO_CYCLE, s.bfoPitchHz, t)) },
       { label: 'Gain', value: maxGain > 0 ? `${fmGain}/${maxGain}` : '-',
         onEdit: (t) => spyService.setFmGain(spyService.getFmGain() + t) },
+      ...stationGainRows(),
     );
   } else {
     const fm = spyService.getFMOptions();
@@ -146,6 +164,7 @@ function buildAllRows(currentMode: number): DialRow[] {
         onEdit: () => spyService.setFMOption('stereo', !fm.stereo) },
       { label: 'Gain',   value: maxGain > 0 ? `${fmGain}/${maxGain}` : '-',
         onEdit: (t) => spyService.setFmGain(spyService.getFmGain() + t) },
+      ...stationGainRows(),
     );
   }
   return rows;
@@ -258,7 +277,7 @@ export class SpyDialOptionsCombo extends SingletonAction<Settings> {
       label: allRows[MODE_STEP_IDX]?.label ?? 'Pre/Stp',
       value: allRows[MODE_STEP_IDX]?.value ?? '',
     };
-    const opts: OptionsPanelRow[] = allRows.slice(OPTS_START_IDX).map((r) => ({ label: r.label, value: r.value }));
+    const opts: OptionsPanelRow[] = allRows.slice(OPTS_START_IDX).map((r) => ({ label: r.label, value: r.value, valueColor: r.valueColor }));
     const activeBandIdx = (BAND_MODES as readonly number[]).indexOf(this.currentMode);
     const sel = this.rowState.focused ? this.rowState.selectedIdx : -1;
     const dim = !this.enabled || !this.connected;

@@ -29,6 +29,27 @@ final class LocalRadio {
     /// The pending gain apply, so a run of taps becomes one apply.
     private var gainApply: DispatchWorkItem?
 
+    // Automatic per-station gain (GainSearch.swift; spyService.ts runGainSearch).
+    /// The gain in force for this station when it is not the band's: the one
+    /// the search chose, the one saved for it, or one turned by hand with auto
+    /// gain on. Never written into `config`, which would file it as the band's.
+    /// Main thread.
+    private(set) var stationGain: UInt32?
+    /// Bumped by every landing and every hand-set gain; a search that sees it
+    /// move stops. Read across threads, so under `gainLock`.
+    private var gainToken = 0
+    private var gainDwell: DispatchWorkItem?
+    private let gainQueue = DispatchQueue(label: "deck-rx.localradio.gainsearch", qos: .utility)
+    private let gainLock = NSLock()
+    /// The gain index last sent to the server, by anyone (gainLock).
+    private var lastSentGain: UInt32?
+    /// Whole-band power of the newest packet and when it arrived (gainLock).
+    private var packetPowerDb = -120.0
+    private var packetPowerAt = Date.distantPast
+    /// Sees every packet while a search measures (gainLock).
+    private var gainTap: ((Data) -> Void)?
+    let gainMemory = GainMemory.shared
+
     /// Longest gap between two IQ packets in the last ten seconds, in ms.
     ///
     /// This is what separates the two causes of an output underrun. IQ arrives
@@ -209,7 +230,7 @@ final class LocalRadio {
     var fmGainIndex: UInt32 { min(config.fmGain ?? maxGainIndex, maxGainIndex) }
     /// What the server is told to use. AM is the split, exactly as
     /// spyService.ts:1214 draws it — every other mode takes the FM value.
-    var gain: UInt32 { mode == 2 ? amGainIndex : fmGainIndex }
+    var gain: UInt32 { stationGain.map { min($0, maxGainIndex) } ?? (mode == 2 ? amGainIndex : fmGainIndex) }
     /// Audio decimation from the IQ rate; the audio rate is the IQ rate over
     /// this. Exactly what the plugin does — `Math.max(1, cfg.audioDecimate)`,
     /// spyService.ts:1206 — and nothing else.
@@ -258,6 +279,7 @@ final class LocalRadio {
                 if self.audioEnabled { self.restartAudio() }
             }
             restartIfRateChanged()
+            onGainLanding("mode")
         }
     }
 
@@ -860,6 +882,9 @@ final class LocalRadio {
         followBand(from: was)
         config.frequencyHz = Double(hz)
         config.save()
+        // A jump (preset, band) searches at once; a step waits for the dial
+        // to stop.
+        onGainLanding("tune", immediate: recenter)
         guard isConnected else { deviceCenterHz = hz; setVfo(0); return }
         // spyService.ts:789. `resetForRetune()` zeroes the AM DC and carrier
         // AGC, which then needs 150-200 ms to re-converge on the new station's
@@ -1165,7 +1190,11 @@ final class LocalRadio {
         muteUntil = max(muteUntil, Date().addingTimeInterval(0.5))
         if audioEnabled { restartAudio() }
         startFrameTimer()
-        DispatchQueue.main.async { self.onState?() }
+        gainLock.lock(); lastSentGain = g; gainLock.unlock()
+        DispatchQueue.main.async {
+            self.onGainLanding("stream start")
+            self.onState?()
+        }
     }
 
     // MARK: IQ -> frames
@@ -1319,6 +1348,7 @@ final class LocalRadio {
             NSLog("[gain] sent index \(g) digital \(digital) canControl \(self.canControl)")
             self.client.setSetting(.gain, g)
             self.client.setSetting(.iqDigitalGain, digital)
+            self.gainLock.lock(); self.lastSentGain = g; self.gainLock.unlock()
         }
         gainApply = work
         queue.asyncAfter(deadline: .now() + 0.08, execute: work)
@@ -1525,6 +1555,13 @@ final class LocalRadio {
         // as there, 0.9/0.1: at 0.8/0.2 the needle chased the modulation.
         let corrected = db - Double(gainDb)
         rssiDbfs = rssiDbfs * 0.9 + corrected * 0.1
+        // Uncorrected, for the gain search to see a gain step land.
+        gainLock.lock()
+        packetPowerDb = db
+        packetPowerAt = Date()
+        let tap = gainTap
+        gainLock.unlock()
+        tap?(body)
     }
 
     /// Preset stepping, shared with the control endpoint. Returns the frequency
@@ -1619,5 +1656,277 @@ final class LocalRadio {
                                        centerFreq: deviceCenterHz, seq: seq,
                                        rawBins: fft.lastRaw)
         DispatchQueue.main.async { self.onFrame?(frame) }
+    }
+}
+
+// MARK: automatic per-station gain
+
+/// spyService.ts's onGainLanding / runGainSearch / saveStationGain, step for
+/// step and with its timings, so the app and the plugin settle a station the
+/// same way.
+extension LocalRadio {
+    /// A preset jump waits this long for the retune to reach the server.
+    private static let gainJumpDelay = 0.15
+    /// A VFO step waits for the dial to stop.
+    private static let gainDwell = 1.0
+    /// Ceiling on the wait for a gain step to show in the IQ.
+    private static let gainSettle = 0.15
+    /// A jump in whole-band packet power this big means the new gain arrived.
+    private static let gainStepDb = 1.5
+    private static let gainMeasure = 0.06
+    private static let gainSearchFft = 4096
+
+    /// The station being heard, as GainMemory files it.
+    var gainKeyNow: String? {
+        guard let dk = activeDeviceKey else { return nil }
+        return GainSearch.key(deviceKey: dk, freqHz: Double(frequency), mode: mode)
+    }
+
+    var autoGain: Bool {
+        get { config.autoGain }
+        set {
+            guard newValue != config.autoGain else { return }
+            var c = config
+            c.autoGain = newValue
+            c.save()
+            config = c
+            onGainLanding(newValue ? "auto on" : "auto off")
+            onState?()
+        }
+    }
+
+    /// Where the station's gain comes from: saved, chosen by the search, or
+    /// neither (the band's).
+    var stationGainSource: GainMemory.Source? {
+        gainKeyNow.flatMap { gainMemory.source($0) }
+    }
+
+    /// The Gain control. With auto gain on it is for now only — the station
+    /// keeps it when saved; with it off it files the band's gain, as before.
+    func setGainByHand(_ v: UInt32) {
+        onMain {
+            self.cancelGainSearch()
+            if self.config.autoGain {
+                self.setStationGain(v, why: "hand", force: true)
+            } else {
+                self.stationGain = nil
+                var c = self.config
+                if self.mode == 2 { c.amGain = v } else { c.fmGain = v }
+                c.save()
+                self.config = c
+            }
+        }
+    }
+
+    /// Keep the gain in force as this station's (preset's) own.
+    @discardableResult
+    func saveStationGain() -> Bool {
+        guard let key = gainKeyNow, deviceInfo != nil else { return false }
+        gainMemory.save(key, Int(gain))
+        NSLog("[gain] saved \(gain) for \(key)")
+        onMain { self.onState?() }
+        return true
+    }
+
+    /// Drop the station's saved (and auto) gain: search again with auto on,
+    /// the band's gain with it off.
+    @discardableResult
+    func clearStationGain() -> Bool {
+        guard let key = gainKeyNow, deviceInfo != nil else { return false }
+        gainMemory.forget(key)
+        NSLog("[gain] cleared \(key)")
+        onMain { self.onGainLanding("cleared"); self.onState?() }
+        return true
+    }
+
+    /// Forget this station's gain and search again now.
+    @discardableResult
+    func researchGain() -> Bool {
+        guard let key = gainKeyNow, deviceInfo != nil else { return false }
+        gainMemory.forget(key)
+        onMain { self.onGainLanding("research") }
+        return true
+    }
+
+    private func onMain(_ f: @escaping () -> Void) {
+        if Thread.isMainThread { f() } else { DispatchQueue.main.async(execute: f) }
+    }
+
+    private func cancelGainSearch() {
+        gainLock.lock(); gainToken += 1; gainLock.unlock()
+        gainDwell?.cancel(); gainDwell = nil
+    }
+
+    private var currentGainToken: Int {
+        gainLock.lock(); defer { gainLock.unlock() }
+        return gainToken
+    }
+
+    /// Make `g` the station's gain (nil: the band's) and send it if the
+    /// server holds something else.
+    private func setStationGain(_ g: UInt32?, why: String, force: Bool = false) {
+        stationGain = g
+        gainLock.lock(); let sent = lastSentGain; gainLock.unlock()
+        if force || sent != gain {
+            NSLog("[gain] \(why) -> \(gain)")
+            queue.async { self.sendGain() }
+        }
+        onState?()
+    }
+
+    /// The receiver arrived somewhere (retune, mode change, stream start).
+    /// A saved gain first; with auto off the band's; then a remembered auto
+    /// gain; failing all, a search — at once after a jump, once the dial has
+    /// stopped after a step.
+    func onGainLanding(_ why: String, immediate: Bool = true) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.onGainLanding(why, immediate: immediate) }
+            return
+        }
+        cancelGainSearch()
+        guard let info = deviceInfo, let key = gainKeyNow, info.maxGainIndex > 0 else { return }
+        if gainMemory.source(key) == .saved, let g = gainMemory.recall(key) {
+            setStationGain(UInt32(g), why: "saved (\(why))")
+            return
+        }
+        guard config.autoGain else { setStationGain(nil, why: "band (\(why))"); return }
+        if let g = gainMemory.recall(key) {
+            setStationGain(UInt32(g), why: "remembered (\(why))")
+            return
+        }
+        let searchable = GainSearch.measureChannel(mode: mode) != nil && isConnected && canControl
+        let work = DispatchWorkItem { [weak self] in self?.startGainSearch() }
+        if immediate && searchable {
+            // Silent from the switch to the result (spyService.ts: a burst of
+            // the old gain, silence, then the settled sound read as wrong).
+            let until = Date().addingTimeInterval(Self.gainJumpDelay + Self.gainSettle + Self.gainMeasure + 0.1)
+            queue.async { self.muteUntil = max(self.muteUntil, until) }
+            gainDwell = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.gainJumpDelay, execute: work)
+            return
+        }
+        // Under a turning dial the previous station's gain (maybe a weak
+        // station's high one) is not left behind.
+        setStationGain(nil, why: "band (\(why))")
+        guard searchable else { return }
+        gainDwell = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.gainDwell, execute: work)
+    }
+
+    /// Main thread: capture what the search needs, then run it off it.
+    private func startGainSearch() {
+        gainDwell = nil
+        guard let info = deviceInfo, let key = gainKeyNow, info.maxGainIndex > 0,
+              GainSearch.measureChannel(mode: mode) != nil, iqRate > 0 else { return }
+        guard isConnected, canControl else {
+            NSLog("[gain] search skipped: connected \(isConnected) control \(canControl)")
+            return
+        }
+        let token = currentGainToken
+        let mode = self.mode, freq = frequency, rate = Double(iqRate), offset = vfoOffsetHz
+        let decStage = decimationOffset + info.minIQDecimation
+        gainQueue.async {
+            self.runGainSearch(token: token, info: info, key: key, mode: mode, freq: freq,
+                               rate: rate, offset: offset, decStage: decStage)
+        }
+    }
+
+    /// gainQueue. Each step: send the gain, wait for the whole-band power to
+    /// jump (or the ceiling), then average spectra and note the IQ peak.
+    private func runGainSearch(token: Int, info: SpyClient.DeviceInfo, key: String, mode: Int,
+                               freq: UInt32, rate: Double, offset: Double, decStage: UInt32) {
+        let n = Self.gainSearchFft
+        guard let fft = FFTPipeline(n) else { return }
+        let maxGain = Int(info.maxGainIndex)
+        let started = Date()
+        var results: [GainSearch.Result] = []
+        var settle: [String] = [], peaks: [String] = []
+        // Filled by the tap on auxQueue, read here: under `lock`.
+        let lock = NSLock()
+        var buf = Data(), acc: [Double]? = nil, frames = 0, peak = 0, nearFull = 0, samples = 0
+        let tap: (Data) -> Void = { body in
+            lock.lock(); defer { lock.unlock() }
+            buf.append(body)
+            if buf.count > n * 8 { buf.removeSubrange(0 ..< (buf.count - n * 4)) }
+            guard acc != nil else { return }
+            body.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                let c = raw.count / 2
+                for i in 0..<c {
+                    let v = abs(Int(raw.loadUnaligned(fromByteOffset: i * 2, as: Int16.self).littleEndian))
+                    if v > peak { peak = v }
+                    if v >= 32390 { nearFull += 1 }
+                }
+                samples += c
+            }
+            guard let b = fft.process(int16IQ: buf, smoothAlpha: 1) else { return }
+            for i in 0..<n { acc![i] += pow(10, Double(b[i]) / 10) }
+            frames += 1
+        }
+        let stale = { self.currentGainToken != token }
+        gainLock.lock(); gainTap = tap; gainLock.unlock()
+        defer { gainLock.lock(); gainTap = nil; gainLock.unlock() }
+
+        func measure(_ g: Int) -> Bool {
+            if stale() { return false }
+            let until = Date().addingTimeInterval(Self.gainSettle + Self.gainMeasure + 0.1)
+            queue.async { self.muteUntil = max(self.muteUntil, until) }
+            gainLock.lock(); let base = packetPowerDb; gainLock.unlock()
+            let sentAt = Date()
+            let digital = computeDigitalGain(deviceType: info.deviceType, deviceGain: UInt32(g),
+                                             decimationStage: decStage, maxGainIndex: info.maxGainIndex)
+            client.setSetting(.gain, UInt32(g))
+            client.setSetting(.iqDigitalGain, digital)
+            gainLock.lock(); lastSentGain = UInt32(g); gainLock.unlock()
+            lock.lock(); acc = nil; lock.unlock()
+            var seen = false
+            while Date().timeIntervalSince(sentAt) < Self.gainSettle {
+                gainLock.lock(); let p = packetPowerDb, at = packetPowerAt; gainLock.unlock()
+                if at > sentAt && abs(p - base) >= Self.gainStepDb { seen = true; break }
+                usleep(5_000)
+            }
+            if stale() { return false }
+            settle.append("\(Int(Date().timeIntervalSince(sentAt) * 1000))\(seen ? "" : "*")")
+            lock.lock(); acc = [Double](repeating: 0, count: n); frames = 0
+            peak = 0; nearFull = 0; samples = 0; lock.unlock()
+            usleep(useconds_t(Self.gainMeasure * 1_000_000))
+            if stale() { return false }
+            lock.lock()
+            let sum = acc, fr = frames, pk = peak, nf = nearFull, sm = samples
+            acc = nil
+            lock.unlock()
+            let peakDb = pk > 0 ? 20 * log10(Double(pk) / 32767) : -120
+            peaks.append(String(format: "%d:%.1f/%.2f%%", g, peakDb, Double(nf) / Double(max(1, sm)) * 100))
+            guard let s = sum, fr >= 2 else { return true }
+            let avg = s.map { Float(10 * log10($0 / Double(fr) + 1e-30)) }
+            if let cn = GainSearch.channelCnDb(bins: avg, iqRate: rate, centreOffsetHz: offset, mode: mode) {
+                results.append(.init(gain: g, cn: cn, peakDb: peakDb))
+            }
+            return true
+        }
+
+        let coarse = GainSearch.coarseGains(maxGain: maxGain)
+        for g in coarse { if !measure(g) { return } }
+        let table = { results.sorted { $0.gain < $1.gain }
+                        .map { String(format: "%d:%.1f", $0.gain, $0.cn) }.joined(separator: " ") }
+        guard let first = GainSearch.pickGain(results) else {
+            NSLog("[gain] search \(freq) mode=\(mode): no station to judge (C/N dB \(table())) — band gain")
+            DispatchQueue.main.async {
+                guard !stale() else { return }
+                self.setStationGain(nil, why: "band (no station)", force: true)
+            }
+            return
+        }
+        for g in GainSearch.refineGains(best: first, maxGain: maxGain, coarse: coarse) {
+            if !measure(g) { return }
+        }
+        let best = GainSearch.pickGain(results) ?? first
+        gainMemory.remember(key, best)
+        NSLog("[gain] search \(freq) mode=\(mode) -> \(best)  (C/N dB \(table()))  " +
+              "\(Int(Date().timeIntervalSince(started) * 1000)) ms, settle \(settle.joined(separator: "/"))" +
+              "  peak dBFS/full \(peaks.joined(separator: " "))")
+        DispatchQueue.main.async {
+            guard !stale() else { return }
+            self.setStationGain(UInt32(best), why: "auto", force: true)
+        }
     }
 }

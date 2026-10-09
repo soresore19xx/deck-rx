@@ -283,6 +283,19 @@ final class AppServer {
             }
             return ("200 OK", optionsJSON())
 
+        case "/autogain":
+            // The plugin's endpoint, same parameters and answer.
+            if let a = q["auto"], a == "0" || a == "1" { onMainSync { self.radio.autoGain = a == "1" } }
+            var ok = true
+            onMainSync {
+                if q["research"] == "1" { ok = ok && self.radio.researchGain() }
+                if q["save"] == "1" { ok = ok && self.radio.saveStationGain() }
+                if q["clear"] == "1" { ok = ok && self.radio.clearStationGain() }
+            }
+            if !ok { return ("409 Conflict", "no receiver") }
+            return ("200 OK", json(["auto": radio.autoGain,
+                                    "station": (radio.stationGainSource?.rawValue as Any?) ?? NSNull()]))
+
         case "/receiver":
             // Receiver-wide settings, including the server address. Without
             // this the window can drive the radio but not configure it, and on
@@ -341,8 +354,15 @@ final class AppServer {
             // neighbour, FM wants all of it. Reported resolved rather than as
             // stored, so a value the receiver has never been given reads as
             // the device maximum it is actually running at.
-            "gain": ["am": Int(radio.amGainIndex), "fm": Int(radio.fmGainIndex),
+            // The live mode's entry is the gain in force, which with auto
+            // gain is the station's rather than the band's.
+            "gain": ["am": Int(radio.mode == 2 ? radio.gain : radio.amGainIndex),
+                     "fm": Int(radio.mode != 2 ? radio.gain : radio.fmGainIndex),
                      "max": Int(radio.maxGainIndex)],
+            // Automatic per-station gain, and where this station's gain comes
+            // from: "saved", "auto" or null (the band's).
+            "autoGain": ["auto": radio.autoGain,
+                         "station": (radio.stationGainSource?.rawValue as Any?) ?? NSNull()],
         ]
     }
 
@@ -446,13 +466,27 @@ final class AppServer {
         // (spyService.ts:1214), not the narrower `mode 0 or 1` test the
         // plugin's own control server writes through. Under that test a gain
         // set while listening to SSB edited a number SSB never reads.
+        // With auto gain on a turned gain is the station's for now only, and
+        // never the band's; LocalRadio.setGainByHand draws that line.
         case "gain":           let v = UInt32(max(0, min(n, 64)))
-                               if radio.mode == 2 { c.amGain = v } else { c.fmGain = v }
+                               onMainSync { self.radio.setGainByHand(v) }
+                               return true
+        case "autoGain":       onMainSync { self.radio.autoGain = b }
+                               return true
+        // 1 keeps the gain in force as the station's own, 0 drops it.
+        case "gainSave":       onMainSync { if b { self.radio.saveStationGain() } else { self.radio.clearStationGain() } }
+                               return true
         default: return false
         }
         c.save()
         radio.config = c
         return true
+    }
+
+    /// The receiver's gain state belongs to the main thread; this server runs
+    /// on its own queue, and the answer must describe the change just made.
+    private func onMainSync(_ f: () -> Void) {
+        if Thread.isMainThread { f() } else { DispatchQueue.main.sync(execute: f) }
     }
 
     private func applyReceiver(_ name: String, _ raw: String) -> Bool {

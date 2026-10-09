@@ -35,6 +35,10 @@ Landscape, and the width goes to the spectrum.
 - **an options sheet** carrying the live mode's settings only, so an AM receiver
   is never offered de-emphasis. Anything with more than two values is a
   pull-down showing the whole list.
+  **Auto gain** and **Station gain** sit under Gain: the automatic per-station
+  RF gain and the station's saved gain, as in Solo (see [Standalone
+  receiver](solo.md)). Tap Station gain to save the gain in force for the
+  station, again to drop it.
 - **a display rail**: zoom and waterfall depth as sliders, the dB ceiling and
   floor as rails beside the trace. The ceiling and floor also set the
   waterfall's colour range (as in SDR++), and moving them recolours its history.

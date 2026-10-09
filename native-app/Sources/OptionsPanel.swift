@@ -379,6 +379,11 @@ final class OptionsPanel: NSView {
         // cycle over 0-8, the HF+'s range: on the V4 (0-28) nothing above 8
         // could be reached, and getting from 8 to 3 meant going round.
         views.append(row("Gain", "gain", .menu({ [weak self] in self?.gainChoices() ?? [] })))
+        // Automatic per-station gain, and the station's own gain: clicking
+        // Station gain saves the gain in force for this station (preset), and
+        // clicking it again while it reads SAVED drops it.
+        views.append(row("Auto gain", "autoGain", .bool))
+        views.append(row("Station gain", "gainSave", .bool))
 
         // Receiver-wide settings, the ones the deck keeps in its Property
         // Inspector. Without them the window can drive the radio but not
@@ -468,6 +473,10 @@ final class OptionsPanel: NSView {
         }
         let parts = name.split(separator: ".")
         if parts.count == 1 {
+            if name == "autoGain" || name == "gainSave" {
+                guard let a = live["autoGain"] as? [String: Any] else { return nil }
+                return name == "autoGain" ? a["auto"] : ((a["station"] as? String) == "saved")
+            }
             if name == "gain" {
                 guard let g = live["gain"] as? [String: Any] else { return nil }
                 // The split the demodulators make: AM has its own gain, and
@@ -496,6 +505,11 @@ final class OptionsPanel: NSView {
         for r in rows {
             let v = value(for: r.name)
             switch r.kind {
+            case .bool where r.name == "gainSave":
+                // Where the station's gain comes from, not an on/off.
+                let src = (live["autoGain"] as? [String: Any])?["station"] as? String
+                r.value.stringValue = src == "saved" ? "SAVED" : src == "auto" ? "AUTO" : "BAND"
+                r.value.textColor = src == "saved" ? P.accent : P.faint
             case .bool:
                 let on = (v as? Bool) ?? false
                 r.value.stringValue = on ? "ON" : "OFF"

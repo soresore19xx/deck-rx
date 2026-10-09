@@ -27,7 +27,7 @@ DATA_SRC="$HERE/../com.hogehoge.deck-rx.sdPlugin/data"
 # the second is the Stream Deck plugin's control endpoint, which has nothing to
 # answer on an iPad.
 SRC="Sources/Platform.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
-     Sources/iOSApp.swift Sources/LocalRadio.swift Sources/SpyClient.swift \
+     Sources/iOSApp.swift Sources/LocalRadio.swift Sources/GainSearch.swift Sources/SpyClient.swift \
      Sources/IQSource.swift Sources/RtlTcpClient.swift \
      Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift \
      Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \

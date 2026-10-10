@@ -162,6 +162,13 @@ function startPipeline(): void {
 
   iqListener = (iq, iqRate, freq) => {
     if (clients.size === 0) return;
+    // A gain search is stepping the level: send nothing, so the app keeps
+    // its last frame, and drop what was being averaged for the next one.
+    if (spyService.spectrumHeld()) {
+      fft?.push(iq);
+      if (sum) { sum.fill(0); count = 0; }
+      return;
+    }
     // Every packet goes into the window, including the ones the rate limit
     // skips: a packet is rate/100 samples, often fewer than the FFT size, so
     // the window is built from several consecutive ones. The pipeline also

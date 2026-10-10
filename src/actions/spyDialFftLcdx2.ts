@@ -288,6 +288,8 @@ export class SpyDialFftLcdx2 extends SingletonAction<Settings> {
     }
     st.iqListener = (iq, iqRate, freq) => {
       if (!st.fft) return;
+      // A gain search is stepping the level: keep the last trace.
+      if (spyService.spectrumHeld()) { st.fft.push(iq); return; }
       // The pipeline keeps the last N samples across packets (a packet is
       // rate/100 samples, often fewer than N), and transforms at the
       // display's pace rather than on every packet: at N=65536 every

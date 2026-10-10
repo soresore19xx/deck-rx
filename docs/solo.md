@@ -55,8 +55,9 @@ are, so what is seen and what is heard line up.
 Under **Gain** in the options, **Auto gain** and **Station gain** carry the
 plugin's automatic per-station RF gain (`native-app/Sources/GainSearch.swift`,
 a port of `src/gainSearch.ts` with the same numbers in both test suites): on
-landing on a station the receiver tries a handful of gains, keeps the lowest
-within 1 dB of the best carrier-to-noise that leaves 6 dB of IQ headroom, and
+landing on a station the receiver tries a handful of gains, climbs from the
+lowest that leaves 6 dB of IQ headroom until the floor starts rising with the
+signal (half its rise or more), keeps that gain, and
 remembers it per receiver, channel and mode in `gain-memory.json` beside
 `receiver.json`. With auto gain on, the Gain control is for the moment only;
 clicking Station gain saves the gain in force as that station's own (it then

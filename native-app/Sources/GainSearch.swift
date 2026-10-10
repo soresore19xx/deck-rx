@@ -53,6 +53,17 @@ enum GainSearch {
     /// C/N in dB from one fftshift'd dBFS spectrum (bin N/2 = the IQ centre).
     /// `centreOffsetHz` is where the tuned frequency sits against the IQ centre.
     static func channelCnDb(bins: [Float], iqRate: Double, centreOffsetHz: Double, mode: Int) -> Double? {
+        channelLevels(bins: bins, iqRate: iqRate, centreOffsetHz: centreOffsetHz, mode: mode)?.cn
+    }
+
+    /// AM, DSB and CW are judged by their carrier (the strongest bin in the
+    /// channel), which stands still under modulation; the others by the mean.
+    private static func hasCarrier(_ mode: Int) -> Bool { mode == 2 || mode == 3 || mode == 5 }
+
+    /// `cn` as channelCnDb, `signalDb` (carrier or channel mean) and `floorDb`
+    /// (median bin outside the channel), dBFS — `channelLevels` exactly.
+    static func channelLevels(bins: [Float], iqRate: Double, centreOffsetHz: Double,
+                              mode: Int) -> (cn: Double, signalDb: Double, floorDb: Double)? {
         guard let ch = measureChannel(mode: mode), bins.count >= 64, iqRate > 0 else { return nil }
         let n = bins.count
         let hzPerBin = iqRate / Double(n)
@@ -60,17 +71,22 @@ enum GainSearch {
         let half = ch.widthHz / 2
         let edge = iqRate * 0.45          // off the decimation filter's skirts
         var sum = 0.0, count = 0
+        var top = -Double.infinity
         var floor: [Float] = []
         for i in 0..<n {
             let f = (Double(i) - Double(n) / 2) * hzPerBin
             if abs(f) > edge { continue }
             let d = abs(f - centre)
-            if d <= half { sum += pow(10, Double(bins[i]) / 10); count += 1 }
-            else if d > half * 1.2 + hzPerBin { floor.append(bins[i]) }
+            if d <= half {
+                sum += pow(10, Double(bins[i]) / 10); count += 1
+                top = max(top, Double(bins[i]))
+            } else if d > half * 1.2 + hzPerBin { floor.append(bins[i]) }
         }
         guard count >= 1, floor.count >= 16 else { return nil }
         floor.sort()
-        return 10 * log10(sum / Double(count)) - Double(floor[floor.count >> 1])
+        let floorDb = Double(floor[floor.count >> 1])
+        let meanDb = 10 * log10(sum / Double(count))
+        return (meanDb - floorDb, hasCarrier(mode) ? top : meanDb, floorDb)
     }
 
     /// IQ peak allowed at the chosen gain. C/N peaks on the step just under
@@ -80,19 +96,48 @@ enum GainSearch {
     /// Below this best C/N there is no station to judge by; nothing is chosen.
     static let minCnDb = 6.0
 
-    struct Result { let gain: Int; let cn: Double; var peakDb: Double? = nil }
+    /// A step up is taken while the floor rises by less than this share of
+    /// the signal's rise (GAIN_FLOOR_RISE_SHARE).
+    static let floorRiseShare = 0.5
 
-    /// The lowest gain within `toleranceDb` of the best C/N among the gains
-    /// that leave the headroom; the lowest gain tried when none does; nil when
-    /// nothing was measured or no gain shows a station.
+    struct Result {
+        let gain: Int; let cn: Double; var peakDb: Double? = nil
+        var signalDb: Double? = nil; var floorDb: Double? = nil
+    }
+
+    /// `pickGain` exactly: among the gains that leave the headroom, climb from
+    /// the lowest and stop where the floor rises by `floorRiseShare` or more
+    /// of the signal's rise, or the signal stops rising — past that the noise
+    /// is the antenna's and more gain only lifts the floor. Until the station
+    /// stands `minCnDb` clear, any step that improves C/N is taken. Results
+    /// without levels fall back to the lowest gain within `toleranceDb` of the
+    /// best C/N (the rule before, which chose 24-26 on medium wave where 6-12
+    /// gave the same C/N: user, 2026-10-10). The lowest gain tried when none
+    /// leaves the headroom; nil when nothing was measured or no gain shows a
+    /// station.
     static func pickGain(_ results: [Result], toleranceDb: Double = 1,
                          maxPeakDb: Double = maxPeakDbfs) -> Int? {
         guard !results.isEmpty else { return nil }
         guard results.map(\.cn).max()! >= minCnDb else { return nil }
         let clean = results.filter { $0.peakDb == nil || $0.peakDb! <= maxPeakDb }
         if clean.isEmpty { return results.map(\.gain).min() }
-        let best = clean.map(\.cn).max()!
-        return clean.filter { $0.cn >= best - toleranceDb }.map(\.gain).min()
+        if clean.contains(where: { $0.signalDb == nil || $0.floorDb == nil }) {
+            let best = clean.map(\.cn).max()!
+            return clean.filter { $0.cn >= best - toleranceDb }.map(\.gain).min()
+        }
+        let up = clean.sorted { $0.gain < $1.gain }
+        var at = up[0]
+        for next in up.dropFirst() {
+            if at.cn < minCnDb {
+                if next.cn > at.cn { at = next; continue }
+                break
+            }
+            let dSignal = next.signalDb! - at.signalDb!
+            let dFloor = next.floorDb! - at.floorDb!
+            if dSignal <= 0 || dFloor >= floorRiseShare * dSignal { break }
+            at = next
+        }
+        return at.gain
     }
 
     /// Receiver, channel to 100 Hz, demod mode — `gainMemoryKey` exactly.

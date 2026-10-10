@@ -60,6 +60,9 @@ const GAIN_AFTER_STEP_MS = 15;
 const GAIN_STEP_DB = 1.5;        // packet power jump that says the new gain has landed
 const GAIN_MEASURE_MS = 60;
 const GAIN_SEARCH_FFT = 4096;
+/** Spectrum held this long after a search ends: the final gain's settling
+ *  (the same 250 ms sendLiveGain mutes the audio for). */
+const SPECTRUM_HOLD_TAIL_MS = 250;
 
 export type DeemphasisOpt = 'off' | '50us' | '75us';
 
@@ -952,6 +955,19 @@ class SpyService {
    *  so the next apply sends even when the number looks unchanged. */
   private gainHwDirty = false;
   private gainSearching = false;
+  private spectrumHoldUntil = 0;
+
+  /**
+   * True while a gain search steps the level, and briefly after it while the
+   * chosen gain settles. Spectrum displays keep their last frame meanwhile:
+   * every test step moves the whole trace by its gain, and drawn live the
+   * display swung up and down through each one (user, 2026-10-10). Displays
+   * keep feeding their FFT window (push) so the first frame after the hold
+   * holds no pre-search samples.
+   */
+  spectrumHeld(): boolean {
+    return this.gainSearching || Date.now() < this.spectrumHoldUntil;
+  }
   /** Whole-band power of the newest IQ packet (dBFS) and when it arrived. */
   private packetPowerDb = -120;
   private packetPowerAt = 0;
@@ -1206,6 +1222,7 @@ class SpyService {
     } finally {
       this.unsubscribeIqStream(tap);
       this.gainSearching = false;
+      this.spectrumHoldUntil = Date.now() + SPECTRUM_HOLD_TAIL_MS;
       // Abandoned by a retune: that landing already sent its own gain (dirty
       // made sure). Abandoned by a stop: nothing to restore.
       if (!stale() && this.gainHwDirty) this.sendLiveGain('search end');

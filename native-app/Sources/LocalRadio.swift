@@ -48,6 +48,12 @@ final class LocalRadio {
     private var packetPowerAt = Date.distantPast
     /// Sees every packet while a search measures (gainLock).
     private var gainTap: ((Data) -> Void)?
+    /// The spectrum stands still while a search steps the gain, and until the
+    /// chosen gain has reached the IQ (gainLock). Each test step moves the
+    /// whole trace by its gain, so drawn live the display swung up and down
+    /// through every step (user, 2026-10-10). spyService.ts spectrumHeld().
+    private var gainSearching = false
+    private var spectrumHoldEnd = Date.distantPast
     let gainMemory = GainMemory.shared
 
     /// Longest gap between two IQ packets in the last ten seconds, in ms.
@@ -1634,6 +1640,9 @@ final class LocalRadio {
         // that has just started does not lurch backwards.
         let target = audioEnabled ? sink.latencySeconds : 0
         displayDelaySeconds += (target - displayDelaySeconds) * 0.1
+        // A gain search is stepping the level: keep the last frame (and the
+        // smoothing state) rather than draw each step.
+        if spectrumHeld(delay: displayDelaySeconds) { return }
         // Clamped to what is actually in hand: after a retune the buffer starts
         // empty, so the display begins live and slides back to the ear's own
         // delay as it refills, rather than showing nothing for a fifth of a
@@ -1675,6 +1684,17 @@ extension LocalRadio {
     private static let gainStepDb = 1.5
     private static let gainMeasure = 0.06
     private static let gainSearchFft = 4096
+    /// How long the spectrum stays held after a search ends: the final gain's
+    /// trip to the server and its settling (sendLiveGain's 250 ms in the plugin).
+    static let spectrumHoldTail = 0.25
+
+    /// auxQueue. True while the spectrum should keep its last frame.
+    /// `delay` is how far behind the live IQ the display is drawn: the steps
+    /// reach the drawn window that much later, so the hold ends that much later.
+    func spectrumHeld(delay: Double) -> Bool {
+        gainLock.lock(); defer { gainLock.unlock() }
+        return gainSearching || Date() < spectrumHoldEnd.addingTimeInterval(delay)
+    }
 
     /// The station being heard, as GainMemory files it.
     var gainKeyNow: String? {
@@ -1863,8 +1883,16 @@ extension LocalRadio {
             frames += 1
         }
         let stale = { self.currentGainToken != token }
-        gainLock.lock(); gainTap = tap; gainLock.unlock()
-        defer { gainLock.lock(); gainTap = nil; gainLock.unlock() }
+        gainLock.lock(); gainTap = tap; gainSearching = true; gainLock.unlock()
+        defer {
+            gainLock.lock()
+            gainTap = nil
+            gainSearching = false
+            // The result (or the landing that cut the search short) is sent
+            // just after this; hold over its settling as well.
+            spectrumHoldEnd = Date().addingTimeInterval(Self.spectrumHoldTail)
+            gainLock.unlock()
+        }
 
         func measure(_ g: Int) -> Bool {
             if stale() { return false }

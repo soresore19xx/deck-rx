@@ -62,7 +62,8 @@ remembers it per receiver, channel and mode in `gain-memory.json` beside
 clicking Station gain saves the gain in force as that station's own (it then
 reads SAVED and is never searched over), and clicking it again drops it.
 AUTO means the search chose it, BAND that the band's gain is in force.
-`/autogain` on the control endpoint takes the plugin's parameters.
+`/autogain` on the control endpoint takes the plugin's parameters. As in the plugin, the spectrum and waterfall hold their last frame while a
+search steps the gain (and 250 ms after, plus the display's audio delay).
 
 The meters, the drop count and every row in the options panel describe **this**
 receiver. They used to be read off the loopback control

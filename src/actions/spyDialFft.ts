@@ -97,6 +97,8 @@ export class SpyDialFft extends SingletonAction<Settings> {
     this.connected = spyService.isConnected();
     this.iqListener = (iq, iqRate, freq) => {
       if (!this.fft) return;
+      // A gain search is stepping the level: keep the last trace.
+      if (spyService.spectrumHeld()) { this.fft.push(iq); return; }
       // Paced to the display: a large N transformed on every packet costs
       // far more than an LCD redrawn 16 times a second can show.
       const bins = this.fft.processPaced(iq, this.smoothing, 1000 / this.frameRate);

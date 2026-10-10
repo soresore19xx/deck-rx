@@ -149,13 +149,20 @@ enum GainSearch {
 /// The gains the search chose (`gains`) and the ones the user saved for a
 /// station on purpose (`saved`), in the plugin's file layout. A saved gain
 /// wins and is never searched over. Its own file beside receiver.json.
+/// `measured` is when each auto gain was measured (ms since 1970); past
+/// `maxAge`, or with no time at all (filed by the rule before f3898dc), the
+/// station is measured again on the next landing (gainMemory.ts).
 final class GainMemory {
     static let shared = GainMemory()
+
+    /// AUTO_GAIN_MAX_AGE_MS in gainMemory.ts.
+    static let maxAge: TimeInterval = 60 * 60
 
     private struct File: Codable {
         var version = 1
         var gains: [String: Int] = [:]
         var saved: [String: Int]? = [:]
+        var measured: [String: Double]? = [:]
     }
     private var file: File
     private let path: String
@@ -192,10 +199,20 @@ final class GainMemory {
         return nil
     }
 
-    func remember(_ key: String, _ gain: Int) {
+    /// Whether the auto gain was measured under the current rule within maxAge.
+    func autoFresh(_ key: String, now: Date = Date()) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        guard file.gains[key] != gain else { return }
+        guard let at = file.measured?[key] else { return false }
+        let age = now.timeIntervalSince1970 * 1000 - at
+        return age >= 0 && age < Self.maxAge * 1000
+    }
+
+    /// File the gain the search chose, and when.
+    func remember(_ key: String, _ gain: Int, now: Date = Date()) {
+        lock.lock(); defer { lock.unlock() }
         file.gains[key] = gain
+        if file.measured == nil { file.measured = [:] }
+        file.measured![key] = now.timeIntervalSince1970 * 1000
         write()
     }
 
@@ -212,6 +229,7 @@ final class GainMemory {
         guard file.gains[key] != nil || file.saved?[key] != nil else { return }
         file.gains[key] = nil
         file.saved?[key] = nil
+        file.measured?[key] = nil
         write()
     }
 
@@ -221,10 +239,14 @@ final class GainMemory {
         return (file.gains, file.saved ?? [:])
     }
 
-    /// Apply what sync settled on: `nil` deletes the key.
+    /// Apply what sync settled on: `nil` deletes the key. A gain changed by
+    /// another device loses this device's time for that key.
     func apply(gains: [String: Int?], saved: [String: Int?]) {
         lock.lock(); defer { lock.unlock() }
-        for (k, v) in gains { file.gains[k] = v }
+        for (k, v) in gains {
+            if file.gains[k] != v { file.measured?[k] = nil }
+            file.gains[k] = v
+        }
         if file.saved == nil { file.saved = [:] }
         for (k, v) in saved { file.saved![k] = v }
         write()

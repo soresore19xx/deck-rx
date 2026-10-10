@@ -59,7 +59,8 @@ landing on a station the receiver tries a handful of gains, climbs from the
 lowest that leaves 6 dB of IQ headroom until the floor starts rising with the
 signal (half its rise or more), keeps that gain, and
 remembers it per receiver, channel and mode in `gain-memory.json` beside
-`receiver.json`. With auto gain on, the Gain control is for the moment only;
+`receiver.json` for an hour (an older one, or one with no measurement time,
+is searched again on the next landing, as in the plugin). With auto gain on, the Gain control is for the moment only;
 clicking Station gain saves the gain in force as that station's own (it then
 reads SAVED and is never searched over), and clicking it again drops it.
 AUTO means the search chose it, BAND that the band's gain is in force.

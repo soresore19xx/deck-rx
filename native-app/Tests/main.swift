@@ -1312,6 +1312,23 @@ do {
     check("and comes back from disk", m2.recall(k) == 9 && m2.source(k) == .saved)
     m2.forget(k)
     check("forget drops both", m2.source(k) == nil && GainMemory(path: path).recall(k) == nil)
+
+    // The same numbers as the plugin's gain-memory tests.
+    let ka = GainSearch.key(deviceKey: "3:00000000", freqHz: 1_440_000, mode: 2)
+    let t0 = Date(timeIntervalSince1970: 1_760_000_000)
+    m2.remember(ka, 0, now: t0)
+    check("an auto gain is fresh for under an hour", m2.autoFresh(ka, now: t0.addingTimeInterval(59 * 60)))
+    check("and stale at an hour", !m2.autoFresh(ka, now: t0.addingTimeInterval(GainMemory.maxAge)) && m2.recall(ka) == 0)
+    m2.remember(ka, 0, now: t0.addingTimeInterval(GainMemory.maxAge))
+    check("the same gain measured again is fresh again, from disk too",
+          GainMemory(path: path).autoFresh(ka, now: t0.addingTimeInterval(GainMemory.maxAge + 1)))
+    try? #"{"version":1,"gains":{"\#(ka)":24},"saved":{}}"#.write(toFile: path, atomically: true, encoding: .utf8)
+    let m3 = GainMemory(path: path)
+    check("a gain filed without a time is measured again", m3.recall(ka) == 24 && !m3.autoFresh(ka))
+    let kb = GainSearch.key(deviceKey: "3:00000000", freqHz: 954_000, mode: 2)
+    m3.remember(ka, 0); m3.remember(kb, 6)
+    m3.apply(gains: [ka: 0, kb: 12], saved: [:])
+    check("sync: a changed gain loses the time, an unchanged one keeps it", m3.autoFresh(ka) && !m3.autoFresh(kb))
     try? FileManager.default.removeItem(at: dir)
 }
 

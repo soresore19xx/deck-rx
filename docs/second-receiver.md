@@ -80,8 +80,9 @@ within 1 dB of the best C/N had chosen 24-26 on medium-wave stations that read
 the same at 6-12, with the floor 15-20 dB higher for nothing: one 60 ms read
 of an AM channel moves by decibels with the programme, and the high gain that
 caught a loud moment won. The choice is filed per receiver, channel
-and mode in `data/gain-memory.json`, ahead of the band slot, and a gain set by
-hand overwrites it. Each step waits until the whole-band power of the incoming
+and mode in `data/gain-memory.json` with the time it was measured, ahead of
+the band slot, and used for an hour; after that, or with no time on it (filed
+by the older rule), the station is searched again on the next landing. Each step waits until the whole-band power of the incoming
 packets jumps (the V4's packet header reports the same gain throughout), which
 brings a search to about 1 s. Rules: `src/gainSearch.ts` (pure, tested in
 `test/gainSearch.test.ts`), the file in `src/gainMemory.ts`, the driving in

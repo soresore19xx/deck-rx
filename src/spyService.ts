@@ -37,7 +37,7 @@ import { FftPipeline } from './fft.js';
 import {
   measureChannel, coarseGains, refineGains, channelLevels, pickGain, gainMemoryKey, type GainResult,
 } from './gainSearch.js';
-import { recallGain, rememberGain, forgetGain, saveGain, gainSource } from './gainMemory.js';
+import { recallGain, rememberGain, forgetGain, saveGain, gainSource, autoGainFresh } from './gainMemory.js';
 
 declare const __dirname: string;
 // CONFIG_PATH defaults to the bundled config.json (sibling of bin/) for the
@@ -1034,9 +1034,15 @@ class SpyService {
       return;
     }
     const known = recallGain(key);
-    if (known !== undefined) { this.setLiveScopeGain(known, `remembered (${why})`); return; }
     const searchable = measureChannel(this.currentDemodMode) !== null
       && this.connected && this.audioRunning && this.canControl;
+    // A remembered gain that is old, or from the rule before f3898dc, is
+    // measured again — reception does not stand still. Used as it is only
+    // when there is no searching now.
+    if (known !== undefined && (autoGainFresh(key) || !searchable)) {
+      this.setLiveScopeGain(known, `remembered (${why})`);
+      return;
+    }
     if (immediate && searchable) {
       // Silent from the switch to the result. Letting the band's gain play
       // for the dwell first gave "a burst of sound, silence, then the
@@ -1052,10 +1058,11 @@ class SpyService {
       }, GAIN_JUMP_DELAY_MS);
       return;
     }
-    // Unknown station under a turning dial: leave the previous station's gain
-    // behind (it may be a weak station's high gain, the one that overloads on
-    // a strong one) and search once the dial has stopped.
-    this.setLiveScopeGain(this.bandGainNow(info), `band (${why})`);
+    // Unknown (or stale) station under a turning dial: leave the previous
+    // station's gain behind (it may be a weak station's high gain, the one
+    // that overloads on a strong one) and search once the dial has stopped.
+    this.setLiveScopeGain(known ?? this.bandGainNow(info),
+                          known !== undefined ? `remembered, stale (${why})` : `band (${why})`);
     if (!searchable) return;
     this.gainDwellTimer = setTimeout(() => {
       this.gainDwellTimer = null;

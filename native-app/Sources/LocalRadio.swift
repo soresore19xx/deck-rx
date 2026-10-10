@@ -1810,11 +1810,14 @@ extension LocalRadio {
             return
         }
         guard config.autoGain else { setStationGain(nil, why: "band (\(why))"); return }
-        if let g = gainMemory.recall(key) {
+        let known = gainMemory.recall(key)
+        let searchable = GainSearch.measureChannel(mode: mode) != nil && isConnected && canControl
+        // An old remembered gain, or one from the rule before f3898dc, is
+        // measured again (reception moves); as it is only when no search can run.
+        if let g = known, gainMemory.autoFresh(key) || !searchable {
             setStationGain(UInt32(g), why: "remembered (\(why))")
             return
         }
-        let searchable = GainSearch.measureChannel(mode: mode) != nil && isConnected && canControl
         let work = DispatchWorkItem { [weak self] in self?.startGainSearch() }
         if immediate && searchable {
             // Silent from the switch to the result (spyService.ts: a burst of
@@ -1827,7 +1830,8 @@ extension LocalRadio {
         }
         // Under a turning dial the previous station's gain (maybe a weak
         // station's high one) is not left behind.
-        setStationGain(nil, why: "band (\(why))")
+        setStationGain(known.map { UInt32($0) },
+                       why: known != nil ? "remembered, stale (\(why))" : "band (\(why))")
         guard searchable else { return }
         gainDwell = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.gainDwell, execute: work)

@@ -172,6 +172,36 @@ describe('gain memory', () => {
     m.resetGainMemoryCache();
     expect(m.recallGain(v4)).toBeUndefined();
   });
+  it('an auto gain is trusted for an hour, then measured again', async () => {
+    const m = await import('../src/gainMemory.js');
+    const k = gainMemoryKey('3:00000000', 1_440_000, 2);
+    const t0 = 1_760_000_000_000;
+    m.rememberGain(k, 0, t0);
+    expect(m.autoGainFresh(k, t0 + 59 * 60_000)).toBe(true);
+    expect(m.autoGainFresh(k, t0 + m.AUTO_GAIN_MAX_AGE_MS)).toBe(false);
+    expect(m.recallGain(k)).toBe(0);             // still the fallback meanwhile
+    m.rememberGain(k, 0, t0 + m.AUTO_GAIN_MAX_AGE_MS);   // same gain, new time
+    expect(m.autoGainFresh(k, t0 + m.AUTO_GAIN_MAX_AGE_MS + 1)).toBe(true);
+    m.resetGainMemoryCache();
+    expect(m.autoGainFresh(k, t0 + m.AUTO_GAIN_MAX_AGE_MS + 1)).toBe(true);  // from disk
+  });
+  it('a gain filed without a time (the rule before f3898dc) is measured again', async () => {
+    const m = await import('../src/gainMemory.js');
+    const k = gainMemoryKey('3:00000000', 1_440_000, 2);
+    fs.writeFileSync(file, JSON.stringify({ version: 1, gains: { [k]: 24 }, saved: {} }));
+    m.resetGainMemoryCache();
+    expect(m.recallGain(k)).toBe(24);
+    expect(m.autoGainFresh(k)).toBe(false);
+  });
+  it('a gain changed by sync loses this device\'s time, an unchanged one keeps it', async () => {
+    const m = await import('../src/gainMemory.js');
+    const a = gainMemoryKey('3:00000000', 1_440_000, 2);
+    const b = gainMemoryKey('3:00000000', 954_000, 2);
+    m.rememberGain(a, 0); m.rememberGain(b, 6);
+    m.replaceGainMaps({ [a]: 0, [b]: 12 }, {});
+    expect(m.autoGainFresh(a)).toBe(true);
+    expect(m.autoGainFresh(b)).toBe(false);
+  });
   it('a saved gain wins over the auto one and survives the next search', async () => {
     const m = await import('../src/gainMemory.js');
     const k = gainMemoryKey('3:00000000', 90_500_000, 1);

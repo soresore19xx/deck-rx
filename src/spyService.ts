@@ -35,7 +35,7 @@ import {
 import { scrapeJpStations } from './japanStationsScraper.js';
 import { FftPipeline } from './fft.js';
 import {
-  measureChannel, coarseGains, refineGains, channelCnDb, pickGain, gainMemoryKey,
+  measureChannel, coarseGains, refineGains, channelLevels, pickGain, gainMemoryKey, type GainResult,
 } from './gainSearch.js';
 import { recallGain, rememberGain, forgetGain, saveGain, gainSource } from './gainMemory.js';
 
@@ -1161,7 +1161,7 @@ class SpyService {
       frames++;
     };
     const stale = () => token !== this.gainSearchToken || !this.audioRunning;
-    const results: Array<{ gain: number; cn: number; peakDb: number }> = [];
+    const results: GainResult[] = [];
     const overload: string[] = [];
     const settleMs: string[] = [];   // "*" = ran to the ceiling
     const startedAt = Date.now();
@@ -1189,9 +1189,9 @@ class SpyService {
       if (!sum || frames < 2) return true;
       const avg = new Float32Array(sum.length);
       for (let i = 0; i < sum.length; i++) avg[i] = 10 * Math.log10(sum[i] / frames + 1e-30);
-      const cn = channelCnDb(avg, this.currentIQRate, 0, mode);
+      const lv = channelLevels(avg, this.currentIQRate, 0, mode);
       const peakDb = peak > 0 ? 20 * Math.log10(peak / 32767) : -120;
-      if (cn !== null) results.push({ gain: g, cn, peakDb });
+      if (lv) results.push({ gain: g, cn: lv.cn, peakDb, signalDb: lv.signalDb, floorDb: lv.floorDb });
       overload.push(`${g}:${peakDb.toFixed(1)}/${(nearFull / Math.max(1, samples) * 100).toFixed(2)}%`);
       return true;
     };
@@ -1215,7 +1215,10 @@ class SpyService {
       rememberGain(key, best);
       const table = [...results].sort((a, b) => a.gain - b.gain)
         .map(r => `${r.gain}:${r.cn.toFixed(1)}`).join(' ');
+      const levels = [...results].sort((a, b) => a.gain - b.gain)
+        .map(r => `${r.gain}:${r.signalDb!.toFixed(1)}/${r.floorDb!.toFixed(1)}`).join(' ');
       log.info(`[spyService] gain search ${freq} mode=${mode} → ${best}  (C/N dB ${table})` +
+               `  sig/floor dBFS ${levels}` +
                `  ${Date.now() - startedAt} ms, settle ${settleMs.join('/')}` +
                `  peak dBFS/full ${overload.join(' ')}`);
       this.setLiveScopeGain(best, 'auto');

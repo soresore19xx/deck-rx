@@ -64,7 +64,7 @@ serve both ends of FM broadcast on the V4: a gain high enough for a
 neighbouring prefecture's 79.5 MHz overloads the strong Tokyo stations, and one
 low enough for those loses 79.5. So on landing on a station the plugin steps
 the gain, reads carrier-to-noise in the channel at each step and keeps the
-lowest gain within 1 dB of the best; C/N rises with gain, plateaus, then drops
+gain where the plateau starts; C/N rises with gain, plateaus, then drops
 sharply once the front end overloads (1242 kHz: 27.4 dB at 9, 9.8 at 12;
 82.5 MHz: 35.0 at 9, 21.8 at 12). The peak itself sits at the edge of
 overload, though: the strong wide-FM stations peaked at -1.7 (90.5 MHz) and
@@ -72,7 +72,14 @@ overload, though: the strong wide-FM stations peaked at -1.7 (90.5 MHz) and
 at full scale. So only gains whose IQ peak stays at or below -6 dBFS are
 candidates — 90.5 now gets 3 (C/N 38.8 dB) where it got 6 — and a channel
 with no station at any gain (best C/N under 6 dB) files nothing and keeps the
-band's gain. The choice is filed per receiver, channel
+band's gain. Since 2026-10-10 "where the plateau starts" is found by levels,
+not by the best C/N: climbing from the lowest gain, the search stops at the
+first step where the floor outside the channel rises by half the signal's rise
+or more (the signal is the carrier for AM / DSB / CW). Taking the lowest gain
+within 1 dB of the best C/N had chosen 24-26 on medium-wave stations that read
+the same at 6-12, with the floor 15-20 dB higher for nothing: one 60 ms read
+of an AM channel moves by decibels with the programme, and the high gain that
+caught a loud moment won. The choice is filed per receiver, channel
 and mode in `data/gain-memory.json`, ahead of the band slot, and a gain set by
 hand overwrites it. Each step waits until the whole-band power of the incoming
 packets jumps (the V4's packet header reports the same gain throughout), which

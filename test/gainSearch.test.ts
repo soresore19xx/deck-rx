@@ -6,7 +6,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
-  coarseGains, refineGains, channelCnDb, pickGain, gainMemoryKey, measureChannel,
+  coarseGains, refineGains, channelCnDb, channelLevels, pickGain, gainMemoryKey, measureChannel,
 } from '../src/gainSearch.js';
 
 /** A flat floor with a raised block of `widthHz` centred on `atHz`. */
@@ -90,6 +90,63 @@ describe('pickGain', () => {
   });
   it('nothing measured, nothing picked', () => {
     expect(pickGain([])).toBeNull();
+  });
+});
+
+describe('pickGain with levels: stop where the floor starts to follow the gain', () => {
+  // dB per step for the V4 ladder is roughly the index gap, close enough here.
+  const at = (gain: number, signalDb: number, floorDb: number, peakDb = -30) =>
+    ({ gain, signalDb, floorDb, cn: signalDb - floorDb, peakDb });
+  it('medium wave: the antenna noise rules from 6 up, so a lucky 24 does not win', () => {
+    // Floor flat from 0 to 6 (the receiver's own), then rising with the gain.
+    // 24 reads 1.5 dB better C/N by chance; the old rule took it.
+    const r = [at(0, -70, -110), at(6, -64, -108), at(12, -58, -101),
+               at(18, -52, -95), at(24, -42, -87.5), at(29, -41, -84)];
+    expect(pickGain(r)).toBe(6);
+    expect(pickGain(r.map(({ gain, cn, peakDb }) => ({ gain, cn, peakDb })))).toBe(24);
+  });
+  it('a quiet band: the floor stays put, so the climb goes on', () => {
+    const r = [at(0, -80, -110), at(6, -74, -110), at(12, -68, -109.5),
+               at(18, -62, -108), at(24, -56, -102), at(29, -51, -97)];
+    expect(pickGain(r)).toBe(18);
+  });
+  it('overload: intermod lifts the floor faster than the signal', () => {
+    const r = [at(0, -40, -110), at(6, -34, -109), at(12, -29, -95)];
+    expect(pickGain(r)).toBe(6);
+  });
+  it('the signal stops rising (compression): stop below', () => {
+    const r = [at(0, -40, -110), at(6, -34, -109.5), at(12, -34, -109)];
+    expect(pickGain(r)).toBe(6);
+  });
+  it('a station not yet clear of the floor is climbed out of', () => {
+    // At 0 the carrier is lost in the receiver's noise and the levels say
+    // nothing; C/N improving is the only guide until it stands clear.
+    const r = [at(0, -108, -110), at(6, -102, -110), at(12, -96, -110), at(18, -90, -105)];
+    expect(pickGain(r)).toBe(12);
+  });
+  it('headroom still comes first', () => {
+    const r = [at(0, -30, -110, -14), at(6, -24, -110, -4), at(12, -18, -110, -1)];
+    expect(pickGain(r)).toBe(0);
+  });
+  it('the order the steps were measured in does not matter', () => {
+    const r = [at(12, -58, -101), at(0, -70, -110), at(9, -61, -106), at(6, -64, -108)];
+    expect(pickGain(r)).toBe(6);
+  });
+});
+
+describe('channelLevels', () => {
+  const n = 4096, rate = 300_000;
+  it('AM: the carrier is the reference, not the mean of the channel', () => {
+    const b = spectrum(n, rate, -100, -80, 0, 8_000);
+    b[n / 2] = -40;                          // carrier
+    const lv = channelLevels(b, rate, 0, 2)!;
+    expect(lv.signalDb).toBeCloseTo(-40, 5);
+    expect(lv.floorDb).toBeCloseTo(-100, 5);
+    expect(lv.cn).toBeLessThan(60);          // C/N stays the channel mean
+  });
+  it('WFM: the mean of the channel', () => {
+    const lv = channelLevels(spectrum(n, rate, -100, -60, 0, 180_000), rate, 0, 1)!;
+    expect(lv.signalDb).toBeCloseTo(-60, 0);
   });
 });
 

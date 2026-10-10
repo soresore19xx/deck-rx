@@ -1263,6 +1263,37 @@ do {
                                R(gain: 12, cn: 0.9, peakDb: -19.5), R(gain: 29, cn: 1.1, peakDb: -7.4)]) == nil)
     check("nothing measured, nothing picked", GainSearch.pickGain([]) == nil)
 
+    // With levels: stop where the floor starts to follow the gain
+    // (test/gainSearch.test.ts, same numbers).
+    func lv(_ g: Int, _ s: Double, _ f: Double, _ pk: Double = -30) -> R {
+        R(gain: g, cn: s - f, peakDb: pk, signalDb: s, floorDb: f)
+    }
+    let mw = [lv(0, -70, -110), lv(6, -64, -108), lv(12, -58, -101),
+              lv(18, -52, -95), lv(24, -42, -87.5), lv(29, -41, -84)]
+    check("levels: medium wave stops at 6, not a lucky 24", GainSearch.pickGain(mw) == 6)
+    check("levels: the old rule on the same C/N took 24",
+          GainSearch.pickGain(mw.map { R(gain: $0.gain, cn: $0.cn, peakDb: $0.peakDb) }) == 24)
+    check("levels: a quiet band climbs on",
+          GainSearch.pickGain([lv(0, -80, -110), lv(6, -74, -110), lv(12, -68, -109.5),
+                               lv(18, -62, -108), lv(24, -56, -102), lv(29, -51, -97)]) == 18)
+    check("levels: overload lifts the floor",
+          GainSearch.pickGain([lv(0, -40, -110), lv(6, -34, -109), lv(12, -29, -95)]) == 6)
+    check("levels: signal stops rising",
+          GainSearch.pickGain([lv(0, -40, -110), lv(6, -34, -109.5), lv(12, -34, -109)]) == 6)
+    check("levels: climbed out of the receiver's noise",
+          GainSearch.pickGain([lv(0, -108, -110), lv(6, -102, -110), lv(12, -96, -110), lv(18, -90, -105)]) == 12)
+    check("levels: headroom first",
+          GainSearch.pickGain([lv(0, -30, -110, -14), lv(6, -24, -110, -4), lv(12, -18, -110, -1)]) == 0)
+    check("levels: measuring order does not matter",
+          GainSearch.pickGain([lv(12, -58, -101), lv(0, -70, -110), lv(9, -61, -106), lv(6, -64, -108)]) == 6)
+    var carrier = spectrum(n, rate, -100, -80, 0, 8_000)
+    carrier[n / 2] = -40
+    let amLv = GainSearch.channelLevels(bins: carrier, iqRate: rate, centreOffsetHz: 0, mode: 2)
+    check("levels: AM takes the carrier",
+          amLv.map { near($0.signalDb, -40, 1e-4) && near($0.floorDb, -100, 1e-4) && $0.cn < 60 } ?? false)
+    let wfmLv = GainSearch.channelLevels(bins: spectrum(n, rate, -100, -60, 0, 180_000), iqRate: rate, centreOffsetHz: 0, mode: 1)
+    check("levels: WFM takes the channel mean", wfmLv.map { near($0.signalDb, -60, 0.5) } ?? false)
+
     let v4 = GainSearch.key(deviceKey: "3:00000000", freqHz: 79_500_000, mode: 1)
     check("key as the plugin writes it", v4 == "3:00000000|79500000|1", v4)
     check("key rounds to 100 Hz", GainSearch.key(deviceKey: "3:00000000", freqHz: 79_500_040, mode: 1) == v4)

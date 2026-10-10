@@ -1926,8 +1926,9 @@ extension LocalRadio {
             peaks.append(String(format: "%d:%.1f/%.2f%%", g, peakDb, Double(nf) / Double(max(1, sm)) * 100))
             guard let s = sum, fr >= 2 else { return true }
             let avg = s.map { Float(10 * log10($0 / Double(fr) + 1e-30)) }
-            if let cn = GainSearch.channelCnDb(bins: avg, iqRate: rate, centreOffsetHz: offset, mode: mode) {
-                results.append(.init(gain: g, cn: cn, peakDb: peakDb))
+            if let lv = GainSearch.channelLevels(bins: avg, iqRate: rate, centreOffsetHz: offset, mode: mode) {
+                results.append(.init(gain: g, cn: lv.cn, peakDb: peakDb,
+                                     signalDb: lv.signalDb, floorDb: lv.floorDb))
             }
             return true
         }
@@ -1949,7 +1950,9 @@ extension LocalRadio {
         }
         let best = GainSearch.pickGain(results) ?? first
         gainMemory.remember(key, best)
-        NSLog("[gain] search \(freq) mode=\(mode) -> \(best)  (C/N dB \(table()))  " +
+        let levels = results.sorted { $0.gain < $1.gain }
+            .map { String(format: "%d:%.1f/%.1f", $0.gain, $0.signalDb ?? 0, $0.floorDb ?? 0) }.joined(separator: " ")
+        NSLog("[gain] search \(freq) mode=\(mode) -> \(best)  (C/N dB \(table()))  sig/floor dBFS \(levels)  " +
               "\(Int(Date().timeIntervalSince(started) * 1000)) ms, settle \(settle.joined(separator: "/"))" +
               "  peak dBFS/full \(peaks.joined(separator: " "))")
         DispatchQueue.main.async {

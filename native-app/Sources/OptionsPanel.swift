@@ -101,6 +101,7 @@ final class OptionsPanel: NSView {
             ((j["databases"] as? [String]) ?? []).joined(separator: ","),
             ((j["regions"] as? [String]) ?? []).joined(separator: ","),
             ((j["audioDevices"] as? [String]) ?? []).joined(separator: ","),
+            j["connected"] == nil ? "-" : "c",
         ].joined(separator: "|")
     }
 
@@ -433,6 +434,14 @@ final class OptionsPanel: NSView {
             views.append(row("Bitrate", "rx.icecastBitrate",
                              .text(["64k", "96k", "128k", "192k", "256k"])))
         }
+        // SERVER: the link and its address together, the switch on top. The
+        // three rows below are locked while it is on (Disconnect, change,
+        // Connect), so the switch sits where the eye goes when they will not
+        // take a click. Only shown by an endpoint that reports the link.
+        views.append(header("SERVER"))
+        if rx["connected"] != nil {
+            views.append(row("Link", "rx.connected", .bool))
+        }
         // What the receiver listens through. Above the address because it
         // decides whether the address below means anything: on "usb" the app
         // opens the device on this machine and the host and port are dormant
@@ -443,8 +452,8 @@ final class OptionsPanel: NSView {
             // reach another dropped the link on the way (asked 2026-09-25).
             views.append(row("Source", "rx.source", .menu({ list })))
         }
-        // The link's address. Changing either dials the new server, so these
-        // are typed and applied on Enter rather than cycled by accident.
+        // The link's address, typed and applied on Enter. Taken only with the
+        // link off; Connect is what dials it.
         // Short names: "Server host" truncates to "Serve" in this column, and a
         // label that loses its last word says less than one that never had it.
         views.append(editRow("Host", "rx.host", width: S(128)))
@@ -531,6 +540,10 @@ final class OptionsPanel: NSView {
                 let src = (live["autoGain"] as? [String: Any])?["station"] as? String
                 r.value.stringValue = src == "saved" ? "SAVED" : src == "auto" ? "AUTO" : "BAND"
                 r.value.textColor = src == "saved" ? P.accent : P.faint
+            case .bool where r.name == "rx.connected":
+                let on = (v as? Bool) ?? false
+                r.value.stringValue = on ? "CONNECTED" : "DISCONNECTED"
+                r.value.textColor = on ? P.accent : P.faint
             case .bool:
                 let on = (v as? Bool) ?? false
                 r.value.stringValue = on ? "ON" : "OFF"
@@ -587,6 +600,11 @@ final class OptionsPanel: NSView {
             }
         }
         switch kind {
+        case .bool where name == "rx.connected":
+            // The same switch as the toolbar's (Solo's DIRECT, the front-end's
+            // POWER), not a setting: it goes through the power path.
+            Receiver.togglePower()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.refresh() }
         case .bool:
             let on = (value(for: name) as? Bool) ?? false
             send(on ? "0" : "1")

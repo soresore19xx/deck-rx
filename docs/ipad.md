@@ -102,7 +102,9 @@ Connects to `127.0.0.1:5555`, the default the shared `RadioConfig` carries;
 there is no plugin config on an iPad to seed a real address from. Address and
 port are two boxes because they are two things, and `host:port` pasted into the
 address box is still split correctly. Both are saved before the connect is
-attempted, so a refused address survives to the next launch. The two boxes and
+attempted, so a refused address survives to the next launch. **Connect** /
+**Disconnect** is the first key of the SERVER group, lit while the link is on;
+Options and DRM sit beside the status line below it. The two boxes and
 the source menu are greyed out while **Disconnect** is showing — connected or
 still retrying — so an address is changed with the link off: Disconnect,
 change, Connect.

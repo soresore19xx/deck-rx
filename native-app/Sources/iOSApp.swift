@@ -291,7 +291,10 @@ final class RadioViewController: UIViewController {
 #endif
 
         connectButton.setTitle("Connect", for: .normal)
-        connectButton.titleLabel?.font = .systemFont(ofSize: S(17), weight: .semibold)
+        // A key like the others, lit while the link is wanted: the toggle the
+        // locked address boxes beside it wait on, first in the group.
+        styleAsKey(connectButton, font: xMono(S(15), .medium), height: S(40))
+        connectButton.widthAnchor.constraint(equalToConstant: S(124)).isActive = true
         connectButton.setContentHuggingPriority(.required, for: .horizontal)
         connectButton.addTarget(self, action: #selector(toggleConnection), for: .touchUpInside)
 
@@ -538,7 +541,7 @@ final class RadioViewController: UIViewController {
             serverRow(),
             // Named and framed like everything above it: it is the one thing in
             // the column that says whether any of the rest is doing anything.
-            boxed("STATUS", statusLabel),
+            statusRow(),
         ])
         controls.axis = .vertical
         controls.spacing = S(10)
@@ -1108,18 +1111,28 @@ final class RadioViewController: UIViewController {
         floorRail.setReadout(String(format: "%.0f", spectrum.dbFloor))
     }
 
-    /// The server group, Options, and the mute key — plus the DRM key when the
+    /// The server group, Connect first, and the mute key. Options and DRM
+    /// moved down beside the status: with them here the row was wider than a
+    /// portrait iPad and the Connect key at its end was squeezed to nothing.
+    private func serverRow() -> UIStackView {
+        let server = boxed("SERVER", row([connectButton, sourceButton, hostField, portField]))
+        return row([server, UIView(), boxed("AUDIO", muteButton)])
+    }
+
+    /// The status, taking what width is left, then Options — and DRM when the
     /// decoder is built in. A function rather than an inline literal because
     /// Swift will not accept #if between the elements of one.
-    private func serverRow() -> UIStackView {
-        let server = boxed("SERVER", row([sourceButton, hostField, portField, connectButton]))
-        var items: [UIView] = [server, optionsButton]
+    private func statusRow() -> UIStackView {
+        let status = boxed("STATUS", statusLabel)
+        status.setContentHuggingPriority(.init(1), for: .horizontal)
+        status.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        var items: [UIView] = [status, optionsButton]
 #if DRM_ENABLED
         items.append(drmButton)
 #endif
-        items.append(UIView())
-        items.append(boxed("AUDIO", muteButton))
-        return row(items)
+        let r = row(items)
+        r.alignment = .fill
+        return r
     }
 
     private func row(_ views: [UIView]) -> UIStackView {
@@ -1390,6 +1403,7 @@ final class RadioViewController: UIViewController {
 
         let wanted = radio.wantConnection
         setTitle(connectButton, wanted ? "Disconnect" : "Connect")
+        light(connectButton, wanted)
         // The address and the kind of server are changed with the link off:
         // Disconnect, change, Connect.
         if hostField.isEnabled == wanted {

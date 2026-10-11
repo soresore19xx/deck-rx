@@ -145,6 +145,25 @@ describe('controlServer — knob endpoints', () => {
     await harness.settle(500);
     expect((await health(port)).enabled).toBe(false);
   }, 25_000);
+
+  it('a mute set just before power-on holds, and a disabled start already has the saved volume', async () => {
+    // 2026-10-10: /mute then /power?toggle=1 within the 300 ms persist
+    // debounce — connect() re-read muted:false from disk and the studio
+    // speakers played 1440 kHz at 41 %.
+    const port = await freePort();
+    harness = await boot(port, { enabled: false, volume: 0.41 });
+    await harness.settle(1500);
+    const off = await health(port);
+    expect(off.enabled).toBe(false);
+    expect(off.volume).toBeCloseTo(0.41, 5);     // not the default 1.0
+    await get(port, '/mute?toggle=1');
+    await get(port, '/power?toggle=1');
+    await harness.settle(1500);
+    const on = await health(port);
+    expect(on.enabled).toBe(true);
+    expect(on.muted).toBe(true);
+    expect(on.volume).toBeCloseTo(0.41, 5);
+  }, 25_000);
 });
 
 describe('controlServer — the Tune dial keeps up with the knob', () => {

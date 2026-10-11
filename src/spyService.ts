@@ -402,6 +402,8 @@ class SpyService {
   /** cfg.autoGain — see gainSearch.ts. */
   private autoGainEnabled = true;
   private muted = false;
+  /** Volume / mute came from disk; from then on memory is the truth. */
+  private volumeHydrated = false;
   private _currentFreq = 0;
 
   private deviceInfo: DeviceInfo | null = null;
@@ -633,6 +635,18 @@ class SpyService {
       // Done before any side-effects so a disabled plugin stays fully idle.
       if (typeof cfg.enabled === 'boolean') this.enabled = cfg.enabled;
       for (const fn of this.enabledListeners) fn(this.enabled);
+      // Volume and mute: from disk once, before the disabled bail, and never
+      // again. Re-reading them on every connect let a mute set less than the
+      // 300 ms persist debounce before /power?toggle=1 come undone (the
+      // studio speakers played 1440 kHz at 41 %, 2026-10-10), and a plugin
+      // started disabled sat at the default volume 1.0 until its first
+      // connect — a mute in that window would have persisted 1.0.
+      if (!this.volumeHydrated) {
+        this.volumeHydrated = true;
+        if (typeof cfg.volume === 'number') this.volume = Math.max(0, Math.min(1.0, cfg.volume));
+        if (typeof cfg.muted  === 'boolean') this.muted  = cfg.muted;
+        for (const fn of this.volumeListeners) fn(this.volume, this.muted);
+      }
       if (!this.enabled) {
         log.info('[spyService] connect: disabled, staying offline');
         return;
@@ -665,7 +679,6 @@ class SpyService {
         this.ssbOptions.bfoPitchHz  = Math.max(400, Math.min(900,  this.ssbOptions.bfoPitchHz));
         for (const fn of this.ssbOptionsListeners) fn(this.ssbOptions);
       }
-      if (typeof cfg.volume === 'number') this.volume = Math.max(0, Math.min(1.0, cfg.volume));
       if (typeof cfg.audioGain === 'number') this.audioGain = Math.max(0.1, Math.min(4, cfg.audioGain));
       if (typeof cfg.audioLeveling === 'boolean') this.audioLeveling = cfg.audioLeveling;
       if (typeof cfg.autoGain === 'boolean') this.autoGainEnabled = cfg.autoGain;
@@ -683,8 +696,6 @@ class SpyService {
         enabled: this.audioLeveling,
         targetRms: DEFAULT_LEVELER_CFG.targetRms,
       });
-      if (typeof cfg.muted  === 'boolean') this.muted  = cfg.muted;
-      for (const fn of this.volumeListeners) fn(this.volume, this.muted);
       // Restore last-used freq + mode so the radio is already on the right
       // station when audio starts (without depending on any dial firing first).
       // Only when nothing is live yet (fresh process / first connect): on a

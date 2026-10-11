@@ -83,8 +83,10 @@ caught a loud moment won. The choice is filed per receiver, channel
 and mode in `data/gain-memory.json` with the time it was measured, ahead of
 the band slot, and used for an hour; after that, or with no time on it (filed
 by the older rule), the station is searched again on the next landing. Each step waits until the whole-band power of the incoming
-packets jumps (the V4's packet header reports the same gain throughout), which
-brings a search to about 1 s. Rules: `src/gainSearch.ts` (pure, tested in
+packets jumps (the V4's packet header reports the same gain throughout), and
+the steps go lowest first and stop once the climb has stopped below them
+(`nextGainToMeasure`: the same choice as measuring every step), which brings
+a search to 0.4-1.2 s. Rules: `src/gainSearch.ts` (pure, tested in
 `test/gainSearch.test.ts`), the file in `src/gainMemory.ts`, the driving in
 `spyService.runGainSearch()`.
 

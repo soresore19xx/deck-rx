@@ -167,6 +167,55 @@ export function pickGain(results: GainResult[],
   return at.gain;
 }
 
+/**
+ * True once `pickGain`'s climb has stopped on a station (C/N at least
+ * GAIN_MIN_CN_DB) below the highest gain measured: a higher gain can no
+ * longer change the choice, so the search need not measure it. The steps
+ * are taken lowest first, so this is what lets a search end early.
+ */
+export function climbSettled(results: GainResult[], maxPeakDb = GAIN_MAX_PEAK_DBFS): boolean {
+  const clean = results.filter(r => r.peakDb === undefined || r.peakDb <= maxPeakDb);
+  if (clean.some(r => r.signalDb === undefined || r.floorDb === undefined)) return false;
+  const up = [...clean].sort((a, b) => a.gain - b.gain);
+  if (up.length < 2) return false;
+  let at = up[0];
+  for (const next of up.slice(1)) {
+    if (at.cn < GAIN_MIN_CN_DB) {
+      if (next.cn > at.cn) { at = next; continue; }
+      return false;
+    }
+    const dSignal = next.signalDb! - at.signalDb!;
+    const dFloor = next.floorDb! - at.floorDb!;
+    if (dSignal <= 0 || dFloor >= GAIN_FLOOR_RISE_SHARE * dSignal) return true;
+    at = next;
+  }
+  return false;
+}
+
+/**
+ * The next gain the search should measure, or null when it is done.
+ * `measured` is every gain tried so far (a step can leave no result).
+ * Coarse steps go lowest first and stop once `climbSettled`; the refining
+ * midpoints are around the best coarse point; and if a midpoint moved the
+ * climb on, the coarse steps carry on. The choice comes
+ * out as measuring every coarse step would give, in fewer steps — most
+ * stations settle two or three steps up (user, 2026-10-11: the wait felt
+ * like a freeze).
+ */
+export function nextGainToMeasure(maxGain: number, measured: number[],
+                                  results: GainResult[]): number | null {
+  const coarse = coarseGains(maxGain);
+  const todo = (g: number) => !measured.includes(g);
+  const nextCoarse = coarse.find(todo);
+  // Refining starts once the coarse climb has settled or run out; a midpoint
+  // that moves the climb on sends the search back to the coarse steps.
+  if (nextCoarse !== undefined && !climbSettled(results)) return nextCoarse;
+  const first = pickGain(results.filter(r => coarse.includes(r.gain)));
+  if (first === null) return null;
+  const mid = refineGains(first, maxGain, coarse).find(todo);
+  return mid ?? null;
+}
+
 /** Key for the remembered gain: receiver, channel to 100 Hz, demod mode. */
 export function gainMemoryKey(devKey: string, freqHz: number, mode: number): string {
   return `${devKey}|${Math.round(freqHz / 100) * 100}|${mode}`;

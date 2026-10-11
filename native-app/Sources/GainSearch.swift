@@ -140,6 +140,42 @@ enum GainSearch {
         return at.gain
     }
 
+    /// `climbSettled` exactly: true once pickGain's climb has stopped on a
+    /// station (C/N at least `minCnDb`) below the highest gain measured — a
+    /// higher gain can no longer change the choice.
+    static func climbSettled(_ results: [Result], maxPeakDb: Double = maxPeakDbfs) -> Bool {
+        let clean = results.filter { $0.peakDb == nil || $0.peakDb! <= maxPeakDb }
+        if clean.contains(where: { $0.signalDb == nil || $0.floorDb == nil }) { return false }
+        let up = clean.sorted { $0.gain < $1.gain }
+        guard up.count >= 2 else { return false }
+        var at = up[0]
+        for next in up.dropFirst() {
+            if at.cn < minCnDb {
+                if next.cn > at.cn { at = next; continue }
+                return false
+            }
+            let dSignal = next.signalDb! - at.signalDb!
+            let dFloor = next.floorDb! - at.floorDb!
+            if dSignal <= 0 || dFloor >= floorRiseShare * dSignal { return true }
+            at = next
+        }
+        return false
+    }
+
+    /// `nextGainToMeasure` exactly: the next gain to measure, nil when done.
+    /// Coarse steps lowest first until the climb settles (or a midpoint
+    /// unsettles it), then the midpoints round the best coarse point. Same choice as measuring every coarse step, in
+    /// fewer steps (user, 2026-10-11: the wait felt like a freeze).
+    static func nextGainToMeasure(maxGain: Int, measured: [Int], results: [Result]) -> Int? {
+        let coarse = coarseGains(maxGain: maxGain)
+        let nextCoarse = coarse.first { !measured.contains($0) }
+        if let g = nextCoarse, !climbSettled(results) { return g }
+        guard let first = pickGain(results.filter { coarse.contains($0.gain) }) else { return nil }
+        if let mid = refineGains(best: first, maxGain: maxGain, coarse: coarse)
+            .first(where: { !measured.contains($0) }) { return mid }
+        return nil
+    }
+
     /// Receiver, channel to 100 Hz, demod mode — `gainMemoryKey` exactly.
     static func key(deviceKey: String, freqHz: Double, mode: Int) -> String {
         "\(deviceKey)|\(Int((freqHz / 100).rounded()) * 100)|\(mode)"

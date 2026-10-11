@@ -1937,11 +1937,14 @@ extension LocalRadio {
             return true
         }
 
-        let coarse = GainSearch.coarseGains(maxGain: maxGain)
-        for g in coarse { if !measure(g) { return } }
+        var measured: [Int] = []
+        while let g = GainSearch.nextGainToMeasure(maxGain: maxGain, measured: measured, results: results) {
+            measured.append(g)
+            if !measure(g) { return }
+        }
         let table = { results.sorted { $0.gain < $1.gain }
                         .map { String(format: "%d:%.1f", $0.gain, $0.cn) }.joined(separator: " ") }
-        guard let first = GainSearch.pickGain(results) else {
+        guard let best = GainSearch.pickGain(results) else {
             NSLog("[gain] search \(freq) mode=\(mode): no station to judge (C/N dB \(table())) — band gain")
             DispatchQueue.main.async {
                 guard !stale() else { return }
@@ -1949,10 +1952,6 @@ extension LocalRadio {
             }
             return
         }
-        for g in GainSearch.refineGains(best: first, maxGain: maxGain, coarse: coarse) {
-            if !measure(g) { return }
-        }
-        let best = GainSearch.pickGain(results) ?? first
         gainMemory.remember(key, best)
         let levels = results.sorted { $0.gain < $1.gain }
             .map { String(format: "%d:%.1f/%.1f", $0.gain, $0.signalDb ?? 0, $0.floorDb ?? 0) }.joined(separator: " ")

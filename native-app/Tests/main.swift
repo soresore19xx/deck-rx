@@ -1286,6 +1286,22 @@ do {
           GainSearch.pickGain([lv(0, -30, -110, -14), lv(6, -24, -110, -4), lv(12, -18, -110, -1)]) == 0)
     check("levels: measuring order does not matter",
           GainSearch.pickGain([lv(12, -58, -101), lv(0, -70, -110), lv(9, -61, -106), lv(6, -64, -108)]) == 6)
+    // The search order (nextGainToMeasure in test/gainSearch.test.ts, same numbers).
+    func walk(_ maxGain: Int, _ at: (Int) -> R) -> [Int] {
+        var measured: [Int] = [], r: [R] = []
+        while let g = GainSearch.nextGainToMeasure(maxGain: maxGain, measured: measured, results: r) {
+            if measured.contains(g) { return measured + [-1] }
+            measured.append(g); r.append(at(g))
+        }
+        return measured
+    }
+    let mwV4: [Int: R] = [0: lv(0, -70, -110), 3: lv(3, -67, -109.5), 6: lv(6, -64, -100),
+                          12: lv(12, -58, -94), 18: lv(18, -52, -88)]
+    let mwWalk = walk(29) { mwV4[$0]! }
+    check("search: medium wave on the V4 ends after 0, 6 and 3", mwWalk == [0, 6, 3], "\(mwWalk)")
+    check("search: settled there", GainSearch.climbSettled(mwWalk.map { mwV4[$0]! }))
+    let none = walk(8) { R(gain: $0, cn: 1, peakDb: -40, signalDb: -110, floorDb: -111) }
+    check("search: no station takes every coarse step", none == [0, 2, 4, 6, 8], "\(none)")
     var carrier = spectrum(n, rate, -100, -80, 0, 8_000)
     carrier[n / 2] = -40
     let amLv = GainSearch.channelLevels(bins: carrier, iqRate: rate, centreOffsetHz: 0, mode: 2)

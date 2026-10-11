@@ -7,6 +7,7 @@ import os from 'os';
 import path from 'path';
 import {
   coarseGains, refineGains, channelCnDb, channelLevels, pickGain, gainMemoryKey, measureChannel,
+  nextGainToMeasure, climbSettled, type GainResult,
 } from '../src/gainSearch.js';
 
 /** A flat floor with a raised block of `widthHz` centred on `atHz`. */
@@ -215,5 +216,80 @@ describe('gain memory', () => {
     expect(m.recallGain(k)).toBe(9);         // came back from disk
     m.forgetGain(k);
     expect(m.gainSource(k)).toBeUndefined();
+  });
+});
+
+describe('nextGainToMeasure: fewer steps, the same choice', () => {
+  // A station on a receiver: the signal follows the gain at `db` per index,
+  // the floor is the receiver's own until the antenna's noise comes up past
+  // it, the IQ peak follows the gain. Jitter stands in for modulation.
+  function station(seed: number) {
+    let s = seed * 2654435761 % 4294967296;
+    const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+    const db = 1 + rnd() * 5, sig0 = -125 + rnd() * 90, ant0 = -135 + rnd() * 40;
+    const rx = -112 + rnd() * 6, peak0 = -45 + rnd() * 40, compressAt = rnd() * 40;
+    const jitter = rnd() * 2;
+    const memo = new Map<number, GainResult>();
+    return (g: number): GainResult => {
+      if (!memo.has(g)) {
+        const lift = Math.min(g, compressAt) * db;
+        const signalDb = sig0 + lift + (rnd() - 0.5) * jitter;
+        const floorDb = Math.max(rx, ant0 + g * db) + (rnd() - 0.5) * jitter;
+        const ceiling = Math.max(signalDb, floorDb);
+        memo.set(g, { gain: g, cn: ceiling - floorDb, signalDb: ceiling, floorDb, peakDb: peak0 + g * db });
+      }
+      return memo.get(g)!;
+    };
+  }
+  /** The search before 2026-10-11: every coarse step, then the midpoints. */
+  function full(maxGain: number, at: (g: number) => GainResult) {
+    const coarse = coarseGains(maxGain);
+    const r = coarse.map(at);
+    const first = pickGain(r);
+    if (first === null) return { pick: null, steps: r.length };
+    for (const g of refineGains(first, maxGain, coarse)) r.push(at(g));
+    return { pick: pickGain(r), steps: r.length };
+  }
+  function stepped(maxGain: number, at: (g: number) => GainResult) {
+    const measured: number[] = [], r: GainResult[] = [];
+    for (let g = nextGainToMeasure(maxGain, measured, r); g !== null; g = nextGainToMeasure(maxGain, measured, r)) {
+      expect(measured).not.toContain(g);
+      measured.push(g); r.push(at(g));
+    }
+    return { pick: pickGain(r), steps: r.length };
+  }
+  for (const maxGain of [8, 29]) {
+    it(`gives the full search's choice on 3000 stations (max gain ${maxGain})`, () => {
+      let before = 0, after = 0;
+      for (let i = 1; i <= 3000; i++) {
+        const at = station(i * 7 + maxGain);
+        const a = full(maxGain, at), b = stepped(maxGain, at);
+        expect(b.pick, `station ${i}`).toBe(a.pick);
+        expect(b.steps, `station ${i}`).toBeLessThanOrEqual(a.steps);
+        before += a.steps; after += b.steps;
+      }
+      expect(after).toBeLessThan(before);
+    });
+  }
+  it('a medium-wave station on the V4 ends after 0, 6 and the midpoint 3', () => {
+    const lv = (gain: number, signalDb: number, floorDb: number) =>
+      ({ gain, signalDb, floorDb, cn: signalDb - floorDb, peakDb: -30 });
+    const table = new Map([[0, lv(0, -70, -110)], [3, lv(3, -67, -109.5)], [6, lv(6, -64, -100)],
+                           [12, lv(12, -58, -94)], [18, lv(18, -52, -88)]]);
+    const measured: number[] = [], r: GainResult[] = [];
+    for (let g = nextGainToMeasure(29, measured, r); g !== null; g = nextGainToMeasure(29, measured, r)) {
+      measured.push(g); r.push(table.get(g)!);
+    }
+    expect(measured).toEqual([0, 6, 3]);
+    expect(climbSettled(r)).toBe(true);
+    expect(pickGain(r)).toBe(3);
+  });
+  it('no station anywhere: every coarse step, then nothing', () => {
+    const measured: number[] = [], r: GainResult[] = [];
+    for (let g = nextGainToMeasure(8, measured, r); g !== null; g = nextGainToMeasure(8, measured, r)) {
+      measured.push(g); r.push({ gain: g, cn: 1, signalDb: -110, floorDb: -111, peakDb: -40 });
+    }
+    expect(measured).toEqual([0, 2, 4, 6, 8]);
+    expect(pickGain(r)).toBeNull();
   });
 });

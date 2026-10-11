@@ -35,7 +35,7 @@ import {
 import { scrapeJpStations } from './japanStationsScraper.js';
 import { FftPipeline } from './fft.js';
 import {
-  measureChannel, coarseGains, refineGains, channelLevels, pickGain, gainMemoryKey, type GainResult,
+  measureChannel, nextGainToMeasure, channelLevels, pickGain, gainMemoryKey, type GainResult,
 } from './gainSearch.js';
 import { recallGain, rememberGain, forgetGain, saveGain, gainSource, autoGainFresh } from './gainMemory.js';
 
@@ -1216,10 +1216,14 @@ class SpyService {
     this.gainSearching = true;
     this.subscribeIqStream(tap);
     try {
-      const coarse = coarseGains(this.maxGain);
-      for (const g of coarse) if (!(await measure(g))) return;
-      const first = pickGain(results);
-      if (first === null) {
+      const measured: number[] = [];
+      for (let g = nextGainToMeasure(this.maxGain, measured, results); g !== null;
+           g = nextGainToMeasure(this.maxGain, measured, results)) {
+        measured.push(g);
+        if (!(await measure(g))) return;
+      }
+      const best = pickGain(results);
+      if (best === null) {
         // Nothing on the channel to judge by: file nothing.
         const t = results.map(r => `${r.gain}:${r.cn.toFixed(1)}`).join(' ');
         log.info(`[spyService] gain search ${freq} mode=${mode}: no station to judge (C/N dB ${t}) — band gain`);
@@ -1228,8 +1232,6 @@ class SpyService {
         this.setLiveScopeGain(this.bandGainNow(info), 'band (no station)');
         return;
       }
-      for (const g of refineGains(first, this.maxGain, coarse)) if (!(await measure(g))) return;
-      const best = pickGain(results)!;
       rememberGain(key, best);
       const table = [...results].sort((a, b) => a.gain - b.gain)
         .map(r => `${r.gain}:${r.cn.toFixed(1)}`).join(' ');

@@ -287,6 +287,11 @@ final class OptionsPanel: NSView {
         ButtonBox.shared.actions[ObjectIdentifier(f)] = { [weak self] in
             guard let self else { return }
             let key = String(name.dropFirst(3))
+            // The action also fires when the field merely loses the focus.
+            // Sending the unchanged value then re-dialled the server, so
+            // clicking into the host box and out again dropped the link.
+            let cur = self.rx[key].map { $0 is Int ? String($0 as! Int) : (($0 as? String) ?? "") }
+            guard f.stringValue.trimmingCharacters(in: .whitespaces) != cur else { return }
             Receiver.receiver(set: key, value: f.stringValue) { [weak self] j in
                 guard let self else { return }
                 self.rx = j
@@ -493,11 +498,27 @@ final class OptionsPanel: NSView {
         return group[key]
     }
 
+    /// Connect is on: the address and the kind of server are fixed until
+    /// Disconnect. Change them with the link off, then Connect.
+    private var addressLocked: Bool { (rx["connected"] as? Bool) ?? false }
+    private static let addressRows: Set<String> = ["rx.host", "rx.port", "rx.source"]
+
     private func updateValues() {
         for f in fields {
+            let key = String(f.name.dropFirst(3))
+            if Self.addressRows.contains(f.name) {
+                let locked = addressLocked
+                // Connected while typing: what was typed is dropped, the way
+                // the endpoint would refuse it anyway.
+                if locked, window?.firstResponder === f.field.currentEditor() {
+                    f.field.abortEditing()
+                }
+                f.field.isEditable = !locked
+                f.field.isSelectable = !locked
+                f.field.textColor = locked ? P.faint : P.text
+            }
             // Don't overwrite what someone is typing.
             if window?.firstResponder === f.field.currentEditor() { continue }
-            let key = String(f.name.dropFirst(3))
             if let v = rx[key] {
                 f.field.stringValue = v is Int ? String(v as! Int) : ((v as? String) ?? "")
             }
@@ -530,6 +551,7 @@ final class OptionsPanel: NSView {
                 let t = (v as? String) ?? (v as? Int).map(String.init)
                     ?? (v as? Double).map { String(format: "%g", $0) } ?? "—"
                 r.value.stringValue = t.isEmpty ? "system default" : t
+                if Self.addressRows.contains(r.name), addressLocked { r.value.textColor = P.faint }
             case .action:
                 r.value.textColor = P.accent
                 r.value.stringValue = "RUN"
@@ -543,6 +565,7 @@ final class OptionsPanel: NSView {
         // Receiver-wide settings live behind a different endpoint than the
         // demod's; the row does not need to care which.
         let isRx = name.hasPrefix("rx.")
+        if Self.addressRows.contains(name), addressLocked { return }
         let key = isRx ? String(name.dropFirst(3)) : name
         func send(_ v: String) {
             if isRx, key == "uiScale" {

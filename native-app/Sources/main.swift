@@ -1749,7 +1749,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// `Receiver.direct` stays installed so every control keeps addressing this
     /// receiver whether the link is up or not.
     private func toggleSource() {
-        if radio.isConnected {
+        // Lit while a connection is wanted, up or still retrying, and a press
+        // then always disconnects. Keyed on `isConnected` it showed off during
+        // a retry and a press dialled again instead, so there was no way to
+        // stop it and get at the address, which is locked while it is on.
+        if radio.wantConnection {
             radio.audioEnabled = false
             view.srcAudioPad.isOn = false
             radio.disconnect()
@@ -1765,6 +1769,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             view.srcAudioPad.isOn = true
         }
         syncSource()
+        // The address rows lock and unlock with this; not on the next poll.
+        view.options.refresh()
     }
 
     /// Routes control and the status readout at the app's own receiver, so the
@@ -1859,8 +1865,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func syncSource() {
-        view.srcPad.isOn = radio.isConnected
-        if let e = radio.lastError {
+        view.srcPad.isOn = radio.wantConnection
+        if !radio.wantConnection {
+            view.srcLabel.stringValue = "disconnected"
+            view.srcLabel.textColor = P.faint
+        } else if let e = radio.lastError {
             view.srcLabel.stringValue = e
             view.srcLabel.textColor = P.warn
         } else if radio.isConnected {
@@ -2182,7 +2191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         UI.scale = wanted
 
 #if STANDALONE
-        let wasConnected = radio.isConnected
+        let wasConnected = radio.wantConnection
 #endif
         let frame = window.frame
         let fresh = makeView()

@@ -164,6 +164,26 @@ describe('controlServer — knob endpoints', () => {
     expect(on.muted).toBe(true);
     expect(on.volume).toBeCloseTo(0.41, 5);
   }, 25_000);
+
+  it('the server address is refused while reception is on and taken with it off', async () => {
+    // 2026-10-11: changing it under a live link dropped the station; the rule
+    // is power off, change, power on.
+    const port = await freePort();
+    harness = await boot(port, { enabled: false });
+    await harness.settle(1500);
+    const off = JSON.parse((await get(port, '/receiver')).body);
+    expect(off.connected).toBe(false);
+    expect((await get(port, '/receiver?set=port&value=9999')).status).toBe(200);
+    expect((await health(port)).enabled).toBe(false);   // a set does not power on
+    await get(port, '/receiver?set=port&value=' + (off.port as number));
+    await get(port, '/power?toggle=1');
+    await harness.settle(1500);
+    const on = JSON.parse((await get(port, '/receiver')).body);
+    expect(on.connected).toBe(true);
+    const r = await get(port, '/receiver?set=host&value=10.0.0.1');
+    expect(r.status).toBe(409);
+    expect(JSON.parse((await get(port, '/receiver')).body).host).toBe(on.host);
+  }, 25_000);
 });
 
 describe('controlServer — the Tune dial keeps up with the knob', () => {

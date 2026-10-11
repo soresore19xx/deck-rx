@@ -326,6 +326,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       if (set !== null) {
         const raw = q.get('value');
         if (raw === null) { bad(); return; }
+        // The server address is changed with reception off: power off, change
+        // it, power on. Changing it under a live link dropped the station
+        // mid-listen, and a front-end field that merely lost the focus sent one.
+        if ((set === 'host' || set === 'port') && spyService.isEnabled()) {
+          res.writeHead(409, { 'Content-Type': 'text/plain' });
+          res.end(`power off before changing ${set}`);
+          return;
+        }
         switch (set) {
           case 'tuneMode':
             if (raw !== 'preset' && raw !== 'vfo') { bad(); return; }
@@ -349,8 +357,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
             break;
           case 'host': {
             if (raw.trim() === '') { bad(); return; }
-            // Live-applied: updateServerConfig tears the link down and dials
-            // the new address, the same path the Property Inspector uses.
+            // Only reached with reception off (above); the new address is
+            // dialled when power comes back on.
             await spyService.updateServerConfig({ host: raw.trim() });
             break;
           }
@@ -394,6 +402,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         audioSink: spyService.getAudioSink(),
         host: server.host,
         port: server.port,
+        // Reception on: a front-end locks the address fields while it is.
+        connected: spyService.isEnabled(),
         audioEnabled: audio.audioEnabled,
         icecastUrl: audio.icecastUrl,
         icecastBitrate: audio.bitrate,

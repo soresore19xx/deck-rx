@@ -315,10 +315,13 @@ past. The list is read when the menu opens, so a device plugged in after the
 window was built is in it.
 
 It is bound when the audio engine starts, so choosing a different one rebuilds
-the graph rather than waiting for the next connect. **Host** and **Port** dial
-the new address the moment they are entered, connected or not — that gate used
-to require an existing connection, which is the one state an address never gets
-corrected in. Names are matched exactly,
+the graph rather than waiting for the next connect. **Host**, **Port** and
+**Source** are changed with the link off: press **DIRECT** to disconnect, change
+them, press it again to connect. While it is lit — connected, or still retrying
+an address that does not answer — the three rows are greyed out and the control
+endpoint answers 409 to a `/receiver?set=host|port|source`. Entering a value
+never dials on its own, and an unchanged value is not sent at all: a field that
+only gained and lost the focus used to drop the link. Names are matched exactly,
 trailing spaces and all — CoreAudio reports "DX7s " and "SMSL USB AUDIO " that
 way, and trimming would fail to find the very devices the picker offered. A
 name that no longer resolves falls back to the system default rather than

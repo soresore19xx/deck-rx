@@ -308,6 +308,9 @@ final class AppServer {
                     + ",\"migrated\":\(r.migrated),\"lists\":\(r.lists)}")
             }
             if let set = q["set"], let raw = q["value"] {
+                if let e = addressLocked(set) {
+                    return ("409 Conflict", "{\"ok\":false,\"error\":\"\(e)\"}")
+                }
                 if !applyReceiver(set, raw) { return bad("unknown setting \(set)") }
             }
             return ("200 OK", receiverJSON())
@@ -393,6 +396,9 @@ final class AppServer {
             "sources": sources,
             "host": c.host,
             "port": c.port,
+            // Connect is on (up, or retrying). The address and the source are
+            // locked while it is: Disconnect, change them, then Connect.
+            "connected": radio.wantConnection,
             "uiScale": c.uiScale,
             "uiScales": UI.names,
         ]
@@ -416,6 +422,7 @@ final class AppServer {
             return ["added": r.added, "skipped": r.skipped,
                     "migrated": r.migrated, "lists": r.lists]
         }
+        if let set, let e = addressLocked(set) { return ["ok": false, "error": e] }
         if let set, let value, !applyReceiver(set, value) {
             return ["ok": false, "error": "unknown setting \(set)"]
         }
@@ -489,6 +496,16 @@ final class AppServer {
         if Thread.isMainThread { f() } else { DispatchQueue.main.sync(execute: f) }
     }
 
+    /// The server address and the kind of server are changed with the link
+    /// off: Disconnect, change, Connect. Changing them under a live link
+    /// dropped it mid-listen, and a field that merely gained and lost the
+    /// focus was enough to do that. A link still retrying counts as on — it
+    /// is what Connect asked for, and Disconnect is what stops it.
+    private func addressLocked(_ name: String) -> String? {
+        guard name == "host" || name == "port" || name == "source", radio.wantConnection else { return nil }
+        return "disconnect before changing \(name)"
+    }
+
     private func applyReceiver(_ name: String, _ raw: String) -> Bool {
         var c = radio.config
         // Set by the uiScale case and acted on after the save below. Notifying
@@ -521,19 +538,10 @@ final class AppServer {
         c.save()
         radio.config = c
         if scaleChanged { DispatchQueue.main.async { self.onUiScaleChanged?() } }
-        // The address only takes effect on the next connection, so dial it now
-        // — otherwise the field accepts a new host and nothing happens.
-        //
-        // Especially when nothing is connected, which is when an address gets
-        // corrected in the first place. This was gated on `isConnected`, so
-        // the one case it needed to cover was the one it skipped: the retry
-        // loop kept dialling the address it had captured when it first tried,
-        // the field showed the new one, and the app sat on "TCP connect
-        // timeout" against a server nobody had asked for.
-        if name == "host" || name == "port" || name == "source" {
-            radio.disconnect()
-            radio.connect()
-        }
+        // No dialling from here: the address is only accepted with the link
+        // off (addressLocked), and the link comes up when Connect is pressed.
+        // This used to disconnect and reconnect on every host/port/source set,
+        // and a field that merely gained and lost the focus sent one.
         return true
     }
 

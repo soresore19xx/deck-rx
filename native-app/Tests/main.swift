@@ -1378,6 +1378,24 @@ do {
 runDeviceSettingsTests()
 runRtlTcpTests()
 
+// 2026-10-11: the server address and source are changed with the link off —
+// Disconnect, change, Connect. A set never dials, and with Connect on (even
+// while it is still retrying) it is refused.
+do {
+    let ar = LocalRadio()
+    let srv = AppServer(radio: ar)
+    let p0 = ar.config.port
+    var j = srv.receiverDirect(set: "port", value: "9999", action: nil)
+    check("address: a port is taken with the link off", (j["port"] as? Int) == 9999 && j["connected"] as? Bool == false)
+    check("address: a set does not dial", !ar.wantConnection)
+    ar.connect(host: "127.0.0.1", port: 1)
+    j = srv.receiverDirect(set: "host", value: "10.0.0.1", action: nil)
+    check("address: refused while Connect is on", (j["ok"] as? Bool) == false && ar.config.host != "10.0.0.1")
+    check("address: the receiver reports Connect as on", srv.receiverDirect(set: nil, value: nil, action: nil)["connected"] as? Bool == true)
+    ar.disconnect()
+    _ = srv.receiverDirect(set: "port", value: String(p0), action: nil)
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 {
     print("\(failures) FAILED")

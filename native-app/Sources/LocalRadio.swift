@@ -453,7 +453,7 @@ final class LocalRadio {
     /// Reconnect state. A receiver that drops off the air and stays off is
     /// worse than one that never started: the window keeps showing the last
     /// frequency and nothing says the link is gone.
-    private var wantConnection = false
+    private(set) var wantConnection = false
     private var reconnectTimer: DispatchSourceTimer?
     private var reconnectDelay: TimeInterval = 1
     private static let reconnectMax: TimeInterval = 30

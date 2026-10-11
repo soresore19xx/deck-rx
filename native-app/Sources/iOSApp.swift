@@ -1227,7 +1227,7 @@ final class RadioViewController: UIViewController {
 
     /// Picking a source brings its own address back, so the boxes change with
     /// it; a source never used takes rtl_tcp's port (8890) or keeps the one in
-    /// the box. When connected it reconnects at once to the new one.
+    /// the box. Only offered with the link off: Disconnect, change, Connect.
     private func chooseSource(_ id: String) {
         guard id != radio.config.source else { return }
         var c = radio.config
@@ -1237,7 +1237,6 @@ final class RadioViewController: UIViewController {
         hostField.text = c.host
         portField.text = String(c.port)
         refreshSourceMenu()
-        if radio.isConnected { radio.disconnect(); connectNow() }
     }
 
     /// Fold the rows above SERVER while an address is typed, unfold after.
@@ -1257,7 +1256,9 @@ final class RadioViewController: UIViewController {
     }
 
     @objc private func toggleConnection() {
-        guard !radio.isConnected else { radio.disconnect(); return }
+        // Keyed on the wish, not the link: a link still retrying showed
+        // "Connect", and pressing it dialled again rather than stopping.
+        guard !radio.wantConnection else { radio.disconnect(); return }
         connectNow()
     }
 
@@ -1387,7 +1388,24 @@ final class RadioViewController: UIViewController {
         spectrum.vfoHz = Double(radio.frequency)
         if radio.iqRate > 0 { spectrum.idleSpanHz = Double(radio.iqRate) }
 
-        setTitle(connectButton, radio.isConnected ? "Disconnect" : "Connect")
+        let wanted = radio.wantConnection
+        setTitle(connectButton, wanted ? "Disconnect" : "Connect")
+        // The address and the kind of server are changed with the link off:
+        // Disconnect, change, Connect.
+        if hostField.isEnabled == wanted {
+            for f in [hostField, portField] {
+                f.resignFirstResponder()
+                f.isEnabled = !wanted
+                f.alpha = wanted ? 0.45 : 1
+            }
+            sourceButton.isEnabled = !wanted
+            sourceButton.alpha = wanted ? 0.45 : 1
+            // Locked: show the address in use, not something half typed.
+            if wanted {
+                hostField.text = radio.config.host
+                portField.text = String(radio.config.port)
+            }
+        }
         // Before `light`, which is what carries the state: only the change
         // gets the work, as everywhere else in here.
         lightAudio(radio.muted)

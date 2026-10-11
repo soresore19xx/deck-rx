@@ -243,7 +243,10 @@ final class OptionsPanel: NSView {
         let box = NSView()
         box.wantsLayer = true
         box.layer?.borderWidth = 1
-        box.layer?.borderColor = P.line.cgColor
+        // `faint`, not `line` or `rule`: on this panel's ground both of those
+        // drew a frame nobody could see, and the group did not read as
+        // enclosed at all.
+        box.layer?.borderColor = P.faint.withAlphaComponent(0.7).cgColor
         box.layer?.cornerRadius = 3
         box.translatesAutoresizingMaskIntoConstraints = false
         let col = NSStackView(views: inner)

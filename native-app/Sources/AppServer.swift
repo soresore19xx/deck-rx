@@ -229,8 +229,11 @@ final class AppServer {
             return ok("\"muted\":\(radio.muted)")
 
         case "/power":
-            if radio.isConnected { radio.disconnect() } else { radio.connect() }
-            return ok("\"enabled\":\(radio.isConnected)")
+            // On the wish, not the link, the same as the window's switch: a
+            // link still retrying is on, and a press stops it rather than
+            // dialling again.
+            if radio.wantConnection { radio.disconnect() } else { radio.connect() }
+            return ok("\"enabled\":\(radio.wantConnection)")
 
         case "/mode":
             guard let m = q["m"].flatMap(Int.init) else { return bad("need m") }

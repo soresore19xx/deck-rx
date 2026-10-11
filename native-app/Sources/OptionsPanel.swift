@@ -207,6 +207,69 @@ final class OptionsPanel: NSView {
         return host
     }
 
+    /// Set while the SERVER group's rows are built: inside its frame they take
+    /// their insets from the frame, which already clears the scroller, so
+    /// their names and values still line up with the rows outside it.
+    private var inBox = false
+    private var linkPad: TogglePad?
+
+    /// CONNECT / DISCONNECT, at the head of the SERVER group. The same switch
+    /// as the toolbar's (Solo's DIRECT, the front-end's POWER) through the
+    /// same power path, set beside the rows it locks: the address and the
+    /// source change with the link off.
+    private func linkKey() -> NSView {
+        let key = TogglePad("CONNECT", font: mono(13, .medium)) { [weak self] in
+            Receiver.togglePower()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.refresh() }
+        }
+        linkPad = key
+        key.translatesAutoresizingMaskIntoConstraints = false
+        let host = NSView()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(key)
+        NSLayoutConstraint.activate([
+            key.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: S(6)),
+            key.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -S(6)),
+            key.topAnchor.constraint(equalTo: host.topAnchor, constant: S(6)),
+            key.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -S(4)),
+            key.heightAnchor.constraint(equalToConstant: S(28)),
+        ])
+        return host
+    }
+
+    /// A thin frame around rows that belong together, inset from the panel's
+    /// edge and clear of the scroller.
+    private func boxedGroup(_ inner: [NSView]) -> NSView {
+        let box = NSView()
+        box.wantsLayer = true
+        box.layer?.borderWidth = 1
+        box.layer?.borderColor = P.line.cgColor
+        box.layer?.cornerRadius = 3
+        box.translatesAutoresizingMaskIntoConstraints = false
+        let col = NSStackView(views: inner)
+        col.orientation = .vertical
+        col.spacing = 0
+        col.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(col)
+        for v in inner { v.widthAnchor.constraint(equalTo: col.widthAnchor).isActive = true }
+        NSLayoutConstraint.activate([
+            col.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 1),
+            col.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -1),
+            col.topAnchor.constraint(equalTo: box.topAnchor, constant: 1),
+            col.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -S(3)),
+        ])
+        let host = NSView()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(box)
+        NSLayoutConstraint.activate([
+            box.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: S(5)),
+            box.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -(scrollerClearance - 1)),
+            box.topAnchor.constraint(equalTo: host.topAnchor, constant: S(2)),
+            box.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -S(2)),
+        ])
+        return host
+    }
+
     private func row(_ title: String, _ name: String, _ kind: Kind) -> NSView {
         // Monospaced, like the value. A proportional name beside a monospaced
         // value put two rhythms in one line and read as two different tables.
@@ -241,11 +304,11 @@ final class OptionsPanel: NSView {
         pad.translatesAutoresizingMaskIntoConstraints = false
         pad.addSubview(r)
         NSLayoutConstraint.activate([
-            r.leadingAnchor.constraint(equalTo: pad.leadingAnchor, constant: S(12)),
+            r.leadingAnchor.constraint(equalTo: pad.leadingAnchor, constant: inBox ? S(6) : S(12)),
             // Clear of the scroller: its width is a system dimension and does
             // not follow our scale, so the clearance must not either.
             r.trailingAnchor.constraint(equalTo: pad.trailingAnchor,
-                                        constant: -(scrollerClearance + S(6))),
+                                        constant: -(inBox ? S(6) : scrollerClearance + S(6))),
             r.topAnchor.constraint(equalTo: pad.topAnchor),
             r.bottomAnchor.constraint(equalTo: pad.bottomAnchor),
         ])
@@ -306,9 +369,9 @@ final class OptionsPanel: NSView {
         inner.translatesAutoresizingMaskIntoConstraints = false
         r.addSubview(inner)
         NSLayoutConstraint.activate([
-            inner.leadingAnchor.constraint(equalTo: r.leadingAnchor, constant: S(12)),
+            inner.leadingAnchor.constraint(equalTo: r.leadingAnchor, constant: inBox ? S(6) : S(12)),
             inner.trailingAnchor.constraint(equalTo: r.trailingAnchor,
-                                            constant: -(scrollerClearance + S(6))),
+                                            constant: -(inBox ? S(6) : scrollerClearance + S(6))),
             inner.topAnchor.constraint(equalTo: r.topAnchor),
             inner.bottomAnchor.constraint(equalTo: r.bottomAnchor),
         ])
@@ -358,6 +421,7 @@ final class OptionsPanel: NSView {
         for v in stack.arrangedSubviews { stack.removeArrangedSubview(v); v.removeFromSuperview() }
         rows.removeAll()
         fields.removeAll()
+        linkPad = nil
         var views: [NSView] = []
         switch mode {
         case 0, 1:   // NFM / WFM
@@ -439,8 +503,10 @@ final class OptionsPanel: NSView {
         // Connect), so the switch sits where the eye goes when they will not
         // take a click. Only shown by an endpoint that reports the link.
         views.append(header("SERVER"))
+        var server: [NSView] = []
+        inBox = true
         if rx["connected"] != nil {
-            views.append(row("Link", "rx.connected", .bool))
+            server.append(linkKey())
         }
         // What the receiver listens through. Above the address because it
         // decides whether the address below means anything: on "usb" the app
@@ -450,14 +516,16 @@ final class OptionsPanel: NSView {
             // Opened as a list rather than cycled: each step of a cycle is a
             // reconnect to a different kind of server, so walking past one to
             // reach another dropped the link on the way (asked 2026-09-25).
-            views.append(row("Source", "rx.source", .menu({ list })))
+            server.append(row("Source", "rx.source", .menu({ list })))
         }
         // The link's address, typed and applied on Enter. Taken only with the
         // link off; Connect is what dials it.
         // Short names: "Server host" truncates to "Serve" in this column, and a
         // label that loses its last word says less than one that never had it.
-        views.append(editRow("Host", "rx.host", width: S(128)))
-        views.append(editRow("Port", "rx.port", width: S(64)))
+        server.append(editRow("Host", "rx.host", width: S(128)))
+        server.append(editRow("Port", "rx.port", width: S(64)))
+        inBox = false
+        views.append(boxedGroup(server))
         // Last, and after the address: these fetch from the network, and a row
         // that goes and does something belongs below the ones that only say
         // what the receiver is set to.
@@ -513,6 +581,11 @@ final class OptionsPanel: NSView {
     private static let addressRows: Set<String> = ["rx.host", "rx.port", "rx.source"]
 
     private func updateValues() {
+        if let k = linkPad {
+            // Lit while the link is on, naming what a press does next.
+            k.isOn = addressLocked
+            k.title = addressLocked ? "DISCONNECT" : "CONNECT"
+        }
         for f in fields {
             let key = String(f.name.dropFirst(3))
             if Self.addressRows.contains(f.name) {
@@ -540,10 +613,6 @@ final class OptionsPanel: NSView {
                 let src = (live["autoGain"] as? [String: Any])?["station"] as? String
                 r.value.stringValue = src == "saved" ? "SAVED" : src == "auto" ? "AUTO" : "BAND"
                 r.value.textColor = src == "saved" ? P.accent : P.faint
-            case .bool where r.name == "rx.connected":
-                let on = (v as? Bool) ?? false
-                r.value.stringValue = on ? "CONNECTED" : "DISCONNECTED"
-                r.value.textColor = on ? P.accent : P.faint
             case .bool:
                 let on = (v as? Bool) ?? false
                 r.value.stringValue = on ? "ON" : "OFF"
@@ -600,11 +669,6 @@ final class OptionsPanel: NSView {
             }
         }
         switch kind {
-        case .bool where name == "rx.connected":
-            // The same switch as the toolbar's (Solo's DIRECT, the front-end's
-            // POWER), not a setting: it goes through the power path.
-            Receiver.togglePower()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.refresh() }
         case .bool:
             let on = (value(for: name) as? Bool) ?? false
             send(on ? "0" : "1")

@@ -1375,7 +1375,11 @@ final class CrosshairPad: NSView {
 }
 
 final class TogglePad: NSView {
-    private let title: String
+    /// Settable for a pad that names what a press does next — the options
+    /// panel's CONNECT / DISCONNECT.
+    var title: String {
+        didSet { if title != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    }
     private let font: NSFont
     private let onColor: NSColor
     private let action: () -> Void

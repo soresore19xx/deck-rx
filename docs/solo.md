@@ -316,8 +316,8 @@ window was built is in it.
 
 It is bound when the audio engine starts, so choosing a different one rebuilds
 the graph rather than waiting for the next connect. **Host**, **Port** and
-**Source** are changed with the link off: press **DIRECT** — or **Link**, the
-first row of the options panel's SERVER group — to disconnect, change them,
+**Source** are changed with the link off: press **DIRECT** — or **CONNECT / DISCONNECT**,
+the key at the head of the options panel's framed SERVER group — to disconnect, change them,
 press it again to connect. While it is lit — connected, or still retrying
 an address that does not answer — the three rows are greyed out and the control
 endpoint answers 409 to a `/receiver?set=host|port|source`. Entering a value

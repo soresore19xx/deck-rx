@@ -1414,16 +1414,21 @@ final class TogglePad: NSView {
         let box = bounds.insetBy(dx: 0.75, dy: 0.75)
         let path = CGPath(roundedRect: box, cornerWidth: 5, cornerHeight: 5, transform: nil)
         let lit = isOn && !momentary
+        // A lit green key takes a fraction of the accent over the panel, as the
+        // iPad's keys do — a key filled with #59D973 is a traffic light, not a
+        // state. The warning colour (MUTE, HOLD) stays solid: it is meant to shout.
+        let soft = onColor == P.accent
+        let litFill = soft ? (onColor.blended(withFraction: 0.62, of: P.panel) ?? onColor) : onColor
         ctx.addPath(path)
         ctx.setFillColor(pressed ? onColor.withAlphaComponent(0.45).cgColor
-                                 : (lit ? onColor.cgColor : P.panel.cgColor))
+                                 : (lit ? litFill.cgColor : P.panel.cgColor))
         ctx.fillPath()
         ctx.addPath(path)
-        ctx.setStrokeColor(lit ? onColor.cgColor : P.line.cgColor)
+        ctx.setStrokeColor(lit ? (soft ? onColor.withAlphaComponent(0.7) : onColor).cgColor : P.line.cgColor)
         ctx.setLineWidth(1.5)
         ctx.strokePath()
 
-        let color: NSColor = lit ? NSColor(white: 0.05, alpha: 1) : P.text
+        let color: NSColor = lit && !soft ? NSColor(white: 0.05, alpha: 1) : P.text
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
         let size = (title as NSString).size(withAttributes: attrs)
         (title as NSString).draw(at: CGPoint(x: (bounds.width - size.width) / 2,

@@ -84,9 +84,10 @@ and mode in `data/gain-memory.json` with the time it was measured, ahead of
 the band slot, and used for an hour; after that, or with no time on it (filed
 by the older rule), the station is searched again on the next landing. Each step waits until the whole-band power of the incoming
 packets jumps (the V4's packet header reports the same gain throughout), and
-the steps go lowest first and stop once the climb has stopped below them
-(`nextGainToMeasure`: the same choice as measuring every step), which brings
-a search to 0.4-1.2 s. Rules: `src/gainSearch.ts` (pure, tested in
+the steps go lowest first and stop once the climb has stopped below them, or
+at the first overloaded step once a station has shown (`nextGainToMeasure`:
+the same choice as measuring every step). Measured 2026-10-12 on the V4:
+medium wave 0.4-1 s (1.3-1.6 s before), wide FM 0.8-1.5 s. Rules: `src/gainSearch.ts` (pure, tested in
 `test/gainSearch.test.ts`), the file in `src/gainMemory.ts`, the driving in
 `spyService.runGainSearch()`.
 

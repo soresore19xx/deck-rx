@@ -284,6 +284,21 @@ describe('nextGainToMeasure: fewer steps, the same choice', () => {
     expect(climbSettled(r)).toBe(true);
     expect(pickGain(r)).toBe(3);
   });
+  it('overload ends the climb: V4 954 kHz (2026-10-12) takes 0, 6, 3 instead of seven steps', () => {
+    // Measured: 0 clean, 3 at -3.4 dBFS, 6 and up at full scale.
+    const lv = (gain: number, signalDb: number, floorDb: number, peakDb: number) =>
+      ({ gain, signalDb, floorDb, cn: signalDb - floorDb, peakDb });
+    const table = new Map([[0, lv(0, -28.5, -81.7, -16.2)], [3, lv(3, -17.6, -80.9, -3.4)],
+                           [6, lv(6, -11.7, -58.6, 0)], [12, lv(12, -21.9, -40.3, 0)],
+                           [18, lv(18, -23.5, -39.4, 0)], [24, lv(24, -26, -40, 0)], [29, lv(29, -25.2, -39.8, 0)]]);
+    const measured: number[] = [], r: GainResult[] = [];
+    for (let g = nextGainToMeasure(29, measured, r); g !== null; g = nextGainToMeasure(29, measured, r)) {
+      measured.push(g); r.push(table.get(g)!);
+    }
+    expect(measured).toEqual([0, 6, 3]);
+    expect(pickGain(r)).toBe(pickGain([...table.values()]));
+    expect(pickGain(r)).toBe(0);
+  });
   it('no station anywhere: every coarse step, then nothing', () => {
     const measured: number[] = [], r: GainResult[] = [];
     for (let g = nextGainToMeasure(8, measured, r); g !== null; g = nextGainToMeasure(8, measured, r)) {

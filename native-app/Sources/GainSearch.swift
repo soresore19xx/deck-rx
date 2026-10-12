@@ -169,7 +169,13 @@ enum GainSearch {
     static func nextGainToMeasure(maxGain: Int, measured: [Int], results: [Result]) -> Int? {
         let coarse = coarseGains(maxGain: maxGain)
         let nextCoarse = coarse.first { !measured.contains($0) }
-        if let g = nextCoarse, !climbSettled(results) { return g }
+        // A step over the headroom line ends the climb too: the gains above
+        // overload as well (V4 medium wave from 6; 2026-10-12: 1.3-1.6 s a station).
+        // Only once some step shows a station: until then an overloaded
+        // step's C/N is still what lets pickGain judge at all.
+        let over = results.contains { ($0.peakDb ?? -.infinity) > maxPeakDbfs }
+            && results.contains { $0.cn >= minCnDb }
+        if let g = nextCoarse, !over, !climbSettled(results) { return g }
         guard let first = pickGain(results.filter { coarse.contains($0.gain) }) else { return nil }
         if let mid = refineGains(best: first, maxGain: maxGain, coarse: coarse)
             .first(where: { !measured.contains($0) }) { return mid }

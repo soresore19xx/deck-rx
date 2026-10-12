@@ -1300,6 +1300,16 @@ do {
     let mwWalk = walk(29) { mwV4[$0]! }
     check("search: medium wave on the V4 ends after 0, 6 and 3", mwWalk == [0, 6, 3], "\(mwWalk)")
     check("search: settled there", GainSearch.climbSettled(mwWalk.map { mwV4[$0]! }))
+    func lp(_ g: Int, _ s: Double, _ f: Double, _ pk: Double) -> R {
+        R(gain: g, cn: s - f, peakDb: pk, signalDb: s, floorDb: f)
+    }
+    let mw954: [Int: R] = [0: lp(0, -28.5, -81.7, -16.2), 3: lp(3, -17.6, -80.9, -3.4),
+                           6: lp(6, -11.7, -58.6, 0), 12: lp(12, -21.9, -40.3, 0),
+                           18: lp(18, -23.5, -39.4, 0), 24: lp(24, -26, -40, 0), 29: lp(29, -25.2, -39.8, 0)]
+    let w954 = walk(29) { mw954[$0]! }
+    check("search: overload ends the climb (V4 954 kHz)", w954 == [0, 6, 3], "\(w954)")
+    check("search: same choice as every step",
+          GainSearch.pickGain(w954.map { mw954[$0]! }) == 0 && GainSearch.pickGain(Array(mw954.values)) == 0)
     let none = walk(8) { R(gain: $0, cn: 1, peakDb: -40, signalDb: -110, floorDb: -111) }
     check("search: no station takes every coarse step", none == [0, 2, 4, 6, 8], "\(none)")
     var carrier = spectrum(n, rate, -100, -80, 0, 8_000)

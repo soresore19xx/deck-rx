@@ -195,7 +195,8 @@ export function climbSettled(results: GainResult[], maxPeakDb = GAIN_MAX_PEAK_DB
 /**
  * The next gain the search should measure, or null when it is done.
  * `measured` is every gain tried so far (a step can leave no result).
- * Coarse steps go lowest first and stop once `climbSettled`; the refining
+ * Coarse steps go lowest first and stop once `climbSettled` or a step
+ * overloads (IQ peak over GAIN_MAX_PEAK_DBFS); the refining
  * midpoints are around the best coarse point; and if a midpoint moved the
  * climb on, the coarse steps carry on. The choice comes
  * out as measuring every coarse step would give, in fewer steps — most
@@ -207,9 +208,17 @@ export function nextGainToMeasure(maxGain: number, measured: number[],
   const coarse = coarseGains(maxGain);
   const todo = (g: number) => !measured.includes(g);
   const nextCoarse = coarse.find(todo);
+  // A step over the headroom line ends the climb too: the gains above it
+  // overload as well and pickGain passes them over. On the V4 medium wave
+  // overloads from 6, and the search went on to 29 with each overloaded step
+  // waiting out the 150 ms settle (2026-10-12: 1.3-1.6 s a station).
+  // Only once some step shows a station: until then an overloaded step's
+  // C/N is still what lets pickGain judge at all.
+  const over = results.some(r => r.peakDb !== undefined && r.peakDb > GAIN_MAX_PEAK_DBFS)
+    && results.some(r => r.cn >= GAIN_MIN_CN_DB);
   // Refining starts once the coarse climb has settled or run out; a midpoint
   // that moves the climb on sends the search back to the coarse steps.
-  if (nextCoarse !== undefined && !climbSettled(results)) return nextCoarse;
+  if (nextCoarse !== undefined && !over && !climbSettled(results)) return nextCoarse;
   const first = pickGain(results.filter(r => coarse.includes(r.gain)));
   if (first === null) return null;
   const mid = refineGains(first, maxGain, coarse).find(todo);

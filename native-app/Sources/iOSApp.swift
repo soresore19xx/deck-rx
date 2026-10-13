@@ -625,15 +625,24 @@ final class RadioViewController: UIViewController {
         let presetKeys = [-1, 1].map { dir -> UIButton in
             let b = padButton(dir < 0 ? "◀" : "▶", font: xMono(S(15), .medium), height: S(34))
             b.tag = dir
-            b.widthAnchor.constraint(equalToConstant: S(36)).isActive = true
             b.addTarget(self, action: #selector(presetStepTapped(_:)), for: .touchUpInside)
             return b
         }
-        let presetBar = row([presetTitle] + presetKeys + [UIView(), addPresetButton, editPresetsButton])
+        // The two keys take the bar's spare width between the heading and
+        // + Add, rather than sitting at 36 pt with a gap beside them.
+        let presetKeyRow = row(presetKeys)
+        presetKeyRow.distribution = .fillEqually
+        presetKeyRow.spacing = S(6)
+        presetKeyRow.setContentHuggingPriority(.init(1), for: .horizontal)
+        let presetBar = row([presetTitle, presetKeyRow, addPresetButton, editPresetsButton])
         // Tighter than the default row: with the two keys in it the heading was
         // the thing that gave, cut to "PRES…".
         presetBar.spacing = S(6)
         presetTitle.setContentCompressionResistancePriority(.required, for: .horizontal)
+        for b in [addPresetButton, editPresetsButton] {
+            b.setContentHuggingPriority(.required, for: .horizontal)
+            b.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
         presetBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(presetBar)
         view.addSubview(presetTable)

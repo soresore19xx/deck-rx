@@ -188,6 +188,21 @@ final class RadioViewController: UIViewController {
         super.viewDidLoad()
         // Before anything is built: every constant and font size below is baked
         // in at construction, the way the Mac window bakes them (main.swift:1192).
+        // The iPad mini (744 pt short side) does not fit at "max": the station
+        // line went off the top, the clocks off the right and STATUS off the
+        // bottom (measured: fixed 524 + trace floor 220 against 744). Once,
+        // on such a screen, a config still on the default steps down to
+        // "middle" (fixed 480, trace 264 — everything shows). The flag keeps
+        // it once: a later choice of "max" in Options stays.
+        let screen = UIScreen.main.bounds.size
+        if min(screen.width, screen.height) < 800,
+           !UserDefaults.standard.bool(forKey: "uiScaleShortScreenApplied") {
+            UserDefaults.standard.set(true, forKey: "uiScaleShortScreenApplied")
+            if radio.config.uiScale == "max" {
+                radio.config.uiScale = "middle"
+                radio.config.save()
+            }
+        }
         UI.scale = UI.from(radio.config.uiScale)
         view.backgroundColor = Pal.bg
         buildUI()

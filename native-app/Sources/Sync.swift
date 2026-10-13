@@ -120,7 +120,14 @@ final class SyncClient {
         if let e = ProcessInfo.processInfo.environment["DECK_RX_SYNC_HUBS"] {
             return e.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         }
+#if targetEnvironment(simulator)
+        // A simulator is a test bench, not a device: on 2026-10-14 one used for
+        // a layout check pushed its stale presets (31 old names) into the live
+        // hub. It syncs only when DECK_RX_SYNC_HUBS names a hub on purpose.
+        return []
+#else
         return ["http://192.168.0.51:8772", "http://192.168.1.51:8772"]
+#endif
     }()
     private let queue = DispatchQueue(label: "deck-rx.sync", qos: .utility)
     private var timer: DispatchSourceTimer?

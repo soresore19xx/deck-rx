@@ -75,7 +75,12 @@ gives up the height; at the two larger scales that is more than the trace's
 usual floor, and it is allowed to. Before, the floor held and UIKit dropped a
 constraint of its own choosing — the port box being typed into was the thing
 that vanished, which is why the smallest scale was the only one that seemed
-to work. On a screen under 900 points tall (the iPad mini, 744 in landscape)
+to work. On the iPad mini (744-point short side) the window does not fit at "max" —
+the station line went off the top, the clocks off the right and STATUS off the
+bottom. The first launch on such a screen steps a config still on "max" down to
+"middle", once; choosing "max" again in Options afterwards stays.
+
+On a screen under 900 points tall (the iPad mini, 744 in landscape)
 the readout and the trace fold as well while an address is typed: with only
 the rows above SERVER folded, what was left still did not fit above the
 keyboard and the SERVER row went under it. `DECK_RX_FOCUS=host|port`

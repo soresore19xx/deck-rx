@@ -590,7 +590,21 @@ final class RadioViewController: UIViewController {
         presetTitle.setContentHuggingPriority(.required, for: .horizontal)
         // In the bar rather than on a line of its own: a heading that cost a
         // row's height would undo the tightening below it.
-        let presetBar = row([presetTitle, UIView(), addPresetButton, editPresetsButton])
+        // The Mac's ◀ PRESET / PRESET ▶ pads, beside the heading of the list
+        // they walk through rather than in the TUNE box, which has no width to
+        // spare at the larger text scales.
+        let presetKeys = [-1, 1].map { dir -> UIButton in
+            let b = padButton(dir < 0 ? "◀" : "▶", font: xMono(S(15), .medium), height: S(34))
+            b.tag = dir
+            b.widthAnchor.constraint(equalToConstant: S(36)).isActive = true
+            b.addTarget(self, action: #selector(presetStepTapped(_:)), for: .touchUpInside)
+            return b
+        }
+        let presetBar = row([presetTitle] + presetKeys + [UIView(), addPresetButton, editPresetsButton])
+        // Tighter than the default row: with the two keys in it the heading was
+        // the thing that gave, cut to "PRES…".
+        presetBar.spacing = S(6)
+        presetTitle.setContentCompressionResistancePriority(.required, for: .horizontal)
         presetBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(presetBar)
         view.addSubview(presetTable)
@@ -1303,6 +1317,17 @@ final class RadioViewController: UIViewController {
     }
 
     @objc private func tuneTapped(_ sender: UIButton) { radio.tune(ticks: sender.tag) }
+
+    /// The next or previous preset by frequency — the Mac's preset pads and
+    /// the knob, through the same `stepPreset`. Persisted like a tap on the
+    /// list, so a relaunch comes back to the station it was stepped to.
+    @objc private func presetStepTapped(_ sender: UIButton) {
+        guard let hz = radio.stepPreset(sender.tag) else { return }
+        radio.config.mode = radio.mode
+        radio.config.frequencyHz = Double(hz)
+        radio.config.save()
+        refresh()
+    }
 
     /// Keys rather than a segmented control, so the row reads like the band
     /// row above it and the live mode is lit rather than outlined in a shade of

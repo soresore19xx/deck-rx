@@ -32,6 +32,8 @@ Landscape, and the width goes to the spectrum.
 - **presets** grouped by band, with the row marked by the frequency the receiver
   is actually on rather than by what was last picked. Add / Edit / long-press to
   rename. The iPad keeps its own `presets.json`, not the plugin's.
+  ◀ / ▶ beside the PRESET heading step to the previous / next preset by
+  frequency, wrapping at the ends — Solo's ◀ PRESET / PRESET ▶ pads.
 - **an options sheet** carrying the live mode's settings only, so an AM receiver
   is never offered de-emphasis. Anything with more than two values is a
   pull-down showing the whole list.

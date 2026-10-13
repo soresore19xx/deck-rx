@@ -28,7 +28,10 @@ change up. The SDR++ file itself is still only read.
 Receivers try `http://192.168.0.51:8772` then `http://192.168.1.51:8772` (the
 iPad's segment). `DECK_RX_SYNC_HUBS` overrides the list, and an empty value
 turns sync off; the test runners set it empty, and a harness plugin instance
-(`DECK_RX_CONFIG_PATH`) never syncs.
+(`DECK_RX_CONFIG_PATH`) never syncs. Neither does an iPad simulator build
+unless `DECK_RX_SYNC_HUBS` names a hub: on 2026-10-14 a simulator started for
+a layout check pushed its 31 stale presets into the live hub, and they had to
+be deleted from the hub by hand.
 
 Rules: `src/syncCore.ts` and `native-app/Sources/Sync.swift`, the same cases in
 `test/syncCore.test.ts` and `native-app/Tests/main.swift`.

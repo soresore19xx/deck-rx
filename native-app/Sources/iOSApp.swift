@@ -143,6 +143,11 @@ final class RadioViewController: UIViewController {
     /// choosing and the SERVER row stayed under the keyboard, the number being
     /// typed out of sight (2026-09-25, on the iPad and in the simulator).
     private var foldedWhileTyping: [UIView] = []
+    /// Folded as well on a short screen. On the iPad mini (744 pt in
+    /// landscape) the readout and the trace alone left less than the keyboard
+    /// does, so the SERVER row went under the keyboard with the rows above it
+    /// already folded.
+    private var foldedWhileTypingShort: [UIView] = []
 
     /// The modes worth a segment on a receiver this size. RAW and DSB exist in
     /// the mode list but are not what anyone reaches for on an iPad, and eight
@@ -190,8 +195,14 @@ final class RadioViewController: UIViewController {
         // tapped into from a script: DECK_RX_FOCUS=host|port puts the cursor in
         // that box a moment after launch, so the keyboard comes up on its own.
         if let f = ProcessInfo.processInfo.environment["DECK_RX_FOCUS"] {
+            // The boxes only take a cursor with the link off (c127950), and
+            // the app dials at launch, so the check disconnects first.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                _ = (f == "port" ? self?.portField : self?.hostField)?.becomeFirstResponder()
+                self?.radio.disconnect()
+                self?.refresh()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    _ = (f == "port" ? self?.portField : self?.hostField)?.becomeFirstResponder()
+                }
             }
         }
 
@@ -548,6 +559,7 @@ final class RadioViewController: UIViewController {
         controls.translatesAutoresizingMaskIntoConstraints = false
         controlsBlock = controls
 
+        foldedWhileTypingShort = [header, plot]
         let right = UIStackView(arrangedSubviews: [header, plot, displayBox])
         right.axis = .vertical
         right.spacing = S(10)
@@ -1275,8 +1287,10 @@ final class RadioViewController: UIViewController {
             guard let self else { return }
             let typing = self.hostField.isFirstResponder || self.portField.isFirstResponder
             guard self.foldedWhileTyping.first?.isHidden != typing else { return }
+            let short = self.view.bounds.height < 900
             UIView.animate(withDuration: 0.2) {
                 for v in self.foldedWhileTyping { v.isHidden = typing }
+                for v in self.foldedWhileTypingShort { v.isHidden = typing && short }
                 self.view.layoutIfNeeded()
             }
         }

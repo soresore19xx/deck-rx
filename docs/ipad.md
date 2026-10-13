@@ -75,7 +75,12 @@ gives up the height; at the two larger scales that is more than the trace's
 usual floor, and it is allowed to. Before, the floor held and UIKit dropped a
 constraint of its own choosing — the port box being typed into was the thing
 that vanished, which is why the smallest scale was the only one that seemed
-to work. The layout logs its numbers (`[ui] window … fixed … trace …`) on
+to work. On a screen under 900 points tall (the iPad mini, 744 in landscape)
+the readout and the trace fold as well while an address is typed: with only
+the rows above SERVER folded, what was left still did not fit above the
+keyboard and the SERVER row went under it. `DECK_RX_FOCUS=host|port`
+(`SIMCTL_CHILD_` in the simulator) disconnects and puts the cursor in that box
+a moment after launch, for checking this without a tap. The layout logs its numbers (`[ui] window … fixed … trace …`) on
 every change, readable with `devicectl device process launch --console`.
 
 ## DRM

@@ -293,7 +293,7 @@ final class RadioViewController: UIViewController {
         // the button pushed the first digit of "5555" out of the box, so the
         // number being typed was the one thing the box did not show.
         portField.widthAnchor.constraint(equalToConstant: S(92)).isActive = true
-        styleAsKey(sourceButton, font: xMono(S(15), .medium), height: S(40))
+        styleAsKey(sourceButton, font: xMono(S(15), .medium), height: S(30))
         sourceButton.widthAnchor.constraint(equalToConstant: S(130)).isActive = true
         sourceButton.setContentHuggingPriority(.required, for: .horizontal)
         sourceButton.showsMenuAsPrimaryAction = true
@@ -301,7 +301,7 @@ final class RadioViewController: UIViewController {
         // Return connects and puts the keyboard away, which is the whole
         // reason the field is being typed into.
         optionsButton.setTitle("Options", for: .normal)
-        styleAsKey(optionsButton, font: xMono(S(15), .medium), height: S(40))
+        styleAsKey(optionsButton, font: xMono(S(15), .medium), height: S(30))
         optionsButton.widthAnchor.constraint(equalToConstant: S(110)).isActive = true
         optionsButton.setContentHuggingPriority(.required, for: .horizontal)
         optionsButton.addTarget(self, action: #selector(showOptions), for: .touchUpInside)
@@ -310,7 +310,7 @@ final class RadioViewController: UIViewController {
         // Beside Options because it is the same kind of thing: a panel that
         // opens over the receiver and leaves it running underneath.
         drmButton.setTitle("DRM", for: .normal)
-        styleAsKey(drmButton, font: xMono(S(15), .medium), height: S(40))
+        styleAsKey(drmButton, font: xMono(S(15), .medium), height: S(30))
         drmButton.widthAnchor.constraint(equalToConstant: S(72)).isActive = true
         drmButton.setContentHuggingPriority(.required, for: .horizontal)
         drmButton.addTarget(self, action: #selector(showDrm), for: .touchUpInside)
@@ -319,7 +319,7 @@ final class RadioViewController: UIViewController {
         connectButton.setTitle("Connect", for: .normal)
         // A key like the others, lit while the link is wanted: the toggle the
         // locked address boxes beside it wait on, first in the group.
-        styleAsKey(connectButton, font: xMono(S(15), .medium), height: S(40))
+        styleAsKey(connectButton, font: xMono(S(15), .medium), height: S(30))
         connectButton.widthAnchor.constraint(equalToConstant: S(124)).isActive = true
         connectButton.setContentHuggingPriority(.required, for: .horizontal)
         connectButton.addTarget(self, action: #selector(toggleConnection), for: .touchUpInside)
@@ -358,7 +358,7 @@ final class RadioViewController: UIViewController {
         // A speaker with or without a slash through it, rather than a word
         // that changes: the state is the icon, and the key no longer has to be
         // wide enough for the longer of two words it might be showing.
-        styleAsKey(muteButton, font: xMono(S(15), .medium), height: S(40))
+        styleAsKey(muteButton, font: xMono(S(15), .medium), height: S(30))
         muteButton.tintColor = Pal.bg
         muteButton.setPreferredSymbolConfiguration(
             UIImage.SymbolConfiguration(pointSize: S(17), weight: .medium), forImageIn: .normal)
@@ -570,7 +570,9 @@ final class RadioViewController: UIViewController {
             statusRow(),
         ])
         controls.axis = .vertical
-        controls.spacing = S(10)
+        // 2026-10-13: keys 40 -> 30 (TUNE 56 -> 40) and the gaps 10 -> 6, so
+        // the trace gets the height (the iPad mini had 264 pt of it at middle).
+        controls.spacing = S(6)
         controls.translatesAutoresizingMaskIntoConstraints = false
         controlsBlock = controls
 
@@ -1044,7 +1046,7 @@ final class RadioViewController: UIViewController {
         let s = row([])
         s.distribution = .fillEqually
         bandButtons = Receiver.bands.enumerated().map { i, b in
-            let btn = padButton(b.name, font: xMono(S(15), .medium), height: S(40))
+            let btn = padButton(b.name, font: xMono(S(15), .medium), height: S(30))
             btn.tag = i
             btn.addTarget(self, action: #selector(bandTapped(_:)), for: .touchUpInside)
             s.addArrangedSubview(btn)
@@ -1193,8 +1195,8 @@ final class RadioViewController: UIViewController {
         for ticks in [-100, -10, -1, 1, 10, 100] {
             // Momentary, so never lit: there is no state for a step to be in.
             let b = padButton(ticks > 0 ? "+\(ticks)" : "\(ticks)",
-                              font: .monospacedDigitSystemFont(ofSize: S(20), weight: .medium),
-                              height: S(56))
+                              font: .monospacedDigitSystemFont(ofSize: S(18), weight: .medium),
+                              height: S(40))
             b.tag = ticks
             b.addTarget(self, action: #selector(tuneTapped(_:)), for: .touchUpInside)
             s.addArrangedSubview(b)
@@ -1365,7 +1367,7 @@ final class RadioViewController: UIViewController {
         let keys = row([])
         keys.distribution = .fillEqually
         modeButtons = Self.shownModes.map { m in
-            let b = padButton(MODE_NAMES[m], font: xMono(S(15), .medium), height: S(40))
+            let b = padButton(MODE_NAMES[m], font: xMono(S(15), .medium), height: S(30))
             b.tag = m
             b.addTarget(self, action: #selector(modeTapped(_:)), for: .touchUpInside)
             keys.addArrangedSubview(b)

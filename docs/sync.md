@@ -31,7 +31,9 @@ turns sync off; the test runners set it empty, and a harness plugin instance
 (`DECK_RX_CONFIG_PATH`) never syncs. Neither does an iPad simulator build
 unless `DECK_RX_SYNC_HUBS` names a hub: on 2026-10-14 a simulator started for
 a layout check pushed its 31 stale presets into the live hub, and they had to
-be deleted from the hub by hand.
+be deleted from the hub by hand. A release build of Solo
+(`DECKRX_HOUSE_SYNC=0 ./build-app.sh solo`) carries no hub either — the
+addresses are this house's — and `notarize.sh` refuses a bundle that does.
 
 Rules: `src/syncCore.ts` and `native-app/Sources/Sync.swift`, the same cases in
 `test/syncCore.test.ts` and `native-app/Tests/main.swift`.

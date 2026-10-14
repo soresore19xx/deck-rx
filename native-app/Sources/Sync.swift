@@ -125,6 +125,9 @@ final class SyncClient {
         // a layout check pushed its stale presets (31 old names) into the live
         // hub. It syncs only when DECK_RX_SYNC_HUBS names a hub on purpose.
         return []
+#elseif NO_HOUSE_SYNC
+        // A release build: the hubs below are this house's, not the recipient's.
+        return []
 #else
         return ["http://192.168.0.51:8772", "http://192.168.1.51:8772"]
 #endif

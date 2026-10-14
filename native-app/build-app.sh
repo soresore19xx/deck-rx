@@ -273,6 +273,10 @@ if [ "$VARIANT" = "both" ] || [ "$VARIANT" = "solo" ]; then
   SRC_FILES="$SHARED $RECEIVER"
   ARM_ONLY_SRC="$AIRSPY_SRC"
   ARM_ONLY_FLAGS="$AIRSPY_FLAGS"
-  build_variant "$APP_DIR/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE $DRM_FLAGS" \
+  # DECKRX_HOUSE_SYNC=0 leaves the house's sync hub out (docs/sync.md); a
+  # release build must, and notarize.sh refuses one that has it.
+  SYNC_FLAGS=""
+  [ "${DECKRX_HOUSE_SYNC:-1}" = "0" ] && SYNC_FLAGS="-D NO_HOUSE_SYNC"
+  build_variant "$APP_DIR/Deck RX Solo.app" "com.hogehoge.deckrx.solo" "Deck RX Solo" "-D STANDALONE $DRM_FLAGS $SYNC_FLAGS" \
                 "deck-rx-solo" || exit 1
 fi

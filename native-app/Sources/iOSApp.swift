@@ -76,7 +76,7 @@ final class RadioViewController: UIViewController {
     private let sourceButton = UIButton(type: .system)
     /// What the iPad can open. No "usb": an iPad has no Airspy library.
     private static let sources = ["spyserver", "rtltcp"]
-    private let connectButton = UIButton(type: .system)
+    private let connectButton = UIButton(type: .custom)
     private let statusLabel = UILabel()
     /// The same views the Mac window draws. Not UIKit copies of them: a second
     /// spectrum would quietly stop agreeing with the first about what a signal
@@ -119,7 +119,7 @@ final class RadioViewController: UIViewController {
     /// either moves and not four times a second.
     private var stepMenuKey = ""
 
-    private let muteButton = UIButton(type: .system)
+    private let muteButton = UIButton(type: .custom)
     private var refreshTimer: Timer?
     /// The packet gap as it stood when the drop count last moved. A live gap
     /// says what the network is doing now; this says what it was doing at the
@@ -749,8 +749,12 @@ final class RadioViewController: UIViewController {
         face(b, Self.keyGround)
     }
 
+    /// `.custom`, not `.system`: a system button draws its own tinted plate
+    /// behind a selected key, and once the keys were made 30 pt tall that
+    /// plate showed as blue above and below every lit key on the iPad Pro.
+    /// The connect and mute keys are `.custom` for the same reason.
     private func padButton(_ title: String, font: XFont, height: CGFloat) -> UIButton {
-        let b = UIButton(type: .system)
+        let b = UIButton(type: .custom)
         b.setTitle(title, for: .normal)
         styleAsKey(b, font: font, height: height)
         return b

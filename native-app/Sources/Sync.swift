@@ -1,7 +1,8 @@
 // === Claude origin ===
 // Created/placed by Anthropic Claude Code at: 2026-10-10-020000
 // Presets and per-station gains kept in step with the plugin and the other
-// devices through the hub on mini4: a port of src/syncCore.ts + syncClient.ts.
+// devices through the sync hub (src/syncHub.ts): a port of src/syncCore.ts +
+// syncClient.ts.
 // ====================
 import Foundation
 
@@ -115,23 +116,32 @@ final class SyncClient {
     static let shared = SyncClient()
 
     var onPresetsChanged: (() -> Void)?
-    /// mini4 on the Macs' segment, then on the iPad's.
-    private let hubs: [String] = {
-        if let e = ProcessInfo.processInfo.environment["DECK_RX_SYNC_HUBS"] {
-            return e.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        }
+    /// The hubs to try, in order: `DECK_RX_SYNC_HUBS` if set, else the
+    /// config's `syncHubs`. Read on every start, so a hub entered in Options
+    /// takes effect without a relaunch.
+    private var hubs: [String] = []
+
+    /// "host", "host:port" or a URL, comma-separated; the port defaults to 8772.
+    static func parseHubs(_ s: String) -> [String] {
+        s.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            .map { h in
+                let u = h.contains("://") ? h : "http://\(h)"
+                let afterScheme = u.components(separatedBy: "://")[1]
+                return afterScheme.contains(":") ? u : "\(u):8772"
+            }
+    }
+
+    private static func configuredHubs() -> [String] {
+        if let e = ProcessInfo.processInfo.environment["DECK_RX_SYNC_HUBS"] { return parseHubs(e) }
 #if targetEnvironment(simulator)
         // A simulator is a test bench, not a device: on 2026-10-14 one used for
-        // a layout check pushed its stale presets (31 old names) into the live
-        // hub. It syncs only when DECK_RX_SYNC_HUBS names a hub on purpose.
-        return []
-#elseif NO_HOUSE_SYNC
-        // A release build: the hubs below are this house's, not the recipient's.
+        // a layout check pushed its stale presets into the live hub. It syncs
+        // only when DECK_RX_SYNC_HUBS names a hub on purpose.
         return []
 #else
-        return ["http://192.168.0.51:8772", "http://192.168.1.51:8772"]
+        return parseHubs(RadioConfig.load().syncHubs)
 #endif
-    }()
+    }
     private let queue = DispatchQueue(label: "deck-rx.sync", qos: .utility)
     private var timer: DispatchSourceTimer?
     private var running = false
@@ -148,8 +158,15 @@ final class SyncClient {
     /// Every 30 s from now, the first after 2 s. Again on a later call only
     /// restarts the timer (the iPad calls this on becoming active).
     func start() {
-        guard !hubs.isEmpty else { NSLog("[sync] no hub configured — sync disabled"); return }
+        let h = Self.configuredHubs()
+        guard !h.isEmpty else {
+            NSLog("[sync] no hub configured — sync disabled")
+            queue.async { self.timer?.cancel(); self.timer = nil; self.hubs = [] }
+            return
+        }
         queue.async {
+            if h != self.hubs { self.lastHub = nil }
+            self.hubs = h
             self.timer?.cancel()
             let t = DispatchSource.makeTimerSource(queue: self.queue)
             t.schedule(deadline: .now() + 2, repeating: 30)

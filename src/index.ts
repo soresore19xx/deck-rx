@@ -110,7 +110,7 @@ startControlServer();
 startSpectrumFeed();
 
 // Presets and per-station gains kept in step with Solo and the iPad through
-// the hub on mini4; the local files are the cache. See src/syncClient.ts.
+// the sync hub (config.json syncHubs); the local files are the cache. See src/syncClient.ts.
 startSync();
 
 // Dial the persisted SpyServer at startup, rather than waiting for a dial to

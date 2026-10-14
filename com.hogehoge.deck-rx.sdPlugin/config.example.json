@@ -29,5 +29,6 @@
     "agcDecay": 0.0005
   },
   "volume": 1.0,
-  "muted": false
+  "muted": false,
+  "syncHubs": ""
 }

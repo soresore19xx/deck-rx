@@ -183,6 +183,7 @@ final class AppServer {
             let err = radio.lastError.map { "\"\($0)\"" } ?? "null"
             return ok("\"receiver\":\"native-app\",\"connected\":\(radio.isConnected)"
                 + ",\"host\":\"\(radio.config.host)\",\"port\":\(radio.config.port)"
+                + ",\"syncHubs\":\"\(radio.config.syncHubs.replacingOccurrences(of: "\"", with: ""))\""
                 + ",\"autoDirect\":\(radio.config.autoDirect)"
                 + ",\"autoAudio\":\(radio.config.autoAudio)"
                 + ",\"audio\":\(radio.audioEnabled)"
@@ -515,7 +516,7 @@ final class AppServer {
         // from inside the case fired before c.save() had run, so the rebuild
         // read the previous value back off disk — which worked for two of the
         // three transitions and not the third.
-        var scaleChanged = false
+        var scaleChanged = false, syncChanged = false
         switch name {
         case "tuneMode":      c.tuneMode = raw
         case "jpRegion":      c.jpRegion = raw
@@ -536,10 +537,15 @@ final class AppServer {
         case "port":
             guard let p = Int(raw), p > 0, p < 65536 else { return false }
             c.setAddress(port: p)
+        case "syncHubs":
+            // Empty is allowed: it turns sync off.
+            c.syncHubs = raw.trimmingCharacters(in: .whitespaces)
+            syncChanged = true
         default: return false
         }
         c.save()
         radio.config = c
+        if syncChanged { SyncClient.shared.start() }
         if scaleChanged { DispatchQueue.main.async { self.onUiScaleChanged?() } }
         // No dialling from here: the address is only accepted with the link
         // off (addressLocked), and the link comes up when Connect is pressed.

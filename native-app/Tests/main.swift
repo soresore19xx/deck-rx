@@ -1358,6 +1358,16 @@ do {
     try? FileManager.default.removeItem(at: dir)
 }
 
+section("sync: hub addresses, as test/syncClient.test.ts")
+do {
+    check("sync hubs: empty is none", SyncClient.parseHubs("").isEmpty && SyncClient.parseHubs(" , ").isEmpty)
+    check("sync hubs: a bare host gets http and 8772",
+          SyncClient.parseHubs("hub.local") == ["http://hub.local:8772"])
+    check("sync hubs: a given port and a URL are kept",
+          SyncClient.parseHubs("10.0.0.5:9000, http://h:8772") == ["http://10.0.0.5:9000", "http://h:8772"],
+          "\(SyncClient.parseHubs("10.0.0.5:9000, http://h:8772"))")
+}
+
 section("sync: the same rules as test/syncCore.test.ts")
 do {
     typealias V = SyncCore.Value

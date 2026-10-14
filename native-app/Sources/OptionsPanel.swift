@@ -527,6 +527,11 @@ final class OptionsPanel: NSView {
         // label that loses its last word says less than one that never had it.
         server.append(editRow("Host", "rx.host", width: S(128)))
         server.append(editRow("Port", "rx.port", width: S(64)))
+        // The sync hub (docs/sync.md), Solo only: the plugin's receiver has
+        // its own in config.json and does not report it here. Empty is no sync.
+        if rx["syncHubs"] != nil {
+            server.append(editRow("Sync hub", "rx.syncHubs", width: S(128)))
+        }
         inBox = false
         views.append(boxedGroup(server))
         // Last, and after the address: these fetch from the network, and a row

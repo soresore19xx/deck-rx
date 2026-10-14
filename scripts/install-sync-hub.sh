@@ -2,7 +2,7 @@
 # === Claude origin ===
 # Created/placed by Anthropic Claude Code at: 2026-10-10-013000
 # Installs the deck-rx sync hub (src/syncHub.ts) as a LaunchAgent on the machine
-# it runs on (mini4). Run there, from the repo, after `npm run build`.
+# it runs on. Run there, from the repo, after `npm run build`.
 # ====================
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

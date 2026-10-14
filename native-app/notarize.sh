@@ -55,23 +55,6 @@ DRM
   exit 1
 fi
 
-# --- the house's sync hub -------------------------------------------------
-# A home build syncs presets with the hub on mini4 (192.168.0.51:8772). Handed
-# to someone else it would post their station list to whatever answers on that
-# address on their network, every 30 s. Same counting form as above.
-HUB_REFS=0
-[ -f "$EXE_IN" ] && HUB_REFS=$(strings -a "$EXE_IN" 2>/dev/null | grep -c "192.168.0.51:8772" || true)
-if [ "${HUB_REFS:-0}" -gt 0 ]; then
-  cat <<'HUB'
-ERROR: this bundle syncs with the house's hub, and must not be distributed.
-
-Build one without it and notarise that instead:
-
-  DECKRX_HOUSE_SYNC=0 DRM_CORE_DIR=/nonexistent ./build-app.sh solo
-HUB
-  exit 1
-fi
-
 # --- the certificate ------------------------------------------------------
 # Apple Development will not do: notarisation accepts Developer ID only, and a
 # development signature is what makes spctl say "rejected" in the first place.

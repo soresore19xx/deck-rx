@@ -278,7 +278,7 @@ It also does two things on its own initiative, both deliberate:
 
   ```sh
   DECKRX_APP_DIR=~/.claude-work/out/release DECKRX_VERSION=1.1 \
-    DRM_CORE_DIR=/nonexistent DECKRX_HOUSE_SYNC=0 ./build-app.sh solo
+    DRM_CORE_DIR=/nonexistent ./build-app.sh solo
   ./notarize.sh --dmg "~/.claude-work/out/release/Deck RX Solo.app"
   ```
 

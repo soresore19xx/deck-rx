@@ -1963,6 +1963,11 @@ final class OptionsViewController: UITableViewController {
                 // one machine's setting is not another's mystery.
                 Row(title: "UI scale", kind: .text(options: UI.names,
                     get: { r.config.uiScale }, set: { r.config.uiScale = $0 })),
+                // The hub presets and station gains sync through (docs/sync.md).
+                // Empty is no sync; tapping asks for the address.
+                Row(title: "Sync hub", kind: .status(
+                    get: { r.config.syncHubs.isEmpty ? ("off", false) : (r.config.syncHubs, true) },
+                    tap: { [weak self] in self?.askSyncHub() })),
             ]),
         ]
         tableView.reloadData()
@@ -2060,6 +2065,29 @@ final class OptionsViewController: UITableViewController {
         case .status(_, let tap):     apply { tap() }
         default: return
         }
+    }
+
+    /// "host" or "host:port", comma-separated for more than one; empty turns
+    /// sync off. Takes effect at once: the sync timer restarts on the new list.
+    private func askSyncHub() {
+        let a = UIAlertController(title: "Sync hub",
+                                  message: "Address of the deck-rx sync hub (port 8772 if none is given). Empty: no sync.",
+                                  preferredStyle: .alert)
+        a.addTextField { [radio] f in
+            f.text = radio.config.syncHubs
+            f.placeholder = "host or host:port"
+            f.keyboardType = .URL
+            f.autocapitalizationType = .none
+            f.autocorrectionType = .no
+        }
+        a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        a.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak a] _ in
+            guard let self else { return }
+            let v = (a?.textFields?.first?.text ?? "").trimmingCharacters(in: .whitespaces)
+            self.apply { self.radio.config.syncHubs = v }
+            SyncClient.shared.start()
+        })
+        present(a, animated: true)
     }
 
     private func apply(_ change: () -> Void) {

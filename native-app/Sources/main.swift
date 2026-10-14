@@ -1723,7 +1723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         installDirectControl()
         server.start()
         // Presets and per-station gains in step with the plugin and the iPad
-        // through the hub on mini4; the local files are the cache (Sync.swift).
+        // through the sync hub (Options, Sync hub); the local files are the cache (Sync.swift).
         SyncClient.shared.onPresetsChanged = { [weak self] in self?.view.presetList.reload() }
         SyncClient.shared.start()
         // The saved demod mode, before the link comes up. `connect()` takes the

@@ -1,12 +1,12 @@
-// The sync hub: one small HTTP server on mini4 that the plugin, Solo and the
+// The sync hub: one small HTTP server, on any always-on Mac, that the plugin, Solo and the
 // iPad all sync presets and per-station gains through. Rules in syncCore.ts.
 //
 //   POST /sync   {since, records}  → {seq, records}   take a side's changes,
 //                                                     answer with everything newer
 //   GET  /health                   → {ok, seq, counts}
 //
-// Run by a LaunchAgent on mini4 (docs/sync.md). Listens on every interface:
-// the Macs reach it at 192.168.0.51, the iPad's segment at 192.168.1.51.
+// Run by a LaunchAgent (docs/sync.md). Listens on every interface, so
+// devices on more than one segment can each reach it at their own address.
 
 import http from 'http';
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';

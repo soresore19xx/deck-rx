@@ -14,7 +14,7 @@ import { autoStationLabel } from './stationLabel.js';
  *     app running -> zero writes, zero syscalls beyond one stat per tick.
  *  2. **Prefer RAM over disk.** /Volumes/RAMDisk is a RAM-backed volume on
  *     this host, so the feed costs no SSD wear at all there. /tmp is the
- *     fallback for hosts without it (e.g. mini4).
+ *     fallback for hosts without it.
  *  3. **No new leak surface.** One timer and one subscription, both created
  *     once at process start — never per willAppear, which is how duplicate
  *     timers and growing listener sets happen in dial code.

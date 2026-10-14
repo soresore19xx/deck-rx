@@ -192,6 +192,9 @@ interface Config {
   audioLeveling?: boolean;
   /** Choose the RF gain per station automatically (gainSearch.ts). Default on. */
   autoGain?: boolean;
+  /// Sync hub(s), comma-separated "host[:port]" (docs/sync.md). Empty or
+  /// absent: no sync.
+  syncHubs?: string;
   muted?: boolean;
   tuneMode?: 'preset' | 'vfo';
   tuneStepHz?: number;
@@ -2190,6 +2193,9 @@ class SpyService {
       tuneStepHz:    typeof cfg.tuneStepHz === 'number' && cfg.tuneStepHz > 0 ? cfg.tuneStepHz : undefined,
       jpRegion:      isJpRegion(cfg.jpRegion) ? cfg.jpRegion : undefined,
       autoSyncSdrpp: !!cfg.autoSyncSdrpp,
+      // Read by syncClient.ts, not here; carried so a whole-config rewrite
+      // (updateAudioConfig) does not drop it.
+      syncHubs:      typeof cfg.syncHubs === 'string' ? cfg.syncHubs : undefined,
     };
   }
 

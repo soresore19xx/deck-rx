@@ -230,7 +230,7 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
     // The per-station gain file too: without it every harness run filed the
     // mock receiver's gains into the live plugin's data/gain-memory.json.
     DECK_RX_GAIN_MEMORY_PATH:   resolve(sandboxDir, 'gain-memory.json'),
-    // Never the real hub on mini4.
+    // Never a real hub.
     DECK_RX_SYNC_HUBS:          '',
     DECK_RX_SYNC_STATE:         resolve(sandboxDir, 'sync-state.json'),
   };

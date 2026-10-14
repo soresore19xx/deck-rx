@@ -176,7 +176,7 @@ cat > "$APP/Info.plist" <<PLIST
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to your SpyServer on the local network.</string>
-	<!-- The sync hub on mini4 is plain HTTP on the LAN (Sync.swift). -->
+	<!-- The sync hub is plain HTTP on the LAN (Sync.swift). -->
 	<key>NSAppTransportSecurity</key>
 	<dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict>

@@ -19,8 +19,9 @@ import { notifyPresetsChanged } from './presetList.js';
 
 const SYNC_INTERVAL_MS = 30_000;
 const SYNC_TIMEOUT_MS = 5_000;
-/** mini4 on the Macs' segment, then on the iPad's. */
-const DEFAULT_HUBS = ['http://192.168.0.51:8772', 'http://192.168.1.51:8772'];
+declare const __dirname: string;
+// The plugin's config.json, as spyService.ts finds it.
+const CONFIG_PATH = process.env.DECK_RX_CONFIG_PATH ?? join(__dirname, '..', 'config.json');
 
 interface State { seq: number; base: Base }
 
@@ -51,10 +52,22 @@ function mtime(path: string): number {
   try { return statSync(path).mtimeMs; } catch { return 0; }
 }
 
+/** "host", "host:port" or a URL, comma-separated; the port defaults to 8772. */
+export function parseHubs(s: string): string[] {
+  return s.split(',').map(h => h.trim()).filter(Boolean).map((h) => {
+    const u = h.includes('://') ? h : `http://${h}`;
+    return u.split('://')[1].includes(':') ? u : `${u}:8772`;
+  });
+}
+
+/** DECK_RX_SYNC_HUBS if set, else config.json's `syncHubs`; none means no sync. */
 function hubs(): string[] {
   const env = process.env.DECK_RX_SYNC_HUBS;
-  if (env !== undefined) return env.split(',').map(s => s.trim()).filter(Boolean);
-  return DEFAULT_HUBS;
+  if (env !== undefined) return parseHubs(env);
+  try {
+    const cfg = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as { syncHubs?: unknown };
+    return typeof cfg.syncHubs === 'string' ? parseHubs(cfg.syncHubs) : [];
+  } catch { return []; }
 }
 
 async function post(hub: string, body: unknown): Promise<{ seq: number; records: SyncRecord[] }> {

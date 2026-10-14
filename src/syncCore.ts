@@ -1,4 +1,4 @@
-// Sync between the plugin, Solo and the iPad through a hub on mini4: the
+// Sync between the plugin, Solo and the iPad through the sync hub: the
 // rules every side shares. Pure — the hub (syncHub.ts), the plugin's client
 // (syncClient.ts) and the Swift port (native-app/Sources/Sync.swift) drive it.
 //

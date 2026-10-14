@@ -227,6 +227,9 @@ struct RadioConfig: Codable, Equatable {
     /// changing it swaps in a freshly built view rather than taking a relaunch.
     /// Read and written by both bundles: it describes the window, not the radio.
     var uiScale = "max"
+    /// The sync hub(s), comma-separated: "host", "host:port" or a URL; the
+    /// port defaults to 8772. Empty (the default) is no sync. See docs/sync.md.
+    var syncHubs = ""
     /// Fraction of the spectrum panel given to the trace; the rest is the
     /// waterfall. Dragged on the rail between the two, and kept because how
     /// much history a band is worth is a habit, not a per-session decision.
@@ -407,6 +410,7 @@ struct RadioConfig: Codable, Equatable {
         autoSyncSdrpp = (try? c.decodeIfPresent(Bool.self, forKey: .autoSyncSdrpp)) .flatMap { $0 } ?? d.autoSyncSdrpp
         audioDevice = (try? c.decodeIfPresent(String.self, forKey: .audioDevice)) .flatMap { $0 } ?? d.audioDevice
         uiScale = (try? c.decodeIfPresent(String.self, forKey: .uiScale)) .flatMap { $0 } ?? d.uiScale
+        syncHubs = (try? c.decodeIfPresent(String.self, forKey: .syncHubs)) .flatMap { $0 } ?? d.syncHubs
         spectrumSplit = (try? c.decodeIfPresent(Double.self, forKey: .spectrumSplit)) .flatMap { $0 } ?? d.spectrumSplit
         spectrumDbFloor = (try? c.decodeIfPresent(Double.self, forKey: .spectrumDbFloor)) .flatMap { $0 } ?? d.spectrumDbFloor
         spectrumDbCeil = (try? c.decodeIfPresent(Double.self, forKey: .spectrumDbCeil)) .flatMap { $0 } ?? d.spectrumDbCeil

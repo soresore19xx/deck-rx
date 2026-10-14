@@ -25,7 +25,7 @@ export default defineConfig([
     plugins: plugins(),
     external,
   },
-  // The sync hub, run on mini4 by a LaunchAgent (docs/sync.md).
+  // The sync hub, run by a LaunchAgent (docs/sync.md).
   {
     input: 'src/syncHub.ts',
     output: { file: 'com.hogehoge.deck-rx.sdPlugin/bin/sync-hub.js', format: 'cjs', sourcemap: true },

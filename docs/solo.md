@@ -77,7 +77,8 @@ it — and click MONO to bring stereo back. The choice belongs to the channel
 (to 100 Hz), not to a receiver, and is filed in `station-mono.json` beside
 `receiver.json`. **Stereo** under FM OPTIONS is the switch for every station
 at once: with it off all of them are mono, and clicking MONO turns it back on
-for you. The iPad has the same badge and the same file.
+for you. The iPad has the same badge and the same file. On the control
+endpoint, `/stereo` reads the switch and `/stereo?toggle=1` flips it.
 
 The meters, the drop count and every row in the options panel describe **this**
 receiver. They used to be read off the loopback control

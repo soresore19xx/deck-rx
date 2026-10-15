@@ -1383,6 +1383,25 @@ do {
     try? FileManager.default.removeItem(at: dir)
 }
 
+section("station mono: the badge's switch on a receiver")
+do {
+    let lr = LocalRadio()
+    var c = lr.config; c.fmStereo = true; lr.config = c
+    lr.mode = 0                                     // NFM: no switch
+    lr.toggleStereoHere()
+    check("the switch does nothing off WFM", !lr.monoStation)
+    lr.mode = 1
+    check("WFM starts in stereo", lr.stereoWanted && !lr.monoStation)
+    lr.toggleStereoHere()
+    check("a tap keeps the station mono", lr.monoStation && !lr.stereoWanted && lr.config.fmStereo)
+    check("and files it", StationMono.shared.isMono(freqHz: Double(lr.frequency)))
+    lr.toggleStereoHere()
+    check("a second tap brings stereo back", lr.stereoWanted && !lr.monoStation)
+    c = lr.config; c.fmStereo = false; lr.config = c
+    lr.toggleStereoHere()
+    check("MONO from Options: a tap turns Options back on", lr.config.fmStereo && lr.stereoWanted)
+}
+
 section("sync: the same rules as test/syncCore.test.ts")
 do {
     typealias V = SyncCore.Value

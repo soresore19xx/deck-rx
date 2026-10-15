@@ -1477,10 +1477,10 @@ final class RadioViewController: UIViewController {
         // while the pilot is locked, grey while stereo is allowed but not
         // locked, MONO while this station (or Options) keeps it mono.
         let switchable = live && radio.mode == 1
-        let wanted = radio.stereoWanted
+        let stereoOn = radio.stereoWanted
         let show = switchable || stereo
         if stereoBadge.isHidden == show { stereoBadge.isHidden = !show }
-        setText(stereoBadge, switchable && !wanted ? "MONO" : "STEREO")
+        setText(stereoBadge, switchable && !stereoOn ? "MONO" : "STEREO")
         let badgeColor = stereo ? stereoRed : Pal.faint
         if stereoBadge.textColor != badgeColor {
             stereoBadge.textColor = badgeColor

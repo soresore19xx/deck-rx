@@ -3,7 +3,9 @@
 Optional. Keeps the presets and the per-station RF gains (the ones the
 automatic search chose and the ones saved by hand) the same on every deck-rx
 receiver you run: the Stream Deck plugin, Deck RX Solo on each Mac, and the
-iPad. Display settings, volume and the like stay per device.
+iPad. Solo and the iPad also share the stations kept in mono
+(`station-mono.json`; the plugin has no such setting and leaves them alone).
+Display settings, volume and the like stay per device.
 
 Part of [deck-rx](../README.md).
 
@@ -20,7 +22,8 @@ Part of [deck-rx](../README.md).
 One small HTTP server, the **hub** (`src/syncHub.ts`, built to
 `com.hogehoge.deck-rx.sdPlugin/bin/sync-hub.js`), listens on port 8772 on
 every interface. Each receiver keeps its own files exactly as before — the
-preset store and `gain-memory.json` — and those files are its **local cache**:
+preset store, `gain-memory.json` and, on Solo and the iPad,
+`station-mono.json` — and those files are its **local cache**:
 
 - every 30 s (the iPad: while it is in front) a receiver compares its files
   with what the hub last confirmed (`sync-state.json` beside them), sends what

@@ -67,6 +67,18 @@ AUTO means the search chose it, BAND that the band's gain is in force.
 `/autogain` on the control endpoint takes the plugin's parameters. As in the plugin, the spectrum and waterfall hold their last frame while a
 search steps the gain (and 250 ms after, plus the display's audio delay).
 
+### Stereo and mono
+
+On WFM the STEREO badge beside the frequency is also a switch, kept per
+station. Red means the pilot is locked and the station plays in stereo; grey
+means stereo is allowed but no pilot is locked. Click it to keep the tuned
+station in **MONO** — a weak station's stereo is mostly hiss, and mono drops
+it — and click MONO to bring stereo back. The choice belongs to the channel
+(to 100 Hz), not to a receiver, and is filed in `station-mono.json` beside
+`receiver.json`. **Stereo** under FM OPTIONS is the switch for every station
+at once: with it off all of them are mono, and clicking MONO turns it back on
+for you. The iPad has the same badge and the same file.
+
 The meters, the drop count and every row in the options panel describe **this**
 receiver. They used to be read off the loopback control
 endpoint, which belongs to the Stream Deck plugin whenever the plugin is

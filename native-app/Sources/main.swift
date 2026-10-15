@@ -328,8 +328,9 @@ final class MainView: NSView {
     /// badge, shown only while the pilot is actually locked AND the output is
     /// really stereo. Pilot detection keeps running in other modes, so a badge
     /// lit over a mono output would be a lie.
-    private let stereoBadge = BadgeView(text: "STEREO", font: mono(17, .black),
-                                       color: NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1))
+    /// In Solo it is also the STEREO / MONO switch while on WFM (`onClick`).
+    lazy var stereoBadge = BadgeView(text: "STEREO", font: mono(17, .black), color: stereoRed)
+    private let stereoRed = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
     private let bwLabel = label("—", mono(19), P.dim)
     private let stepLabel = label("—", mono(19), P.dim)
 
@@ -1225,7 +1226,18 @@ final class MainView: NSView {
 
         freqView.set(freqHz: s.freqHz)
         modeChip.stringValue = modeName(s.mode)
-        stereoBadge.isHidden = !s.stereo
+        if let on = s.stereoSwitch {
+            // Solo's WFM: the badge stays up and is the switch. Red while the
+            // pilot is locked, grey while stereo is allowed but not locked,
+            // MONO while this station (or Options) keeps it mono.
+            stereoBadge.isHidden = false
+            stereoBadge.text = on ? "STEREO" : "MONO"
+            stereoBadge.color = on && s.stereo ? stereoRed : P.faint
+        } else {
+            stereoBadge.isHidden = !s.stereo
+            stereoBadge.text = "STEREO"
+            stereoBadge.color = stereoRed
+        }
         for (i, pad) in modePads.enumerated() {
             let name = ["WFM", "NFM", "AM", "USB", "LSB", "CW"][i]
             pad.isOn = (MODE_NAMES.firstIndex(of: name) ?? -1) == s.mode
@@ -1443,19 +1455,28 @@ final class TogglePad: NSView {
 /// glyphs riding high inside the border — visible immediately on a two-colour
 /// badge like this one. Drawing the string ourselves puts it where the box says.
 final class BadgeView: NSView {
-    var text: String { didSet { needsDisplay = true } }
-    var color: NSColor { didSet { needsDisplay = true } }
+    var text: String { didSet { if text != oldValue { needsDisplay = true } } }
+    var color: NSColor { didSet { if color != oldValue { needsDisplay = true } } }
     private let font: NSFont
+    /// The width is the first text's, so swapping STEREO for the shorter MONO
+    /// does not shuffle the row beside it.
+    private let sizingText: String
 
     init(text: String, font: NSFont, color: NSColor) {
-        self.text = text; self.font = font; self.color = color
+        self.text = text; self.font = font; self.color = color; self.sizingText = text
         super.init(frame: .zero)
     }
     required init?(coder: NSCoder) { fatalError() }
 
     override var intrinsicContentSize: NSSize {
-        let s = (text as NSString).size(withAttributes: [.font: font])
+        let s = (sizingText as NSString).size(withAttributes: [.font: font])
         return NSSize(width: ceil(s.width) + 18, height: ceil(s.height) + 10)
+    }
+
+    /// Set when the badge is also a switch; a plain badge ignores clicks.
+    var onClick: (() -> Void)?
+    override func mouseDown(with event: NSEvent) {
+        if let onClick { onClick() } else { super.mouseDown(with: event) }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1832,8 +1853,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // own receiver can be decoding stereo perfectly and the window
                 // would still say nothing. `AppServer` already answers this
                 // question about the same receiver; this is the same line.
-                s.stereo = self.radio.isConnected && self.radio.isStereoMode
+                s.stereo = self.radio.isConnected && self.radio.isStereoMode && !self.radio.monoStation
                     && self.radio.stereoLocked
+                s.stereoSwitch = self.radio.isConnected && self.radio.mode == 1
+                    ? self.radio.stereoWanted : nil
                 // Label the frequency ourselves — the feed's station name is
                 // whatever the plugin last tuned, which is not where we are.
                 if let name = StationLabel.lookup(freqHz: s.freqHz, region: self.region) {
@@ -1975,6 +1998,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         v.onNrToggle = { [weak self] in self?.toggleNr() }
         v.onLevelToggle = { [weak self] in self?.toggleLeveling() }
 #if STANDALONE
+        v.stereoBadge.toolTip = "Click: keep this station in mono, or back to stereo"
+        v.stereoBadge.onClick = { [weak self] in self?.radio.toggleStereoHere() }
         v.centerPad.isOn = radio.config.centerTuning
         v.onCenterToggle = { [weak self] in
             guard let self else { return }

@@ -88,6 +88,14 @@ describe('sync', () => {
     expect(diffLocal(b.local, b.base, { [PRESETS]: 400 }, false)).toEqual([]);
   });
 
+  it('a collection this side does not keep is never sent back as a deletion', () => {
+    // Solo and the iPad sync "mono"; the plugin keeps no such file.
+    const local: Snapshot = { [PRESETS]: {} };
+    const base: Base = {};
+    applyRemote(local, base, [{ c: 'mono', k: '79500000', v: 1, t: 900, s: 1 }]);
+    expect(diffLocal({ [PRESETS]: {} }, base, { [PRESETS]: 1000 }, false)).toEqual([]);
+  });
+
   it('a turned-down side is told what stands even when it already pulled it', () => {
     const hub = emptyHub();
     hubMerge(hub, [{ c: PRESETS, k: 'General::X', v: st(1), t: 900 }]);

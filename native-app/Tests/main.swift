@@ -1368,6 +1368,21 @@ do {
           "\(SyncClient.parseHubs("10.0.0.5:9000, http://h:8772"))")
 }
 
+section("station mono: kept per channel, any receiver")
+do {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("deckrx-mono-\(getpid())")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let path = dir.appendingPathComponent("station-mono.json").path
+    let m = StationMono(path: path)
+    check("a station starts in stereo", !m.isMono(freqHz: 79_500_000))
+    m.set(freqHz: 79_500_000, mono: true)
+    check("kept mono, to the 100 Hz channel", m.isMono(freqHz: 79_500_040) && !m.isMono(freqHz: 80_000_000))
+    check("and survives a reload", StationMono(path: path).isMono(freqHz: 79_500_000))
+    m.apply(["79500000": nil, "82500000": 1])
+    check("sync can clear and set", !m.isMono(freqHz: 79_500_000) && m.isMono(freqHz: 82_500_000))
+    try? FileManager.default.removeItem(at: dir)
+}
+
 section("sync: the same rules as test/syncCore.test.ts")
 do {
     typealias V = SyncCore.Value
@@ -1398,6 +1413,13 @@ do {
         .first { $0.k == "General::TBS" }
     let json = del.flatMap { try? JSONEncoder().encode($0) }.flatMap { String(data: $0, encoding: .utf8) } ?? ""
     check("a deletion is sent as \"v\":null", json.contains("\"v\":null"), json)
+    // A collection this side does not keep (the plugin has no "mono") is
+    // folded into base but never goes back up as a deletion.
+    var bare: SyncCore.Snapshot = [SyncCore.presets: [:]]
+    var bareBase: SyncCore.Base = [:]
+    SyncCore.apply(local: &bare, base: &bareBase, remote: [.init(c: SyncCore.mono, k: "79500000", v: .num(1), t: 900, s: 1)])
+    check("an unkept collection is not sent back",
+          SyncCore.diff(local: [SyncCore.presets: [:]], base: bareBase, t: [SyncCore.presets: 1000], first: false).isEmpty)
     // The hub's JSON, as the TS side writes it, decodes.
     let wire = #"{"seq":7,"records":[{"c":"preset","k":"General::FM BAYFM","v":{"frequency":78000000,"bandwidth":200000,"mode":1},"t":1.5,"s":7},{"c":"gainSaved","k":"3:00000000|79500000|1","v":21,"t":2,"s":6},{"c":"preset","k":"General::X","v":null,"t":3,"s":5}]}"#
     struct A: Codable { var seq: Int; var records: [SyncCore.Record] }

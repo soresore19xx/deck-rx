@@ -108,6 +108,7 @@ final class RadioViewController: UIViewController {
     private var modeButtons: [UIButton] = []
     private let stepButton = UIButton(type: .system)
     private let stereoBadge = BadgeLabel()
+    private let stereoRed = XColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
     private let modeChip = UILabel()
     private let bwLabel = UILabel()
     /// Both clocks, as on the Mac. Shortwave schedules are published in UTC —
@@ -464,9 +465,14 @@ final class RadioViewController: UIViewController {
         // is being received, not a setting, and it belongs where the frequency
         // is rather than in a list of controls.
         stereoBadge.text = "STEREO"
+        stereoBadge.sizingText = "STEREO"
         stereoBadge.font = xMono(S(15), .black)
-        stereoBadge.textColor = XColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
-        stereoBadge.layer.borderColor = XColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1).cgColor
+        stereoBadge.textColor = stereoRed
+        stereoBadge.layer.borderColor = stereoRed.cgColor
+        // On WFM it is also the STEREO / MONO switch for the tuned station.
+        stereoBadge.isUserInteractionEnabled = true
+        stereoBadge.addGestureRecognizer(UITapGestureRecognizer(target: self,
+                                                                action: #selector(stereoTapped)))
         stereoBadge.layer.borderWidth = 1.5
         stereoBadge.layer.cornerRadius = S(4)
         stereoBadge.isHidden = true
@@ -1045,6 +1051,11 @@ final class RadioViewController: UIViewController {
     /// Tapping without moving is still a tune: a pan recogniser reports began
     /// and ended with no change in between, and the frequency under the finger
     /// is the one that was asked for.
+    @objc private func stereoTapped() {
+        radio.toggleStereoHere()
+        refresh()
+    }
+
     @objc private func spectrumTapped(_ g: UITapGestureRecognizer) {
         guard let hz = aimFreq(atX: g.location(in: spectrum).x) else { return }
         clearAim()
@@ -1461,8 +1472,20 @@ final class RadioViewController: UIViewController {
         // Same condition the status feed publishes (AppServer.swift:439): a
         // stereo mode, a locked pilot, and a live receiver.
         setText(modeChip, modeName(radio.mode))
-        let stereo = live && radio.isStereoMode && radio.stereoLocked
-        if stereoBadge.isHidden == stereo { stereoBadge.isHidden = !stereo }
+        let stereo = live && radio.isStereoMode && !radio.monoStation && radio.stereoLocked
+        // On a live WFM receiver the badge stays up and is the switch: red
+        // while the pilot is locked, grey while stereo is allowed but not
+        // locked, MONO while this station (or Options) keeps it mono.
+        let switchable = live && radio.mode == 1
+        let wanted = radio.stereoWanted
+        let show = switchable || stereo
+        if stereoBadge.isHidden == show { stereoBadge.isHidden = !show }
+        setText(stereoBadge, switchable && !wanted ? "MONO" : "STEREO")
+        let badgeColor = stereo ? stereoRed : Pal.faint
+        if stereoBadge.textColor != badgeColor {
+            stereoBadge.textColor = badgeColor
+            stereoBadge.layer.borderColor = badgeColor.cgColor
+        }
         spectrum.bandwidthHz = radio.config.bandwidth(for: radio.mode)
         // The window is drawn around the device; the marker sits where the
         // demodulator is, which is not the same place once it moves inside it.
@@ -1772,9 +1795,16 @@ extension RadioViewController: UITableViewDataSource, UITableViewDelegate {
 /// rather than as a box clamped to the glyphs.
 final class BadgeLabel: UILabel {
     private let pad = UIEdgeInsets(top: S(3), left: S(8), bottom: S(3), right: S(8))
+    /// When set, the width is this text's, so swapping STEREO for the shorter
+    /// MONO does not shuffle the row beside it.
+    var sizingText: String?
     override func drawText(in rect: CGRect) { super.drawText(in: rect.inset(by: pad)) }
     override var intrinsicContentSize: CGSize {
-        let s = super.intrinsicContentSize
+        var s = super.intrinsicContentSize
+        if let t = sizingText, let font {
+            let w = ceil((t as NSString).size(withAttributes: [.font: font]).width)
+            s.width = max(s.width, w)
+        }
         return CGSize(width: s.width + pad.left + pad.right,
                       height: s.height + pad.top + pad.bottom)
     }

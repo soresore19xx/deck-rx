@@ -147,6 +147,10 @@ enum Receiver {
         var bandwidthHz: Double = 0
         var tuneStepHz: Double = 0
         var stereo = false
+        /// The STEREO / MONO switch on a live WFM receiver this window owns;
+        /// nil when there is none to switch (other modes, or the front-end,
+        /// which only draws the plugin's pilot lock).
+        var stereoSwitch: Bool? = nil
         var device = ""
         var iqRateHz: Double = 0
         var decStage = 0

@@ -34,12 +34,14 @@ export function canon(v: unknown): string {
 }
 
 /** This side's changes since the hub last confirmed. `t` is when the local
- *  file last changed (per collection); `first` sends everything at t 0. */
+ *  file last changed (per collection); `first` sends everything at t 0.
+ *  Only the collections this side keeps (the keys of `local`) are compared: a
+ *  collection another app syncs reaches `base` through applyRemote, and with
+ *  no local file behind it would otherwise go back up as a deletion. */
 export function diffLocal(local: Snapshot, base: Base, t: Record<string, number>,
                           first: boolean): SyncRecord[] {
   const out: SyncRecord[] = [];
-  const colls = new Set([...Object.keys(local), ...Object.keys(base)]);
-  for (const c of colls) {
+  for (const c of Object.keys(local)) {
     const lc = local[c] ?? {}, bc = base[c] ?? {};
     for (const k of new Set([...Object.keys(lc), ...Object.keys(bc)])) {
       const lv = lc[k] ?? null, bv = bc[k]?.v ?? null;

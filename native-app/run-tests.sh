@@ -12,6 +12,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 export DECK_RX_RECEIVER_CONFIG="$(mktemp -d)/receiver.json"
 # Same for the per-station gains (GainSearch.swift).
 export DECK_RX_GAIN_MEMORY_PATH="$(dirname "$DECK_RX_RECEIVER_CONFIG")/gain-memory.json"
+# And the stations kept in mono.
+export DECK_RX_STATION_MONO_PATH="$(dirname "$DECK_RX_RECEIVER_CONFIG")/station-mono.json"
 # And never the real sync hub.
 export DECK_RX_SYNC_HUBS=""
 export DECK_RX_SYNC_STATE="$(dirname "$DECK_RX_RECEIVER_CONFIG")/sync-state.json"

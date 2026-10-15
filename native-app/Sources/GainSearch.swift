@@ -308,3 +308,77 @@ final class GainMemory {
         try? d.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }
+
+/// Stations the user keeps in mono: a weak WFM station whose stereo is mostly
+/// hiss. Keyed by the channel to 100 Hz like GainMemory, but not by receiver or
+/// mode — a station too weak for stereo is weak on either front end, and only
+/// WFM has stereo. Set from the STEREO / MONO badge; its own file beside
+/// receiver.json, and synced as the "mono" collection.
+final class StationMono {
+    static let shared = StationMono()
+
+    private struct File: Codable {
+        var version = 1
+        var mono: [String: Int] = [:]
+    }
+    private var file: File
+    private let path: String
+    private let lock = NSLock()
+
+    /// `DECK_RX_STATION_MONO_PATH` redirects it, and the test runner sets it.
+    init(path: String? = nil) {
+        if let p = path ?? ProcessInfo.processInfo.environment["DECK_RX_STATION_MONO_PATH"], !p.isEmpty {
+            self.path = p
+        } else {
+            let dir = Plat.appSupport.appendingPathComponent("deck-rx")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            self.path = dir.appendingPathComponent("station-mono.json").path
+        }
+        if let d = FileManager.default.contents(atPath: self.path),
+           let f = try? JSONDecoder().decode(File.self, from: d) {
+            file = f
+        } else {
+            file = File()
+        }
+    }
+
+    static func key(freqHz: Double) -> String { "\(Int((freqHz / 100).rounded()) * 100)" }
+
+    func isMono(freqHz: Double) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return file.mono[Self.key(freqHz: freqHz)] != nil
+    }
+
+    func set(freqHz: Double, mono: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        let k = Self.key(freqHz: freqHz)
+        guard (file.mono[k] != nil) != mono else { return }
+        file.mono[k] = mono ? 1 : nil
+        write()
+    }
+
+    /// For sync (Sync.swift).
+    func map() -> [String: Int] {
+        lock.lock(); defer { lock.unlock() }
+        return file.mono
+    }
+
+    /// Apply what sync settled on: `nil` deletes the key.
+    func apply(_ changes: [String: Int?]) {
+        lock.lock(); defer { lock.unlock() }
+        for (k, v) in changes { file.mono[k] = v }
+        write()
+    }
+
+    var mtimeMs: Double {
+        let a = try? FileManager.default.attributesOfItem(atPath: path)
+        return ((a?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) * 1000
+    }
+
+    private func write() {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let d = try? enc.encode(file) else { return }
+        try? d.write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
+}

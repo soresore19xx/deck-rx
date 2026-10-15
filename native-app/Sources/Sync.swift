@@ -55,11 +55,15 @@ enum SyncCore {
     typealias Base = [String: [String: BaseEntry]]
 
     static let presets = "preset", gainAuto = "gainAuto", gainSaved = "gainSaved"
+    /// Stations kept in mono (StationMono). Solo and the iPad only.
+    static let mono = "mono"
 
-    /// This side's changes since the hub last confirmed (`diffLocal`).
+    /// This side's changes since the hub last confirmed (`diffLocal`). Only
+    /// the collections in `local`: one this side does not keep is not a
+    /// deletion of it.
     static func diff(local: Snapshot, base: Base, t: [String: Double], first: Bool) -> [Record] {
         var out: [Record] = []
-        for c in Set(local.keys).union(base.keys).sorted() {
+        for c in local.keys.sorted() {
             let lc = local[c] ?? [:], bc = base[c] ?? [:]
             for k in Set(lc.keys).union(bc.keys).sorted() {
                 let lv = lc[k], bv = bc[k]?.v
@@ -225,10 +229,12 @@ final class SyncClient {
             SyncCore.presets: SyncCore.snapshot(of: PresetStore.load()),
             SyncCore.gainAuto: maps.gains.mapValues { .num(Double($0)) },
             SyncCore.gainSaved: maps.saved.mapValues { .num(Double($0)) },
+            SyncCore.mono: StationMono.shared.map().mapValues { .num(Double($0)) },
         ]
         let first = state.seq == 0 && state.base.isEmpty
         let t = [SyncCore.presets: Self.mtimeMs(PresetStore.storePath),
-                 SyncCore.gainAuto: gm.mtimeMs, SyncCore.gainSaved: gm.mtimeMs]
+                 SyncCore.gainAuto: gm.mtimeMs, SyncCore.gainSaved: gm.mtimeMs,
+                 SyncCore.mono: StationMono.shared.mtimeMs]
         let recs = SyncCore.diff(local: local, base: state.base, t: t, first: first)
 #if os(iOS)
         let who = "ipad"
@@ -264,6 +270,15 @@ final class SyncClient {
                 if r.c == SyncCore.gainSaved { s[r.k] = .some(v) }
             }
             gm.apply(gains: g, saved: s)
+        }
+        if changed.contains(SyncCore.mono) {
+            var m: [String: Int?] = [:]
+            for r in answer.records where r.c == SyncCore.mono {
+                if case .num(let n)? = r.v { m[r.k] = .some(Int(n)) } else { m[r.k] = .some(nil) }
+            }
+            // The demodulator reads the store per packet, and the badge on
+            // its next refresh: nothing to tell.
+            StationMono.shared.apply(m)
         }
         state.seq = answer.seq
         if let d = try? JSONEncoder().encode(state) {

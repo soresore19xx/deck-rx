@@ -1254,6 +1254,27 @@ final class LocalRadio {
 
     /// WFM is the only stereo mode, so the sink's channel count follows it.
     var isStereoMode: Bool { mode == 1 && config.fmStereo }
+    /// The tuned station is kept in mono (StationMono) — what the STEREO /
+    /// MONO badge switches. Over the Options switch: with that off, every
+    /// station is mono already.
+    var monoStation: Bool { StationMono.shared.isMono(freqHz: Double(frequency)) }
+    /// What the badge shows: stereo allowed here, or not.
+    var stereoWanted: Bool { config.fmStereo && !monoStation }
+
+    /// The badge's tap, on WFM. Stereo on → this station mono; MONO → stereo,
+    /// turning the Options switch back on if that is what made it mono.
+    func toggleStereoHere() {
+        guard mode == 1 else { return }
+        let hz = Double(frequency)
+        if stereoWanted {
+            StationMono.shared.set(freqHz: hz, mono: true)
+        } else {
+            StationMono.shared.set(freqHz: hz, mono: false)
+            if !config.fmStereo { config.fmStereo = true; config.save() }
+        }
+        NSLog("[stereo] \(Int(hz)) Hz: \(stereoWanted ? "stereo" : "mono")")
+        onState?()
+    }
     var stereoLocked: Bool { other.stereoLocked }
     var pilotMetric: Double { other.pilotMetric }
 
@@ -1416,6 +1437,16 @@ final class LocalRadio {
                  return other.processFM(int16IQ: body, decimate: audioDecimate,
                                         gain: OutputScale.nfm * fmScale)
         case 1:
+                 // A station kept in mono plays the mono detector on both
+                 // channels: the sink stays two-channel, so switching it per
+                 // station needs no rebuild of the audio graph.
+                 if config.fmStereo && monoStation {
+                     let m = other.processWFM(int16IQ: body, decimate: audioDecimate,
+                                              gain: OutputScale.wfm * fmScale)
+                     var out = [Float](repeating: 0, count: m.count * 2)
+                     for i in 0..<m.count { out[i * 2] = m[i]; out[i * 2 + 1] = m[i] }
+                     return out
+                 }
                  return config.fmStereo
                     ? other.processWFMStereo(int16IQ: body, decimate: audioDecimate,
                                              gain: OutputScale.wfmStereo * fmScale)

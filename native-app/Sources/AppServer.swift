@@ -586,7 +586,7 @@ final class AppServer {
             "muted": radio.muted,
             "station": name ?? "",
             "bandwidthHz": radio.bandwidthHz,
-            "stereo": live && radio.isStereoMode && radio.stereoLocked,
+            "stereo": live && radio.isStereoMode && !radio.monoStation && radio.stereoLocked,
             "tuneStepHz": radio.tuneStepHz,
             "device": radio.deviceLabel,
             "iqRateHz": Double(radio.iqRate),

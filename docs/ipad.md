@@ -24,8 +24,10 @@ Landscape, and the width goes to the spectrum.
   reachable by touch at all, a pixel of an unzoomed 456 kHz window being half a
   kilohertz.
 - **the readout**, tuned by tapping a digit, with the station name above and the
-  S and N meters beside it. Under it: the mode, the STEREO badge when a WFM
-  pilot is locked, and the bandwidth.
+  S and N meters beside it. Under it: the mode, the STEREO / MONO badge, and
+  the bandwidth. On WFM the badge is a switch for the tuned station: tap it to
+  keep a weak station in mono, tap MONO to bring stereo back (see
+  [Solo](solo.md#stereo-and-mono) — it works the same way).
 - **tune keys** that are multiples of the mode's own step, with the step in the
   box beside them — `-100` is 900 kHz on medium wave and 10 MHz on FM, which a
   key marked `-100` cannot say on its own.

@@ -236,6 +236,16 @@ final class AppServer {
             if radio.wantConnection { radio.disconnect() } else { radio.connect() }
             return ok("\"enabled\":\(radio.wantConnection)")
 
+        case "/stereo":
+            // The STEREO / MONO badge: `toggle=1` switches the tuned WFM
+            // station, as a click on the badge does; without it, a reading.
+            if q["toggle"] == "1" {
+                guard radio.mode == 1 else { return bad("stereo is WFM only") }
+                radio.toggleStereoHere()
+            }
+            return ok("\"stereo\":\(radio.stereoWanted),\"monoStation\":\(radio.monoStation)"
+                      + ",\"freqHz\":\(radio.frequency),\"mode\":\(radio.mode)")
+
         case "/mode":
             guard let m = q["m"].flatMap(Int.init) else { return bad("need m") }
             radio.mode = m

@@ -1474,9 +1474,16 @@ final class BadgeView: NSView {
     }
 
     /// Set when the badge is also a switch; a plain badge ignores clicks.
-    var onClick: (() -> Void)?
+    var onClick: (() -> Void)? { didSet { window?.invalidateCursorRects(for: self) } }
     override func mouseDown(with event: NSEvent) {
         if let onClick { onClick() } else { super.mouseDown(with: event) }
+    }
+    /// A click with the window behind another app's switches at once instead
+    /// of only bringing the window forward — a lost first click read as a
+    /// switch that does nothing.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { onClick != nil }
+    override func resetCursorRects() {
+        if onClick != nil { addCursorRect(bounds, cursor: .pointingHand) }
     }
 
     override func draw(_ dirtyRect: NSRect) {

@@ -511,7 +511,10 @@ final class SpectrumView: XView {
     /// SDR++ findBestRange: the first step in its 1-2-2.5-5 series that keeps
     /// `range / step` under `maxSteps`.
     static func bestStep(_ range: Double, _ maxSteps: Int) -> Double {
-        let series: [Double] = [1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500]
+        // SDR++'s freq_ranges, 1 to 50 M: the frequency scale uses it too.
+        let series: [Double] = (0..<8).flatMap { e in
+            [1.0, 2.0, 2.5, 5.0].map { $0 * pow(10, Double(e)) }
+        }
         for s in series where range / s < Double(maxSteps) { return s }
         return series[series.count - 1]
     }
@@ -729,53 +732,17 @@ final class SpectrumView: XView {
                                     specH: CGFloat, lo: Double, span: Double,
                                     xOf: (Double) -> CGFloat) {
         func x(forHz hz: Double) -> CGFloat { xOf(hz) }
-        // Grid step chosen as the ladder rung *nearest* the ideal spacing,
-        // judged in log space so rungs are compared by ratio the way spacing
-        // is actually perceived.
-        //
-        // The ladder is deliberately finer than the usual 1-2-5. Every gap
-        // in 1-2-5 is a factor of 2, so the line count had to swing by that
-        // much between rungs: measured over a 1x-64x sweep it ran 3.2-8.0
-        // lines (2.49x). Filling in 1.25/1.5/2.5/3/4/6/8 caps every gap at
-        // 1.33x and holds the count at 7.0-9.2 (1.31x) — the graticule now
-        // subdivides smoothly under zoom instead of lurching at each rung.
-        // 1-2-2.5-5 was tried first and only reached 1.97x, not enough.
-        // Major spacing follows the window, not a fixed count: one labelled
-        // line per ~LABEL_PITCH px keeps the labels from crowding as the
-        // window is resized, and a wide window earns more of them.
-        let LABEL_PITCH: CGFloat = 110
-        let targetTicks = max(4.0, Double(plotW / LABEL_PITCH))
-        let raw = span / targetTicks
-        let mag = pow(10, (log10(raw)).rounded(.down))
-        let step = [1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0].map { mag * $0 }
-            .min(by: { abs(log($0 / raw)) < abs(log($1 / raw)) }) ?? mag
-
-        // Minor lines subdivide each major interval. Label width — not
-        // legibility of the ruling — is what caps the major spacing, so
-        // without these the graticule is only ever as fine as the text
-        // allows, which is what read as coarse under zoom. Subdivision
-        // matches the rung so the minors land on round values too: 5 parts
-        // for a 1/2.5/5 rung, 4 for 4/8, 3 for 1.5/3/6, 2 otherwise.
-        let rung = step / mag
-        let sub: Int
-        switch rung {
-        case 1.0, 2.5, 5.0, 10.0: sub = 5
-        case 4.0, 8.0:            sub = 4
-        case 1.5, 3.0, 6.0:       sub = 3
-        default:                  sub = 2
-        }
-        let minorStep = step / Double(sub)
-        if plotW / CGFloat(span / minorStep) >= 9 {
-            ctx.setStrokeColor(XColor(white: 0.030, alpha: 1).cgColor)
-            ctx.setLineWidth(0.5)
-            var mf = (lo / minorStep).rounded(.up) * minorStep
-            while mf < lo + span {
-                let px = pixelCentre(x(forHz: mf))
-                ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
-                mf += minorStep
-            }
-            ctx.strokePath()
-        }
+        // The step is SDR++'s (WaterFall: range = findBestRange(viewBandwidth,
+        // maxHSteps), maxHSteps = data width / (width of "000.000" + 10)): the
+        // first rung of 1-2-2.5-5 that leaves fewer lines than that. Until
+        // 2026-10-17 this was "the rung nearest one line per 110 px" on a
+        // 1-1.25-1.5-...-8 ladder with darker minor lines between; side by
+        // side over the same 912 kHz SDR++ ruled 50 kHz (18 lines) where this
+        // ruled 80 kHz (11), and the minors were too dark to be seen at all.
+        let labelW = NSAttributedString(string: "000.000",
+                                        attributes: [.font: xMono(13, .regular)]).size().width
+        let maxHSteps = max(1, Int(plotW / (labelW + 10)))
+        let step = Self.bestStep(span, maxHSteps)
 
         // Stroked before any label is drawn: drawing text sets the context's
         // colour to the label's, and a path still pending then went out in
@@ -1126,18 +1093,17 @@ final class SpectrumView: XView {
         fill.addLine(to: CGPoint(x: w, y: specH))
         fill.addLine(to: CGPoint(x: plotX, y: specH))
         fill.closeSubpath()
-        ctx.saveGState()
-        ctx.addPath(fill); ctx.clip()
-        if let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                 colors: [XColor(red: 0.40, green: 0.70, blue: 0.95, alpha: 0.30).cgColor,
-                                          XColor(red: 0.40, green: 0.70, blue: 0.95, alpha: 0.02).cgColor] as CFArray,
-                                 locations: [0, 1]) {
-            ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: specH), options: [])
-        }
-        ctx.restoreGState()
+        // As SDR++ draws it with the user's theme (Army Green, PlotLines
+        // #B1D7F2): a 1 pt trace, and under it the same colour at 20 %, flat.
+        // Until 2026-10-17 a brighter 1.2 pt trace over a 30 % -> 2 % gradient
+        // of another blue, which read as glaring over a fill that faded out.
+        let traceColor = XColor(red: 177 / 255.0, green: 215 / 255.0, blue: 242 / 255.0, alpha: 1)
+        ctx.addPath(fill)
+        ctx.setFillColor(traceColor.withAlphaComponent(0.2).cgColor)
+        ctx.fillPath()
         ctx.addPath(path)
-        ctx.setStrokeColor(XColor(red: 0.78, green: 0.90, blue: 1.0, alpha: 1).cgColor)
-        ctx.setLineWidth(1.2)
+        ctx.setStrokeColor(traceColor.cgColor)
+        ctx.setLineWidth(1)
         ctx.strokePath()
 
         if holdEnabled, hold.count == n {

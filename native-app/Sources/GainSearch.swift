@@ -103,6 +103,31 @@ enum GainSearch {
     struct Result {
         let gain: Int; let cn: Double; var peakDb: Double? = nil
         var signalDb: Double? = nil; var floorDb: Double? = nil
+        /// WFM only: the discriminator's mean power in 66-84 kHz, dB
+        /// (Demods.wfmQuietSum / wfmQuietCount). Lower is quieter audio.
+        var quietDb: Double? = nil
+    }
+
+    /// WFM: a step within this of the quietest is as good (the lowest such
+    /// gain is taken, out of overload's way).
+    static let quietToleranceDb = 1.0
+    /// WFM: quiet at least this far down is a station received, not noise —
+    /// on the V4 (2026-10-16) noise alone measured -12.5 dB, the weak 78.9 MHz
+    /// -19 at its best gain, 79.5 -35, the strong 81.3 and 90.5 -50 and lower.
+    static let quietReceivedDb = -18.0
+
+    /// WFM is judged by how quiet the demodulated audio is, not the
+    /// spectrum: past the FM threshold the audio quiets all at once, which
+    /// C/N and the floor's rise do not show (78.9 MHz, V4: the climb stopped
+    /// at 18, the audio quieted only from 24; user, 2026-10-16).
+    private static func pickQuiet(_ clean: [Result]) -> Int? {
+        let q = clean.compactMap { r in r.quietDb.map { (r.gain, $0) } }
+        guard let best = q.map(\.1).min() else { return nil }
+        return q.filter { $0.1 <= best + quietToleranceDb }.map(\.0).min()
+    }
+
+    private static func judgedByQuiet(_ results: [Result]) -> Bool {
+        !results.isEmpty && results.allSatisfy { $0.quietDb != nil }
     }
 
     /// `pickGain` exactly: among the gains that leave the headroom, climb from
@@ -118,9 +143,13 @@ enum GainSearch {
     static func pickGain(_ results: [Result], toleranceDb: Double = 1,
                          maxPeakDb: Double = maxPeakDbfs) -> Int? {
         guard !results.isEmpty else { return nil }
-        guard results.map(\.cn).max()! >= minCnDb else { return nil }
+        let quiet = judgedByQuiet(results)
+        let received = results.map(\.cn).max()! >= minCnDb
+            || (quiet && results.compactMap(\.quietDb).min()! <= quietReceivedDb)
+        guard received else { return nil }
         let clean = results.filter { $0.peakDb == nil || $0.peakDb! <= maxPeakDb }
         if clean.isEmpty { return results.map(\.gain).min() }
+        if quiet { return pickQuiet(clean) }
         if clean.contains(where: { $0.signalDb == nil || $0.floorDb == nil }) {
             let best = clean.map(\.cn).max()!
             return clean.filter { $0.cn >= best - toleranceDb }.map(\.gain).min()
@@ -145,6 +174,13 @@ enum GainSearch {
     /// higher gain can no longer change the choice.
     static func climbSettled(_ results: [Result], maxPeakDb: Double = maxPeakDbfs) -> Bool {
         let clean = results.filter { $0.peakDb == nil || $0.peakDb! <= maxPeakDb }
+        // WFM: settled once the pick is a received station and a higher
+        // gain has been tried without beating it.
+        if judgedByQuiet(results) {
+            guard let p = pickQuiet(clean), let top = clean.map(\.gain).max(),
+                  let q = clean.first(where: { $0.gain == p })?.quietDb else { return false }
+            return q <= quietReceivedDb && top > p
+        }
         if clean.contains(where: { $0.signalDb == nil || $0.floorDb == nil }) { return false }
         let up = clean.sorted { $0.gain < $1.gain }
         guard up.count >= 2 else { return false }
@@ -174,7 +210,7 @@ enum GainSearch {
         // Only once some step shows a station: until then an overloaded
         // step's C/N is still what lets pickGain judge at all.
         let over = results.contains { ($0.peakDb ?? -.infinity) > maxPeakDbfs }
-            && results.contains { $0.cn >= minCnDb }
+            && results.contains { $0.cn >= minCnDb || ($0.quietDb ?? 0) <= quietReceivedDb }
         if let g = nextCoarse, !over, !climbSettled(results) { return g }
         guard let first = pickGain(results.filter { coarse.contains($0.gain) }) else { return nil }
         if let mid = refineGains(best: first, maxGain: maxGain, coarse: coarse)

@@ -60,25 +60,42 @@ lowest that leaves 6 dB of IQ headroom until the floor starts rising with the
 signal (half its rise or more), keeps that gain, and
 remembers it per receiver, channel and mode in `gain-memory.json` beside
 `receiver.json` for an hour (an older one, or one with no measurement time,
-is searched again on the next landing, as in the plugin). With auto gain on, the Gain control is for the moment only;
-clicking Station gain saves the gain in force as that station's own (it then
-reads SAVED and is never searched over), and clicking it again drops it.
-AUTO means the search chose it, BAND that the band's gain is in force.
-`/autogain` on the control endpoint takes the plugin's parameters. As in the plugin, the spectrum and waterfall hold their last frame while a
+is searched again on the next landing, as in the plugin).
+
+**WFM is judged differently** (Solo and the iPad; the plugin still uses the
+spectrum rule): by how quiet the demodulated audio is, not by the spectrum.
+Each step measures the FM discriminator's noise in 66-84 kHz, above anything a
+broadcast carries, and the search keeps the lowest gain within 1 dB of the
+quietest that leaves the headroom. Past the FM threshold the audio quiets all
+at once, which the spectrum's C/N does not show: on a weak station (78.9 MHz
+on the V4) the spectrum rule stopped at gain 18, where the audio was still
+noise; it quiets from 24, and that is what the search now picks. The search
+measures until a higher gain no longer beats the quietest, so a strong station
+takes three steps and a weak one up to eight (about 1.6 s).
+
+**Gain is each station's own.** Turning Gain keeps the value for the tuned
+station at once (`saved`, never searched over), auto gain on or off; no other
+station changes. Station gain reads SAVED, AUTO (the search chose it) or BAND
+(neither: the band's gain); clicking it on SAVED drops the station's value and
+hands it back to the search or the band. `/autogain` on the control endpoint
+takes the plugin's parameters, and its answer also carries the gain in force
+and the last search's table (`lastSearch`, C/N, quiet and IQ peak per step).
+As in the plugin, the spectrum and waterfall hold their last frame while a
 search steps the gain (and 250 ms after, plus the display's audio delay).
 
 ### Stereo and mono
 
-On WFM the STEREO badge beside the frequency is also a switch, kept per
-station. Red means the pilot is locked and the station plays in stereo; grey
-means stereo is allowed but no pilot is locked. Click it to keep the tuned
-station in **MONO** — a weak station's stereo is mostly hiss, and mono drops
-it — and click MONO to bring stereo back. The choice belongs to the channel
-(to 100 Hz), not to a receiver, and is filed in `station-mono.json` beside
-`receiver.json`. **Stereo** under FM OPTIONS is the switch for every station
-at once: with it off all of them are mono, and clicking MONO turns it back on
-for you. The iPad has the same badge and the same file. On the control
-endpoint, `/stereo` reads the switch and `/stereo?toggle=1` flips it.
+On WFM the STEREO badge beside the frequency is also a switch, and stereo is
+each station's own: there is no setting for every station at once. Red means
+the pilot is locked and the station plays in stereo; grey means stereo with no
+pilot locked. Click it to keep the tuned station in **MONO** — a weak
+station's stereo is mostly hiss, and mono drops it — and click MONO to bring
+stereo back. Every other station keeps its own; a station never set is
+stereo. The choice belongs to the channel (to 100 Hz), not to a receiver, and
+is filed in `station-mono.json` beside `receiver.json`. The iPad has the same
+badge and the same file. On the control endpoint, `/stereo` reads the switch
+and `/stereo?toggle=1` flips it; `/options?set=fm.stereo` sets the tuned
+station too.
 
 The meters, the drop count and every row in the options panel describe **this**
 receiver. They used to be read off the loopback control

@@ -318,15 +318,16 @@ export class SpyDialFft extends SingletonAction<Settings> {
         pts.push(`${x},${y.toFixed(1)}`);
       }
       pts.push(`${LCD_W - 1},${PLOT_BOTTOM}`);
-      // Cyan-blue (水色) fill, with a brighter cyan outline on top.
-      out += `<polygon points="${pts.join(' ')}" fill="#14384a" fill-opacity="0.7" stroke="none"/>`;
+      // SDR++'s trace with the user's theme (Army Green, PlotLines #B1D7F2):
+      // the outline in that colour, the fill the same colour at 20 %, flat.
+      out += `<polygon points="${pts.join(' ')}" fill="#b1d7f2" fill-opacity="0.2" stroke="none"/>`;
       // Outline (top of the spectrum) drawn on top of the fill for sharper peaks.
       const lineSegs: string[] = [];
       for (let x = 0; x < LCD_W; x++) {
         const y = mapDbToY(pixHeights[x], floor, range);
         lineSegs.push(`${x === 0 ? 'M' : 'L'}${x},${y.toFixed(1)}`);
       }
-      out += `<path d="${lineSegs.join(' ')}" stroke="#66c8e8" stroke-width="1" fill="none"/>`;
+      out += `<path d="${lineSegs.join(' ')}" stroke="#b1d7f2" stroke-width="1" fill="none"/>`;
     } else {
       out += `<text x="${LCD_W / 2}" y="${LCD_H / 2 + 4}" fill="#666" font-family="monospace" font-size="11" text-anchor="middle">${this.connected ? 'waiting…' : 'OFFLINE'}</text>`;
     }

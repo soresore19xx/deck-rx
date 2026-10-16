@@ -259,9 +259,11 @@ export class SpyDialFft extends SingletonAction<Settings> {
     let out = `<rect width="${LCD_W}" height="${LCD_H}" fill="#000000"/>`;
 
     // Horizontal gridlines every 20 dB inside the plot region (dashed grey).
+    // On a pixel centre so the 1 px rule lights one row, not half of two;
+    // grey 50/255, SDR++'s graticule.
     for (let db = Math.ceil(floor / 20) * 20; db <= ceil; db += 20) {
-      const y = mapDbToY(db, floor, range);
-      out += `<line x1="0" y1="${y.toFixed(1)}" x2="${LCD_W}" y2="${y.toFixed(1)}" stroke="#3a3a3a" stroke-width="1" stroke-dasharray="2 3"/>`;
+      const y = Math.floor(mapDbToY(db, floor, range)) + 0.5;
+      out += `<line x1="0" y1="${y}" x2="${LCD_W}" y2="${y}" stroke="#323232" stroke-width="1" stroke-dasharray="2 3"/>`;
     }
     // Center crosshair (VFO marker) — vertical red line at x = LCD_W/2.
     const cx = LCD_W / 2;

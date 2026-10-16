@@ -211,6 +211,22 @@ final class Demods {
     private var lprConfigured = false
     private(set) var wfmInBandMeanPower: Double = 0
 
+    /// How quiet the WFM discriminator is: its power in 66-84 kHz, above
+    /// everything a broadcast carries (L-R ends at 53 kHz, RDS at 59.4), and
+    /// the samples it was summed over, for the last block. The discriminator
+    /// reads radians, whatever the RF level, so the mean is comparable across
+    /// gains; not over the whole power, which the programme moves (speech,
+    /// music, a pause). Noise only, it is large; once the station quiets the
+    /// receiver it falls. Gain
+    /// search judges WFM by it — the spectrum's C/N cannot see the FM
+    /// threshold, and on 78.9 MHz chose gain 18 where only 24 was listenable
+    /// (2026-10-16). Both sums are 0 when the band cannot be measured (IQ
+    /// rate under 200 kHz, or an IF filter narrower than the band).
+    private(set) var wfmQuietSum: Double = 0
+    private(set) var wfmQuietCount: Double = 0
+    private var quietBpf = [Biquad](repeating: Biquad(), count: 2)
+    private var quietReady = false
+
     // Stereo pilot PLL.
     private var pllPhase: Double = 0
     private var pllNominalDelta: Double = 0
@@ -243,6 +259,8 @@ final class Demods {
         let fc = min(max(cutoffHz, minCut), maxCut)
         wfmIf.setLowPass(fs: iqRate, fc: fc, transBw: max(5000, fc * 0.25))
         wfmIfRate = iqRate
+        quietReady = iqRate >= 200_000 && fc >= 90_000
+        if quietReady { for k in 0..<2 { quietBpf[k].setBandPass(fs: iqRate, fc: 75_000, q: 3) } }
     }
 
     func setDeemphasis(audioRate: Double, tau: Double) {
@@ -302,6 +320,7 @@ final class Demods {
         var out = [Float](repeating: 0, count: outSamples * 2)
         var oi = 0
         var inBandSum: Double = 0
+        var quietSum: Double = 0, totalSum: Double = 0
         let a = deempAlpha
 
         iq.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
@@ -318,6 +337,11 @@ final class Demods {
                 if abs(denom) + abs(numer) > 1 { demod = atan2(numer, denom) }
                 prevI = I
                 prevQ = Q
+                if quietReady {
+                    var q = demod
+                    for k in 0..<2 { q = quietBpf[k].step(q) }
+                    quietSum += q * q; totalSum += 1
+                }
 
                 var lpr = demod
                 for k in 0..<4 { lpr = lprLpf[k].step(lpr) }
@@ -386,6 +410,7 @@ final class Demods {
             }
         }
         wfmInBandMeanPower = inSamples > 0 ? inBandSum / Double(inSamples) : 0
+        wfmQuietSum = quietSum; wfmQuietCount = totalSum
         return out
     }
 
@@ -407,6 +432,8 @@ final class Demods {
         var out = [Float](repeating: 0, count: outSamples)
         var oi = 0
         var inBandSum: Double = 0
+        var quietSum: Double = 0, totalSum: Double = 0
+        let quiet = wide && quietReady
 
         iq.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             let base = raw.baseAddress!
@@ -428,6 +455,11 @@ final class Demods {
                 if abs(denom) + abs(numer) > 1 { r = atan2(numer, denom) }
                 prevI = I
                 prevQ = Q
+                if quiet {
+                    var q = r
+                    for k in 0..<2 { q = quietBpf[k].step(q) }
+                    quietSum += q * q; totalSum += 1
+                }
 
                 var band = r
                 if wide && lprConfigured {
@@ -448,6 +480,7 @@ final class Demods {
             }
         }
         wfmInBandMeanPower = inSamples > 0 ? inBandSum / Double(inSamples) : 0
+        wfmQuietSum = quietSum; wfmQuietCount = totalSum
         return out
     }
 
@@ -580,6 +613,7 @@ final class Demods {
         pilotPower = 0; deempL = 0; deempR = 0; stereoLocked = false
         audioLpfR.reset(); audioHpfR.reset()
         pilotBpf.reset()
+        for k in 0..<2 { quietBpf[k].reset() }
         for i in 0..<4 { lprLpf[i].reset(); lmrLpf[i].reset() }
         for i in 0..<2 { ssbLpfI[i].reset(); ssbLpfQ[i].reset(); cwLpf[i].reset() }
     }

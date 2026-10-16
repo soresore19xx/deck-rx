@@ -48,6 +48,10 @@ final class LocalRadio {
     private var packetPowerAt = Date.distantPast
     /// Sees every packet while a search measures (gainLock).
     private var gainTap: ((Data) -> Void)?
+    /// WFM's quiet sums over the step gain search is measuring (Demods.wfmQuietSum).
+    private var quietAcc: (quiet: Double, total: Double)?
+    /// The last search, as the log line has it, for /autogain.
+    private(set) var lastGainSearch = ""
     /// The spectrum stands still while a search steps the gain, and until the
     /// chosen gain has reached the IQ (gainLock). Each test step moves the
     /// whole trace by its gain, so drawn live the display swung up and down
@@ -1253,25 +1257,26 @@ final class LocalRadio {
     var audioUnderruns: Int { sink.underruns }
 
     /// WFM is the only stereo mode, so the sink's channel count follows it.
-    var isStereoMode: Bool { mode == 1 && config.fmStereo }
+    /// Stereo or mono is the station's own (StationMono), not a setting: the
+    /// sink stays two-channel on WFM and a mono station plays both channels.
+    var isStereoMode: Bool { mode == 1 }
     /// The tuned station is kept in mono (StationMono) — what the STEREO /
-    /// MONO badge switches. Over the Options switch: with that off, every
-    /// station is mono already.
+    /// MONO badge switches. Every station starts in stereo.
     var monoStation: Bool { StationMono.shared.isMono(freqHz: Double(frequency)) }
-    /// What the badge shows: stereo allowed here, or not.
-    var stereoWanted: Bool { config.fmStereo && !monoStation }
+    /// What the badge shows: stereo here, or not.
+    var stereoWanted: Bool { !monoStation }
 
-    /// The badge's tap, on WFM. Stereo on → this station mono; MONO → stereo,
-    /// turning the Options switch back on if that is what made it mono.
+    /// The badge's tap, on WFM: this station alone between stereo and mono
+    /// (user, 2026-10-16: stereo and gain are each station's own, nothing
+    /// shared across stations).
     func toggleStereoHere() {
+        setStereoHere(!stereoWanted)
+    }
+
+    func setStereoHere(_ stereo: Bool) {
         guard mode == 1 else { return }
         let hz = Double(frequency)
-        if stereoWanted {
-            StationMono.shared.set(freqHz: hz, mono: true)
-        } else {
-            StationMono.shared.set(freqHz: hz, mono: false)
-            if !config.fmStereo { config.fmStereo = true; config.save() }
-        }
+        StationMono.shared.set(freqHz: hz, mono: !stereo)
         NSLog("[stereo] \(Int(hz)) Hz: \(stereoWanted ? "stereo" : "mono")")
         onState?()
     }
@@ -1440,18 +1445,24 @@ final class LocalRadio {
                  // A station kept in mono plays the mono detector on both
                  // channels: the sink stays two-channel, so switching it per
                  // station needs no rebuild of the audio graph.
-                 if config.fmStereo && monoStation {
+                 var out: [Float]
+                 if monoStation {
                      let m = other.processWFM(int16IQ: body, decimate: audioDecimate,
                                               gain: OutputScale.wfm * fmScale)
-                     var out = [Float](repeating: 0, count: m.count * 2)
+                     out = [Float](repeating: 0, count: m.count * 2)
                      for i in 0..<m.count { out[i * 2] = m[i]; out[i * 2 + 1] = m[i] }
-                     return out
+                 } else {
+                     out = other.processWFMStereo(int16IQ: body, decimate: audioDecimate,
+                                                  gain: OutputScale.wfmStereo * fmScale)
                  }
-                 return config.fmStereo
-                    ? other.processWFMStereo(int16IQ: body, decimate: audioDecimate,
-                                             gain: OutputScale.wfmStereo * fmScale)
-                    : other.processWFM(int16IQ: body, decimate: audioDecimate,
-                                       gain: OutputScale.wfm * fmScale)
+                 // For gain search, while it measures a step.
+                 gainLock.lock()
+                 if quietAcc != nil {
+                     quietAcc!.quiet += other.wfmQuietSum
+                     quietAcc!.total += other.wfmQuietCount
+                 }
+                 gainLock.unlock()
+                 return out
         case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
                                          upperSideband: true, gain: OutputScale.ssb)
         case 6:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
@@ -1752,13 +1763,17 @@ extension LocalRadio {
         gainKeyNow.flatMap { gainMemory.source($0) }
     }
 
-    /// The Gain control. With auto gain on it is for now only — the station
-    /// keeps it when saved; with it off it files the band's gain, as before.
+    /// The Gain control. A gain set by hand is the station's own and is kept
+    /// at once, auto gain on or off (user, 2026-10-16: gain is each station's,
+    /// independent of the others); Station gain's clear hands it back to auto
+    /// or the band. Only with no station to file it under (no receiver yet)
+    /// does it go to the band's gain, as before.
     func setGainByHand(_ v: UInt32) {
         onMain {
             self.cancelGainSearch()
-            if self.config.autoGain {
-                self.setStationGain(v, why: "hand", force: true)
+            if let key = self.gainKeyNow, self.deviceInfo != nil {
+                self.gainMemory.save(key, Int(v))
+                self.setStationGain(v, why: "hand, saved", force: true)
             } else {
                 self.stationGain = nil
                 var c = self.config
@@ -1951,19 +1966,22 @@ extension LocalRadio {
             settle.append("\(Int(Date().timeIntervalSince(sentAt) * 1000))\(seen ? "" : "*")")
             lock.lock(); acc = [Double](repeating: 0, count: n); frames = 0
             peak = 0; nearFull = 0; samples = 0; lock.unlock()
+            gainLock.lock(); quietAcc = mode == 1 ? (0, 0) : nil; gainLock.unlock()
             usleep(useconds_t(Self.gainMeasure * 1_000_000))
+            gainLock.lock(); let qa = quietAcc; quietAcc = nil; gainLock.unlock()
             if stale() { return false }
             lock.lock()
             let sum = acc, fr = frames, pk = peak, nf = nearFull, sm = samples
             acc = nil
             lock.unlock()
+            let quietDb = qa.flatMap { $0.total > 0 && $0.quiet > 0 ? 10 * log10($0.quiet / $0.total) : nil }
             let peakDb = pk > 0 ? 20 * log10(Double(pk) / 32767) : -120
             peaks.append(String(format: "%d:%.1f/%.2f%%", g, peakDb, Double(nf) / Double(max(1, sm)) * 100))
             guard let s = sum, fr >= 2 else { return true }
             let avg = s.map { Float(10 * log10($0 / Double(fr) + 1e-30)) }
             if let lv = GainSearch.channelLevels(bins: avg, iqRate: rate, centreOffsetHz: offset, mode: mode) {
                 results.append(.init(gain: g, cn: lv.cn, peakDb: peakDb,
-                                     signalDb: lv.signalDb, floorDb: lv.floorDb))
+                                     signalDb: lv.signalDb, floorDb: lv.floorDb, quietDb: quietDb))
             }
             return true
         }
@@ -1975,8 +1993,12 @@ extension LocalRadio {
         }
         let table = { results.sorted { $0.gain < $1.gain }
                         .map { String(format: "%d:%.1f", $0.gain, $0.cn) }.joined(separator: " ") }
+        let quiets = results.sorted { $0.gain < $1.gain }
+            .compactMap { r in r.quietDb.map { String(format: "%d:%.1f", r.gain, $0) } }.joined(separator: " ")
         guard let best = GainSearch.pickGain(results) else {
-            NSLog("[gain] search \(freq) mode=\(mode): no station to judge (C/N dB \(table())) — band gain")
+            let line = "search \(freq) mode=\(mode): no station to judge (C/N dB \(table()))  quiet dB \(quiets) — band gain"
+            NSLog("[gain] \(line)")
+            DispatchQueue.main.async { self.lastGainSearch = line }
             DispatchQueue.main.async {
                 guard !stale() else { return }
                 self.setStationGain(nil, why: "band (no station)", force: true)
@@ -1986,9 +2008,11 @@ extension LocalRadio {
         gainMemory.remember(key, best)
         let levels = results.sorted { $0.gain < $1.gain }
             .map { String(format: "%d:%.1f/%.1f", $0.gain, $0.signalDb ?? 0, $0.floorDb ?? 0) }.joined(separator: " ")
-        NSLog("[gain] search \(freq) mode=\(mode) -> \(best)  (C/N dB \(table()))  sig/floor dBFS \(levels)  " +
-              "\(Int(Date().timeIntervalSince(started) * 1000)) ms, settle \(settle.joined(separator: "/"))" +
-              "  peak dBFS/full \(peaks.joined(separator: " "))")
+        let line = "search \(freq) mode=\(mode) -> \(best)  (C/N dB \(table()))  quiet dB \(quiets)  sig/floor dBFS \(levels)  " +
+            "\(Int(Date().timeIntervalSince(started) * 1000)) ms, settle \(settle.joined(separator: "/"))" +
+            "  peak dBFS/full \(peaks.joined(separator: " "))"
+        NSLog("[gain] \(line)")
+        DispatchQueue.main.async { self.lastGainSearch = line }
         DispatchQueue.main.async {
             guard !stale() else { return }
             self.setStationGain(UInt32(best), why: "auto", force: true)

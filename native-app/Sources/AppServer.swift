@@ -307,8 +307,10 @@ final class AppServer {
                 if q["clear"] == "1" { ok = ok && self.radio.clearStationGain() }
             }
             if !ok { return ("409 Conflict", "no receiver") }
-            return ("200 OK", json(["auto": radio.autoGain,
-                                    "station": (radio.stationGainSource?.rawValue as Any?) ?? NSNull()]))
+            return ("200 OK", json(["auto": radio.autoGain, "gain": Int(radio.gain),
+                                    "station": (radio.stationGainSource?.rawValue as Any?) ?? NSNull(),
+                                    // The last search's table, as the log has it.
+                                    "lastSearch": radio.lastGainSearch]))
 
         case "/receiver":
             // Receiver-wide settings, including the server address. Without
@@ -362,7 +364,8 @@ final class AppServer {
             "mode": radio.mode,
             "fm": ["bandwidth": c.fmBandwidthHz, "deemphasis": c.fmDeemphasis,
                    "ifnr": c.fmIfnr, "highPass": c.fmHighPass, "lowPass": c.fmLowPass,
-                   "stereo": c.fmStereo],
+                   // The tuned station's, as the badge shows it.
+                   "stereo": radio.stereoWanted],
             "am": ["bandwidth": c.amBandwidthHz, "carrierAgc": c.amCarrierAgc,
                    "agcAttack": c.amAgcAttack, "agcDecay": c.amAgcDecay, "sync": c.amSync],
             "ssb": ["bandwidthHz": c.ssbBandwidthHz, "bfoPitchHz": c.cwBfoHz],
@@ -474,7 +477,9 @@ final class AppServer {
         case "fm.ifnr":        c.fmIfnr = b; radio.iqNrEnabled = b
         case "fm.highPass":    c.fmHighPass = b
         case "fm.lowPass":     c.fmLowPass = b
-        case "fm.stereo":      c.fmStereo = b
+        // Stereo is each station's own: this sets the tuned one, as the badge.
+        case "fm.stereo":      onMainSync { self.radio.setStereoHere(b) }
+                               return true
         case "am.bandwidth":   c.amBandwidthHz = n
         case "am.carrierAgc":  c.amCarrierAgc = b
         case "am.agcAttack":   c.amAgcAttack = n
@@ -487,8 +492,8 @@ final class AppServer {
         // (spyService.ts:1214), not the narrower `mode 0 or 1` test the
         // plugin's own control server writes through. Under that test a gain
         // set while listening to SSB edited a number SSB never reads.
-        // With auto gain on a turned gain is the station's for now only, and
-        // never the band's; LocalRadio.setGainByHand draws that line.
+        // A turned gain is kept as the station's own, never the band's;
+        // LocalRadio.setGainByHand draws that line.
         case "gain":           let v = UInt32(max(0, min(n, 64)))
                                onMainSync { self.radio.setGainByHand(v) }
                                return true

@@ -231,8 +231,13 @@ section("LocalRadio routes each mode index to the right demodulator")
 // demodulator called directly is what pins index to detector — the level
 // checks above prove the detectors work, not that the right one is picked.
 var lrCfg = RadioConfig()
-lrCfg.fmStereo = false            // mono, so the comparison is one channel
 lrCfg.audioDecimate = 4
+// Mono is a station's own (StationMono): WFM here is the tuned station kept in
+// mono, played on both channels, so the comparison takes the left one.
+func monoLeft(_ lr: LocalRadio, _ out: [Float]) -> [Float] {
+    guard lr.mode == WFM else { return out }
+    return stride(from: 0, to: out.count, by: 2).map { out[$0] }
+}
 for (m, name) in [(NFM, "NFM"), (WFM, "WFM"), (USB, "USB"), (LSB, "LSB"), (CW, "CW")] {
     // A fresh receiver per mode: filter state carries across a mode change in
     // real use too, but a test that depends on the order it ran in is a test
@@ -240,7 +245,9 @@ for (m, name) in [(NFM, "NFM"), (WFM, "WFM"), (USB, "USB"), (LSB, "LSB"), (CW, "
     let lr = LocalRadio()
     lr.config = lrCfg
     lr.mode = m
-    let viaRadio = lr.demodulateForTesting(wideIQ, iqRate: UInt32(rate))
+    StationMono.shared.set(freqHz: Double(lr.frequency), mono: true)
+    let viaRadio = monoLeft(lr, lr.demodulateForTesting(wideIQ, iqRate: UInt32(rate)))
+    StationMono.shared.set(freqHz: Double(lr.frequency), mono: false)
     let direct = demodOutput(mode: m, iq: wideIQ,
                              ifCutoff: lrCfg.fmBandwidthHz / 2, tau: lrCfg.deemphasisTau)
     let n = min(viaRadio.count, direct.count)
@@ -294,7 +301,6 @@ let toneHz = 6_000.0
 let toneIQ = makeIQ(rate: rate, count: 91_200, deviationHz: 20_000, noise: 0,
                     mpx: { sin(2 * .pi * toneHz * $0) })
 var toneCfg = RadioConfig()
-toneCfg.fmStereo = false
 toneCfg.audioDecimate = 4
 let toneRadio = LocalRadio()
 toneRadio.config = toneCfg
@@ -303,7 +309,9 @@ toneRadio.mode = WFM
 // Kept short enough that the old, lower rate still leaves samples to measure —
 // a regression has to fail on the tone being in the wrong place, not on an
 // empty array.
-let toneOut = Array(toneRadio.demodulateForTesting(toneIQ, iqRate: UInt32(rate)).dropFirst(800))
+StationMono.shared.set(freqHz: Double(toneRadio.frequency), mono: true)
+let toneOut = Array(monoLeft(toneRadio, toneRadio.demodulateForTesting(toneIQ, iqRate: UInt32(rate))).dropFirst(800))
+StationMono.shared.set(freqHz: Double(toneRadio.frequency), mono: false)
 let toneRate = toneRadio.audioRate
 check("the audio rate leaves Nyquist above the 15 kHz anti-alias filter",
       toneRate / 2 > 15_000, "audio rate \(toneRate)")
@@ -1368,6 +1376,53 @@ do {
           "\(SyncClient.parseHubs("10.0.0.5:9000, http://h:8772"))")
 }
 
+section("automatic gain on WFM: judged by how quiet the audio is")
+do {
+    // The measurement: a quieted station against the same station under noise.
+    func quietDb(noise: Double) -> Double {
+        let iq = makeIQ(rate: rate, count: 45_600, deviationHz: 60_000, amplitude: 0.05,
+                        noise: noise, mpx: { 0.9 * sin(2 * .pi * 1_000 * $0) })
+        let d = Demods()
+        d.setWfmAudioBand(iqRate: rate)
+        d.setWfmIfBandwidth(iqRate: rate, cutoffHz: 100_000)
+        _ = d.processWFM(int16IQ: iq, decimate: audioDec)
+        return 10 * log10(d.wfmQuietSum / d.wfmQuietCount)
+    }
+    let clean = quietDb(noise: 0.002), noisy = quietDb(noise: 0.4)
+    check("a quieted station reads as received", clean <= GainSearch.quietReceivedDb, "\(clean) dB")
+    check("noise alone does not", noisy > GainSearch.quietReceivedDb, "\(noisy) dB")
+    check("and the two are far apart", noisy - clean > 15, "\(noisy) vs \(clean)")
+    let narrow = Demods()
+    narrow.setWfmAudioBand(iqRate: rate)
+    narrow.setWfmIfBandwidth(iqRate: rate, cutoffHz: 45_000)
+    _ = narrow.processWFM(int16IQ: wideIQ, decimate: audioDec)
+    check("an IF filter narrower than the band measures nothing", narrow.wfmQuietCount == 0)
+
+    typealias R = GainSearch.Result
+    // 78.9 MHz on the V4, measured 2026-10-16: the spectrum rule stopped at
+    // 18; the audio quieted from 24.
+    let k789 = [R(gain: 0, cn: 0.3, peakDb: -36.5, quietDb: -12.4), R(gain: 6, cn: 0.6, peakDb: -35.9, quietDb: -12.5),
+                R(gain: 12, cn: 3.0, peakDb: -35.1, quietDb: -13.6), R(gain: 18, cn: 9.3, peakDb: -27.9, quietDb: -16.6),
+                R(gain: 24, cn: 13.8, peakDb: -20.0, quietDb: -19.2), R(gain: 29, cn: 13.6, peakDb: -19.6, quietDb: -18.4)]
+    check("WFM takes the gain where the audio quiets", GainSearch.pickGain(k789) == 24)
+    check("not the noisy one under it",
+          GainSearch.pickGain(Array(k789.prefix(5)) + [R(gain: 29, cn: 13, peakDb: -3, quietDb: -30)]) == 24)
+    // 90.5 MHz: 6 is quieter still, but past the headroom line.
+    check("the quietest gain that leaves the headroom",
+          GainSearch.pickGain([R(gain: 0, cn: 28.8, peakDb: -21.1, quietDb: -41.7),
+                               R(gain: 3, cn: 37.8, peakDb: -12.7, quietDb: -50.4),
+                               R(gain: 6, cn: 45.1, peakDb: -5.5, quietDb: -56.1)]) == 3)
+    check("the climb goes on while it is still noise", !GainSearch.climbSettled(Array(k789.prefix(4))))
+    check("and stops one step past the quiet one", GainSearch.climbSettled(k789))
+    // 82.5 MHz: flat from 3 up.
+    let strong = [R(gain: 0, cn: 18.4, peakDb: -29.0, quietDb: -30.5), R(gain: 6, cn: 34.6, peakDb: -14.7, quietDb: -30.6)]
+    check("a strong station settles low", GainSearch.climbSettled(strong) && GainSearch.pickGain(strong) == 0)
+    check("its next step is a midpoint, not the coarse climb",
+          GainSearch.nextGainToMeasure(maxGain: 29, measured: [0, 6], results: strong) == 3)
+    let empty = [R(gain: 0, cn: 0.3, quietDb: -12.4), R(gain: 29, cn: 2, quietDb: -13)]
+    check("noise at every gain is no station", GainSearch.pickGain(empty) == nil)
+}
+
 section("station mono: kept per channel, any receiver")
 do {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("deckrx-mono-\(getpid())")
@@ -1386,20 +1441,18 @@ do {
 section("station mono: the badge's switch on a receiver")
 do {
     let lr = LocalRadio()
-    var c = lr.config; c.fmStereo = true; lr.config = c
     lr.mode = 0                                     // NFM: no switch
     lr.toggleStereoHere()
     check("the switch does nothing off WFM", !lr.monoStation)
     lr.mode = 1
-    check("WFM starts in stereo", lr.stereoWanted && !lr.monoStation)
+    check("WFM starts in stereo", lr.stereoWanted && !lr.monoStation && lr.isStereoMode)
     lr.toggleStereoHere()
-    check("a tap keeps the station mono", lr.monoStation && !lr.stereoWanted && lr.config.fmStereo)
+    check("a tap keeps the station mono", lr.monoStation && !lr.stereoWanted)
     check("and files it", StationMono.shared.isMono(freqHz: Double(lr.frequency)))
+    check("another station stays in stereo",
+          !StationMono.shared.isMono(freqHz: Double(lr.frequency) + 1_000_000))
     lr.toggleStereoHere()
     check("a second tap brings stereo back", lr.stereoWanted && !lr.monoStation)
-    c = lr.config; c.fmStereo = false; lr.config = c
-    lr.toggleStereoHere()
-    check("MONO from Options: a tap turns Options back on", lr.config.fmStereo && lr.stereoWanted)
 }
 
 section("sync: the same rules as test/syncCore.test.ts")

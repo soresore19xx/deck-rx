@@ -1899,7 +1899,6 @@ final class OptionsViewController: UITableViewController {
                     unit: "kHz", get: { r.config.fmBandwidthHz }, set: { r.config.fmBandwidthHz = $0 })),
                 Row(title: "De-emphasis", kind: .text(options: ["off", "50us", "75us"],
                     get: { r.config.fmDeemphasis }, set: { r.config.fmDeemphasis = $0 })),
-                Row(title: "Stereo", kind: .bool(get: { r.config.fmStereo }, set: { r.config.fmStereo = $0 })),
                 Row(title: "IFNR", kind: .bool(get: { r.config.fmIfnr }, set: { r.config.fmIfnr = $0 })),
                 Row(title: "Audio HPF", kind: .bool(get: { r.config.fmHighPass }, set: { r.config.fmHighPass = $0 })),
                 Row(title: "Audio LPF", kind: .bool(get: { r.config.fmLowPass }, set: { r.config.fmLowPass = $0 })),
@@ -1940,7 +1939,7 @@ final class OptionsViewController: UITableViewController {
                 Row(title: "Gain", kind: .list(values: (0...Int(r.maxGainIndex)).map { Double($0) },
                                                unit: "",
                     get: { Double(r.gain) },
-                    // With auto gain on, for this station and for now only;
+                    // Kept as this station's own at once;
                     // LocalRadio.setGainByHand draws that line.
                     set: { v in r.setGainByHand(UInt32(max(0, v))) })),
                 Row(title: "Auto gain", kind: .bool(get: { r.autoGain }, set: { r.autoGain = $0 })),

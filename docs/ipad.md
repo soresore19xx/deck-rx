@@ -41,8 +41,10 @@ Landscape, and the width goes to the spectrum.
   pull-down showing the whole list.
   **Auto gain** and **Station gain** sit under Gain: the automatic per-station
   RF gain and the station's saved gain, as in Solo (see [Standalone
-  receiver](solo.md)). Tap Station gain to save the gain in force for the
-  station, again to drop it.
+  receiver](solo.md)): gain set by hand is kept for the tuned station at once,
+  and WFM's automatic gain is judged by how quiet the audio is. Tap Station
+  gain on SAVED to drop the station's value. There is no Stereo row: stereo is
+  each station's, on the badge.
 - **a display rail**: zoom and waterfall depth as sliders, the dB ceiling and
   floor as rails beside the trace. The ceiling and floor also set the
   waterfall's colour range (as in SDR++), and moving them recolours its history.

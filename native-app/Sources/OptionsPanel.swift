@@ -431,7 +431,6 @@ final class OptionsPanel: NSView {
             views.append(header("FM OPTIONS"))
             views.append(row("Bandwidth", "fm.bandwidth", .list([90_000, 100_000, 110_000, 150_000, 200_000, 250_000], "kHz")))
             views.append(row("De-emphasis", "fm.deemphasis", .text(["off", "50us", "75us"])))
-            views.append(row("Stereo", "fm.stereo", .bool))
             views.append(row("IFNR", "fm.ifnr", .bool))
             views.append(row("Audio HPF", "fm.highPass", .bool))
             views.append(row("Audio LPF", "fm.lowPass", .bool))

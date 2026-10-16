@@ -497,6 +497,12 @@ final class SpectrumView: XView {
     /// decibels, not at pixels, so every line of it was landing wherever it
     /// fell; this is why the ruling looked heavier than the half point it is
     /// drawn at.
+    /// SDR++'s graticule, measured off its window: 50/255 grey.
+    static let gridColor = XColor(white: 50.0 / 255.0, alpha: 1)
+
+    /// One physical pixel.
+    private var hairline: CGFloat { 1 / max(1, pixelScale) }
+
     private func pixelCentre(_ v: CGFloat) -> CGFloat {
         let p = 1 / max(1, pixelScale)
         return (v / p).rounded() * p + p / 2
@@ -771,18 +777,24 @@ final class SpectrumView: XView {
             ctx.strokePath()
         }
 
+        // Stroked before any label is drawn: drawing text sets the context's
+        // colour to the label's, and a path still pending then went out in
+        // label grey (measured 106/255 where SDR++ is 50).
         var f = (lo / step).rounded(.up) * step
-        ctx.setStrokeColor(XColor(white: 0.052, alpha: 1).cgColor)
-        ctx.setLineWidth(0.5)
+        var labels: [(String, CGFloat)] = []
+        ctx.setStrokeColor(Self.gridColor.cgColor)
+        ctx.setLineWidth(hairline)
         while f < lo + span {
             let px = pixelCentre(x(forHz: f))
             ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
-            let text = axisFreq(f)
-            axisLabel(text, at: CGPoint(x: px - CGFloat(text.count) * 3.9, y: specH + 4))
+            labels.append((axisFreq(f), px))
             f += step
         }
         ctx.strokePath()
         ctx.setLineWidth(1)
+        for (text, px) in labels {
+            axisLabel(text, at: CGPoint(x: px - CGFloat(text.count) * 3.9, y: specH + 4))
+        }
     }
 
     /// Preset names on the trace, stacked so they never overlap.
@@ -919,10 +931,10 @@ final class SpectrumView: XView {
         // a shape.
         // Rules are a reference, not content: dark enough that the trace and the
         // station labels sit clearly in front of them.
-        ctx.setStrokeColor(XColor(white: 0.052, alpha: 1).cgColor)
-        // 0.5 pt, not 1: on a Retina display a 1 pt rule is two physical
-        // pixels, which reads as a drawn line rather than a graticule.
-        ctx.setLineWidth(0.5)
+        ctx.setStrokeColor(Self.gridColor.cgColor)
+        // One physical pixel, as SDR++ draws it: 1 pt on a Retina display is
+        // two, and a fixed 0.5 pt on a 1x display is half a pixel.
+        ctx.setLineWidth(hairline)
         // The step follows the MIN / MAX window the way SDR++ picks it
         // (WaterFall: vRange = findBestRange(fftMax - fftMin, maxVSteps), with
         // maxVSteps = fft height / the height of "000.000"): the first of
@@ -934,13 +946,16 @@ final class SpectrumView: XView {
         let maxVSteps = max(1, Int(specH / max(1, labelH)))
         let dbStep = Self.bestStep(Double(dbCeil - dbFloor), maxVSteps)
         var db = (Double(dbCeil) / dbStep).rounded(.down) * dbStep
+        var dbLabels: [(String, CGFloat)] = []
         while db > Double(dbFloor) {
             let y = pixelCentre(specH - norm(Float(db)) * specH)
             ctx.move(to: CGPoint(x: plotX, y: y)); ctx.addLine(to: CGPoint(x: w, y: y))
-            axisLabel(String(Int(db)), at: CGPoint(x: 8, y: y - 9))
+            dbLabels.append((String(Int(db)), y))
             db -= dbStep
         }
+        // Before the labels, for the reason given in drawFrequencyScale.
         ctx.strokePath()
+        for (text, y) in dbLabels { axisLabel(text, at: CGPoint(x: 8, y: y - 9)) }
 
         // The window on screen, from a frame when there is one and from the
         // status feed when there is not. Deriving it in both states is what

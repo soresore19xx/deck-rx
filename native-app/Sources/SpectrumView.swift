@@ -771,8 +771,18 @@ final class SpectrumView: XView {
         }
         ctx.strokePath()
         ctx.setLineWidth(1)
+        // Centred on its line, but pulled back inside the plot at either end:
+        // a label centred on a line near the edge ran past it and was cut
+        // ("6.160" on the iPad, 2026-10-17). A label that would then run into
+        // its neighbour is left out rather than overprinted.
+        var lastRight = -CGFloat.infinity
         for (text, px) in labels {
-            axisLabel(text, at: CGPoint(x: px - CGFloat(text.count) * 3.9, y: specH + 4))
+            let w = NSAttributedString(string: text,
+                                       attributes: [.font: xMono(13, .regular)]).size().width
+            let tx = min(max(px - w / 2, plotX + 2), plotX + plotW - w - 2)
+            if tx < lastRight + 4 { continue }
+            axisLabel(text, at: CGPoint(x: tx, y: specH + 4))
+            lastRight = tx + w
         }
     }
 

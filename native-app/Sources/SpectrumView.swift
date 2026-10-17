@@ -743,19 +743,31 @@ final class SpectrumView: XView {
                                         attributes: [.font: xMono(13, .regular)]).size().width
         let maxHSteps = max(1, Int(plotW / (labelW + 10)))
         let step = Self.bestStep(span, maxHSteps)
+        // iPad: a line at every half step, labelled every other one. The plot
+        // is about 690 pt wide there, so the label-limited step left 9 lines
+        // about 2 cm apart, half the density SDR++ shows on the Mac (user,
+        // 2026-10-17). Labels keep SDR++'s spacing; only the ruling doubles.
+        #if canImport(UIKit)
+        let linesPerLabel = 2
+        #else
+        let linesPerLabel = 1
+        #endif
+        let lineStep = step / Double(linesPerLabel)
 
         // Stroked before any label is drawn: drawing text sets the context's
         // colour to the label's, and a path still pending then went out in
         // label grey (measured 106/255 where SDR++ is 50).
-        var f = (lo / step).rounded(.up) * step
+        // Counted in whole steps so the labelled lines are exact multiples.
+        var k = Int((lo / lineStep).rounded(.up))
         var labels: [(String, CGFloat)] = []
         ctx.setStrokeColor(Self.gridColor.cgColor)
         ctx.setLineWidth(hairline)
-        while f < lo + span {
+        while Double(k) * lineStep < lo + span {
+            let f = Double(k) * lineStep
             let px = pixelCentre(x(forHz: f))
             ctx.move(to: CGPoint(x: px, y: 0)); ctx.addLine(to: CGPoint(x: px, y: specH))
-            labels.append((axisFreq(f), px))
-            f += step
+            if k % linesPerLabel == 0 { labels.append((axisFreq(f), px)) }
+            k += 1
         }
         ctx.strokePath()
         ctx.setLineWidth(1)

@@ -519,10 +519,24 @@ final class SpectrumView: XView {
         return series[series.count - 1]
     }
 
+    /// Fonts made once and kept. draw() runs at the frame rate and had been
+    /// asking for a fresh monospaced font for every label of every frame; the
+    /// Solo aborted twice inside CoreText's string sizing (2026-10-18) with a
+    /// font being torn down on CoreText's own queue at the same moment.
+    /// Main thread only, like draw().
+    private static var fonts: [String: XFont] = [:]
+    static func mono(_ size: CGFloat, _ weight: XFont.Weight) -> XFont {
+        let key = "\(size)/\(weight.rawValue)"
+        if let f = fonts[key] { return f }
+        let f = xMono(size, weight)
+        fonts[key] = f
+        return f
+    }
+
     private func axisLabel(_ text: String, at p: CGPoint, size: CGFloat = 13,
                            color: XColor = XColor(white: 0.68, alpha: 1)) {
         NSAttributedString(string: text, attributes: [
-            .font: xMono(size, .regular),
+            .font: Self.mono(size, .regular),
             .foregroundColor: color,
         ]).draw(at: p)
     }
@@ -740,7 +754,7 @@ final class SpectrumView: XView {
         // side over the same 912 kHz SDR++ ruled 50 kHz (18 lines) where this
         // ruled 80 kHz (11), and the minors were too dark to be seen at all.
         let labelW = NSAttributedString(string: "000.000",
-                                        attributes: [.font: xMono(13, .regular)]).size().width
+                                        attributes: [.font: Self.mono(13, .regular)]).size().width
         let maxHSteps = max(1, Int(plotW / (labelW + 10)))
         let step = Self.bestStep(span, maxHSteps)
         // iPad: a line at every half step, labelled every other one. The plot
@@ -778,7 +792,7 @@ final class SpectrumView: XView {
         var lastRight = -CGFloat.infinity
         for (text, px) in labels {
             let w = NSAttributedString(string: text,
-                                       attributes: [.font: xMono(13, .regular)]).size().width
+                                       attributes: [.font: Self.mono(13, .regular)]).size().width
             let tx = min(max(px - w / 2, plotX + 2), plotX + plotW - w - 2)
             if tx < lastRight + 4 { continue }
             axisLabel(text, at: CGPoint(x: tx, y: specH + 4))
@@ -807,7 +821,7 @@ final class SpectrumView: XView {
         // smallest setting every caption on the page had come down and the
         // names were still 16 points, the one thing that had not noticed.
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: xMono(S(16), .semibold),
+            .font: Self.mono(S(16), .semibold),
             .foregroundColor: XColor.black,
         ]
         let rowH: CGFloat = S(24)
@@ -931,7 +945,7 @@ final class SpectrumView: XView {
         // narrowing the window refines the scale. It was a fixed 10 dB until
         // 2026-10-06. Lines from floor(max / step) * step down, above MIN.
         let labelH = NSAttributedString(string: "000.000",
-                                        attributes: [.font: xMono(13, .regular)]).size().height
+                                        attributes: [.font: Self.mono(13, .regular)]).size().height
         let maxVSteps = max(1, Int(specH / max(1, labelH)))
         let dbStep = Self.bestStep(Double(dbCeil - dbFloor), maxVSteps)
         var db = (Double(dbCeil) / dbStep).rounded(.down) * dbStep

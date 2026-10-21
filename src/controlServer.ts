@@ -131,6 +131,8 @@ async function applyOption(name: string, raw: string, asBool: boolean, asNum: nu
     case 'am.sync':       await spyService.setAMOption('sync', asBool); return true;
     case 'am.agcAttack':  if (num === null) return false; await spyService.setAMOption('agcAttack', num); return true;
     case 'am.agcDecay':   if (num === null) return false; await spyService.setAMOption('agcDecay', num); return true;
+    case 'am.autoNotch':  await spyService.setAMOption('autoNotch', asBool); return true;
+    case 'ssb.autoNotch': await spyService.setSSBOption('autoNotch', asBool); return true;
     case 'ssb.bandwidth': if (num === null) return false; await spyService.setSSBOption('bandwidthHz', num); return true;
     case 'ssb.bfo':       if (num === null) return false; await spyService.setSSBOption('bfoPitchHz', num); return true;
     // One gain control, routed to whichever the live mode uses: the receiver
@@ -445,9 +447,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         },
         am: {
           bandwidth: am.bandwidth, carrierAgc: am.carrierAgc,
-          agcAttack: am.agcAttack, agcDecay: am.agcDecay, sync: am.sync,
+          agcAttack: am.agcAttack, agcDecay: am.agcDecay, sync: am.sync, autoNotch: am.autoNotch,
         },
-        ssb: { bandwidthHz: ssb.bandwidthHz, bfoPitchHz: ssb.bfoPitchHz },
+        ssb: { bandwidthHz: ssb.bandwidthHz, bfoPitchHz: ssb.bfoPitchHz, autoNotch: ssb.autoNotch },
         gain: { am: spyService.getAmGain(), fm: spyService.getFmGain(), max: spyService.getMaxGain() },
         autoGain: { auto: spyService.isAutoGain(), station: spyService.stationGainSource() },
       }));

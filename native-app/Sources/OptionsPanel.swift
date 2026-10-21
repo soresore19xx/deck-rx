@@ -438,6 +438,7 @@ final class OptionsPanel: NSView {
             views.append(header("AM OPTIONS"))
             views.append(row("Bandwidth", "am.bandwidth", .list([4_000, 6_000, 9_000, 12_000], "kHz")))
             views.append(row("Sync detect", "am.sync", .bool))
+            views.append(row("Auto notch", "am.autoNotch", .bool))
             views.append(row("Carrier AGC", "am.carrierAgc", .bool))
             views.append(row("AGC attack", "am.agcAttack", .list([5, 10, 20, 50, 100, 200], "")))
             views.append(row("AGC decay", "am.agcDecay", .list([1, 2, 5, 8, 12, 20], "")))
@@ -445,6 +446,8 @@ final class OptionsPanel: NSView {
             views.append(header("SSB / CW OPTIONS"))
             views.append(row("Bandwidth", "ssb.bandwidth", .list([500, 1_000, 1_800, 2_400, 3_000], "Hz")))
             views.append(row("BFO pitch", "ssb.bfo", .list([400, 500, 600, 700, 800, 1_000], "Hz")))
+            // USB / LSB only: CW's signal is itself a steady tone.
+            views.append(row("Auto notch", "ssb.autoNotch", .bool))
         }
         views.append(header("RF"))
         // A list to pick from, up to what the connected receiver has. It was a

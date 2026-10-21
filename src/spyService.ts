@@ -113,6 +113,7 @@ export interface AMOptions {
   agcDecay: number;    // 0..1
   sync: boolean;       // PLL-based synchronous AM detection (DSB)
   autoNotch: boolean;  // cut steady tones: heterodyne whistles, mains hum (autoNotch.ts)
+  nr: boolean;         // audio noise reduction, the hiss between words (ifnr.ts)
 }
 
 const DEFAULT_AM_OPTIONS: AMOptions = {
@@ -127,6 +128,8 @@ const DEFAULT_AM_OPTIONS: AMOptions = {
   sync: false,
   // Off until asked for, as in OnAir: it also takes a held note out of music.
   autoNotch: false,
+  // Off too: on a weak station it dulls the treble along with the hiss.
+  nr: false,
 };
 
 export interface SSBOptions {
@@ -140,12 +143,19 @@ export interface SSBOptions {
   bfoPitchHz: number;
   // USB / LSB only (CW's wanted signal IS a steady tone). autoNotch.ts.
   autoNotch: boolean;
+  // Audio noise reduction, USB / LSB / CW (ifnr.ts).
+  nr: boolean;
+  // USB / LSB AGC (demodulator.ts SSB_AGC_SET_POINT). CW has its own, always on.
+  agc: boolean;
 }
 
 const DEFAULT_SSB_OPTIONS: SSBOptions = {
   bandwidthHz: 2400,
   bfoPitchHz: 700,
   autoNotch: false,
+  nr: false,
+  // Off, as before it existed: turning it on changes how loud SSB is.
+  agc: false,
 };
 
 interface Config {
@@ -436,6 +446,7 @@ class SpyService {
   private ifnrL = new Ifnr();
   private ifnrR = new Ifnr();
   private autoNotch = new AutoNotch();
+  private audioNrOn = false;
   private audioRunning = false;
   private iqListener: ((p: IQPacket) => void) | null = null;
   private currentIQRate = 0;
@@ -1314,8 +1325,9 @@ class SpyService {
       const muteMs = this.currentDemodMode === 2 ? 200 : 100;
       this.muteUntil = Math.max(this.muteUntil, Date.now() + muteMs);
       this.demod.resetForRetune();
-      // Another station, other whistles.
+      // Another station, other whistles, another noise floor.
       this.autoNotch.reset();
+      this.ifnrL.reset();
     } else if (this.currentDemodMode === 2) {
       // 200 ms matches the AM sync PLL's pull-in at wn=150 Hz (see
       // setAmSync). Earlier 400 ms covered a slower 80 Hz PLL;
@@ -1992,6 +2004,7 @@ class SpyService {
         // USB (mode 4) / LSB (mode 6) — Weaver SSB demod. f_off = bandwidth/2
         // so the audio band ends up 0..bandwidth (default 2.4 kHz).
         this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
+        this.demod.setSsbAgc(this.ssbOptions.agc, this.currentAudioRate);
         pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB', SSB_GAIN);
       } else if (this.currentDemodMode === 5) {
         // CW (mode 5) — direct frequency-shift by BFO (default 700 Hz).
@@ -2016,6 +2029,23 @@ class SpyService {
       if (notch) {
         this.autoNotch.configure(this.currentAudioRate);
         this.autoNotch.process(pcm, 2);
+      }
+      // Then the hiss (after the notches, so a whistle is not mistaken for
+      // the noise floor of its bins). Mono: AM / SSB / CW carry L = R.
+      const nrOn = (mode === 2 && this.amOptions.nr)
+        || ((mode === 4 || mode === 5 || mode === 6) && this.ssbOptions.nr);
+      if (nrOn !== this.audioNrOn) { this.ifnrL.reset(); this.audioNrOn = nrOn; }
+      if (nrOn && this.currentAudioRate > 0) {
+        this.ifnrL.configure(this.currentAudioRate);
+        const frames = pcm.length >> 1;
+        const mono = new Float64Array(frames);
+        for (let i = 0; i < frames; i++) mono[i] = pcm[2 * i];
+        const y = this.ifnrL.process(mono);
+        for (let i = 0; i < frames; i++) {
+          const v = y[i];
+          const s = v >= 32767 ? 32767 : v <= -32767 ? -32767 : Math.round(v);
+          pcm[2 * i] = s; pcm[2 * i + 1] = s;
+        }
       }
       // Diagnostic log every 3 s: detect silent output from DSP issues.
       const _now = Date.now();

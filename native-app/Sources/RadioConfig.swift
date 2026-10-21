@@ -192,6 +192,13 @@ struct RadioConfig: Codable, Equatable {
     /// a held note in music is a steady tone too. AutoNotch.swift.
     var amAutoNotch = false
     var ssbAutoNotch = false
+    /// Audio noise reduction (AudioNr.swift) for AM / for USB, LSB and CW. Off,
+    /// as in the plugin: on a weak station it dulls the treble with the hiss.
+    var amNr = false
+    var ssbNr = false
+    /// USB / LSB AGC (Demods.swift setSsbAgc). Off, as in the plugin: turning
+    /// it on changes how loud SSB is.
+    var ssbAgc = false
     /// 250 kHz: full Carson for a broadcast, which is 2 x (75 kHz deviation +
     /// 53 kHz of MPX) = 256. Narrower throws the outer sidebands away, and with
     /// them the L-R subcarrier that carries the stereo. Measured on a 75 kHz
@@ -404,6 +411,9 @@ struct RadioConfig: Codable, Equatable {
         amSync = (try? c.decodeIfPresent(Bool.self, forKey: .amSync)) .flatMap { $0 } ?? d.amSync
         amAutoNotch = (try? c.decodeIfPresent(Bool.self, forKey: .amAutoNotch)) .flatMap { $0 } ?? d.amAutoNotch
         ssbAutoNotch = (try? c.decodeIfPresent(Bool.self, forKey: .ssbAutoNotch)) .flatMap { $0 } ?? d.ssbAutoNotch
+        amNr = (try? c.decodeIfPresent(Bool.self, forKey: .amNr)) .flatMap { $0 } ?? d.amNr
+        ssbNr = (try? c.decodeIfPresent(Bool.self, forKey: .ssbNr)) .flatMap { $0 } ?? d.ssbNr
+        ssbAgc = (try? c.decodeIfPresent(Bool.self, forKey: .ssbAgc)) .flatMap { $0 } ?? d.ssbAgc
         fmBandwidthHz = (try? c.decodeIfPresent(Double.self, forKey: .fmBandwidthHz)) .flatMap { $0 } ?? d.fmBandwidthHz
         fmStereo = (try? c.decodeIfPresent(Bool.self, forKey: .fmStereo)) .flatMap { $0 } ?? d.fmStereo
         fmIfnr = (try? c.decodeIfPresent(Bool.self, forKey: .fmIfnr)) .flatMap { $0 } ?? d.fmIfnr
@@ -534,6 +544,7 @@ struct RadioConfig: Codable, Equatable {
             if let v = am["carrierAgc"] as? Bool { c.amCarrierAgc = v }
             if let v = am["sync"] as? Bool { c.amSync = v }
             if let v = am["autoNotch"] as? Bool { c.amAutoNotch = v }
+            if let v = am["nr"] as? Bool { c.amNr = v }
             if let v = am["agcAttack"] as? Double { c.amAgcAttack = v }
             if let v = am["agcDecay"] as? Double { c.amAgcDecay = v }
         }
@@ -541,6 +552,8 @@ struct RadioConfig: Codable, Equatable {
             if let v = ssb["bandwidthHz"] as? Double { c.ssbBandwidthHz = v }
             if let v = ssb["bfoPitchHz"] as? Double { c.cwBfoHz = v }
             if let v = ssb["autoNotch"] as? Bool { c.ssbAutoNotch = v }
+            if let v = ssb["nr"] as? Bool { c.ssbNr = v }
+            if let v = ssb["agc"] as? Bool { c.ssbAgc = v }
         }
         if let fm = j["fm"] as? [String: Any] {
             if let v = fm["highPass"] as? Bool { c.fmHighPass = v }

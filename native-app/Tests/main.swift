@@ -1668,6 +1668,81 @@ do {
     check("auto notch leaves speech alone", 10 * log10(e / s) < -30, "\(10 * log10(e / s)) dB")
 }
 
+section("Audio NR: the cases of test/ifnr.test.ts")
+do {
+    // The same signals, made here: speech in syllables with silent gaps, and
+    // Gaussian noise. Levels in the int16 scale the plugin's tests use, /32768.
+    let fs = 48_000.0, n = Int(fs * 8)
+    var r = 1, ph = 0.0, target = 150.0, f0 = 150.0
+    func rnd() -> Double { r = (r * 16807) % 2147483647; return Double(r) / 2147483647 }
+    var v = [Double](repeating: 0, count: n)
+    for i in 0..<n {
+        if i % Int((fs * 0.12).rounded()) == 0 { target = 110 + 80 * rnd() }
+        f0 += (target - f0) * 0.0005
+        ph += 2 * Double.pi * f0 / fs
+        let s4 = sin(2 * Double.pi * 2 * Double(i) / fs)
+        var s = 0.0
+        for h in 1...20 { s += sin(Double(h) * ph) / Double(h) }
+        v[i] = 4000 * max(0, s4) * s
+    }
+    var q = 9
+    func u() -> Double { q = (q * 48271) % 2147483647; return Double(q) / 2147483647 }
+    let w = (0..<n).map { _ in 400 * (-2 * log(max(1e-12, u()))).squareRoot() * cos(2 * Double.pi * u()) }
+    let lat = 2048
+    let silent = { (i: Int) -> Bool in sin(2 * Double.pi * 2 * Double(i) / fs) < -0.3 }
+    func rmsOf(_ x: [Double], _ from: Int, _ to: Int, _ mask: (Int) -> Bool) -> Double {
+        var s = 0.0, c = 0.0
+        for i in from..<to where mask(i) { s += x[i] * x[i]; c += 1 }
+        return (s / max(1, c)).squareRoot()
+    }
+    let nr = AudioNr(); nr.configure(rate: fs)
+    var y = [Float]()
+    var o = 0
+    while o < n {
+        var part = (o..<min(n, o + 4096)).map { Float((v[$0] + w[$0]) / 32768) }
+        nr.process(&part); y += part; o += 4096
+    }
+    let yd = y.map { Double($0) * 32768 }
+    let xd = (0..<n).map { v[$0] + w[$0] }
+    let from = Int(fs * 3)
+    let floorDb = 20 * log10(rmsOf(yd, from, n, { $0 >= lat && silent($0 - lat) }) / rmsOf(xd, from, n, silent))
+    let speechDb = 20 * log10(rmsOf(yd, from, n, { $0 >= lat && !silent($0 - lat) }) / rmsOf(v, from, n, { !silent($0) }))
+    check("audio NR takes the hiss between words down", floorDb < -10, "\(floorDb) dB")
+    check("audio NR keeps the words", abs(speechDb) < 2.5, "\(speechDb) dB")
+}
+
+section("SSB AGC: the cases of test/ssbAgc.test.ts")
+do {
+    let iqR = 114_000.0, dec = 2, ar = iqR / Double(dec)
+    func tone(_ a: Double) -> Data {
+        let n = Int(iqR * 1.2)
+        var d = Data(count: n * 4)
+        var r = 5
+        func u() -> Double { r = (r * 48271) % 2147483647; return Double(r) / 2147483647 - 0.5 }
+        d.withUnsafeMutableBytes { (p: UnsafeMutableRawBufferPointer) in
+            for i in 0..<n {
+                let w = 2 * Double.pi * 1000 * Double(i) / iqR
+                p.storeBytes(of: Int16((a * cos(w) + 20 * u()).rounded()).littleEndian, toByteOffset: i * 4, as: Int16.self)
+                p.storeBytes(of: Int16((a * sin(w) + 20 * u()).rounded()).littleEndian, toByteOffset: i * 4 + 2, as: Int16.self)
+            }
+        }
+        return d
+    }
+    func level(_ agc: Bool, _ a: Double) -> (rms: Double, peak: Double) {
+        let d = Demods()
+        d.setupSSB(iqRate: iqR, audioRate: ar, offsetHz: 1200)
+        d.setSsbAgc(agc, audioRate: ar)
+        let o = d.processSSB(int16IQ: tone(a), decimate: dec, upperSideband: true, gain: OutputScale.ssb)
+        var s = 0.0, c = 0.0, pk = 0.0
+        for i in Int(ar * 0.6)..<o.count { s += Double(o[i]) * Double(o[i]); c += 1; pk = max(pk, abs(Double(o[i]))) }
+        return ((s / c).squareRoot(), pk)
+    }
+    let w = level(true, 300), st = level(true, 12_000)
+    check("SSB AGC brings weak and strong to one level", abs(20 * log10(st.rms / w.rms)) < 1.5,
+          "\(20 * log10(st.rms / w.rms)) dB")
+    check("SSB AGC keeps a strong station off the rail", level(true, 16_000).peak < 32767.0 / 32768)
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 {
     print("\(failures) FAILED")

@@ -21,6 +21,9 @@ final class LocalRadio {
     private let other = Demods()
     /// Steady tones out of AM and USB/LSB (spyService.ts, the same switch).
     private let autoNotch = AutoNotch()
+    /// Then the hiss, AM / USB / LSB / CW (spyService.ts, after the notch).
+    private let audioNr = AudioNr()
+    private var audioNrOn = false
     private let sink = AudioSink()
     private let leveler = OutputLeveler()
     /// Output is silenced until this instant. The plugin keeps the same window
@@ -905,7 +908,8 @@ final class LocalRadio {
         muteUntil = max(muteUntil, Date().addingTimeInterval(mode == 2 ? 0.2 : 0.1))
         am.resetForRetune()
         other.resetForRetune()
-        autoNotch.reset()     // another station, other whistles
+        autoNotch.reset()     // another station, other whistles, another noise floor
+        audioNr.reset()
         // Inside the window the device does not move — only the demodulator's
         // offset from the centre does. No round trip, no re-centred spectrum,
         // and the IQ already in hand still describes the same piece of band, so
@@ -972,6 +976,7 @@ final class LocalRadio {
         am.resetForRetune()
         other.resetForRetune()
         autoNotch.reset()
+        audioNr.reset()
         setVfo(Double(frequency) - center)
         client.setFrequency(deviceCenterHz)
         auxQueue.async { self.iq.removeAll(keepingCapacity: true) }
@@ -1467,9 +1472,11 @@ final class LocalRadio {
                  }
                  gainLock.unlock()
                  return out
-        case 4:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
+        case 4:  other.setSsbAgc(config.ssbAgc, audioRate: audioRate)
+                 return other.processSSB(int16IQ: body, decimate: audioDecimate,
                                          upperSideband: true, gain: OutputScale.ssb)
-        case 6:  return other.processSSB(int16IQ: body, decimate: audioDecimate,
+        case 6:  other.setSsbAgc(config.ssbAgc, audioRate: audioRate)
+                 return other.processSSB(int16IQ: body, decimate: audioDecimate,
                                          upperSideband: false, gain: OutputScale.ssb)
         case 5:  return other.processCW(int16IQ: body, decimate: audioDecimate,
                                         gain: OutputScale.cw)
@@ -1487,9 +1494,17 @@ final class LocalRadio {
     private func applyAutoNotch(_ pcm: inout [Float]) {
         let on = (mode == 2 && config.amAutoNotch) || ((mode == 4 || mode == 6) && config.ssbAutoNotch)
         if on != autoNotch.enabled { autoNotch.reset(); autoNotch.enabled = on }
-        guard on, audioRate > 0 else { return }
-        autoNotch.configure(fs: audioRate)
-        autoNotch.process(&pcm)
+        if on, audioRate > 0 {
+            autoNotch.configure(fs: audioRate)
+            autoNotch.process(&pcm)
+        }
+        // After the notches, so a whistle is not taken for its bins' noise floor.
+        let nr = (mode == 2 && config.amNr) || ((mode == 4 || mode == 5 || mode == 6) && config.ssbNr)
+        if nr != audioNrOn { audioNr.reset(); audioNrOn = nr }
+        if nr, audioRate > 0 {
+            audioNr.configure(rate: audioRate)
+            audioNr.process(&pcm)
+        }
     }
 
     /// Makeup and the optional AGC. **The limiter is not here** — it is in the

@@ -478,6 +478,10 @@ for toneHz in [100.0, 1000.0, 5000.0] {
     // 38 kHz subcarrier are the first thing a narrow IF throws away.
     sd.setWfmIfBandwidth(iqRate: rate, cutoffHz: 100_000)
     sd.setDeemphasis(audioRate: audioRate, tau: 50e-6)
+    // The matrix and the 38 kHz reference are what this asks about; the
+    // multipath equaliser's own step noise costs a clean signal 3-5 dB of
+    // separation in a channel this narrow and is checked on its own below.
+    sd.setWfmEqualizer(false)
     let o = sd.processWFMStereo(int16IQ: sepIQ, decimate: audioDec)
     var sl = [Float](), sr = [Float]()
     for i in stride(from: 0, to: o.count - 1, by: 2) { sl.append(o[i]); sr.append(o[i + 1]) }
@@ -1159,6 +1163,8 @@ do {
         d.setWfmAudioBand(iqRate: rate)
         d.setWfmIfBandwidth(iqRate: rate, cutoffHz: 75_000)
         d.setDeemphasis(audioRate: audioRate, tau: 50e-6)
+        // IFNR's cost alone; the equaliser is measured in its own section.
+        d.setWfmEqualizer(false)
         let o = d.processWFMStereo(int16IQ: body, decimate: audioDec)
         var sl = [Float](), sr = [Float]()
         for i in stride(from: 0, to: o.count - 1, by: 2) { sl.append(o[i]); sr.append(o[i + 1]) }
@@ -1524,6 +1530,81 @@ do {
     check("address: the receiver reports Connect as on", srv.receiverDirect(set: nil, value: nil, action: nil)["connected"] as? Bool == true)
     ar.disconnect()
     _ = srv.receiverDirect(set: "port", value: String(p0), action: nil)
+}
+
+section("WFM pilot notch and multipath equaliser")
+// The cases of test/wfmMultipath.test.ts: Zenith-GE composite, left only.
+do {
+    let r = 912_000.0, dec = 2
+    func composite(_ seconds: Double, echoDelay: Int, echoGain: Double, rot: Double) -> Data {
+        let n = Int(r * seconds)
+        var i = [Double](repeating: 0, count: n), q = [Double](repeating: 0, count: n)
+        var ph = 0.0
+        for k in 0..<n {
+            let t = Double(k) / r, psi = 2 * Double.pi * 19_000 * t
+            let L = sin(2 * Double.pi * 1000 * t)
+            let mpx = 0.9 * (L / 2 + (L / 2) * sin(2 * psi)) + 0.1 * sin(psi)
+            ph += 2 * Double.pi * 75_000 * mpx / r
+            i[k] = cos(ph); q[k] = sin(ph)
+        }
+        var d = Data(count: n * 4)
+        let c = cos(rot) * echoGain, s = sin(rot) * echoGain
+        d.withUnsafeMutableBytes { (p: UnsafeMutableRawBufferPointer) in
+            for k in 0..<n {
+                var I = i[k], Q = q[k]
+                if echoDelay > 0 && k >= echoDelay {
+                    let ei = i[k - echoDelay], eq = q[k - echoDelay]
+                    I += ei * c - eq * s; Q += ei * s + eq * c
+                }
+                p.storeBytes(of: Int16((6000 * I).rounded()).littleEndian, toByteOffset: k * 4, as: Int16.self)
+                p.storeBytes(of: Int16((6000 * Q).rounded()).littleEndian, toByteOffset: k * 4 + 2, as: Int16.self)
+            }
+        }
+        return d
+    }
+    func decode(_ iq: Data, eq: Bool) -> [Float] {
+        let d = Demods()
+        d.setWfmAudioBand(iqRate: r)
+        d.setWfmIfBandwidth(iqRate: r, cutoffHz: 110_000)
+        d.setDeemphasis(audioRate: r / Double(dec), tau: 50e-6)
+        d.setWfmEqualizer(eq)
+        var out = [Float]()
+        var o = 0
+        while o < iq.count {
+            out += d.processWFMStereo(int16IQ: iq.subdata(in: o..<min(iq.count, o + 65536)), decimate: dec, gain: 2000)
+            o += 65536
+        }
+        return out
+    }
+    func tone(_ x: [Float], _ ch: Int, _ hz: Double, skip: Int) -> Double {
+        var re = 0.0, im = 0.0, n = 0.0
+        let ar = r / Double(dec)
+        for k in skip..<(x.count / 2) {
+            let w = 2 * Double.pi * hz * Double(k) / ar
+            re += Double(x[k * 2 + ch]) * cos(w); im -= Double(x[k * 2 + ch]) * sin(w); n += 1
+        }
+        return (re * re + im * im).squareRoot() / n
+    }
+    func chRms(_ x: [Float], _ ch: Int, skip: Int) -> Double {
+        var s = 0.0, n = 0.0
+        for k in skip..<(x.count / 2) { s += Double(x[k * 2 + ch]) * Double(x[k * 2 + ch]); n += 1 }
+        return (s / n).squareRoot()
+    }
+    let skip = Int(r / Double(dec) * 0.8)
+    let clean = composite(1.5, echoDelay: 0, echoGain: 0, rot: 0)
+    let cOn = decode(clean, eq: true), cOff = decode(clean, eq: false)
+    let prog = tone(cOn, 0, 1000, skip: skip)
+    let pilotDb = 20 * log10(max(tone(cOn, 0, 19_000, skip: skip), tone(cOn, 1, 19_000, skip: skip)) / prog)
+    check("WFM: 19 kHz pilot under -60 dB in the audio", pilotDb < -60, "\(pilotDb) dB")
+    let sepOn = 20 * log10(prog / chRms(cOn, 1, skip: skip))
+    let sepOff = 20 * log10(tone(cOff, 0, 1000, skip: skip) / chRms(cOff, 1, skip: skip))
+    check("WFM equaliser leaves a clean signal as it was", sepOn > sepOff - 1.5, "on \(sepOn) off \(sepOff) dB")
+    let echo = composite(1.5, echoDelay: 8, echoGain: 0.3, rot: 1.2)
+    let eOn = decode(echo, eq: true), eOff = decode(echo, eq: false)
+    let gainDb = 20 * log10(chRms(eOn, 1, skip: skip) / chRms(eOff, 1, skip: skip))
+    let restDb = 20 * log10(chRms(eOn, 1, skip: skip) / tone(eOn, 0, 1000, skip: skip))
+    check("WFM equaliser cleans the stereo an 8.8 us echo smeared", gainDb < -15 && restDb < -35,
+          "right channel \(gainDb) dB vs off, \(restDb) dB under the programme")
 }
 
 print("\n\(checks - failures)/\(checks) passed")

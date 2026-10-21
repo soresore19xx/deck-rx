@@ -46,6 +46,19 @@ struct Biquad {
         a2 = (1 - alpha) / a0
     }
 
+    /// Notch at `fc`: infinite depth there, -3 dB width fc/q.
+    mutating func setNotch(fs: Double, fc: Double, q: Double) {
+        let w = 2 * Double.pi * fc / fs
+        let cw = cos(w), sw = sin(w)
+        let alpha = sw / (2 * q)
+        let a0 = 1 + alpha
+        b0 = 1 / a0
+        b1 = (-2 * cw) / a0
+        b2 = 1 / a0
+        a1 = (-2 * cw) / a0
+        a2 = (1 - alpha) / a0
+    }
+
     mutating func step(_ x: Double) -> Double {
         let y = b0 * x + z1
         z1 = b1 * x - a1 * y + z2

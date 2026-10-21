@@ -196,8 +196,10 @@ struct RadioConfig: Codable, Equatable {
     var fmBandwidthHz: Double = 250_000
     var fmStereo = true
     var fmIfnr = false
-    /// "50us" (JP/EU) or "75us" (US). Stored as the plugin stores it.
-    var fmDeemphasis = "75us"
+    /// "50us" (JP/EU) or "75us" (US). Stored as the plugin stores it, and
+    /// defaulting as the plugin does (DEFAULT_FM_OPTIONS): this said "75us"
+    /// until 2026-10-21, so a fresh install played Japanese FM a little dull.
+    var fmDeemphasis = "50us"
     var fmHighPass = false
     var fmLowPass = false
     /// SDR++'s slider units, as the plugin stores them: attack 1..200, decay

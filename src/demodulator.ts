@@ -1,4 +1,4 @@
-import { Biquad, ComplexFirLpf } from './dspFilters.js';
+import { Biquad, CmaEqualizer, ComplexFirLpf } from './dspFilters.js';
 
 // AM AGC tuning constants (SDR++ port). Equivalents of dsp::demod::AM init
 // args: setPoint (target |IQ|), maxGain (cap), maxOutputAmp (look-ahead
@@ -119,6 +119,10 @@ export class Demodulator {
   // Blackman) taps — IIR Butterworth in the IF path was deck-rx's
   // particular shortcut, not industry practice.
   private wfmIfLpf: ComplexFirLpf = new ComplexFirLpf();
+  // Multipath equaliser between the IF LPF and the discriminator (WFM only).
+  // See CmaEqualizer: echoes are what make stereo much noisier than mono.
+  private wfmEq = new CmaEqualizer();
+  private wfmEqOn = true;
   // Post-IF-LPF mean power (I²+Q² averaged over the most recent processed
   // buffer). spyService uses this to compute an in-band-only RSSI instead
   // of the raw-IQ-stream power that was inflating the S meter with energy
@@ -163,10 +167,17 @@ export class Demodulator {
   // audiotoolbox the resampler's own 24 kHz LPF cleaned that up; the
   // naudiodon path streams the raw 114 kHz audio to CoreAudio HAL, so
   // any high-frequency residue plays back as audible 19+ kHz whine /
-  // subcarrier ghost ("distortion"). 8th-order gets the pilot to
-  // ≈ −48 dB and the subcarrier to ≈ −100 dB, well below audibility.
+  // subcarrier ghost ("distortion"). 8th-order puts the subcarrier well
+  // below audibility, but NOT the pilot: 19 kHz is only 1.27x the cutoff,
+  // where an 8th-order Butterworth is down about 16 dB (this comment said
+  // −48 dB until 2026-10-21, when the pilot was measured in the output at
+  // −20 dB under the programme). The notches below take it out.
   private lprLpf: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
   private lmrLpf: Biquad[] = Array.from({ length: 4 }, () => new Biquad());
+  // 19 kHz notches after the 15 kHz LPFs. The L−R one is needed too: the
+  // 38 kHz mix puts the pilot back at 19 kHz (and 57 kHz).
+  private lprNotch = new Biquad();
+  private lmrNotch = new Biquad();
   private pilotBpf = new Biquad();  // 19 kHz pilot bandpass (PLL pre-filter)
   private stereoConfigured = false;
   // PLL state (Costas-style, locks to 19 kHz pilot, generates 38 kHz reference)
@@ -263,6 +274,8 @@ export class Demodulator {
    *  rotate. */
   resetForRetune(): void {
     this.prevI = 0; this.prevQ = 0;
+    // Another station has other echoes; start the equaliser from a pass-through.
+    this.wfmEq.reset();
     this.amDc = 0;
     this.amAgcAmp = 0;
     this.amSyncPhase = 0;
@@ -295,8 +308,11 @@ export class Demodulator {
     for (const b of this.amIfLpfI) b.reset();
     for (const b of this.amIfLpfQ) b.reset();
     this.wfmIfLpf.reset();
+    this.wfmEq.reset();
     for (const b of this.lprLpf) b.reset();
     for (const b of this.lmrLpf) b.reset();
+    this.lprNotch.reset();
+    this.lmrNotch.reset();
     this.pilotBpf.reset();
     this.pilotPower = 0;
     this.pllPhase = 0;
@@ -631,6 +647,9 @@ export class Demodulator {
       this.lprLpf[k].setLowPass(iqRate, 15000, Q8[k]);
       this.lmrLpf[k].setLowPass(iqRate, 15000, Q8[k]);
     }
+    // q 4: about 4.8 kHz wide, all of it above the 15 kHz audio band.
+    this.lprNotch.setNotch(iqRate, 19000, 4);
+    this.lmrNotch.setNotch(iqRate, 19000, 4);
     this.pilotBpf.setBandPass(iqRate, 19000, 30);
     // PLL coefficients: standard 2nd-order PLL with damping = 1/√2,
     // loop bandwidth ~50 Hz (FM stereo industry typical 30-100 Hz).
@@ -665,7 +684,14 @@ export class Demodulator {
     const fc = Math.max(minCut, Math.min(maxCut, cutoffHz));
     const transBw = Math.max(5000, fc * 0.25);
     this.wfmIfLpf.setLowPass(iqRate, fc, transBw);
+    if (this.wfmIfRate !== iqRate) this.wfmEq.configure(iqRate);
     this.wfmIfRate = iqRate;
+  }
+
+  /** Multipath equaliser on/off (WFM). On by default. */
+  setWfmEqualizer(on: boolean): void {
+    if (on && !this.wfmEqOn) this.wfmEq.reset();
+    this.wfmEqOn = on;
   }
   isStereoConfigured(): boolean { return this.stereoConfigured; }
 
@@ -746,6 +772,11 @@ export class Demodulator {
         Q = this.wfmIfLpf.lastQ;
       }
       inBandSumP += I * I + Q * Q;
+      if (this.wfmEqOn && this.wfmIfRate > 0) {
+        this.wfmEq.step(I, Q);
+        I = this.wfmEq.lastI;
+        Q = this.wfmEq.lastQ;
+      }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let r = 0;
@@ -762,7 +793,7 @@ export class Demodulator {
       // when stereo isn't configured (e.g., before startAudio has set
       // iqRate).
       const lpr = this.stereoConfigured
-        ? this.lprLpf[3].step(this.lprLpf[2].step(this.lprLpf[1].step(this.lprLpf[0].step(r))))
+        ? this.lprNotch.step(this.lprLpf[3].step(this.lprLpf[2].step(this.lprLpf[1].step(this.lprLpf[0].step(r)))))
         : r;
       if (i % decimate === 0 && oi < outSamples) {
         this.deempY = a * lpr + (1 - a) * this.deempY;
@@ -802,6 +833,11 @@ export class Demodulator {
         Q = this.wfmIfLpf.lastQ;
       }
       inBandSumP += I * I + Q * Q;
+      if (this.wfmEqOn && this.wfmIfRate > 0) {
+        this.wfmEq.step(I, Q);
+        I = this.wfmEq.lastI;
+        Q = this.wfmEq.lastQ;
+      }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let demod = 0;
@@ -810,7 +846,7 @@ export class Demodulator {
       this.prevQ = Q;
 
       // L+R baseband from FM-demodulated signal
-      const lpr = this.lprLpf[3].step(this.lprLpf[2].step(this.lprLpf[1].step(this.lprLpf[0].step(demod))));
+      const lpr = this.lprNotch.step(this.lprLpf[3].step(this.lprLpf[2].step(this.lprLpf[1].step(this.lprLpf[0].step(demod)))));
       // Pilot extraction (narrow BPF for clean 19 kHz tone)
       const pilot = this.pilotBpf.step(demod);
       // ── PLL ── lock VCO phase to pilot ──────────────────────────────
@@ -885,7 +921,7 @@ export class Demodulator {
       // Recover L−R baseband: mix demod with 38 kHz reference (×2 to compensate for
       // the cos·cos averaging factor of 1/2), then LPF
       const lmrIn = demod * ref38 * 2;
-      const lmr = this.lmrLpf[3].step(this.lmrLpf[2].step(this.lmrLpf[1].step(this.lmrLpf[0].step(lmrIn))));
+      const lmr = this.lmrNotch.step(this.lmrLpf[3].step(this.lmrLpf[2].step(this.lmrLpf[1].step(this.lmrLpf[0].step(lmrIn)))));
 
       if (i % decimate === 0 && oi < outSamples) {
         // Hysteresis: typical stereo broadcasts give pilotPower ~0.001-0.05

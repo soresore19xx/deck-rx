@@ -134,6 +134,92 @@ final class ComplexFirLpf {
     }
 }
 
+/// Constant-modulus blind equaliser (Godard, p = 2) for wide FM, between the IF
+/// low-pass and the discriminator. Ported from `CmaEqualizer` in
+/// `src/dspFilters.ts`, constants intact; the comment there has the reasoning
+/// and the 2026-10-21 measurement (echoes are what made stereo so much noisier
+/// than mono).
+final class CmaEqualizer {
+    static let taps = 16
+    static let ref = 3
+    private var wI = [Double](repeating: 0, count: CmaEqualizer.taps)
+    private var wQ = [Double](repeating: 0, count: CmaEqualizer.taps)
+    private var hI = [Double]()
+    private var hQ = [Double]()
+    private var head = 0
+    private var len = 0
+    private var spacing = 1
+    private var mu: Double = 0
+    private var powAlpha: Double = 0
+    private var pow: Double = 0
+    private(set) var lastI: Double = 0
+    private(set) var lastQ: Double = 0
+
+    /// Taps about 2 µs apart whatever the rate; adaptation and power tracking
+    /// scaled to run at the same speed in seconds.
+    func configure(fs: Double) {
+        spacing = max(1, Int((fs / 500_000).rounded()))
+        len = (CmaEqualizer.taps - 1) * spacing + 1
+        hI = [Double](repeating: 0, count: len)
+        hQ = [Double](repeating: 0, count: len)
+        let perSample = 500_000 / fs
+        mu = 2e-4 * perSample
+        powAlpha = min(1, 0.002 * perSample)
+        reset()
+    }
+
+    func reset() {
+        for k in 0..<CmaEqualizer.taps { wI[k] = 0; wQ[k] = 0 }
+        wI[CmaEqualizer.ref] = 1
+        for i in 0..<hI.count { hI[i] = 0; hQ[i] = 0 }
+        head = 0
+        pow = 0
+        lastI = 0; lastQ = 0
+    }
+
+    func step(_ iIn: Double, _ qIn: Double) {
+        guard len > 0 else { lastI = iIn; lastQ = qIn; return }
+        let p = iIn * iIn + qIn * qIn
+        pow = pow > 0 ? pow + (p - pow) * powAlpha : p
+        guard pow > 1e-12 else { lastI = iIn; lastQ = qIn; return }
+        let scale = pow.squareRoot()
+        let g = 1 / scale
+        hI[head] = iIn * g
+        hQ[head] = qIn * g
+        // y = sum w[k] . x[n - k.D]
+        var yI: Double = 0, yQ: Double = 0
+        var idx = head
+        for k in 0..<CmaEqualizer.taps {
+            let xi = hI[idx], xq = hQ[idx]
+            yI += wI[k] * xi - wQ[k] * xq
+            yQ += wI[k] * xq + wQ[k] * xi
+            idx -= spacing; if idx < 0 { idx += len }
+        }
+        let m = yI * yI + yQ * yQ
+        guard m < 16 else {
+            // Diverged (or NaN): start again from a pass-through, keep the power.
+            let pw = pow
+            reset()
+            pow = pw
+            lastI = iIn; lastQ = qIn
+            return
+        }
+        // w[k] -= mu (|y|^2 - 1) . y . conj(x[n - k.D])
+        let e = mu * (m - 1)
+        let eI = e * yI, eQ = e * yQ
+        idx = head
+        for k in 0..<CmaEqualizer.taps {
+            let xi = hI[idx], xq = hQ[idx]
+            wI[k] -= eI * xi + eQ * xq
+            wQ[k] -= eQ * xi - eI * xq
+            idx -= spacing; if idx < 0 { idx += len }
+        }
+        head = head + 1 < len ? head + 1 : 0
+        lastI = yI * scale
+        lastQ = yQ * scale
+    }
+}
+
 /// The output scales LocalRadio hands the demodulators — `AM_AGC_OFF_SCALE`,
 /// `SSB_GAIN` and `CW_GAIN` in src/demodulator.ts, same values, same reasons
 /// (the comment there has the measurements). Each keeps an IQ amplitude of
@@ -203,6 +289,15 @@ final class Demods {
 
     private let wfmIf = ComplexFirLpf()
     private var wfmIfRate: Double = 0
+    /// Multipath equaliser before the WFM discriminator (CmaEqualizer).
+    private let wfmEq = CmaEqualizer()
+    private var wfmEqOn = true
+    /// 19 kHz notches after the 15 kHz LPFs: the 8th-order Butterworth is only
+    /// ~16 dB down at 19 kHz, and the pilot reached the audio at -20 dB under
+    /// the programme (2026-10-21). L-R needs one too — the 38 kHz mix puts the
+    /// pilot back at 19 kHz.
+    private var lprNotch = Biquad()
+    private var lmrNotch = Biquad()
     private var deempAlpha: Double = 1
     private var deempY: Double = 0
     private var lprLpf = [Biquad](repeating: Biquad(), count: 4)
@@ -258,9 +353,16 @@ final class Demods {
         let maxCut = max(minCut + 1, iqRate * 0.45)
         let fc = min(max(cutoffHz, minCut), maxCut)
         wfmIf.setLowPass(fs: iqRate, fc: fc, transBw: max(5000, fc * 0.25))
+        if wfmIfRate != iqRate { wfmEq.configure(fs: iqRate) }
         wfmIfRate = iqRate
         quietReady = iqRate >= 200_000 && fc >= 90_000
         if quietReady { for k in 0..<2 { quietBpf[k].setBandPass(fs: iqRate, fc: 75_000, q: 3) } }
+    }
+
+    /// Multipath equaliser on/off (WFM). On by default.
+    func setWfmEqualizer(_ on: Bool) {
+        if on && !wfmEqOn { wfmEq.reset() }
+        wfmEqOn = on
     }
 
     func setDeemphasis(audioRate: Double, tau: Double) {
@@ -278,6 +380,9 @@ final class Demods {
             lprLpf[k].setLowPass(fs: iqRate, fc: 15000, q: q8[k])
             lmrLpf[k].setLowPass(fs: iqRate, fc: 15000, q: q8[k])
         }
+        // q 4: about 4.8 kHz wide, all of it above the 15 kHz audio band.
+        lprNotch.setNotch(fs: iqRate, fc: 19000, q: 4)
+        lmrNotch.setNotch(fs: iqRate, fc: 19000, q: 4)
         pilotBpf.setBandPass(fs: iqRate, fc: 19000, q: 30)
         // Second-order PLL, damping 1/sqrt(2), loop bandwidth 50 Hz — the
         // middle of the 30-100 Hz the broadcast industry uses. The phase
@@ -331,6 +436,7 @@ final class Demods {
                 var Q = Double(base.loadUnaligned(fromByteOffset: o + 2, as: Int16.self).littleEndian)
                 if wfmIfRate > 0 { wfmIf.step(I, Q); I = wfmIf.lastI; Q = wfmIf.lastQ }
                 inBandSum += I * I + Q * Q
+                if wfmEqOn && wfmIfRate > 0 { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
                 let denom = I * prevI + Q * prevQ
                 let numer = Q * prevI - I * prevQ
                 var demod: Double = 0
@@ -345,6 +451,7 @@ final class Demods {
 
                 var lpr = demod
                 for k in 0..<4 { lpr = lprLpf[k].step(lpr) }
+                lpr = lprNotch.step(lpr)
                 let pilot = pilotBpf.step(demod)
 
                 let cosV = cos(pllPhase), sinV = sin(pllPhase)
@@ -391,6 +498,7 @@ final class Demods {
                 // x2 compensates the 1/2 from cos.cos.
                 var lmr = demod * ref38 * 2
                 for k in 0..<4 { lmr = lmrLpf[k].step(lmr) }
+                lmr = lmrNotch.step(lmr)
 
                 guard i % decimate == 0, oi < outSamples else { continue }
                 if stereoLocked {
@@ -449,6 +557,7 @@ final class Demods {
                     Q = wfmIf.lastQ
                 }
                 inBandSum += I * I + Q * Q
+                if wide && wfmEqOn && wfmIfRate > 0 { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
                 let denom = I * prevI + Q * prevQ
                 let numer = Q * prevI - I * prevQ
                 var r: Double = 0
@@ -464,6 +573,7 @@ final class Demods {
                 var band = r
                 if wide && lprConfigured {
                     for k in 0..<4 { band = lprLpf[k].step(band) }
+                    band = lprNotch.step(band)
                 }
                 if i % decimate == 0 && oi < outSamples {
                     var v: Double
@@ -601,7 +711,8 @@ final class Demods {
 
     // MARK: lifecycle
 
-    func resetForRetune() { prevI = 0; prevQ = 0 }
+    /// Another station has other echoes: the equaliser starts from a pass-through.
+    func resetForRetune() { prevI = 0; prevQ = 0; wfmEq.reset() }
 
     func reset() {
         prevI = 0; prevQ = 0
@@ -615,6 +726,8 @@ final class Demods {
         pilotBpf.reset()
         for k in 0..<2 { quietBpf[k].reset() }
         for i in 0..<4 { lprLpf[i].reset(); lmrLpf[i].reset() }
+        lprNotch.reset(); lmrNotch.reset()
+        wfmEq.reset()
         for i in 0..<2 { ssbLpfI[i].reset(); ssbLpfQ[i].reset(); cwLpf[i].reset() }
     }
 }

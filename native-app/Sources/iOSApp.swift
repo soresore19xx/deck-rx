@@ -1909,6 +1909,7 @@ final class OptionsViewController: UITableViewController {
                     unit: "kHz", get: { r.config.amBandwidthHz }, set: { r.config.amBandwidthHz = $0 })),
                 Row(title: "Sync detect", kind: .bool(get: { r.config.amSync }, set: { r.config.amSync = $0 })),
                 Row(title: "Auto notch", kind: .bool(get: { r.config.amAutoNotch }, set: { r.config.amAutoNotch = $0 })),
+                Row(title: "Noise reduction", kind: .bool(get: { r.config.amNr }, set: { r.config.amNr = $0 })),
                 Row(title: "Carrier AGC", kind: .bool(get: { r.config.amCarrierAgc }, set: { r.config.amCarrierAgc = $0 })),
                 Row(title: "AGC attack", kind: .list(values: [5, 10, 20, 50, 100, 200], unit: "",
                     get: { r.config.amAgcAttack }, set: { r.config.amAgcAttack = $0 })),
@@ -1923,6 +1924,8 @@ final class OptionsViewController: UITableViewController {
                     get: { r.config.cwBfoHz }, set: { r.config.cwBfoHz = $0 })),
                 // USB / LSB only: CW's signal is itself a steady tone.
                 Row(title: "Auto notch", kind: .bool(get: { r.config.ssbAutoNotch }, set: { r.config.ssbAutoNotch = $0 })),
+                Row(title: "Noise reduction", kind: .bool(get: { r.config.ssbNr }, set: { r.config.ssbNr = $0 })),
+                Row(title: "SSB AGC", kind: .bool(get: { r.config.ssbAgc }, set: { r.config.ssbAgc = $0 })),
             ])
         }
         sections = [

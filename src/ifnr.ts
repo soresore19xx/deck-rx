@@ -10,88 +10,102 @@
 //             + (1-α) · max(γ_k(n) - 1, 0)               (DD a priori SNR)
 //    G_k(n) = ξ_k / (1 + ξ_k)                           (Wiener gain)
 //
-// Noise PSD estimate λ_d,k uses asymmetric tracking that is HELD when the
-// observed γ suggests strong signal — that prevents the floor from creeping
-// up to a steady broadcast tone, which would otherwise cause progressive
-// attenuation of the signal we wanted to keep.
+// The noise PSD λ_d,k is minimum statistics (Martin 2001): per bin, the
+// smallest SMOOTHED power seen across a sliding window of about 2.4 s,
+// bias-corrected.
 //
-// Block size N=2048 with HOP=N/2=1024 → frame rate 56 Hz at 57 kHz audio,
-// well below the speech band so analysis-frame artifacts can't be heard.
-// Per-block CPU is ~2 FFTs of 2048 + bin processing × 56 blocks/sec.
-// Latency is HOP samples (~18 ms) — borderline but acceptable for radio.
+// Until 2026-10-21 the minimum was taken of each frame's raw |Y|². That is an
+// exponential variable, and the smallest of ~112 of them sits around 1/112 of
+// its mean, so even a bias of 4 left the noise estimate some 15 dB low and the
+// gain at ~0.9: on medium-wave audio it took the hiss down by 1 dB where
+// OnAir's NR took 15. This class was not used anywhere then (6b82142 replaced
+// it with the FM IF tracking filter); it is now the audio NR of AM and SSB.
+// Measured on the same recordings after the fix: hiss between words 12-15 dB
+// down, the programme's loud level within 1 dB on a clean station (954 kHz).
 //
-// sqrt-Hann analysis × sqrt-Hann synthesis at 50 % overlap = combined Hann,
-// which COLAs to 1 — i.e., a gain-of-1 pass is mathematically lossless.
+// Frames of about 43 ms whatever the audio rate (2048 at 48 kHz), half
+// overlapped. sqrt-Hann analysis × sqrt-Hann synthesis at 50 % overlap =
+// combined Hann, which COLAs to 1 — a gain-of-1 pass is lossless. Latency is
+// one frame.
 import FFT from 'fft.js';
-
-const N = 2048;
-const HOP = N / 2;
 
 // Decision-directed smoothing weight. 0.95 — slightly faster than the
 // canonical 0.98 so gain converges from initial unity within ~1 s.
 const ALPHA_DD = 0.95;
-// Minimum gain (linear). 0.15 ≈ -16 dB attenuation cap. Below this, residual
-// musical noise tends to peek through.
-const G_MIN = 0.15;
-// Minimum statistics noise estimator (Martin 2001):
-//   per bin, track the smallest mag² seen across a sliding window (~2 sec),
-//   then bias-correct. Bias 4 — much higher than Martin's textbook 1.5
-//   because our sub-window count is only 8 and we work on broadband audio
-//   where the per-bin minima underestimate the true noise variance more
-//   aggressively. Without this the gain sat at ~0.95 (passthrough).
+const PSD_TAU_S = 0.13;          // periodogram smoothing before the minimum
 const MS_SUBWINDOWS = 8;
-const MS_FRAMES_PER_SW = 14; // ~112 frames total ≈ 2 s @ 56 Hz frame rate
-const MS_BIAS = 4.0;
+const MS_SUBWINDOW_S = 0.3;      // 8 × 0.3 s: the minimum's memory
+const MS_BIAS = 2.5;
 
 export class Ifnr {
-  private fft = new FFT(N);
-  private window: Float64Array;
-  private inputBuf: Float64Array;
+  /** The most a bin is turned down, linear. 0.18 ≈ -15 dB: deeper and the
+   *  leftover noise starts to warble ("musical noise"). setMaxCutDb() moves it. */
+  private gMin = 0.18;
+  setMaxCutDb(db: number): void { this.gMin = Math.pow(10, -Math.max(3, Math.min(30, db)) / 20); }
+  private rate = 0;
+  private n = 0;
+  private hop = 0;
+  private framesPerSw = 14;
+  private psdSmooth = 0.85;
+  private psd = new Float64Array(0);   // smoothed |Y|² per bin
+  private gains = new Float64Array(0);
+  private fft: FFT | null = null;
+  private window = new Float64Array(0);
+  private inputBuf = new Float64Array(0);
   private inputPos = 0;
-  private overlap: Float64Array;
-  private prevSignalMag2: Float64Array; // |S_hat_k(n-1)|², per bin
-  // Minimum-statistics state: per bin, per sub-window minimum of mag².
-  // Layout: [subWindow * N + bin]. Current sub-window updates as new frames
-  // arrive; once it ages out (every MS_FRAMES_PER_SW frames) we slide the
-  // ring forward and reset the new "current" window to +Infinity.
-  private msMin: Float64Array;
-  private msSubIdx = 0;            // current sub-window we're filling
-  private msFrameInSub = 0;        // frames in current sub-window so far
+  private overlap = new Float64Array(0);
+  private prevSignalMag2 = new Float64Array(0); // |S_hat_k(n-1)|², per bin
+  // Minimum-statistics state: per bin, per sub-window minimum.
+  // Layout: [subWindow * n + bin]. Current sub-window updates as new frames
+  // arrive; once it ages out (every framesPerSw frames) we slide the ring
+  // forward and reset the new "current" window to +Infinity.
+  private msMin = new Float64Array(0);
+  private msSubIdx = 0;
+  private msFrameInSub = 0;
   // Diagnostic: running mean of the per-block average gain. 1.0 = pure
   // passthrough; lower = noise reduction is doing something.
   private diagAvgGain = 1.0;
-  private diagBlocks = 0;
-  /** Last average gain across all bins from the most recent processBlock.
-   *  Used by the spyService diag log to confirm the NR is actually firing. */
+  /** Average gain across bins, smoothed over blocks, for the diag log. */
   getAvgGain(): number { return this.diagAvgGain; }
-  // Output ring with read/write indices — process() must return one output
-  // sample per input sample so the upstream PCM rate is preserved. The first
-  // HOP samples emitted are silence (the block-buffering latency).
-  private outBuf: Float64Array;
+  // Output ring — process() returns one output sample per input sample.
+  private outBuf = new Float64Array(0);
   private outRead = 0;
   private outWrite = 0;
-  private freqBuf: number[];
-  private timeBuf: number[];
+  private freqBuf: number[] = [];
+  private timeBuf: number[] = [];
 
-  constructor() {
-    this.window = new Float64Array(N);
-    for (let i = 0; i < N; i++) this.window[i] = Math.sin(Math.PI * i / N);
-    this.inputBuf = new Float64Array(N);
-    this.overlap = new Float64Array(N);
-    this.prevSignalMag2 = new Float64Array(N);
-    this.msMin = new Float64Array(MS_SUBWINDOWS * N);
-    this.msMin.fill(Number.POSITIVE_INFINITY);
-    // Generous output ring (4 × HOP) — only ever accumulates up to a couple
-    // of HOPs ahead in steady state. Pre-seed HOP zeros to absorb the initial
-    // block-fill latency so the very first call returns silence rather than
-    // running out of output.
-    this.outBuf = new Float64Array(HOP * 4);
-    this.outWrite = HOP;
+  constructor(rate = 48_000) { this.configure(rate); }
+
+  /** Sizes the frames for this audio rate; a no-op at the rate it has. */
+  configure(rate: number): void {
+    if (rate === this.rate || !(rate > 0)) return;
+    this.rate = rate;
+    let n = 256;
+    while (n < rate * 0.04) n <<= 1;
+    this.n = n;
+    this.hop = n / 2;
+    const frameS = this.hop / rate;
+    this.framesPerSw = Math.max(2, Math.round(MS_SUBWINDOW_S / frameS));
+    this.psdSmooth = Math.exp(-frameS / PSD_TAU_S);
+    this.fft = new FFT(n);
+    this.window = new Float64Array(n);
+    for (let i = 0; i < n; i++) this.window[i] = Math.sin(Math.PI * i / n);
+    this.inputBuf = new Float64Array(n);
+    this.overlap = new Float64Array(n);
+    this.prevSignalMag2 = new Float64Array(n);
+    this.psd = new Float64Array(n / 2 + 1);
+    this.gains = new Float64Array(n / 2 + 1);
+    this.msMin = new Float64Array(MS_SUBWINDOWS * n);
+    // Generous output ring (4 × hop); pre-seeded with hop zeros so the very
+    // first call returns silence rather than running out.
+    this.outBuf = new Float64Array(this.hop * 4);
     this.freqBuf = this.fft.createComplexArray();
     this.timeBuf = this.fft.createComplexArray();
+    this.reset();
   }
 
   reset(): void {
+    this.psd.fill(0);
     this.inputBuf.fill(0);
     this.overlap.fill(0);
     this.prevSignalMag2.fill(0);
@@ -100,32 +114,23 @@ export class Ifnr {
     this.msFrameInSub = 0;
     this.outBuf.fill(0);
     this.outRead = 0;
-    this.outWrite = HOP;  // re-seed the silent warmup
+    this.outWrite = this.hop;  // re-seed the silent warmup
     this.inputPos = 0;
   }
 
-  /** Push input samples, get back the SAME number of output samples. The
-   *  first HOP samples are silence (the algorithm's block-fill latency);
-   *  steady state is sample-for-sample at the same audio rate. */
+  /** Push input samples, get back the SAME number of output samples, one
+   *  frame late. */
   process(input: Float64Array): Float64Array {
     const out = new Float64Array(input.length);
     for (let i = 0; i < input.length; i++) {
-      // Push one input sample
       this.inputBuf[this.inputPos++] = input[i];
-      if (this.inputPos === N) {
-        this.processBlock();  // appends HOP samples to the output ring
-        this.inputBuf.copyWithin(0, HOP);
-        this.inputPos = HOP;
+      if (this.inputPos === this.n) {
+        this.processBlock();  // appends hop samples to the output ring
+        this.inputBuf.copyWithin(0, this.hop);
+        this.inputPos = this.hop;
       }
-      // Pull one output sample (or silence if the ring drained — only on
-      // very first call before any block has emitted)
-      if (this.outRead < this.outWrite) {
-        out[i] = this.outBuf[this.outRead++ % this.outBuf.length];
-      } else {
-        out[i] = 0;
-      }
+      out[i] = this.outRead < this.outWrite ? this.outBuf[this.outRead++ % this.outBuf.length] : 0;
     }
-    // Compact the ring when we've drained a long way to avoid integer growth
     if (this.outRead >= this.outBuf.length) {
       this.outRead -= this.outBuf.length;
       this.outWrite -= this.outBuf.length;
@@ -134,26 +139,23 @@ export class Ifnr {
   }
 
   private processBlock(): void {
-    // Analysis windowing
+    const N = this.n, HOP = this.hop, fft = this.fft!;
     const windowed: number[] = new Array(N);
     for (let i = 0; i < N; i++) windowed[i] = this.inputBuf[i] * this.window[i];
+    fft.realTransform(this.freqBuf, windowed);
+    fft.completeSpectrum(this.freqBuf);
 
-    // Forward FFT
-    this.fft.realTransform(this.freqBuf, windowed);
-    this.fft.completeSpectrum(this.freqBuf);
-
-    // Per-bin DD-Wiener processing with minimum-statistics noise estimate
+    // Per-bin DD-Wiener with the minimum-statistics noise estimate, on the
+    // non-negative half; the mirrored half takes the same gain.
+    const H = N / 2;
     const curOff = this.msSubIdx * N;
-    let gainSum = 0;
-    for (let k = 0; k < N; k++) {
+    const a = this.psdSmooth;
+    for (let k = 0; k <= H; k++) {
       const re = this.freqBuf[2 * k];
       const im = this.freqBuf[2 * k + 1];
       const mag2 = re * re + im * im;
-
-      // Update current sub-window minimum
-      if (mag2 < this.msMin[curOff + k]) this.msMin[curOff + k] = mag2;
-
-      // Noise estimate λ_d,k = bias × min over all sub-windows for bin k
+      this.psd[k] = this.psd[k] > 0 ? a * this.psd[k] + (1 - a) * mag2 : mag2;
+      if (this.psd[k] < this.msMin[curOff + k]) this.msMin[curOff + k] = this.psd[k];
       let mn = Number.POSITIVE_INFINITY;
       for (let u = 0; u < MS_SUBWINDOWS; u++) {
         const v = this.msMin[u * N + k];
@@ -161,48 +163,39 @@ export class Ifnr {
       }
       const lambda = mn === Number.POSITIVE_INFINITY ? mag2 : mn * MS_BIAS;
       const lambdaSafe = lambda > 1e-12 ? lambda : 1e-12;
-
-      // a posteriori SNR
       const gamma = mag2 / lambdaSafe;
-      // Decision-directed a priori SNR
       const xiDD = ALPHA_DD * (this.prevSignalMag2[k] / lambdaSafe)
                  + (1 - ALPHA_DD) * Math.max(0, gamma - 1);
-      // Wiener gain
-      let g = xiDD / (1 + xiDD);
-      if (g < G_MIN) g = G_MIN;
-      gainSum += g;
-
-      const newRe = re * g;
-      const newIm = im * g;
-      this.freqBuf[2 * k]     = newRe;
-      this.freqBuf[2 * k + 1] = newIm;
-      this.prevSignalMag2[k] = newRe * newRe + newIm * newIm;
+      const g = xiDD / (1 + xiDD);
+      this.gains[k] = g < this.gMin ? this.gMin : g;
     }
-    // Update diag stats (smoothed across many blocks for a steady reading)
-    this.diagAvgGain = 0.95 * this.diagAvgGain + 0.05 * (gainSum / N);
-    this.diagBlocks++;
-    // Advance the minimum-statistics sub-window ring after every frame
+    // Smooth the gains across frequency (1-2-1): an isolated bin let through
+    // or cut on its own is the warble of "musical noise".
+    let gainSum = 0;
+    let prev = this.gains[0];
+    for (let k = 0; k <= H; k++) {
+      const cur = this.gains[k];
+      const next = k < H ? this.gains[k + 1] : cur;
+      const g = 0.25 * prev + 0.5 * cur + 0.25 * next;
+      prev = cur;
+      gainSum += g;
+      this.freqBuf[2 * k] *= g; this.freqBuf[2 * k + 1] *= g;
+      if (k > 0 && k < H) { this.freqBuf[2 * (N - k)] *= g; this.freqBuf[2 * (N - k) + 1] *= g; }
+      const re = this.freqBuf[2 * k], im = this.freqBuf[2 * k + 1];
+      this.prevSignalMag2[k] = re * re + im * im;
+    }
+    this.diagAvgGain = 0.95 * this.diagAvgGain + 0.05 * (gainSum / (H + 1));
     this.msFrameInSub++;
-    if (this.msFrameInSub >= MS_FRAMES_PER_SW) {
+    if (this.msFrameInSub >= this.framesPerSw) {
       this.msFrameInSub = 0;
       this.msSubIdx = (this.msSubIdx + 1) % MS_SUBWINDOWS;
-      // Reset the new "current" window so it can collect fresh minima
       const next = this.msSubIdx * N;
       for (let k = 0; k < N; k++) this.msMin[next + k] = Number.POSITIVE_INFINITY;
     }
 
-    // Inverse FFT
-    this.fft.inverseTransform(this.timeBuf, this.freqBuf);
-
-    // Synthesis window + overlap-add
+    fft.inverseTransform(this.timeBuf, this.freqBuf);
     for (let i = 0; i < N; i++) this.overlap[i] += this.timeBuf[2 * i] * this.window[i];
-
-    // Emit the now-stable HOP samples into the output ring
-    for (let i = 0; i < HOP; i++) {
-      this.outBuf[this.outWrite++ % this.outBuf.length] = this.overlap[i];
-    }
-
-    // Slide overlap left, zero-fill the new tail
+    for (let i = 0; i < HOP; i++) this.outBuf[this.outWrite++ % this.outBuf.length] = this.overlap[i];
     this.overlap.copyWithin(0, HOP);
     for (let i = HOP; i < N; i++) this.overlap[i] = 0;
   }

@@ -31,6 +31,19 @@ const AM_AGC_LOOK_AHEAD_SAMPLES = 256;
 const CW_AGC_SET_POINT = 12000;
 const CW_AGC_MAX_GAIN  = 5000;
 
+// SSB AGC (2026-10-21; OnAir has one on by default, this receiver had a fixed
+// gain). Short-wave SSB fades and stations differ by tens of dB, so a fixed
+// gain is either too loud on one or lost under the noise on the next. The
+// envelope is the Weaver baseband's magnitude — the RF amplitude in the
+// passband — followed fast up (2 ms, so a syllable's first word is not
+// blasted) and slowly down (0.5 s, so the gaps between words do not pump up
+// the hiss). The set point is CW's; the ceiling is 50 x the fixed SSB_GAIN
+// (+34 dB), so an empty channel is lifted no further than that.
+const SSB_AGC_SET_POINT = 12000;
+const SSB_AGC_ATTACK_S = 0.002;
+const SSB_AGC_DECAY_S = 0.5;
+const SSB_AGC_MAX_GAIN = 50 * (24000 / 16000);
+
 /**
  * The output scales the service hands the demodulators. Kept here, next to
  * what they scale, so test/audioLevels.test.ts checks the values the app
@@ -323,6 +336,7 @@ export class Demodulator {
     this.stereoGate = 0;
     this.stereoBadgeLocked = false;
     this.ssbPhase = 0;
+    this.ssbAgcAmp = 0;
     for (const b of this.ssbLpfI) b.reset();
     for (const b of this.ssbLpfQ) b.reset();
     this.cwPhase = 0;
@@ -339,6 +353,17 @@ export class Demodulator {
     if (typeof attack === 'number') this.cwAgcAttack = Math.max(0, Math.min(1, attack));
     if (typeof decay  === 'number') this.cwAgcDecay  = Math.max(0, Math.min(1, decay));
     if (!enabled) this.cwAgcAmp = 0;
+  }
+
+  /** SSB AGC on/off at this audio rate. Idempotent per (enabled, rate). */
+  setSsbAgc(enabled: boolean, audioRate: number): void {
+    if (enabled !== this.ssbAgcEnabled) this.ssbAgcAmp = 0;
+    this.ssbAgcEnabled = enabled;
+    if (audioRate > 0 && audioRate !== this.ssbAgcRate) {
+      this.ssbAgcRate = audioRate;
+      this.ssbAgcAttack = 1 - Math.exp(-1 / (SSB_AGC_ATTACK_S * audioRate));
+      this.ssbAgcDecay = 1 - Math.exp(-1 / (SSB_AGC_DECAY_S * audioRate));
+    }
   }
 
   /** Configure the SSB Weaver oscillator + LPF. Idempotent — re-applies
@@ -384,6 +409,12 @@ export class Demodulator {
   // Reset via reset() / resetForRetune() so a new station starts from a
   // fresh tracker (otherwise the previous station's amplitude history bias
   // the gain for the first few seconds).
+  // SSB AGC (off by default): see SSB_AGC_SET_POINT.
+  private ssbAgcEnabled = false;
+  private ssbAgcAmp = 0;
+  private ssbAgcAttack = 0;
+  private ssbAgcDecay = 0;
+  private ssbAgcRate = 0;
   private cwAgcEnabled = true;
   private cwAgcAmp = 0;
   private cwAgcAttack = 30 / 114000;  // SDR++-style rate / fs at audioRate 114 kHz
@@ -525,7 +556,14 @@ export class Demodulator {
       for (const b of this.ssbLpfQ) lpQ = b.step(lpQ);
       // Up-mix (USB convention; the Q-sign flip above gives us LSB for free).
       const audio = lpI * c - lpQ * s;
-      const v = (audio * gain) / 16000;
+      let v: number;
+      if (this.ssbAgcEnabled && this.ssbAgcRate > 0) {
+        const m = Math.sqrt(lpI * lpI + lpQ * lpQ);
+        this.ssbAgcAmp += (m > this.ssbAgcAmp ? this.ssbAgcAttack : this.ssbAgcDecay) * (m - this.ssbAgcAmp);
+        v = audio * Math.min(SSB_AGC_SET_POINT / Math.max(this.ssbAgcAmp, 1e-3), SSB_AGC_MAX_GAIN);
+      } else {
+        v = (audio * gain) / 16000;
+      }
       const sample = v >= 32767 ? 32767 : v <= -32767 ? -32767 : (v | 0);
       out[oi * 2] = sample;
       out[oi * 2 + 1] = sample;

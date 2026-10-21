@@ -368,8 +368,9 @@ final class AppServer {
                    "stereo": radio.stereoWanted],
             "am": ["bandwidth": c.amBandwidthHz, "carrierAgc": c.amCarrierAgc,
                    "agcAttack": c.amAgcAttack, "agcDecay": c.amAgcDecay, "sync": c.amSync,
-                   "autoNotch": c.amAutoNotch],
-            "ssb": ["bandwidthHz": c.ssbBandwidthHz, "bfoPitchHz": c.cwBfoHz, "autoNotch": c.ssbAutoNotch],
+                   "autoNotch": c.amAutoNotch, "nr": c.amNr],
+            "ssb": ["bandwidthHz": c.ssbBandwidthHz, "bfoPitchHz": c.cwBfoHz, "autoNotch": c.ssbAutoNotch,
+                    "nr": c.ssbNr, "agc": c.ssbAgc],
             // Two, as the plugin has them (spyService.ts:107): AM wants the
             // gain pulled down to dodge IMD from a strong medium-wave
             // neighbour, FM wants all of it. Reported resolved rather than as
@@ -488,6 +489,9 @@ final class AppServer {
         case "am.sync":        c.amSync = b
         case "am.autoNotch":   c.amAutoNotch = b
         case "ssb.autoNotch":  c.ssbAutoNotch = b
+        case "am.nr":          c.amNr = b
+        case "ssb.nr":         c.ssbNr = b
+        case "ssb.agc":        c.ssbAgc = b
         case "ssb.bandwidth", "ssb.bandwidthHz": c.ssbBandwidthHz = n
         case "ssb.bfo", "ssb.bfoPitchHz":        c.cwBfoHz = n
         // One control, routed to the value the live mode actually uses — which

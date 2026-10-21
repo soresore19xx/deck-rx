@@ -616,6 +616,25 @@ final class Demods {
     /// The 48000 default is four times the original: the Weaver path splits
     /// energy across two arms over a 2.4 kHz band, so it came out about that
     /// much quieter than AM envelope detection on the same signal.
+    // SSB AGC, off by default: SSB_AGC_* in src/demodulator.ts, same values.
+    private var ssbAgcEnabled = false
+    private var ssbAgcAmp: Double = 0
+    private var ssbAgcAttack: Double = 0
+    private var ssbAgcDecay: Double = 0
+    private var ssbAgcRate: Double = 0
+    private static let ssbSetPoint: Double = 12000
+    private static let ssbMaxGain: Double = 50 * (24000.0 / 16000.0)
+
+    func setSsbAgc(_ enabled: Bool, audioRate: Double) {
+        if enabled != ssbAgcEnabled { ssbAgcAmp = 0 }
+        ssbAgcEnabled = enabled
+        if audioRate > 0 && audioRate != ssbAgcRate {
+            ssbAgcRate = audioRate
+            ssbAgcAttack = 1 - exp(-1 / (0.002 * audioRate))
+            ssbAgcDecay = 1 - exp(-1 / (0.5 * audioRate))
+        }
+    }
+
     func processSSB(int16IQ iq: Data, decimate: Int, upperSideband: Bool,
                     gain: Double = 48000) -> [Float] {
         let inSamples = iq.count / 4
@@ -641,7 +660,13 @@ final class Demods {
                 var lpI = ip, lpQ = qp
                 for k in 0..<2 { lpI = ssbLpfI[k].step(lpI); lpQ = ssbLpfQ[k].step(lpQ) }
                 let audio = lpI * c - lpQ * s
-                out[oi] = Self.toFloat(audio * gain / 16000)
+                if ssbAgcEnabled && ssbAgcRate > 0 {
+                    let m = (lpI * lpI + lpQ * lpQ).squareRoot()
+                    ssbAgcAmp += (m > ssbAgcAmp ? ssbAgcAttack : ssbAgcDecay) * (m - ssbAgcAmp)
+                    out[oi] = Self.toFloat(audio * min(Self.ssbSetPoint / max(ssbAgcAmp, 1e-3), Self.ssbMaxGain))
+                } else {
+                    out[oi] = Self.toFloat(audio * gain / 16000)
+                }
                 oi += 1
             }
         }
@@ -717,7 +742,7 @@ final class Demods {
     func reset() {
         prevI = 0; prevQ = 0
         deempY = 0
-        ssbPhase = 0; cwPhase = 0; cwAgcAmp = 0
+        ssbPhase = 0; cwPhase = 0; cwAgcAmp = 0; ssbAgcAmp = 0
         audioLpf.reset(); audioHpf.reset()
         wfmIf.reset()
         pllPhase = 0; pllPdI = 0; pllPdQ = 0; pllFreqOffset = 0

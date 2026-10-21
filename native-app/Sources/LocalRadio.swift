@@ -19,6 +19,8 @@ final class LocalRadio {
     private var fft: FFTPipeline?
     private let am = AMDemod()
     private let other = Demods()
+    /// Steady tones out of AM and USB/LSB (spyService.ts, the same switch).
+    private let autoNotch = AutoNotch()
     private let sink = AudioSink()
     private let leveler = OutputLeveler()
     /// Output is silenced until this instant. The plugin keeps the same window
@@ -903,6 +905,7 @@ final class LocalRadio {
         muteUntil = max(muteUntil, Date().addingTimeInterval(mode == 2 ? 0.2 : 0.1))
         am.resetForRetune()
         other.resetForRetune()
+        autoNotch.reset()     // another station, other whistles
         // Inside the window the device does not move — only the demodulator's
         // offset from the centre does. No round trip, no re-centred spectrum,
         // and the IQ already in hand still describes the same piece of band, so
@@ -968,6 +971,7 @@ final class LocalRadio {
         muteUntil = max(muteUntil, Date().addingTimeInterval(mode == 2 ? 0.2 : 0.1))
         am.resetForRetune()
         other.resetForRetune()
+        autoNotch.reset()
         setVfo(Double(frequency) - center)
         client.setFrequency(deviceCenterHz)
         auxQueue.async { self.iq.removeAll(keepingCapacity: true) }
@@ -1478,6 +1482,16 @@ final class LocalRadio {
         }
     }
 
+    /// Steady tones out of AM and USB/LSB, as spyService.ts does right after
+    /// demodulation. Not CW: its signal is a steady tone.
+    private func applyAutoNotch(_ pcm: inout [Float]) {
+        let on = (mode == 2 && config.amAutoNotch) || ((mode == 4 || mode == 6) && config.ssbAutoNotch)
+        if on != autoNotch.enabled { autoNotch.reset(); autoNotch.enabled = on }
+        guard on, audioRate > 0 else { return }
+        autoNotch.configure(fs: audioRate)
+        autoNotch.process(&pcm)
+    }
+
     /// Makeup and the optional AGC. **The limiter is not here** — it is in the
     /// sink, after the volume, which is where the plugin has it.
     ///
@@ -1539,6 +1553,7 @@ final class LocalRadio {
             if normalAudio, self.audioRate > 0 {
                 var pcm = self.demodulate(pkt.body)
                 if !pcm.isEmpty {
+                    self.applyAutoNotch(&pcm)
                     self.level(&pcm)
                     // Measured here, after levelling and before the sink, so
                     // it describes what was demodulated rather than what came

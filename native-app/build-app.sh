@@ -208,7 +208,7 @@ SHARED="Sources/main.swift Sources/Receiver.swift Sources/SpectrumFeed.swift \
         Sources/PresetStore.swift Sources/StationLabel.swift"
 RECEIVER="Sources/LocalRadio.swift Sources/GainSearch.swift Sources/Sync.swift Sources/DeviceSettings.swift Sources/AppServer.swift Sources/SpyClient.swift \
           Sources/IQSource.swift Sources/RtlTcpClient.swift \
-          Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift \
+          Sources/FFT.swift Sources/AMDemod.swift Sources/BrickWall.swift Sources/Demods.swift Sources/AutoNotch.swift \
           Sources/AudioSink.swift Sources/AudioLeveling.swift Sources/IqNr.swift \
           Sources/WefaxDecode.swift Sources/WefaxWindow.swift"
 

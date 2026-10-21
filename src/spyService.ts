@@ -21,6 +21,7 @@ import {
 } from './demodulator.js';
 import { OutputLeveler, MODE_MAKEUP, softLimit, DEFAULT_LEVELER_CFG } from './audioLeveling.js';
 import { Ifnr } from './ifnr.js';
+import { AutoNotch } from './autoNotch.js';
 import { IqNr, DemodMode } from './iqnr.js';
 import { AudioOutput, FfmpegOutput, NaudiodonOutput, OutputErrorTag } from './AudioOutput.js';
 import { readFile, writeFile, rename, stat } from 'fs/promises';
@@ -111,6 +112,7 @@ export interface AMOptions {
   agcAttack: number;   // 0..1 (per-sample IIR factor) — larger = faster
   agcDecay: number;    // 0..1
   sync: boolean;       // PLL-based synchronous AM detection (DSB)
+  autoNotch: boolean;  // cut steady tones: heterodyne whistles, mains hum (autoNotch.ts)
 }
 
 const DEFAULT_AM_OPTIONS: AMOptions = {
@@ -123,6 +125,8 @@ const DEFAULT_AM_OPTIONS: AMOptions = {
   agcAttack: 50,
   agcDecay: 5,
   sync: false,
+  // Off until asked for, as in OnAir: it also takes a held note out of music.
+  autoNotch: false,
 };
 
 export interface SSBOptions {
@@ -134,11 +138,14 @@ export interface SSBOptions {
   // to. Range 400..900 Hz. Ignored for USB/LSB (those use bandwidthHz/2 as
   // their Weaver f_off instead).
   bfoPitchHz: number;
+  // USB / LSB only (CW's wanted signal IS a steady tone). autoNotch.ts.
+  autoNotch: boolean;
 }
 
 const DEFAULT_SSB_OPTIONS: SSBOptions = {
   bandwidthHz: 2400,
   bfoPitchHz: 700,
+  autoNotch: false,
 };
 
 interface Config {
@@ -428,6 +435,7 @@ class SpyService {
   private iqnr = new IqNr();
   private ifnrL = new Ifnr();
   private ifnrR = new Ifnr();
+  private autoNotch = new AutoNotch();
   private audioRunning = false;
   private iqListener: ((p: IQPacket) => void) | null = null;
   private currentIQRate = 0;
@@ -1306,6 +1314,8 @@ class SpyService {
       const muteMs = this.currentDemodMode === 2 ? 200 : 100;
       this.muteUntil = Math.max(this.muteUntil, Date.now() + muteMs);
       this.demod.resetForRetune();
+      // Another station, other whistles.
+      this.autoNotch.reset();
     } else if (this.currentDemodMode === 2) {
       // 200 ms matches the AM sync PLL's pull-in at wn=150 Hz (see
       // setAmSync). Earlier 400 ms covered a slower 80 Hz PLL;
@@ -1997,6 +2007,15 @@ class SpyService {
         // NFM (mode 0) — also catches DSB (3), which has no detector of its
         // own and falls through to narrow FM.
         pcm = this.demod.processFM(iqBody, dec, NFM_GAIN * fmScale);
+      }
+      // Steady tones out of AM and SSB (not CW: its signal is one).
+      const mode = this.currentDemodMode;
+      const notch = (mode === 2 && this.amOptions.autoNotch)
+        || ((mode === 4 || mode === 6) && this.ssbOptions.autoNotch);
+      if (notch !== this.autoNotch.enabled) { this.autoNotch.reset(); this.autoNotch.enabled = notch; }
+      if (notch) {
+        this.autoNotch.configure(this.currentAudioRate);
+        this.autoNotch.process(pcm, 2);
       }
       // Diagnostic log every 3 s: detect silent output from DSP issues.
       const _now = Date.now();

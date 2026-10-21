@@ -1607,6 +1607,67 @@ do {
           "right channel \(gainDb) dB vs off, \(restDb) dB under the programme")
 }
 
+section("Auto notch: the cases of test/autoNotch.test.ts")
+do {
+    let fs = 57_000.0
+    func voice(_ n: Int, seed: Int) -> [Double] {
+        var out = [Double](repeating: 0, count: n)
+        var ph = 0.0, r = seed
+        func rnd() -> Double { r = (r * 16807) % 2147483647; return Double(r) / 2147483647 }
+        var target = 150.0, f0 = 150.0
+        let step = Int((fs * 0.12).rounded())
+        for i in 0..<n {
+            if i % step == 0 { target = 110 + 80 * rnd() }
+            f0 += (target - f0) * 0.0005
+            ph += 2 * Double.pi * f0 / fs
+            let syll = 0.5 + 0.5 * sin(2 * Double.pi * 4 * Double(i) / fs)
+            var s = 0.0
+            for h in 1...20 { s += sin(Double(h) * ph) / Double(h) }
+            out[i] = 3000 * syll * s
+        }
+        return out
+    }
+    func run(_ x: [Double]) -> [Float] {
+        let an = AutoNotch(); an.configure(fs: fs); an.enabled = true
+        var out = [Float]()
+        var o = 0
+        while o < x.count {
+            var part = x[o..<min(x.count, o + 4096)].map { Float($0 / 32768) }
+            an.process(&part)
+            out += part
+            o += 4096
+        }
+        return out
+    }
+    func amp(_ x: [Float], _ hz: Double, _ from: Int, _ to: Int) -> Double {
+        var re = 0.0, im = 0.0
+        for i in from..<to {
+            let w = 2 * Double.pi * hz * Double(i) / fs
+            re += Double(x[i]) * cos(w); im -= Double(x[i]) * sin(w)
+        }
+        return 2 * (re * re + im * im).squareRoot() / Double(to - from)
+    }
+    let n4 = Int(fs * 4), n3 = Int(fs * 3)
+    var whistle = voice(n4, seed: 1)
+    for i in 0..<n4 { whistle[i] += 2000 * sin(2 * Double.pi * 1000 * Double(i) / fs) }
+    let wIn = whistle.map { Float($0 / 32768) }, wOut = run(whistle)
+    let wDb = 20 * log10(amp(wOut, 1000, Int(fs * 2), n4) / amp(wIn, 1000, Int(fs * 2), n4))
+    check("auto notch takes a whistle out of speech", wDb < -25, "\(wDb) dB")
+    var hum = voice(n3, seed: 7).map { 0.3 * $0 }
+    let ladder: [(Double, Double)] = [(100, 1500), (200, 1000), (300, 800), (400, 600)]
+    for i in 0..<n3 { for (hz, a) in ladder { hum[i] += a * sin(2 * Double.pi * hz * Double(i) / fs) } }
+    let hIn = hum.map { Float($0 / 32768) }, hOut = run(hum)
+    for (hz, _) in ladder {
+        let d = 20 * log10(amp(hOut, hz, Int(fs * 2), n3) / amp(hIn, hz, Int(fs * 2), n3))
+        check("auto notch takes out \(Int(hz)) Hz hum", d < -25, "\(d) dB")
+    }
+    let v = voice(n4, seed: 3)
+    let vIn = v.map { Float($0 / 32768) }, vOut = run(v)
+    var e = 0.0, s = 0.0
+    for i in Int(fs)..<n4 { let d = Double(vOut[i] - vIn[i]); e += d * d; s += Double(vIn[i]) * Double(vIn[i]) }
+    check("auto notch leaves speech alone", 10 * log10(e / s) < -30, "\(10 * log10(e / s)) dB")
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 {
     print("\(failures) FAILED")

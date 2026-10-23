@@ -526,6 +526,12 @@ final class OptionsPanel: NSView {
             // reach another dropped the link on the way (asked 2026-09-25).
             server.append(row("Source", "rx.source", .menu({ list })))
         }
+        // Links that came up before: source, host and port in one pick.
+        if let recents = rx["recents"] as? [String], !recents.isEmpty {
+            server.append(row("Recent", "rx.recent", .menu({ [weak self] in
+                (self?.rx["recents"] as? [String]) ?? recents
+            })))
+        }
         // The link's address, typed and applied on Enter. Taken only with the
         // link off; Connect is what dials it.
         // Short names: "Server host" truncates to "Serve" in this column, and a
@@ -591,7 +597,7 @@ final class OptionsPanel: NSView {
     /// Connect is on: the address and the kind of server are fixed until
     /// Disconnect. Change them with the link off, then Connect.
     private var addressLocked: Bool { (rx["connected"] as? Bool) ?? false }
-    private static let addressRows: Set<String> = ["rx.host", "rx.port", "rx.source"]
+    private static let addressRows: Set<String> = ["rx.host", "rx.port", "rx.source", "rx.recent"]
 
     private func updateValues() {
         if let k = linkPad {

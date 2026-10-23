@@ -77,6 +77,50 @@ struct RadioConfig: Codable, Equatable {
     /// rtl_tcp's port here: the V4 is served on 8890, next to the HF+'s 8888,
     /// not on rtl_tcp's own 1234.
     static let rtlTcpDefaultPort: UInt16 = 8890
+
+    /// Links that actually came up — source, address and the device found
+    /// there — newest first, so a receiver used once is a pick from a list
+    /// rather than three fields typed again (asked 2026-10-23, when the V4
+    /// moved between SpyServer on mini4 and rtl_tcp on the iPad itself).
+    /// Kept in UserDefaults, not in this file: it is written on every connect,
+    /// and a config change rebuilds the demodulators right as the stream starts.
+    struct RecentLink: Codable, Equatable {
+        var source: String
+        var host: String
+        var port: Int
+        var device: String
+
+        var label: String {
+            "\(RadioConfig.sourceName(source))  \(host):\(port)" + (device.isEmpty ? "" : "  \(device)")
+        }
+        func sameLink(_ o: RecentLink) -> Bool {
+            source == o.source && host == o.host && port == o.port
+        }
+    }
+    static let recentLinksKey = "recentLinks"
+    static let recentLinksMax = 8
+
+    static func recentLinks() -> [RecentLink] {
+        guard let d = UserDefaults.standard.data(forKey: recentLinksKey),
+              let l = try? JSONDecoder().decode([RecentLink].self, from: d) else { return [] }
+        return l
+    }
+
+    /// File a link that came up. The same source, host and port moves to the
+    /// top and takes the device seen this time.
+    static func rememberLink(_ link: RecentLink) {
+        var l = recentLinks().filter { !$0.sameLink(link) }
+        l.insert(link, at: 0)
+        if l.count > recentLinksMax { l.removeLast(l.count - recentLinksMax) }
+        if let d = try? JSONEncoder().encode(l) { UserDefaults.standard.set(d, forKey: recentLinksKey) }
+    }
+
+    /// Put a remembered link in force: its source, and that address as the
+    /// source's own.
+    mutating func useLink(_ link: RecentLink) {
+        selectSource(link.source)
+        setAddress(host: link.host, port: link.port)
+    }
     var frequencyHz: Double = 1_134_000
     var mode = 2
     /// RF gain index, kept per demod family the way the plugin keeps it

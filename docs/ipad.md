@@ -89,8 +89,13 @@ the readout and the trace fold as well while an address is typed: with only
 the rows above SERVER folded, what was left still did not fit above the
 keyboard and the SERVER row went under it. `DECK_RX_FOCUS=host|port`
 (`SIMCTL_CHILD_` in the simulator) disconnects and puts the cursor in that box
-a moment after launch, for checking this without a tap. The layout logs its numbers (`[ui] window … fixed … trace …`) on
+a moment after launch, for checking this without a tap. The layout logs its numbers (`[ui] window … fixed … trace … keyboard guide top …`) on
 every change, readable with `devicectl device process launch --console`.
+
+The block is lifted by the keyboard's own frame notices, not only by
+`keyboardLayoutGuide`: on iPadOS 27 the guide stayed on the bottom edge while
+the notice put the keyboard half way up the screen. A keyboard docked on the
+bottom edge lifts the block by its height; a floating one does not.
 
 ## DRM
 
@@ -124,6 +129,12 @@ Options and DRM sit beside the status line below it. The two boxes and
 the source menu are greyed out while **Disconnect** is showing — connected or
 still retrying — so an address is changed with the link off: Disconnect,
 change, Connect.
+
+Every link that comes up is filed — source, address, port and the kind of
+receiver the server reported — newest first, eight at most. They are listed
+under **Recent** in the source menu (and in a **Recent** row in Solo's
+Options), and one pick sets the source and both boxes together. The list is
+the app's own (UserDefaults), not part of `receiver.json`.
 
 ## When the SpyServer is on the other segment
 

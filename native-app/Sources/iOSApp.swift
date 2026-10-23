@@ -149,6 +149,11 @@ final class RadioViewController: UIViewController {
     /// does, so the SERVER row went under the keyboard with the rows above it
     /// already folded.
     private var foldedWhileTypingShort: [UIView] = []
+    /// How far the docked software keyboard reaches up from the view's bottom
+    /// edge, and the constraint that keeps the control block above it. Kept
+    /// across a scale change, which builds the block (and the constraint) anew.
+    private var keyboardLift: CGFloat = 0
+    private var keyboardBottom: NSLayoutConstraint?
 
     /// The modes worth a segment on a receiver this size. RAW and DSB exist in
     /// the mode list but are not what anyone reaches for on an iPad, and eight
@@ -176,10 +181,11 @@ final class RadioViewController: UIViewController {
             // trace is left with is the slack, and the keyboard has to fit
             // inside it.
             let fixed = size.height - self.spectrum.bounds.height
-            NSLog("[ui] window %.0f x %.0f pt (screen %.0f x %.0f), scale %@ = %.2f, fixed %.0f (controls %.0f) trace %.0f",
+            NSLog("[ui] window %.0f x %.0f pt (screen %.0f x %.0f), scale %@ = %.2f, fixed %.0f (controls %.0f) trace %.0f, keyboard guide top %.0f",
                   size.width, size.height, screen.width, screen.height,
                   self.radio.config.uiScale, UI.scale, fixed,
-                  self.controlsBlock?.bounds.height ?? 0, self.spectrum.bounds.height)
+                  self.controlsBlock?.bounds.height ?? 0, self.spectrum.bounds.height,
+                  self.view.keyboardLayoutGuide.layoutFrame.minY)
         }
     }
 
@@ -205,6 +211,30 @@ final class RadioViewController: UIViewController {
             }
         }
         UI.scale = UI.from(radio.config.uiScale)
+        // The keyboard's height comes from the system's own notice of where it
+        // will be. On iPadOS 27 (iPad Pro 12.9, 2026-10-23) keyboardLayoutGuide
+        // stayed on the bottom edge (top 999) while the notice put the keyboard
+        // at 526, so the SERVER row was typed into from under the keyboard
+        // again, as before 83e6312. Only a keyboard sitting on the bottom edge
+        // lifts the block; a floating one, which ends anywhere, does not.
+        for name in [UIResponder.keyboardWillChangeFrameNotification,
+                     UIResponder.keyboardWillHideNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
+                guard let self else { return }
+                var lift: CGFloat = 0
+                if n.name != UIResponder.keyboardWillHideNotification,
+                   let end = n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                    let local = self.view.convert(end, from: nil)
+                    if local.maxY >= self.view.bounds.maxY - 1 {
+                        lift = max(0, self.view.bounds.maxY - local.minY)
+                    }
+                }
+                guard lift != self.keyboardLift else { return }
+                self.keyboardLift = lift
+                self.keyboardBottom?.constant = -lift
+                UIView.animate(withDuration: 0.2) { self.view.layoutIfNeeded() }
+            }
+        }
         view.backgroundColor = Pal.bg
         buildUI()
         // Layout check for the software keyboard, which the simulator cannot be
@@ -692,6 +722,11 @@ final class RadioViewController: UIViewController {
         // reach the line.
         controls.bottomAnchor.constraint(
             lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor).isActive = true
+        // The same, from the keyboard notices (see viewDidLoad): the guide
+        // alone no longer moves on iPadOS 27.
+        keyboardBottom = controls.bottomAnchor.constraint(
+            lessThanOrEqualTo: view.bottomAnchor, constant: -keyboardLift)
+        keyboardBottom?.isActive = true
     }
 
     /// The key's own ground. A clear step up from the panel behind it (#353840

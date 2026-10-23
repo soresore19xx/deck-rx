@@ -1332,12 +1332,38 @@ final class RadioViewController: UIViewController {
     private func refreshSourceMenu() {
         let current = radio.config.source
         sourceButton.setTitle(RadioConfig.sourceName(current) + " ▾", for: .normal)
-        sourceButton.menu = UIMenu(children: Self.sources.map { id in
+        let kinds = Self.sources.map { id in
             UIAction(title: RadioConfig.sourceName(id),
                      state: id == current ? .on : .off) { [weak self] _ in
                 self?.chooseSource(id)
             }
-        })
+        }
+        // The links that came up before, below the kinds: one pick sets the
+        // source, the host and the port together. Read when the menu opens,
+        // since a link is filed on connect, long after this was built.
+        let recent = UIDeferredMenuElement.uncached { [weak self] done in
+            guard let self else { done([]); return }
+            let here = RadioConfig.RecentLink(source: self.radio.config.source,
+                                              host: self.radio.config.host,
+                                              port: self.radio.config.port, device: "")
+            let items = RadioConfig.recentLinks().map { link in
+                UIAction(title: link.label, state: link.sameLink(here) ? .on : .off) { [weak self] _ in
+                    self?.chooseLink(link)
+                }
+            }
+            done(items.isEmpty ? [] : [UIMenu(title: "Recent", options: .displayInline, children: items)])
+        }
+        sourceButton.menu = UIMenu(children: kinds + [recent])
+    }
+
+    private func chooseLink(_ link: RadioConfig.RecentLink) {
+        var c = radio.config
+        c.useLink(link)
+        c.save()
+        radio.config = c
+        hostField.text = c.host
+        portField.text = String(c.port)
+        refreshSourceMenu()
     }
 
     /// Picking a source brings its own address back, so the boxes change with

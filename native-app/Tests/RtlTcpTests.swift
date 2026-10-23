@@ -379,4 +379,29 @@ func runRtlTcpTests() {
     check("a config from before this reads with no addresses filed",
           (try? JSONDecoder().decode(RadioConfig.self,
                                      from: Data(#"{"host":"h","port":8888}"#.utf8)))?.sourceAddrs == [:])
+
+    print("\nrecent links")
+    let saved = UserDefaults.standard.data(forKey: RadioConfig.recentLinksKey)
+    UserDefaults.standard.removeObject(forKey: RadioConfig.recentLinksKey)
+    let hf = RadioConfig.RecentLink(source: "spyserver", host: "h", port: 8888, device: "Airspy HF+")
+    let v4 = RadioConfig.RecentLink(source: "rtltcp", host: "127.0.0.1", port: 1234, device: "RTL-SDR")
+    RadioConfig.rememberLink(hf)
+    RadioConfig.rememberLink(v4)
+    check("newest first", RadioConfig.recentLinks() == [v4, hf])
+    RadioConfig.rememberLink(hf)
+    check("the same link moves to the top, not in twice", RadioConfig.recentLinks() == [hf, v4])
+    for p in 1...10 {
+        RadioConfig.rememberLink(.init(source: "rtltcp", host: "x", port: p, device: ""))
+    }
+    check("at most \(RadioConfig.recentLinksMax) kept",
+          RadioConfig.recentLinks().count == RadioConfig.recentLinksMax
+          && RadioConfig.recentLinks().first?.port == 10)
+    var u = RadioConfig()
+    u.setAddress(host: "h", port: 8888)
+    u.useLink(v4)
+    check("a picked link sets source, host and port, and files them as that source's",
+          u.source == "rtltcp" && u.host == "127.0.0.1" && u.port == 1234
+          && u.sourceAddrs["rtltcp"]?.port == 1234 && u.sourceAddrs["spyserver"]?.port == 8888)
+    if let saved { UserDefaults.standard.set(saved, forKey: RadioConfig.recentLinksKey) }
+    else { UserDefaults.standard.removeObject(forKey: RadioConfig.recentLinksKey) }
 }

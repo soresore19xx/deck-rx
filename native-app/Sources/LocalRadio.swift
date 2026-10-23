@@ -241,6 +241,15 @@ final class LocalRadio {
         if config.source == "rtltcp" { return "rtl_tcp (RTL-SDR)" }
         return "SpyServer type \(info.deviceType)"
     }
+    /// The receiver behind a link, by the type number the server reports.
+    static func deviceName(type: UInt32) -> String {
+        switch SpyClient.DeviceType(rawValue: type) {
+        case .airspyOne: return "Airspy"
+        case .airspyHF:  return "Airspy HF+"
+        case .rtlsdr:    return "RTL-SDR"
+        case nil:        return "type \(type)"
+        }
+    }
     var amGainIndex: UInt32 { min(config.amGain ?? maxGainIndex, maxGainIndex) }
     var fmGainIndex: UInt32 { min(config.fmGain ?? maxGainIndex, maxGainIndex) }
     /// What the server is told to use. AM is the split, exactly as
@@ -1175,6 +1184,11 @@ final class LocalRadio {
 
         handshakeTimer?.cancel(); handshakeTimer = nil
         isConnected = true
+        if config.source != "usb" {
+            RadioConfig.rememberLink(.init(source: config.source, host: config.host,
+                                           port: config.port,
+                                           device: Self.deviceName(type: info.deviceType)))
+        }
         lastError = nil
         reconnectDelay = 1        // a good connection earns a fast first retry
         reconnectTimer?.cancel(); reconnectTimer = nil

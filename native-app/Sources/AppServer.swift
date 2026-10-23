@@ -413,6 +413,11 @@ final class AppServer {
             "audioSink": "local",
             "source": c.source,
             "sources": sources,
+            // Links that came up before (RadioConfig.RecentLink), by label;
+            // "recent" is the one in force, so the menu can tick it.
+            "recent": RadioConfig.recentLinks()
+                .first { $0.source == c.source && $0.host == c.host && $0.port == c.port }?.label ?? "",
+            "recents": RadioConfig.recentLinks().map(\.label),
             "host": c.host,
             "port": c.port,
             // Connect is on (up, or retrying). The address and the source are
@@ -552,6 +557,9 @@ final class AppServer {
             guard raw == "spyserver" || raw == "rtltcp" || raw == "usb" else { return false }
             // Each source brings its own address back (RadioConfig.sourceAddrs).
             c.selectSource(raw)
+        case "recent":
+            guard let link = RadioConfig.recentLinks().first(where: { $0.label == raw }) else { return false }
+            c.useLink(link)
         case "host":
             let h = raw.trimmingCharacters(in: .whitespaces)
             guard !h.isEmpty else { return false }

@@ -16,7 +16,7 @@ differ in what is holding the radio.
 | **[Deck RX Solo](docs/solo.md)** — Mac app | The whole receiver in one bundle. Start here if you just want to listen. | a SpyServer on the network |
 | **[Deck RX](docs/plugin.md)** — Stream Deck + plugin | Fourteen actions and the encoder dials, driving the radio from the deck. The original. | Stream Deck +, Node, macOS |
 | **[Deck RX](docs/native-app.md)** — Mac front-end | A window onto the plugin's receiver. Draws what the plugin is doing; has no receiver of its own. | the plugin, on the same Mac |
-| **[Deck RX](docs/ipad.md)** — iPad app | A receiver on the tablet, demodulating there. | a SpyServer on the network |
+| **[Deck RX](docs/ipad.md)** — iPad app | A receiver on the tablet, demodulating there. | a SpyServer on the network, or an RTL-SDR plugged into an M-series iPad |
 
 Both Mac apps are called "Deck RX" and "Deck RX Solo"; the plugin and the iPad
 app are "Deck RX" too. Which is meant is usually clear from the context, and
@@ -77,6 +77,7 @@ The DSP algorithms and the LCD UI are inspired by / ported from two open-source 
 - **[ATS-Mini](https://github.com/esp32-si4732/ats-mini)** by the esp32-si4732 project — segmented N (SNR) / S (RSSI) bar styling, metallic dial-knob graphic, EIBI shortwave schedule consumer.
 - **Stream Deck SDK** — [@elgato/streamdeck](https://www.npmjs.com/package/@elgato/streamdeck) by Elgato.
 - **[drm-receiver](https://github.com/JvanKatwijk/drm-receiver)** by Jan van Katwijk — the DRM decoder Solo links, with Qt taken out of it. Fetched and patched by `native-app/drm/fetch.sh`; nothing of it is checked in here.
+- **[RTL-SDR-USB-iPadOS](https://github.com/arvedviehweger/RTL-SDR-USB-iPadOS)** by Arved Viehweger (Apache-2.0), on **[gnuradio4-blocks](https://github.com/gnuradio/gnuradio4-blocks)** (MIT) — the DriverKit driver the iPad app carries for an RTL-SDR on its own port, with an R828D PLL fix of ours. Fetched, patched and built by `native-app/rtlusb/build-driver.sh` ([README](native-app/rtlusb/README.md)); nothing of it is checked in here.
 
 If the upstream ATS-Mini URL has moved, please file an issue.
 

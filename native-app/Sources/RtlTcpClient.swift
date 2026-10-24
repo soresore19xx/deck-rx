@@ -1,6 +1,17 @@
 import Foundation
 import Network
 
+/// Something that speaks rtl_tcp's bytes without being a socket: hands up the
+/// 12-byte header and then 8-bit IQ, and takes the 5-byte commands. The iPad's
+/// own USB driver is one (RtlUsbLink).
+protocol RtlByteLink: AnyObject {
+    /// Starts the stream; `onBytes` is called on `queue`. An error means
+    /// nothing was started and nothing needs closing.
+    func start(queue: DispatchQueue, onBytes: @escaping (Data) -> Void) -> Error?
+    func command(_ d: Data)
+    func close()
+}
+
 /// rtl_tcp client, presented to LocalRadio as an `IQSource`.
 ///
 /// Ported from `src/RtlTcpClient.ts`, rule for rule. The two share their tests'
@@ -175,14 +186,21 @@ final class RtlTcpClient: IQSource {
     private let pace: Bool
     static let paceInterval: TimeInterval = 0.010
 
+    /// A byte link in place of the socket — the iPad's own USB driver
+    /// (RtlUsbLink). Made fresh on every open, like a socket would be.
+    private let makeLink: (() -> RtlByteLink)?
+    private var link: RtlByteLink?
+
     /// `inline` runs every entry point on the caller's thread instead of the
     /// client's queue, and hands IQ up as it is converted rather than paced.
     /// It exists for the tests, which drive `feed` and `setSetting` directly
     /// and look at the result on the next line; the pacer has its own tests.
-    init(rateSettle: TimeInterval = RtlTcpClient.rateSettle, inline: Bool = false) {
+    init(rateSettle: TimeInterval = RtlTcpClient.rateSettle, inline: Bool = false,
+         link: (() -> RtlByteLink)? = nil) {
         self.rateSettleTime = rateSettle
         self.inline = inline
         self.pace = !inline
+        self.makeLink = link
     }
 
     private func onQueue(_ f: @escaping () -> Void) {
@@ -209,6 +227,20 @@ final class RtlTcpClient: IQSource {
             // A fresh rtl_tcp session remembers nothing, so the rate has to be
             // sent again on the next stream start even if it has not changed.
             deviceRate = 0
+
+            if let makeLink {
+                // No address and nothing to wait for: the driver is there or not.
+                let l = makeLink()
+                if let e = l.start(queue: queue, onBytes: { [weak self] in self?.feed($0) }) {
+                    completion(.failure(e))
+                    return
+                }
+                link = l
+                send = { [weak l] d in l?.command(d) }
+                startWatchdog()
+                completion(.success(()))
+                return
+            }
 
             let params = NWParameters.tcp
             if let tcp = params.defaultProtocolStack.internetProtocol as? NWProtocolTCP.Options {
@@ -272,6 +304,8 @@ final class RtlTcpClient: IQSource {
             stopPacing()
             conn?.cancel()
             conn = nil
+            link?.close()
+            link = nil
             send = nil
             buf = Data()
         }
@@ -367,6 +401,9 @@ final class RtlTcpClient: IQSource {
             self.stopWatchdog()
             self.conn?.cancel()
             self.conn = nil
+            // An unplugged dongle goes quiet rather than closing anything.
+            self.link?.close()
+            self.link = nil
             if !self.intentionalClose { self.onDisconnect?() }
         }
         watchdog = t

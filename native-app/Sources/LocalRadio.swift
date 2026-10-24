@@ -239,6 +239,7 @@ final class LocalRadio {
         guard let info = deviceInfo else { return "" }
         if config.source == "usb" { return "Airspy HF+ (USB)" }
         if config.source == "rtltcp" { return "rtl_tcp (RTL-SDR)" }
+        if config.source == "rtlusb" { return "RTL-SDR (USB)" }
         return "SpyServer type \(info.deviceType)"
     }
     /// The receiver behind a link, by the type number the server reports.
@@ -504,6 +505,8 @@ final class LocalRadio {
 
     private var connectHost = ""
     private var connectPort: UInt16 = 8888
+    /// Whether the RtlTcpClient in place reads the USB driver rather than a socket.
+    private var rtlClientIsUsb = false
 
     /// Puts the source the config asks for in place. Called on every connection
     /// attempt, so changing the setting takes effect on the next dial rather
@@ -518,8 +521,21 @@ final class LocalRadio {
         // rtl_tcp is a second network protocol, not a device on this machine,
         // so it needs no library and is in every build (src/iqClient.ts's
         // `source: 'rtltcp'`, the same spelling the plugin writes).
-        if config.source == "rtltcp" {
-            if !(client is RtlTcpClient) { replaceClient(with: RtlTcpClient()) }
+        // The two RTL-SDR sources share one client and differ in what it reads
+        // from, so switching between them has to replace it too.
+        if config.source == "rtltcp" || config.source == "rtlusb" {
+            let usb = config.source == "rtlusb"
+            if !(client is RtlTcpClient) || usb != rtlClientIsUsb {
+#if RTLUSB_ENABLED
+                replaceClient(with: usb ? RtlTcpClient(link: { RtlUsbLink() }) : RtlTcpClient())
+#else
+                if usb, lastError == nil {
+                    lastError = "built without the RTL-SDR USB driver - using RTL-TCP"
+                }
+                replaceClient(with: RtlTcpClient())
+#endif
+                rtlClientIsUsb = usb
+            }
             return
         }
         if client is RtlTcpClient { replaceClient(with: SpyClient()) }
@@ -1184,7 +1200,7 @@ final class LocalRadio {
 
         handshakeTimer?.cancel(); handshakeTimer = nil
         isConnected = true
-        if config.source != "usb" {
+        if RadioConfig.hasAddress(config.source) {
             RadioConfig.rememberLink(.init(source: config.source, host: config.host,
                                            port: config.port,
                                            device: Self.deviceName(type: info.deviceType)))

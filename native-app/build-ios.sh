@@ -208,6 +208,7 @@ cat > "$APP/Info.plist" <<PLIST
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to your SpyServer on the local network.</string>
+$( [ -n "$RTLUSB_FLAGS" ] && printf '\t<!-- RTLBridge carries this key and its driver was approved; ours, without it, never was. -->\n\t<key>NSSystemExtensionUsageDescription</key>\n\t<string>Drives an RTL-SDR plugged into this iPad.</string>' )
 	<!-- The sync hub is plain HTTP on the LAN (Sync.swift). -->
 	<key>NSAppTransportSecurity</key>
 	<dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>

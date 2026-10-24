@@ -85,6 +85,35 @@ func toneSinad(_ x: [Float], rate: Double, lo: Double, hi: Double, tone: Double 
     return 10 * log10(((c * c + s * s) / 2) / max(rest, 1e-30))
 }
 
+/// RMS of `x` inside [lo, hi] Hz: Hann window, scaled to the unwindowed mean square.
+private func bandRms(_ x: [Float], rate: Double, lo: Double, hi: Double) -> Double {
+    var n = 1; while n * 2 <= x.count { n *= 2 }
+    var seg = Array(x[(x.count - n)...])
+    var ms: Float = 0; vDSP_measqv(seg, 1, &ms, vDSP_Length(n))
+    var w = [Float](repeating: 0, count: n); vDSP_hann_window(&w, vDSP_Length(n), Int32(vDSP_HANN_NORM))
+    vDSP_vmul(seg, 1, w, 1, &seg, 1, vDSP_Length(n))
+    let log2n = vDSP_Length(log2(Double(n)))
+    let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
+    var re = [Float](repeating: 0, count: n / 2), im = [Float](repeating: 0, count: n / 2)
+    var mag = [Float](repeating: 0, count: n / 2)
+    re.withUnsafeMutableBufferPointer { rp in im.withUnsafeMutableBufferPointer { ip in
+        var sc = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+        seg.withUnsafeBufferPointer { sp in
+            sp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: n / 2) {
+                vDSP_ctoz($0, 2, &sc, 1, vDSP_Length(n / 2)) } }
+        vDSP_fft_zrip(setup, &sc, 1, log2n, FFTDirection(FFT_FORWARD))
+        vDSP_zvmags(&sc, 1, &mag, 1, vDSP_Length(n / 2))
+    } }
+    vDSP_destroy_fftsetup(setup)
+    var band = 0.0, all = 0.0
+    for k in 1..<(n / 2) {
+        all += Double(mag[k])
+        let f = Double(k) * rate / Double(n)
+        if f >= lo, f <= hi { band += Double(mag[k]) }
+    }
+    return (Double(ms) * band / max(all, 1e-30)).squareRoot()
+}
+
 private func toneLevel(_ x: [Float], hz: Double, rate: Double) -> Double {
     var re = 0.0, im = 0.0
     for (i, v) in x.enumerated() {
@@ -102,10 +131,12 @@ func runChannelTests() {
                          amBandwidthHz: c.amBandwidthHz, ssbBandwidthHz: c.ssbBandwidthHz)
     }
     let w = plan(2_400_000, RxMode.wfm)
-    // 125 kHz cutoff, skirt to 140.6 kHz on both sides, 31.25 kHz between: 312.5
-    // kHz at least, and 2.4 MHz / 7 is the first rate above it.
-    check("WFM at 2.4 MHz runs at 343 kHz: the 250 kHz IF filter, its skirt, and room",
-          w.decimation == 7 && w.channelRate >= 312_500, "\(w)")
+    // The equaliser's 181 kHz passed whole, nothing aliasing onto the IF's skirt
+    // (140.6 kHz), 31.25 kHz between: 352.5 kHz, and 2.4 MHz / 6 is the first
+    // rate above it.
+    check("WFM at 2.4 MHz runs at 400 kHz: the whole FM signal, the IF skirt kept clear, and room",
+          w.decimation == 6 && w.channelRate >= 352_000 && w.passHz >= ChannelPlan.fmEqualiserPassHz, "\(w)")
+    check("NFM does not carry the equaliser's width", plan(2_400_000, RxMode.nfm).passHz < ChannelPlan.fmEqualiserPassHz)
     check("and leaves the detector to drop to the output's rate, not below 24 kHz",
           w.audioRate >= ChannelPlan.minAudioRate && w.audioRate <= 2 * ChannelPlan.outputRate, "\(w.audioRate)")
     let a = plan(2_400_000, RxMode.am)
@@ -199,10 +230,8 @@ func runChannelTests() {
                      spent))
         check("\(k.name) through the channel stage is within 0.5 dB of the full rate",
               sGot >= sRef - 0.5, String(format: "%.2f vs %.2f", sGot, sRef))
-        // Separation through the receiver is printed, not checked: the
-        // multipath equaliser is on there, and it costs separation of its own
-        // (about 9 dB at the full rate on this clean signal, 12 at the channel
-        // rate). The check below takes it out.
+        // Separation through the receiver (equaliser on) is printed; the
+        // sections below check it with the equaliser in and out.
         // CPU is printed, not checked: this suite is built without -O.
     }
 
@@ -233,4 +262,69 @@ func runChannelTests() {
     let sepCh = separation(channel: true), sepFull = separation(channel: false)
     check("WFM through the channel stage keeps the full rate's separation",
           sepCh >= sepFull - 1 && sepCh > 55, String(format: "%.1f vs %.1f dB", sepCh, sepFull))
+
+    section("multipath equaliser: costs a clean signal nothing, cleans an echo")
+    // The composite and echo of test/wfmMultipath.test.ts: left-only tone,
+    // Zenith-GE pilot and subcarrier, an 8.8 us echo at -10 dB.
+    func eqRun(tone: Double, echo: Bool, eq: Bool) -> (leak: Double, band: Double) {
+        let n = Int(iqRate * 1.5)
+        var iI = [Double](repeating: 0, count: n), iQ = [Double](repeating: 0, count: n)
+        var ph = 0.0
+        for k in 0..<n {
+            let t = Double(k) / iqRate
+            let psi = 2 * Double.pi * 19_000 * t
+            let L = sin(2 * Double.pi * tone * t)
+            ph += 2 * Double.pi * 75_000 * (0.9 * (L / 2 + (L / 2) * sin(2 * psi)) + 0.1 * sin(psi)) / iqRate
+            iI[k] = cos(ph); iQ[k] = sin(ph)
+        }
+        let delay = Int((8.8e-6 * iqRate).rounded()), g = echo ? 0.3 : 0
+        let ec = cos(1.2) * g, es = sin(1.2) * g
+        var iq = Data(count: n * 4)
+        iq.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
+            let p = raw.bindMemory(to: Int16.self)
+            for k in 0..<n {
+                var I = iI[k], Q = iQ[k]
+                if k >= delay { I += iI[k - delay] * ec - iQ[k - delay] * es; Q += iI[k - delay] * es + iQ[k - delay] * ec }
+                p[k * 2] = Int16((6000 * I).rounded()); p[k * 2 + 1] = Int16((6000 * Q).rounded())
+            }
+        }
+        let p = plan(iqRate, RxMode.wfm)
+        let ch = Channelizer(); ch.configure(inRate: iqRate, plan: p)
+        let d = Demods()
+        d.setWfmAudioBand(iqRate: p.channelRate)
+        d.setWfmIfBandwidth(iqRate: p.channelRate, cutoffHz: c.fmBandwidthHz / 2)
+        d.setDeemphasis(audioRate: p.audioRate, tau: 50e-6)
+        d.setWfmEqualizer(eq)
+        var out = [Float]()
+        var o = 0
+        while o < iq.count {   // in packets, so the state carries across calls
+            out += d.processWFMStereo(int16IQ: ch.process(iq.subdata(in: o..<min(iq.count, o + 65_536))),
+                                      decimate: p.audioDecimation)
+            o += 65_536
+        }
+        var l = [Float](), r = [Float]()
+        for i in stride(from: 0, to: out.count - 1, by: 2) { l.append(out[i]); r.append(out[i + 1]) }
+        let s = Int(p.audioRate * 0.8)
+        let L = Array(l[s...]), R = Array(r[s...])
+        let lv = toneLevel(L, hz: tone, rate: p.audioRate)
+        // Everything in the right channel up to 15 kHz is damage on a left-only signal.
+        let rBand = bandRms(R, rate: p.audioRate, lo: 50, hi: 15_000)
+        return (20 * log10(lv / max(1e-30, toneLevel(R, hz: tone, rate: p.audioRate))),
+                20 * log10(lv * 0.7071 / max(1e-30, rBand)))
+    }
+    var lossSum = 0.0, worst = 0.0
+    for tone in [400.0, 1000, 3000, 7000] {
+        let off = eqRun(tone: tone, echo: false, eq: false), on = eqRun(tone: tone, echo: false, eq: true)
+        let eOff = eqRun(tone: tone, echo: true, eq: false), eOn = eqRun(tone: tone, echo: true, eq: true)
+        print(String(format: "  %4.0f Hz clean: separation %.1f off / %.1f on    echo: right-channel damage %.1f off / %.1f on dB below the tone",
+                     tone, off.leak, on.leak, eOff.band, eOn.band))
+        lossSum += off.leak - on.leak; worst = max(worst, off.leak - on.leak)
+        check("the equaliser cleans a \(Int(tone)) Hz tone's echo by 15 dB or more", eOn.band >= eOff.band + 15,
+              String(format: "%.1f vs %.1f", eOn.band, eOff.band))
+    }
+    // It sat after the IF filter until 2026-10-25 and cost 10.6 dB here on
+    // average (Demods `wfmEq`). The worst tone, 3 kHz, still gives up 2.1 dB
+    // of 64.
+    check("on a clean signal it costs under 1 dB of separation on average, 2.5 at worst",
+          lossSum / 4 < 1 && worst < 2.5, String(format: "mean %.2f, worst %.2f dB", lossSum / 4, worst))
 }

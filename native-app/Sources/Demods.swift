@@ -107,6 +107,11 @@ struct ChannelPlan: Equatable {
     /// Stereo needs the discriminator output up to the 38 kHz subcarrier's
     /// upper sideband, 53 kHz, below Nyquist.
     static let mpxTopHz = 53_000.0
+    /// Where a broadcast FM signal has next to nothing left: peak deviation
+    /// plus twice the top of the multiplex, 75 + 2 x 53 kHz (the wider form of
+    /// Carson's rule). The multipath equaliser works on the envelope, and a
+    /// channel trimmed inside this ripples it.
+    static let fmEqualiserPassHz = 75_000 + 2 * mpxTopHz
     /// The AM passband when the bandwidth is "no limit": ITU-R's 10 kHz audio
     /// ceiling for broadcast AM.
     static let amWidestAudioHz = 10_000.0
@@ -130,8 +135,11 @@ struct ChannelPlan: Equatable {
             // transition.
             let fc = max(30_000, fmBandwidthHz / 2)
             let edge = fc * (1 + fmTransition / 2)
-            pass = edge; protect = edge
-            var r = 2 * edge + fc * fmTransition
+            // WFM's equaliser runs ahead of the IF filter and has to see the
+            // whole FM signal, not the IF's share of it.
+            pass = mode == 1 ? max(edge, fmEqualiserPassHz) : edge
+            protect = edge
+            var r = pass + protect + fc * fmTransition
             if mode == 1 { r = max(r, 2 * mpxTopHz * 1.1) }
             need = r
         case 2:
@@ -481,7 +489,15 @@ final class Demods {
 
     private let wfmIf = ComplexFirLpf()
     private var wfmIfRate: Double = 0
-    /// Multipath equaliser before the WFM discriminator (CmaEqualizer).
+    /// Multipath equaliser (CmaEqualizer), ahead of the IF filter. It sat
+    /// after it until 2026-10-25, where it was handed a signal the IF filter
+    /// had already trimmed: no longer constant in modulus, so the equaliser
+    /// "corrected" the trim and the correction landed in L-R. On a clean
+    /// left-only signal (250 kHz IF, 343 kHz channel) that cost 10.6 dB of
+    /// separation averaged over 400 Hz-7 kHz; ahead of the filter, fed the
+    /// channel's ±181 kHz (ChannelPlan.fmEqualiserPassHz), it costs nothing
+    /// measurable, and an 8.8 us -10 dB echo is cleaned further than before
+    /// (Tests/ChannelTests.swift).
     private let wfmEq = CmaEqualizer()
     private var wfmEqOn = true
     /// 19 kHz notches after the 15 kHz LPFs: the 8th-order Butterworth is only
@@ -638,9 +654,10 @@ final class Demods {
                 let o = i * 4
                 var I = Double(base.loadUnaligned(fromByteOffset: o, as: Int16.self).littleEndian)
                 var Q = Double(base.loadUnaligned(fromByteOffset: o + 2, as: Int16.self).littleEndian)
+                // The equaliser before the IF filter (see `wfmEq`).
+                if wfmEqOn && wfmIfRate > 0 { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
                 if wfmIfRate > 0 { wfmIf.step(I, Q); I = wfmIf.lastI; Q = wfmIf.lastQ }
                 inBandSum += I * I + Q * Q
-                if wfmEqOn && wfmIfRate > 0 { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
                 let denom = I * prevI + Q * prevQ
                 let numer = Q * prevI - I * prevQ
                 var demod: Double = 0
@@ -753,6 +770,8 @@ final class Demods {
                 let o = i * 4
                 var I = Double(base.loadUnaligned(fromByteOffset: o, as: Int16.self).littleEndian)
                 var Q = Double(base.loadUnaligned(fromByteOffset: o + 2, as: Int16.self).littleEndian)
+                // The equaliser before the IF filter (see `wfmEq`).
+                if wide && wfmEqOn && wfmIfRate > 0 { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
                 // Band-limit before the discriminator, or wideband noise clicks
                 // the atan2 output. Passthrough until the rate is known.
                 if wfmIfRate > 0 {
@@ -761,7 +780,6 @@ final class Demods {
                     Q = wfmIf.lastQ
                 }
                 inBandSum += I * I + Q * Q
-                if wide && wfmEqOn && wfmIfRate > 0 { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
                 let denom = I * prevI + Q * prevQ
                 let numer = Q * prevI - I * prevQ
                 var r: Double = 0

@@ -62,8 +62,11 @@ git -C "$SRC/third_party/gnuradio4-blocks" apply "$HERE/r828d-pll.patch" \
   || { echo "ERROR: r828d-pll.patch does not apply"; exit 1; }
 
 # Rename into the app. The build number is the time: iPadOS only swaps a
-# running driver for a newer one when the number has gone up.
-DEXT_BUILD="$(date +%Y%m%d%H%M)"
+# running driver for a newer one when the number has gone up. Dotted, because
+# the kernel parses a dext's version like a kext's: at most 4 digits per field
+# (xnu libkern/OSKextVersion.c). A plain 202610241215 is rejected outright --
+# driverkitd realizes the dext and the kernel never loads its personalities.
+DEXT_BUILD="$(date +%Y.%m%d.%H%M)"
 P="$SRC/RTL-SDR.xcodeproj/project.pbxproj"
 sed -i '' -e "s/$UPSTREAM_ID/$APP_ID/g" -e "s/$UPSTREAM_TEAM/$TEAM/g" \
           -e "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $DEXT_BUILD;/g" "$P"

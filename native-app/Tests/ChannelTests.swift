@@ -144,7 +144,7 @@ func runChannelTests() {
     let u = plan(3_200_000, 4)
     check("SSB at 3.2 MHz runs at or just above 24 kHz",
           u.channelRate >= 24_000 && u.channelRate < 25_000 && u.audioDecimation == 1, "\(u)")
-    check("an IQ rate that is already narrow is left alone (the HF+'s 456 kHz on WFM)",
+    check("an IQ rate that is already narrow is not decimated (the HF+'s 456 kHz on WFM)",
           plan(456_000, RxMode.wfm).decimation == 1)
     check("nothing runs under the 24 kHz floor (V4 at 250 kHz, AM)",
           plan(250_000, RxMode.am).channelRate >= ChannelPlan.minAudioRate)
@@ -235,6 +235,52 @@ func runChannelTests() {
         // CPU is printed, not checked: this suite is built without -O.
     }
 
+    section("detectors keep their decimation across packets")
+    // Each detector kept sample i when i % decimate == 0 within its own packet
+    // and dropped the remainder, so a packet that was not a multiple of the
+    // divisor broke the time base at every packet: a 1 kHz WFM tone at 13 dB
+    // SINAD instead of 93 (2026-10-25). The channel stage's divisors and
+    // rtl_tcp's reads are not powers of two.
+    do {
+        let r = 456_000.0
+        let iq = channelIQ(rate: r, seconds: 0.5, [TestCarrier(offset: 0, amp: 0.3, dev: 75_000,
+                                                               fm: { t in sin(2 * Double.pi * 1000 * t) / 2 })], noise: 0)
+        let amIQ = channelIQ(rate: r, seconds: 0.5, [TestCarrier(offset: 0, amp: 0.3,
+                                                                 am: { t in sin(2 * Double.pi * 1000 * t) })], noise: 0)
+        func run(_ mode: Int, _ packet: Int?) -> [Float] {
+            let d = Demods(), am = AMDemod()
+            d.setWfmAudioBand(iqRate: r)
+            d.setWfmIfBandwidth(iqRate: r, cutoffHz: 125_000)
+            d.setDeemphasis(audioRate: r / 9, tau: 50e-6)
+            // The equaliser's gate decides once per call, so with it on one
+            // call and many are meant to differ; this is about the time base.
+            d.setWfmEqualizer(false)
+            d.setupSSB(iqRate: r, audioRate: r / 9)
+            d.setupCW(iqRate: r)
+            am.setBandwidth(audioRate: r / 9, bandwidthHz: 9000, iqRate: r)
+            let src = mode == RxMode.am ? amIQ : iq
+            func one(_ b: Data) -> [Float] {
+                switch mode {
+                case RxMode.wfm: return d.processWFMStereo(int16IQ: b, decimate: 9)
+                case RxMode.nfm: return d.processFM(int16IQ: b, decimate: 9)
+                case 4: return d.processSSB(int16IQ: b, decimate: 9, upperSideband: true)
+                case 5: return d.processCW(int16IQ: b, decimate: 9)
+                default: return am.process(int16IQ: b, decimate: 9)
+                }
+            }
+            guard let packet else { return one(src) }
+            var out = [Float](), o = 0
+            while o < src.count { out += one(src.subdata(in: o..<min(src.count, o + packet * 4))); o += packet * 4 }
+            return out
+        }
+        for (name, mode) in [("WFM", RxMode.wfm), ("NFM", RxMode.nfm), ("AM", RxMode.am), ("USB", 4), ("CW", 5)] {
+            let whole = run(mode, nil), split = run(mode, 16_385)
+            let same = whole.count == split.count && zip(whole, split).allSatisfy { abs($0 - $1) < 1e-4 }
+            check("\(name): 16385-sample packets give what one call gives", same,
+                  "\(split.count) vs \(whole.count) samples")
+        }
+    }
+
     section("channel stage: stereo separation, equaliser off")
     // The 38 kHz droop of the discriminator (Demods.lmrDroop) was the whole
     // difference: 39.9 dB at 343 kHz before it was undone, 60.8 after.
@@ -322,9 +368,61 @@ func runChannelTests() {
         check("the equaliser cleans a \(Int(tone)) Hz tone's echo by 15 dB or more", eOn.band >= eOff.band + 15,
               String(format: "%.1f vs %.1f", eOn.band, eOff.band))
     }
+    // At the HF+'s 456 kHz there is nothing to decimate, and a neighbour 200
+    // kHz off is inside the IQ. The equaliser sits ahead of the IF filter, so
+    // the channel filter has to stay even then, or the neighbour reaches it.
+    do {
+        let r = 456_000.0
+        let wanted = TestCarrier(offset: 0, amp: 0.3, dev: 75_000, fm: { t in sin(2 * Double.pi * 1000 * t) / 2 })
+        let neighbour = TestCarrier(offset: 200_000, amp: 0.3, dev: 75_000, fm: { t in sin(2 * Double.pi * 2700 * t) })
+        func sinad(_ cs: [TestCarrier]) -> Double {
+            let iq = channelIQ(rate: r, seconds: 1.0, cs, noise: 0.002)
+            let p = plan(r, RxMode.wfm)
+            let ch = Channelizer(); ch.configure(inRate: r, plan: p)
+            let d = Demods()
+            d.setWfmAudioBand(iqRate: p.channelRate)
+            d.setWfmIfBandwidth(iqRate: p.channelRate, cutoffHz: c.fmBandwidthHz / 2)
+            d.setDeemphasis(audioRate: p.audioRate, tau: 50e-6)
+            d.setWfmEqualizer(true)
+            // In packets, as the receiver gets them: the equaliser's gate
+            // decides per packet.
+            var o = [Float](), off = 0
+            while off < iq.count {
+                o += d.processWFM(int16IQ: ch.process(iq.subdata(in: off..<min(iq.count, off + 65_536))),
+                                  decimate: p.audioDecimation)
+                off += 65_536
+            }
+            return toneSinad(o, rate: p.audioRate, lo: 50, hi: 15_000)
+        }
+        let alone = sinad([wanted]), withN = sinad([wanted, neighbour])
+        print(String(format: "  456 kHz, equaliser on: SINAD %.1f dB alone, %.1f with a neighbour at +200 kHz", alone, withN))
+        check("at 456 kHz the channel filter keeps a +200 kHz neighbour off the equaliser",
+              plan(r, RxMode.wfm).decimation == 1 && withN >= alone - 1, String(format: "%.1f vs %.1f", withN, alone))
+    }
     // It sat after the IF filter until 2026-10-25 and cost 10.6 dB here on
-    // average (Demods `wfmEq`). The worst tone, 3 kHz, still gives up 2.1 dB
-    // of 64.
-    check("on a clean signal it costs under 1 dB of separation on average, 2.5 at worst",
-          lossSum / 4 < 1 && worst < 2.5, String(format: "mean %.2f, worst %.2f dB", lossSum / 4, worst))
+    // average (Demods `wfmEq`); ahead of it, 2.1 dB at 3 kHz were left until
+    // the channel filter stopped starting from zeros (Channelizer `primed`).
+    check("on a clean signal it costs no separation (0.2 dB at most)",
+          worst < 0.2, String(format: "mean %.2f, worst %.2f dB", lossSum / 4, worst))
+    // And the ramp itself: a lone narrow-band station behind the undecimated
+    // filter at 456 kHz, where the equaliser once kept what the ramp taught it.
+    do {
+        let r = 456_000.0
+        let iq = channelIQ(rate: r, seconds: 1.0, [TestCarrier(offset: 0, amp: 0.3, dev: 75_000,
+                                                               fm: { t in sin(2 * Double.pi * 1000 * t) / 2 })], noise: 0)
+        func sinad(_ eq: Bool) -> Double {
+            let p = plan(r, RxMode.wfm)
+            let ch = Channelizer(); ch.configure(inRate: r, plan: p)
+            let d = Demods()
+            d.setWfmAudioBand(iqRate: r)
+            d.setWfmIfBandwidth(iqRate: r, cutoffHz: c.fmBandwidthHz / 2)
+            d.setDeemphasis(audioRate: p.audioRate, tau: 50e-6)
+            d.setWfmEqualizer(eq)
+            return toneSinad(d.processWFM(int16IQ: ch.process(iq), decimate: p.audioDecimation),
+                             rate: p.audioRate, lo: 50, hi: 15_000)
+        }
+        let off = sinad(false), on = sinad(true)
+        check("the channel filter's start does not throw the equaliser (lone station, 456 kHz)",
+              on >= off - 0.5, String(format: "%.1f on vs %.1f off", on, off))
+    }
 }

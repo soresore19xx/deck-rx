@@ -313,7 +313,24 @@ export class Demodulator {
    *  carrier offset. */
   resetAmSyncGate(): void { this.amSyncCos = 0; }
 
+  /** Input samples to skip before the next one kept, carried across packets.
+   *  Each detector kept sample i when i % decimate === 0 within its own
+   *  packet and dropped the remainder, so a packet that was not a multiple of
+   *  the divisor broke the time base at every packet — rtl_tcp's reads are any
+   *  length. Measured in native-app (Demods.swift `pickPhase`): a 1 kHz WFM
+   *  tone at 13 dB SINAD instead of 93 with 16384-sample packets at /9. */
+  private pickPhase = 0;
+
+  /** How many samples of `n` to keep at `d`, and the index of the first. */
+  private takePicks(n: number, d: number): [number, number] {
+    const first = this.pickPhase;
+    const count = n > first ? Math.floor((n - first - 1) / d) + 1 : 0;
+    this.pickPhase = first + count * d - n;
+    return [count, first];
+  }
+
   reset(): void {
+    this.pickPhase = 0;
     this.prevI = 0; this.prevQ = 0;
     this.amDc = 0;
     this.amAgcAmp = 0;  // 0 ⇒ first sample of new station triggers look-ahead, normalises immediately
@@ -463,7 +480,8 @@ export class Demodulator {
   // ness-compensated fixed-gain mode was using.
   processCW(iq: Buffer, decimate: number, gain = 96000): Int16Array {
     const inSamples = iq.length >> 2;
-    const outSamples = Math.floor(inSamples / decimate);
+    const [outSamples, firstPick] = this.takePicks(inSamples, decimate);
+    let nextPick = firstPick;
     const out = new Int16Array(outSamples * 2);
     const agcOn = this.cwAgcEnabled;
     const atk = this.cwAgcAttack;
@@ -485,7 +503,8 @@ export class Demodulator {
       // emitted ones). This both anti-aliases the upcoming decimation and
       // limits the audio band.
       const filt = this.cwLpf[1].step(this.cwLpf[0].step(audio));
-      if (i % decimate !== 0 || oi >= outSamples) continue;
+      if (i !== nextPick || oi >= outSamples) continue;
+      nextPick += decimate;
       let v: number;
       if (agcOn) {
         // Peak-follower on |filt|: rising amplitude tracked with attack α,
@@ -541,7 +560,8 @@ export class Demodulator {
   // 48000 (4x) so signals come out at ~AM listening level.
   processSSB(iq: Buffer, decimate: number, sideBand: 'USB' | 'LSB', gain = 48000): Int16Array {
     const inSamples = iq.length >> 2;
-    const outSamples = Math.floor(inSamples / decimate);
+    const [outSamples, firstPick] = this.takePicks(inSamples, decimate);
+    let nextPick = firstPick;
     const out = new Int16Array(outSamples * 2);
     const qSign = sideBand === 'USB' ? 1 : -1;
     let oi = 0;
@@ -554,7 +574,8 @@ export class Demodulator {
       const Qp = -I * s + Q * c;   // mix-down Q
       this.ssbPhase += this.ssbPhaseInc;
       if (this.ssbPhase > 2 * Math.PI) this.ssbPhase -= 2 * Math.PI;
-      if (i % decimate !== 0 || oi >= outSamples) continue;
+      if (i !== nextPick || oi >= outSamples) continue;
+      nextPick += decimate;
       // LPF runs at audio rate (post-decimation).
       let lpI = Ip;
       for (const b of this.ssbLpfI) lpI = b.step(lpI);
@@ -751,7 +772,8 @@ export class Demodulator {
   // FM discriminator — for NFM (no de-emphasis, narrower deviation). Mono PCM out.
   processFM(iq: Buffer, decimate: number, gain = 6000): Int16Array {
     const inSamples = iq.length >> 2;
-    const outSamples = Math.floor(inSamples / decimate);
+    const [outSamples, firstPick] = this.takePicks(inSamples, decimate);
+    let nextPick = firstPick;
     const out = new Int16Array(outSamples * 2);
     let oi = 0;
     let inBandSumP = 0;
@@ -773,7 +795,8 @@ export class Demodulator {
       if (Math.abs(denom) + Math.abs(numer) > 1) r = Math.atan2(numer, denom);
       this.prevI = I;
       this.prevQ = Q;
-      if (i % decimate === 0 && oi < outSamples) {
+      if (i === nextPick && oi < outSamples) {
+        nextPick += decimate;
         let v = r;
         if (this.lpfEnabled) v = this.lpfL.step(v);
         if (this.hpfEnabled) v = this.hpfL.step(v);
@@ -800,7 +823,8 @@ export class Demodulator {
   // than-stereo behaviour.
   processWFM(iq: Buffer, decimate: number, gain = 3000): Int16Array {
     const inSamples = iq.length >> 2;
-    const outSamples = Math.floor(inSamples / decimate);
+    const [outSamples, firstPick] = this.takePicks(inSamples, decimate);
+    let nextPick = firstPick;
     const out = new Int16Array(outSamples * 2);
     let oi = 0;
     const a = this.deempAlpha;
@@ -841,7 +865,8 @@ export class Demodulator {
       const lpr = this.stereoConfigured
         ? this.lprNotch.step(this.lprLpf[3].step(this.lprLpf[2].step(this.lprLpf[1].step(this.lprLpf[0].step(r)))))
         : r;
-      if (i % decimate === 0 && oi < outSamples) {
+      if (i === nextPick && oi < outSamples) {
+        nextPick += decimate;
         this.deempY = a * lpr + (1 - a) * this.deempY;
         let v = this.deempY;
         if (this.lpfEnabled) v = this.lpfL.step(v);
@@ -862,7 +887,8 @@ export class Demodulator {
   processWFMStereo(iq: Buffer, decimate: number, gain = 2000): Int16Array {
     if (!this.stereoConfigured) return this.processWFM(iq, decimate, gain);
     const inSamples = iq.length >> 2;
-    const outSamples = Math.floor(inSamples / decimate);
+    const [outSamples, firstPick] = this.takePicks(inSamples, decimate);
+    let nextPick = firstPick;
     const out = new Int16Array(outSamples * 2);
     let oi = 0;
     const a = this.deempAlpha;
@@ -969,7 +995,8 @@ export class Demodulator {
       const lmrIn = demod * ref38 * 2 * this.lmrDroop;
       const lmr = this.lmrNotch.step(this.lmrLpf[3].step(this.lmrLpf[2].step(this.lmrLpf[1].step(this.lmrLpf[0].step(lmrIn)))));
 
-      if (i % decimate === 0 && oi < outSamples) {
+      if (i === nextPick && oi < outSamples) {
+        nextPick += decimate;
         // Hysteresis: typical stereo broadcasts give pilotPower ~0.001-0.05
         // depending on signal strength (we observed 0.0007 on weak signals).
         if (this.pllLocked) {
@@ -1117,7 +1144,8 @@ export class Demodulator {
   // (the AGC normalises to setPoint regardless of input amplitude).
   processAM(iq: Buffer, decimate: number, gainScale = 1): Int16Array {
     const inSamples = iq.length >> 2;
-    const outSamples = Math.floor(inSamples / decimate);
+    const [outSamples, firstPick] = this.takePicks(inSamples, decimate);
+    let nextPick = firstPick;
     const out = new Int16Array(outSamples * 2);
     const alphaDc = 0.001;
     // AGC OFF path uses a fixed gain after envelope detection, scaled by
@@ -1163,7 +1191,7 @@ export class Demodulator {
     const invAtk = 1 - atk;
     const invDec = 1 - dec;
     let oi = 0;
-    for (let i = 0; i < inSamples && oi < outSamples; i += decimate) {
+    for (let i = nextPick; i < inSamples && oi < outSamples; i += decimate) {
       let I = this.amDiagPostI[i];
       let Q = this.amDiagPostQ[i];
 

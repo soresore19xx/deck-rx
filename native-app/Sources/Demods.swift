@@ -184,7 +184,7 @@ final class Channelizer {
     /// Where the next kept output's window starts in the history.
     private var start = 0
 
-    var isIdentity: Bool { decimation == 1 }
+    var isIdentity: Bool { taps.isEmpty }
     var tapCount: Int { taps.count }
 
     func configure(inRate: Double, plan: ChannelPlan) {
@@ -192,9 +192,14 @@ final class Channelizer {
         histI.removeAll(keepingCapacity: true)
         histQ.removeAll(keepingCapacity: true)
         start = 0
-        guard decimation > 1 else { taps = []; return }
         let outRate = inRate / Double(decimation)
-        let stop = outRate - plan.protectHz
+        // Without decimation nothing aliases, but the band can still be wider
+        // than the channel: the HF+'s 456 kHz holds a neighbour 200 kHz off,
+        // and WFM's equaliser, ahead of the IF filter, must not see it. So the
+        // filter stays, with its stop band from Nyquist instead, and goes only
+        // when there is no room for a skirt at all.
+        let stop = decimation > 1 ? outRate - plan.protectHz : inRate / 2
+        guard stop > plan.passHz * 1.05 else { taps = []; return }
         let trans = max(1, stop - plan.passHz)
         let fc = (plan.passHz + stop) / 2
         // Blackman's main lobe, as ComplexFirLpf sizes it. Doubling and
@@ -216,12 +221,28 @@ final class Channelizer {
         taps = t.map { Float($0 / sum) }
         histI = [Float](repeating: 0, count: n - 1)
         histQ = [Float](repeating: 0, count: n - 1)
+        primed = false
     }
 
+    /// The history starts as the first sample repeated, not zeros. From zeros
+    /// the output rises out of nothing over the filter's length, and WFM's
+    /// equaliser, which judges by the envelope, took that ramp for an echo and
+    /// set its taps by it; on a narrow-band signal nothing ever moved them
+    /// back — mono SINAD 51 dB where it is 93 without the ramp (2026-10-25).
+    private var primed = false
+
     func process(_ iq: Data) -> Data {
-        guard decimation > 1 else { return iq }
+        guard !taps.isEmpty else { return iq }
         let n = iq.count / 4
         guard n > 0 else { return Data() }
+        if !primed {
+            primed = true
+            iq.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                let s = raw.bindMemory(to: Int16.self)
+                let i0 = Float(Int16(littleEndian: s[0])), q0 = Float(Int16(littleEndian: s[1]))
+                for k in 0..<histI.count { histI[k] = i0; histQ[k] = q0 }
+            }
+        }
         let base = histI.count
         histI.append(contentsOf: repeatElement(0, count: n))
         histQ.append(contentsOf: repeatElement(0, count: n))
@@ -334,8 +355,8 @@ final class ComplexFirLpf {
     }
 }
 
-/// Constant-modulus blind equaliser (Godard, p = 2) for wide FM, between the IF
-/// low-pass and the discriminator. Ported from `CmaEqualizer` in
+/// Constant-modulus blind equaliser (Godard, p = 2) for wide FM, between the
+/// channel filter and the IF low-pass (Demods `wfmEq`). Ported from `CmaEqualizer` in
 /// `src/dspFilters.ts`, constants intact; the comment there has the reasoning
 /// and the 2026-10-21 measurement (echoes are what made stereo so much noisier
 /// than mono).
@@ -354,7 +375,6 @@ final class CmaEqualizer {
     private var pow: Double = 0
     private(set) var lastI: Double = 0
     private(set) var lastQ: Double = 0
-
     /// Taps about 2 µs apart whatever the rate; adaptation and power tracking
     /// scaled to run at the same speed in seconds.
     func configure(fs: Double) {
@@ -513,6 +533,33 @@ final class Demods {
     private var pilotBpf = Biquad()
     private var lprConfigured = false
     private(set) var wfmInBandMeanPower: Double = 0
+    /// Share of the channel's power the IF filter took away, last buffer.
+    private(set) var wfmOutsideShare: Double = 0
+    private var eqGateOpen = true
+
+    /// The equaliser assumes one constant-modulus signal in its input, and a
+    /// second station breaks that: with a neighbour 200 kHz off, even 20 dB
+    /// down, it took a lone tone's SINAD from 93 to about 50 dB, at either
+    /// place in the chain, where without it nothing moved (2026-10-25). An
+    /// echo is the station itself, delayed, and stays inside its own band; a
+    /// neighbour brings power the IF filter then takes away. So the share the
+    /// IF filter removed tells the two apart, and the equaliser waits while a
+    /// neighbour is there.
+    private func updateEqGate(inBand: Double, channel: Double) {
+        guard channel > 0 else { return }
+        wfmOutsideShare = max(0, 1 - inBand / channel)
+        let wasOpen = eqGateOpen
+        if eqGateOpen, wfmOutsideShare > Self.eqGateClose { eqGateOpen = false }
+        else if !eqGateOpen, wfmOutsideShare < Self.eqGateOpen { eqGateOpen = true }
+        if wasOpen && !eqGateOpen { wfmEq.reset() }
+    }
+    /// Measured 2026-10-25 (2.4 MHz and 456 kHz, 250 kHz IF): a lone station
+    /// spills at most -30.2 dB past the IF filter — full-deviation stereo at
+    /// 15 kHz, an 8.8 µs echo, or noise down to 28 dB SNR — and a neighbour
+    /// 200 kHz off lifts that to -22 dB at -20 dB, -12 dB at -10 dB. Shut
+    /// above -26 dB, open again below -28: both clear of the lone station.
+    static let eqGateClose = pow(10, -26.0 / 10)
+    static let eqGateOpen = pow(10, -28.0 / 10)
 
     /// How quiet the WFM discriminator is: its power in 66-84 kHz, above
     /// everything a broadcast carries (L-R ends at 53 kHz, RDS at 59.4), and
@@ -640,11 +687,14 @@ final class Demods {
         }
         let inSamples = iq.count / 4
         guard inSamples > 0, decimate > 0 else { return [] }
-        let outSamples = inSamples / decimate
+        let (outSamples, first) = takePicks(inSamples, decimate)
         guard outSamples > 0 else { return [] }
+        var nextPick = first
         var out = [Float](repeating: 0, count: outSamples * 2)
         var oi = 0
         var inBandSum: Double = 0
+        var chanSum: Double = 0
+        let eqActive = wfmEqOn && wfmIfRate > 0 && eqGateOpen
         var quietSum: Double = 0, totalSum: Double = 0
         let a = deempAlpha
 
@@ -655,7 +705,10 @@ final class Demods {
                 var I = Double(base.loadUnaligned(fromByteOffset: o, as: Int16.self).littleEndian)
                 var Q = Double(base.loadUnaligned(fromByteOffset: o + 2, as: Int16.self).littleEndian)
                 // The equaliser before the IF filter (see `wfmEq`).
-                if wfmEqOn && wfmIfRate > 0 { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
+                if eqActive { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
+                // What the IF filter is handed, so the share it removes is its
+                // own doing: an echo the equaliser cancels lowers the power too.
+                chanSum += I * I + Q * Q
                 if wfmIfRate > 0 { wfmIf.step(I, Q); I = wfmIf.lastI; Q = wfmIf.lastQ }
                 inBandSum += I * I + Q * Q
                 let denom = I * prevI + Q * prevQ
@@ -721,7 +774,8 @@ final class Demods {
                 for k in 0..<4 { lmr = lmrLpf[k].step(lmr) }
                 lmr = lmrNotch.step(lmr)
 
-                guard i % decimate == 0, oi < outSamples else { continue }
+                guard i == nextPick, oi < outSamples else { continue }
+                nextPick += decimate
                 if stereoLocked {
                     if pilotPower < 0.002 { stereoLocked = false }
                 } else if pilotPower > 0.005 {
@@ -739,6 +793,7 @@ final class Demods {
             }
         }
         wfmInBandMeanPower = inSamples > 0 ? inBandSum / Double(inSamples) : 0
+        updateEqGate(inBand: inBandSum, channel: chanSum)
         wfmQuietSum = quietSum; wfmQuietCount = totalSum
         return out
     }
@@ -756,11 +811,14 @@ final class Demods {
     private func demodFM(_ iq: Data, decimate: Int, gain: Double, wide: Bool) -> [Float] {
         let inSamples = iq.count / 4
         guard inSamples > 0, decimate > 0 else { return [] }
-        let outSamples = inSamples / decimate
+        let (outSamples, first) = takePicks(inSamples, decimate)
         guard outSamples > 0 else { return [] }
+        var nextPick = first
         var out = [Float](repeating: 0, count: outSamples)
         var oi = 0
         var inBandSum: Double = 0
+        var chanSum: Double = 0
+        let eqActive = wfmEqOn && wfmIfRate > 0 && eqGateOpen
         var quietSum: Double = 0, totalSum: Double = 0
         let quiet = wide && quietReady
 
@@ -771,7 +829,8 @@ final class Demods {
                 var I = Double(base.loadUnaligned(fromByteOffset: o, as: Int16.self).littleEndian)
                 var Q = Double(base.loadUnaligned(fromByteOffset: o + 2, as: Int16.self).littleEndian)
                 // The equaliser before the IF filter (see `wfmEq`).
-                if wide && wfmEqOn && wfmIfRate > 0 { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
+                if wide && eqActive { wfmEq.step(I, Q); I = wfmEq.lastI; Q = wfmEq.lastQ }
+                chanSum += I * I + Q * Q   // what the IF filter is handed (see the stereo path)
                 // Band-limit before the discriminator, or wideband noise clicks
                 // the atan2 output. Passthrough until the rate is known.
                 if wfmIfRate > 0 {
@@ -797,7 +856,8 @@ final class Demods {
                     for k in 0..<4 { band = lprLpf[k].step(band) }
                     band = lprNotch.step(band)
                 }
-                if i % decimate == 0 && oi < outSamples {
+                if i == nextPick && oi < outSamples {
+                    nextPick += decimate
                     var v: Double
                     if wide {
                         deempY = deempAlpha * band + (1 - deempAlpha) * deempY
@@ -812,6 +872,7 @@ final class Demods {
             }
         }
         wfmInBandMeanPower = inSamples > 0 ? inBandSum / Double(inSamples) : 0
+        updateEqGate(inBand: inBandSum, channel: chanSum)
         wfmQuietSum = quietSum; wfmQuietCount = totalSum
         return out
     }
@@ -861,8 +922,9 @@ final class Demods {
                     gain: Double = 48000) -> [Float] {
         let inSamples = iq.count / 4
         guard inSamples > 0, decimate > 0 else { return [] }
-        let outSamples = inSamples / decimate
+        let (outSamples, first) = takePicks(inSamples, decimate)
         guard outSamples > 0 else { return [] }
+        var nextPick = first
         var out = [Float](repeating: 0, count: outSamples)
         var oi = 0
         let qSign: Double = upperSideband ? 1 : -1
@@ -878,7 +940,8 @@ final class Demods {
                 let qp = -I * s + Q * c
                 ssbPhase += ssbPhaseInc
                 if ssbPhase > 2 * Double.pi { ssbPhase -= 2 * Double.pi }
-                guard i % decimate == 0, oi < outSamples else { continue }
+                guard i == nextPick, oi < outSamples else { continue }
+                nextPick += decimate
                 var lpI = ip, lpQ = qp
                 for k in 0..<2 { lpI = ssbLpfI[k].step(lpI); lpQ = ssbLpfQ[k].step(lpQ) }
                 let audio = lpI * c - lpQ * s
@@ -920,8 +983,9 @@ final class Demods {
     func processCW(int16IQ iq: Data, decimate: Int, gain: Double = 96000) -> [Float] {
         let inSamples = iq.count / 4
         guard inSamples > 0, decimate > 0 else { return [] }
-        let outSamples = inSamples / decimate
+        let (outSamples, first) = takePicks(inSamples, decimate)
         guard outSamples > 0 else { return [] }
+        var nextPick = first
         var out = [Float](repeating: 0, count: outSamples)
         var oi = 0
         // Attack and decay as a rate over the sample rate, SDR++ style. Decay
@@ -946,7 +1010,8 @@ final class Demods {
                 if cwPhase > 2 * Double.pi { cwPhase -= 2 * Double.pi }
                 var filt = audio
                 for k in 0..<2 { filt = cwLpf[k].step(filt) }
-                guard i % decimate == 0, oi < outSamples else { continue }
+                guard i == nextPick, oi < outSamples else { continue }
+                nextPick += decimate
                 var v: Double
                 if cwAgcEnabled {
                     let a = abs(filt)
@@ -965,10 +1030,28 @@ final class Demods {
 
     // MARK: lifecycle
 
+    /// Input samples to skip before the next one kept. Each detector used to
+    /// keep sample i when i % decimate == 0, counting from each packet's own
+    /// start, and drop the remainder: a packet that was not a multiple of the
+    /// divisor lost samples and restarted the grid at every packet. Harmless
+    /// while packets and divisors were both powers of two; with the channel
+    /// stage's divisors (6, 7, 9 ...) or rtl_tcp's arbitrary reads, a 1 kHz
+    /// tone came out at 13 dB SINAD instead of 93 (2026-10-25).
+    private var pickPhase = 0
+
+    /// How many samples of `n` to keep at `d`, and the index of the first.
+    private func takePicks(_ n: Int, _ d: Int) -> (count: Int, first: Int) {
+        let first = pickPhase
+        let count = n > first ? (n - first - 1) / d + 1 : 0
+        pickPhase = first + count * d - n
+        return (count, first)
+    }
+
     /// Another station has other echoes: the equaliser starts from a pass-through.
     func resetForRetune() { prevI = 0; prevQ = 0; wfmEq.reset() }
 
     func reset() {
+        pickPhase = 0
         prevI = 0; prevQ = 0
         deempY = 0
         ssbPhase = 0; cwPhase = 0; cwAgcAmp = 0; ssbAgcAmp = 0

@@ -181,7 +181,10 @@ final class SpectrumView: XView {
         let plotW = bounds.width - gutter
         guard plotW > 0, visibleSpanHz > 0, x >= gutter else { return nil }
         let f = Double(min(max(0, (x - gutter) / plotW), 1))
-        return visibleLoHz + visibleSpanHz * f
+        // Zoomed out near the bottom of the band, the IQ window reaches below
+        // 0 Hz; there is nothing there to aim at or tune to.
+        let hz = visibleLoHz + visibleSpanHz * f
+        return hz > 0 ? hz : nil
     }
 
     /// Where a touch says the receiver would go, drawn while the finger is
@@ -772,7 +775,9 @@ final class SpectrumView: XView {
         // colour to the label's, and a path still pending then went out in
         // label grey (measured 106/255 where SDR++ is 50).
         // Counted in whole steps so the labelled lines are exact multiples.
-        var k = Int((lo / lineStep).rounded(.up))
+        // Never below 0 Hz: a window wider than its centre frequency (zoomed
+        // out on medium wave) reached into negative labels (iPad, 2026-10-25).
+        var k = Int((max(0, lo) / lineStep).rounded(.up))
         var labels: [(String, CGFloat)] = []
         ctx.setStrokeColor(Self.gridColor.cgColor)
         ctx.setLineWidth(hairline)

@@ -24,7 +24,7 @@ import { Ifnr } from './ifnr.js';
 import { AutoNotch } from './autoNotch.js';
 import { IqNr, DemodMode } from './iqnr.js';
 import { Channelizer, ChannelPlan, channelPlan } from './channel.js';
-import { AudioOutput, FfmpegOutput, NaudiodonOutput, OutputErrorTag } from './AudioOutput.js';
+import { AudioOutput, FfmpegOutput, FileOutput, NaudiodonOutput, OutputErrorTag } from './AudioOutput.js';
 import { readFile, writeFile, rename, stat } from 'fs/promises';
 import { join } from 'path';
 import { clearEibiCache, eibiEntryCount, getEibiPath, parseEibiText } from './eibi.js';
@@ -1905,7 +1905,11 @@ class SpyService {
     // Build audio output. The engine is picked from the output mode, not a
     // separate setting: local → naudiodon, icecast → ffmpeg (the only path
     // that still implements icecast SOURCE + MP3 encode in-process).
-    if (cfg.ffmpeg?.mode === 'icecast') {
+    // Tests only: DECK_RX_AUDIO_FILE sends the PCM to a file and nothing to a
+    // device (FileOutput).
+    if (process.env.DECK_RX_AUDIO_FILE) {
+      this.audioOutput = new FileOutput(process.env.DECK_RX_AUDIO_FILE);
+    } else if (cfg.ffmpeg?.mode === 'icecast') {
       const ffOut = new FfmpegOutput({
         icecastUrl:      cfg.ffmpeg?.icecastUrl,
         icecastPassword: cfg.ffmpeg?.icecastPassword,

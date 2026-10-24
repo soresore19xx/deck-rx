@@ -99,7 +99,15 @@ export interface StartPluginOptions {
    *  records every SET_SETTING command into harness.spySettings. Needed by
    *  any test that asserts on connect-time behaviour (connectListeners only
    *  fire after a successful handshake). */
-  spyServer?: boolean | { deviceType?: number };
+  /** `iq`: once the client enables streaming, the mock sends int16 IQ made
+   *  by this function for the rate the client asked for (maxSampleRate over
+   *  2^(SETTING_IQ_DECIMATION)), in 16384-sample packets at real-time pace.
+   *  The function is called once per rate with the sample count wanted. */
+  spyServer?: boolean | { deviceType?: number; iq?: (rate: number, samples: number) => Buffer };
+  /** Raw PCM of the plugin's audio output goes here (DECK_RX_AUDIO_FILE,
+   *  src/AudioOutput.ts FileOutput) instead of a device: the whole audio path
+   *  measured without a sound being made. */
+  audioFile?: string;
   /** Port for the plugin's control endpoint (src/controlServer.ts). Sandboxed
    *  instances keep it disabled unless a test asks for one, so a test plugin
    *  never answers the external knob in the production instance's place. */
@@ -174,9 +182,37 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
             // Reporting 0 forever (the original mock) made the Tune dial's vfo
             // syncListener zero its own freq once a second.
             if (setting === 101) tunedFreq = value;
+            if (setting === 102) decimation = value;
+            if (setting === 1) {   // STREAMING_ENABLED
+              if (iqTimer) { clearInterval(iqTimer); iqTimer = null; }
+              if (value && devOpts.iq) startIq();
+            }
           }
         }
       });
+      // IQ, when asked for: 16384-sample int16 packets at real-time pace.
+      let decimation = 0, iqTimer: ReturnType<typeof setInterval> | null = null, seq = 0;
+      const startIq = () => {
+        const rate = 912_000 / Math.pow(2, decimation);
+        const all = devOpts.iq!(rate, Math.round(rate * 4));
+        const per = 16_384, bytes = per * 4;
+        let off = 0;
+        iqTimer = setInterval(() => {
+          if (sock.destroyed) { if (iqTimer) clearInterval(iqTimer); return; }
+          const body = Buffer.alloc(bytes);
+          for (let k = 0; k < bytes; k += 4) {
+            all.copy(body, k, off, off + 4); off += 4;
+            if (off >= all.length) off = 0;
+          }
+          const hdr = Buffer.alloc(20);
+          hdr.writeUInt32LE(101, 4);             // MSG_INT16_IQ
+          hdr.writeUInt32LE(1, 8);               // StreamType IQ
+          hdr.writeUInt32LE(seq++, 12);
+          hdr.writeUInt32LE(bytes, 16);
+          sock.write(Buffer.concat([hdr, body]));
+        }, Math.round(per / rate * 1000));
+      };
+      sock.on('close', () => { if (iqTimer) clearInterval(iqTimer); });
       // Message header: ProtocolID | MessageType | StreamType | Sequence | BodySize
       const devBody = Buffer.alloc(48);
       devBody.writeUInt32LE(deviceType,   0);   // deviceType
@@ -237,6 +273,7 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
   if (opts.presetsPath)   env.DECK_RX_PRESETS_PATH    = opts.presetsPath;
   if (opts.sdrConfigPath) env.DECK_RX_SDR_CONFIG_PATH = opts.sdrConfigPath;
   if (opts.controlPort)   env.DECK_RX_CONTROL_PORT   = String(opts.controlPort);
+  if (opts.audioFile)     env.DECK_RX_AUDIO_FILE     = opts.audioFile;
   if (opts.spectrumSocket) env.DECK_RX_SPECTRUM_SOCKET = opts.spectrumSocket;
   const plugin = spawn('node', [
     PLUGIN_ENTRY,

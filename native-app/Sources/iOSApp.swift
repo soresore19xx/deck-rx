@@ -304,10 +304,7 @@ final class RadioViewController: UIViewController {
         // a format to obey rather than a pair of values. Sized for what goes in
         // them — the address box took every point the row had left, which on a
         // landscape iPad is most of it.
-        hostField.text = radio.config.host
-        hostField.placeholder = "host"
-        portField.text = String(radio.config.port)
-        portField.placeholder = "port"
+        showAddress()
         for f in [hostField, portField] {
             f.borderStyle = .roundedRect
             f.backgroundColor = Pal.sunken
@@ -1367,9 +1364,20 @@ final class RadioViewController: UIViewController {
         c.useLink(link)
         c.save()
         radio.config = c
-        hostField.text = c.host
-        portField.text = String(c.port)
+        showAddress()
         refreshSourceMenu()
+    }
+
+    /// The boxes show the address of the source in force, and nothing at all
+    /// for one that has no address (a dongle on the iPad's own USB): the
+    /// server address left in the config is kept for going back to a server,
+    /// but showing it beside a USB source read as if it were in use.
+    private func showAddress() {
+        let has = RadioConfig.hasAddress(radio.config.source)
+        hostField.text = has ? radio.config.host : ""
+        portField.text = has ? String(radio.config.port) : ""
+        hostField.placeholder = has ? "host" : ""
+        portField.placeholder = has ? "port" : ""
     }
 
     /// Picking a source brings its own address back, so the boxes change with
@@ -1381,8 +1389,7 @@ final class RadioViewController: UIViewController {
         c.selectSource(id)
         c.save()
         radio.config = c
-        hostField.text = c.host
-        portField.text = String(c.port)
+        showAddress()
         refreshSourceMenu()
     }
 
@@ -1431,8 +1438,7 @@ final class RadioViewController: UIViewController {
         radio.config.save()
         // Written back, so the boxes show what was actually used rather than
         // what was typed at them.
-        hostField.text = radio.config.host
-        portField.text = String(radio.config.port)
+        showAddress()
         hostField.resignFirstResponder()
         portField.resignFirstResponder()
         radio.connect(host: host, port: port)
@@ -1565,19 +1571,21 @@ final class RadioViewController: UIViewController {
         light(connectButton, wanted)
         // The address and the kind of server are changed with the link off:
         // Disconnect, change, Connect.
-        if hostField.isEnabled == wanted {
+        // A source without an address (a dongle on the iPad's own USB) keeps
+        // the boxes locked with the link off too: there is nothing to type.
+        let addressOpen = !wanted && RadioConfig.hasAddress(radio.config.source)
+        if hostField.isEnabled != addressOpen {
             for f in [hostField, portField] {
                 f.resignFirstResponder()
-                f.isEnabled = !wanted
-                f.alpha = wanted ? 0.45 : 1
+                f.isEnabled = addressOpen
+                f.alpha = addressOpen ? 1 : 0.45
             }
+            // Locked: show the address in use, not something half typed.
+            if !addressOpen { showAddress() }
+        }
+        if sourceButton.isEnabled == wanted {
             sourceButton.isEnabled = !wanted
             sourceButton.alpha = wanted ? 0.45 : 1
-            // Locked: show the address in use, not something half typed.
-            if wanted {
-                hostField.text = radio.config.host
-                portField.text = String(radio.config.port)
-            }
         }
         // Before `light`, which is what carries the state: only the change
         // gets the work, as everywhere else in here.

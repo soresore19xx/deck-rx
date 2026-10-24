@@ -143,7 +143,9 @@ On an iPad with an M-series chip, a build made after
 for RTL2832U dongles, and the source menu offers **RTL-SDR (USB)**: the dongle
 on the iPad's own port, no server, no second app. Turn the driver on once in
 Settings > Apps > Deck RX, then plug the dongle in. The address boxes do not
-apply to it and are left as they were, for going back to a server.
+apply to it: they show nothing and take no typing, connected or not. The
+server's address is kept underneath and comes back when a server source is
+picked again.
 
 Underneath it is the RTL-TCP source's own client reading the driver instead of
 a socket, so gain steps, sample rates and the pacing are the same either way.

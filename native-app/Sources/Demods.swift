@@ -1,4 +1,5 @@
 import Foundation
+import Accelerate
 
 /// A complex mixer, phase-continuous across buffers.
 ///
@@ -59,6 +60,197 @@ struct IQShift {
             }
         }
         phase = p
+        return out
+    }
+}
+
+/// The rate each mode is demodulated at, and how it gets there from the IQ.
+///
+/// The detectors used to run at the full IQ rate and only drop samples at the
+/// very end. Two things followed from that, both measured on 2026-10-24:
+/// - The cost grew with the square of the IQ rate (the WFM IF FIR has taps in
+///   proportion to the rate and runs once per sample): 1 s of IQ took 0.49 s of
+///   an M4 Max core at 1.024 MHz, 1.67 s at 2.4 MHz, 2.64 s at 3.2 MHz. Widening
+///   the display made the audio break up.
+/// - NFM, SSB and CW have no filter in front of that final drop, so noise from
+///   the whole IQ width folded into the audio: SSB lost 10 dB at a 150 kHz
+///   audio rate against none at all, NFM 20 dB below 150 kHz, CW 20 dB at 48.
+/// So the channel is cut out first, by `Channelizer`, at the lowest rate that
+/// still holds the mode's own passband — the receiver SDR++ is shaped the same
+/// way — and the IQ width becomes a display setting that costs the audio
+/// nothing. Every figure below comes from a filter or a signal, not a guess.
+struct ChannelPlan: Equatable {
+    /// IQ samples per channel sample. 1 = no channel stage at all.
+    let decimation: Int
+    /// What the detectors run at.
+    let channelRate: Double
+    /// Highest frequency the channel stage must pass untouched.
+    let passHz: Double
+    /// Nothing may alias back below this: the detector's own filter is still
+    /// passing, or only partly stopping, up to here. The channel filter's
+    /// stopband starts at `channelRate - protectHz`.
+    let protectHz: Double
+    /// Channel samples per audio sample.
+    let audioDecimation: Int
+    var audioRate: Double { channelRate / Double(audioDecimation) }
+
+    /// Below this nothing is demodulated: a 9.5 kHz audio rate once put a 6 kHz
+    /// tone out at 3.5 kHz (src/deviceSettings.ts `minAudioRate`).
+    static let minAudioRate = 24_000.0
+    /// What output hardware runs at. Audio above half of it is thrown away by
+    /// the resampler in AudioSink, so producing it is wasted work.
+    static let outputRate = 48_000.0
+    /// The WFM IF filter's transition band as a share of its cutoff
+    /// (`Demods.setWfmIfBandwidth`). The channel stage leaves exactly that much
+    /// room, so it is never the narrower of the two.
+    static let fmTransition = 0.25
+    /// Stereo needs the discriminator output up to the 38 kHz subcarrier's
+    /// upper sideband, 53 kHz, below Nyquist.
+    static let mpxTopHz = 53_000.0
+    /// The AM passband when the bandwidth is "no limit": ITU-R's 10 kHz audio
+    /// ceiling for broadcast AM.
+    static let amWidestAudioHz = 10_000.0
+
+    /// How far above its cutoff an eighth-order Butterworth (48 dB/octave, the
+    /// AM IF filter) has to go to reach 70 dB: 2^(70/48).
+    static let iirSkirt = 2.75
+
+    static func make(iqRate: Double, mode: Int, fmBandwidthHz: Double,
+                     amBandwidthHz: Double, ssbBandwidthHz: Double) -> ChannelPlan {
+        guard iqRate > 0 else {
+            return ChannelPlan(decimation: 1, channelRate: 0, passHz: 0, protectHz: 0, audioDecimation: 1)
+        }
+        let pass: Double, protect: Double, need: Double
+        switch mode {
+        case 0, 1, 3:
+            // NFM, WFM, DSB: the IF FIR's cutoff is half the FM bandwidth,
+            // clamped where that filter clamps it, and its skirt runs an eighth
+            // of the cutoff either side. The channel passes the whole skirt
+            // and keeps aliases off it, with a quarter of the cutoff of its own
+            // transition.
+            let fc = max(30_000, fmBandwidthHz / 2)
+            let edge = fc * (1 + fmTransition / 2)
+            pass = edge; protect = edge
+            var r = 2 * edge + fc * fmTransition
+            if mode == 1 { r = max(r, 2 * mpxTopHz * 1.1) }
+            need = r
+        case 2:
+            pass = amBandwidthHz > 0 ? amBandwidthHz / 2 : amWidestAudioHz
+            protect = pass * iirSkirt
+            need = max(minAudioRate, pass + protect + pass)
+        case 4, 5, 6:
+            // The Weaver detector's whole band sits within its bandwidth of
+            // the centre on one side; CW's tone and its filter are inside it.
+            // Both are followed by fourth-order low-passes only.
+            pass = max(ssbBandwidthHz, 3_000)
+            protect = pass * iirSkirt
+            need = max(minAudioRate, pass + protect + pass)
+        default:
+            // RAW plays silence; there is no channel to cut.
+            return ChannelPlan(decimation: 1, channelRate: iqRate, passHz: iqRate / 2,
+                               protectHz: iqRate / 2, audioDecimation: 1)
+        }
+        let dec = max(1, Int(iqRate / need))
+        let ch = iqRate / Double(dec)
+        // Only WFM has a filter in front of the detector's own sample drop (the
+        // 15 kHz audio band, eighth order), so only WFM may drop samples there;
+        // the rest are already at their audio rate.
+        let audio = mode == 1 ? max(1, Int(ch / outputRate)) : 1
+        return ChannelPlan(decimation: dec, channelRate: ch, passHz: pass, protectHz: protect,
+                           audioDecimation: audio)
+    }
+}
+
+/// Band-limits complex IQ to a channel and decimates it, in one FIR evaluated
+/// only at the samples it keeps. int16 in, int16 out, so the detectors take the
+/// buffer they always took.
+///
+/// The passband is flat to `passHz`; the stopband starts where anything in it
+/// would alias back down below `protectHz` (`rate - protectHz`), Blackman
+/// windowed, about -74 dB. Unity gain at DC.
+final class Channelizer {
+    private(set) var decimation = 1
+    private var taps = [Float]()
+    private var histI = [Float]()
+    private var histQ = [Float]()
+    /// Where the next kept output's window starts in the history.
+    private var start = 0
+
+    var isIdentity: Bool { decimation == 1 }
+    var tapCount: Int { taps.count }
+
+    func configure(inRate: Double, plan: ChannelPlan) {
+        decimation = plan.decimation
+        histI.removeAll(keepingCapacity: true)
+        histQ.removeAll(keepingCapacity: true)
+        start = 0
+        guard decimation > 1 else { taps = []; return }
+        let outRate = inRate / Double(decimation)
+        let stop = outRate - plan.protectHz
+        let trans = max(1, stop - plan.passHz)
+        let fc = (plan.passHz + stop) / 2
+        // Blackman's main lobe, as ComplexFirLpf sizes it. Doubling and
+        // quadrupling this changed nothing measurable (2026-10-25).
+        var n = max(31, Int((5.5 * inRate / trans).rounded()))
+        if n % 2 == 0 { n += 1 }
+        let wc = 2 * Double.pi * fc / inRate
+        let m = Double(n - 1) / 2
+        var t = [Double](repeating: 0, count: n)
+        var sum = 0.0
+        for i in 0..<n {
+            let k = Double(i) - m
+            let sinc = k == 0 ? wc / Double.pi : sin(wc * k) / (Double.pi * k)
+            let w = 0.42 - 0.5 * cos(2 * Double.pi * Double(i) / Double(n - 1))
+                + 0.08 * cos(4 * Double.pi * Double(i) / Double(n - 1))
+            t[i] = sinc * w; sum += t[i]
+        }
+        // Symmetric, so the dot product needs no reversal.
+        taps = t.map { Float($0 / sum) }
+        histI = [Float](repeating: 0, count: n - 1)
+        histQ = [Float](repeating: 0, count: n - 1)
+    }
+
+    func process(_ iq: Data) -> Data {
+        guard decimation > 1 else { return iq }
+        let n = iq.count / 4
+        guard n > 0 else { return Data() }
+        let base = histI.count
+        histI.append(contentsOf: repeatElement(0, count: n))
+        histQ.append(contentsOf: repeatElement(0, count: n))
+        iq.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let s = raw.bindMemory(to: Int16.self).baseAddress!
+            histI.withUnsafeMutableBufferPointer { d in
+                vDSP_vflt16(s, 2, d.baseAddress! + base, 1, vDSP_Length(n))
+            }
+            histQ.withUnsafeMutableBufferPointer { d in
+                vDSP_vflt16(s + 1, 2, d.baseAddress! + base, 1, vDSP_Length(n))
+            }
+        }
+        let len = taps.count, total = histI.count
+        let count = total >= start + len ? (total - start - len) / decimation + 1 : 0
+        var out = Data(count: count * 4)
+        out.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
+            let d = raw.bindMemory(to: Int16.self).baseAddress!
+            taps.withUnsafeBufferPointer { tp in
+            histI.withUnsafeBufferPointer { hi in
+            histQ.withUnsafeBufferPointer { hq in
+                var pos = start
+                for k in 0..<count {
+                    var vi: Float = 0, vq: Float = 0
+                    vDSP_dotpr(tp.baseAddress!, 1, hi.baseAddress! + pos, 1, &vi, vDSP_Length(len))
+                    vDSP_dotpr(tp.baseAddress!, 1, hq.baseAddress! + pos, 1, &vq, vDSP_Length(len))
+                    d[k * 2] = Int16(max(-32767, min(32767, vi.rounded()))).littleEndian
+                    d[k * 2 + 1] = Int16(max(-32767, min(32767, vq.rounded()))).littleEndian
+                    pos += decimation
+                }
+            } } }
+        }
+        start += count * decimation
+        // Drop what no later window reaches.
+        let drop = min(start, total)
+        histI.removeFirst(drop)
+        histQ.removeFirst(drop)
+        start -= drop
         return out
     }
 }
@@ -325,6 +517,16 @@ final class Demods {
     // Stereo pilot PLL.
     private var pllPhase: Double = 0
     private var pllNominalDelta: Double = 0
+    /// Undoes the discriminator's droop at the 38 kHz subcarrier. The phase
+    /// step between two samples is the frequency averaged over one sample
+    /// period, a one-sample moving average with response sinc(f / fs): L-R
+    /// rides at 38 kHz and comes out that much smaller than L+R, and a gain
+    /// error e between the two caps separation at 20 log(2 / e). Measured
+    /// without any IF filter, 2026-10-25: 39.9 dB at 343 kHz, 50.2 at 600 kHz,
+    /// 64.2 at 1.2 MHz, against 40.0 / 49.6 / 61.7 from the formula. Harmless
+    /// at the rates this ran at before (0.3 % at 912 kHz) and the whole story
+    /// at the channel rate.
+    private var lmrDroop: Double = 1
     private var pllAlpha: Double = 0
     private var pllBeta: Double = 0
     private var pllPdLpfAlpha: Double = 0
@@ -388,6 +590,8 @@ final class Demods {
         // middle of the 30-100 Hz the broadcast industry uses. The phase
         // detector's low-pass sits at five times the loop bandwidth.
         pllNominalDelta = 2 * Double.pi * 19000 / iqRate
+        let x = Double.pi * 38_000 / iqRate
+        lmrDroop = x > 0 ? x / sin(x) : 1
         let bw = 50.0, damp = 0.7071067811865476
         let wn = 2 * Double.pi * bw
         pllAlpha = 2 * damp * wn / iqRate
@@ -496,7 +700,7 @@ final class Demods {
                 //    equally well but hands back L and R swapped.
                 let ref38 = -2 * sinV * cosV
                 // x2 compensates the 1/2 from cos.cos.
-                var lmr = demod * ref38 * 2
+                var lmr = demod * ref38 * 2 * lmrDroop
                 for k in 0..<4 { lmr = lmrLpf[k].step(lmr) }
                 lmr = lmrNotch.step(lmr)
 
@@ -686,7 +890,10 @@ final class Demods {
     /// `bfoHz` is the pitch an unmodulated carrier is shifted to. The low-pass
     /// runs at IQ rate so it anti-aliases the decimation and band-limits the
     /// audio in one cascade.
+    private var cwRate: Double = 0
+
     func setupCW(iqRate: Double, bfoHz: Double = 700, audioBwHz: Double = 2400) {
+        cwRate = iqRate
         cwPhaseInc = 2 * Double.pi * bfoHz / iqRate
         let q: [Double] = [0.5411961001, 1.3065629649]
         for k in 0..<2 { cwLpf[k].setLowPass(fs: iqRate, fc: audioBwHz, q: q[k]) }
@@ -701,8 +908,12 @@ final class Demods {
         var oi = 0
         // Attack and decay as a rate over the sample rate, SDR++ style. Decay
         // is deliberately slow so the gain stays up through the gaps between
-        // dots and dashes instead of pumping on every one.
-        let atk = 30.0 / 114000.0, dcy = 2.0 / 114000.0
+        // dots and dashes instead of pumping on every one. Over the rate the
+        // AGC actually runs at: this was 114000 written in, the one audio rate
+        // the plugin's config produced, so any other rate moved both time
+        // constants with it.
+        let aRate = cwRate > 0 ? cwRate / Double(decimate) : 114_000
+        let atk = 30.0 / aRate, dcy = 2.0 / aRate
         let invAtk = 1 - atk, invDec = 1 - dcy
 
         iq.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in

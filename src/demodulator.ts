@@ -199,6 +199,12 @@ export class Demodulator {
   private pllPdI = 0;
   private pllPdQ = 0;
   private pllNominalDelta = 0;
+  /** Undoes the discriminator's droop at the 38 kHz subcarrier: the phase
+   *  step between two samples is the frequency averaged over a sample, a
+   *  sinc(f / fs) response, so L-R comes out smaller than L+R and separation
+   *  is capped at 20 log(2 / error) — 45 dB at 456 kHz, 40 dB at 343 kHz.
+   *  Measured and explained in native-app (Demods.swift `lmrDroop`). */
+  private lmrDroop = 1;
   private pllAlpha = 0;
   private pllBeta = 0;
   private pllPdLpfAlpha = 0;
@@ -692,6 +698,8 @@ export class Demodulator {
     // PLL coefficients: standard 2nd-order PLL with damping = 1/√2,
     // loop bandwidth ~50 Hz (FM stereo industry typical 30-100 Hz).
     this.pllNominalDelta = 2 * Math.PI * 19000 / iqRate;
+    const x = Math.PI * 38000 / iqRate;
+    this.lmrDroop = x > 0 ? x / Math.sin(x) : 1;
     const bwHz = 50;
     const damp = Math.SQRT1_2;
     const omegaN = 2 * Math.PI * bwHz;
@@ -958,7 +966,7 @@ export class Demodulator {
       const ref38 = -2 * sinV * cosV;
       // Recover L−R baseband: mix demod with 38 kHz reference (×2 to compensate for
       // the cos·cos averaging factor of 1/2), then LPF
-      const lmrIn = demod * ref38 * 2;
+      const lmrIn = demod * ref38 * 2 * this.lmrDroop;
       const lmr = this.lmrNotch.step(this.lmrLpf[3].step(this.lmrLpf[2].step(this.lmrLpf[1].step(this.lmrLpf[0].step(lmrIn)))));
 
       if (i % decimate === 0 && oi < outSamples) {

@@ -424,19 +424,6 @@ func runIqChoiceTests() {
           d.applyProfile(for: "3:00000000") && d.rtlSampleRate == 3_200_000)
     let round = try? JSONDecoder().decode(RadioConfig.self, from: JSONEncoder().encode(c))
     check("the chip rate survives receiver.json", round?.rtlSampleRate == 2_048_000)
-    check("a wider IQ keeps the demodulators' rate: 300 kHz / 2 -> 2.4 MHz / 16",
-          DeviceSettingsResolver.audioDecimation(keeping: 150_000, at: 2_400_000) == 16)
-    check("and a narrower one lowers the divisor: 912 kHz / 4 -> 456 kHz / 2",
-          DeviceSettingsResolver.audioDecimation(keeping: 228_000, at: 456_000) == 2)
-    check("a divisor kept from a narrow rate is raised at a wide one: 2.4 MHz / 2 -> / 16",
-          DeviceSettingsResolver.audioDecimation(iqRate: 2_400_000, mode: RxMode.am, stored: 2) == 16)
-    check("3.2 MHz on AM lands at or under 250 kHz",
-          3_200_000 / DeviceSettingsResolver.audioDecimation(iqRate: 3_200_000, mode: RxMode.am, stored: 1)
-            <= 250_000)
-    check("the HF+'s 912 kHz / 4 is left alone",
-          DeviceSettingsResolver.audioDecimation(iqRate: 912_000, mode: RxMode.wfm, stored: 4) == 4)
-    check("never below 1",
-          DeviceSettingsResolver.audioDecimation(keeping: 228_000, at: 114_000) == 1)
     check("a rate the chip does not take falls back to 2.4 MHz",
           RtlRates.valid(1_000_000) == 2_400_000 && RtlRates.valid(nil) == 2_400_000
             && RtlRates.valid(2_880_000) == 2_880_000)

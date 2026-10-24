@@ -33,7 +33,7 @@ That is all of it. The rest, briefly:
 | **TUNE − +** | one step, and the step follows the mode: 9 kHz on AM, 100 kHz on FM |
 | **WFM … CW** | the mode. Bandwidth and the options panel follow it |
 | **BAND JUMP** | MW, the shortwave metre bands, FM |
-| **IQ** | the width the receiver runs at, and so the width of the spectrum. Through a SpyServer, the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). On RTL-TCP and RTL-SDR (USB), the rates the chip itself takes — SDR++'s list, 3200k down to 1024k — and the 2.4 MHz halvings below them (600k / 300k / 150k). Changing it reconnects, with the demodulators kept at the rate they ran at and never above 250 kHz |
+| **IQ** | the width the receiver runs at, and so the width of the spectrum. Through a SpyServer, the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). On RTL-TCP and RTL-SDR (USB), the rates the chip itself takes — SDR++'s list, 3200k down to 1024k — and the 2.4 MHz halvings below them (600k / 300k / 150k). Changing it reconnects. The demodulators do not follow it: each mode is cut out of the IQ at a rate of its own first (see [Channel stage](#channel-stage)) |
 | **STEP / FFT / RATE / SMOOTH** | the spectrum: resolution, frame rate, how much it is averaged |
 | **HOLD** | freezes the trace; the waterfall keeps running |
 | **NR / LVL** | noise reduction, and the output leveller |
@@ -530,7 +530,44 @@ plugin's numbers are checked by `test/audioLeveling.test.ts` and this app's by
 `native-app/Tests/main.swift`, both against the same file, so neither side can
 change its order again without a test going red.
 
+## Channel stage
+
+Before anything is demodulated, the mode's channel is filtered out of the IQ
+and decimated (`ChannelPlan` and `Channelizer` in `Demods.swift`), so the IQ
+width is a display setting that costs the audio nothing. The rate comes from
+the filters that follow, not from a setting:
+
+| mode | channel rate | from |
+| --- | --- | --- |
+| WFM, NFM, DSB | at least 2.5 x the IF cutoff (312.5 kHz at the 250 kHz bandwidth), and above twice the 53 kHz stereo multiplex | the IF FIR's cutoff and its skirt, passed whole, with no alias landing on the skirt |
+| AM | at least 24 kHz | the IF filter's cutoff, plus the 2.75 x its eighth-order skirt needs for 70 dB |
+| USB, LSB, CW | at least 24 kHz | the same rule on the SSB bandwidth |
+
+The rate is the IQ rate over the largest whole divisor that stays above that.
+WFM then drops to about 48 kHz for the output (its 15 kHz audio band is
+filtered before that drop); the others are at their audio rate already.
+
+Before this the detectors ran at the full IQ rate and only dropped samples at
+the end. Measured on 2026-10-24, one second of IQ on an M4 Max core: WFM 0.49 s
+at 1.024 MHz, 1.67 s at 2.4 MHz, 2.64 s at 3.2 MHz — the audio could not keep
+up on a wide IQ — and NFM, SSB and CW, with no filter in front of that drop,
+folded the whole width's noise into the audio (SSB 10 dB worse at a 150 kHz
+audio rate). With the channel stage, at 2.4 MHz: WFM 0.14 s, NFM 0.03, AM,
+SSB and CW under 0.01, and every mode within 0.5 dB SINAD of the same detector
+fed the full IQ rate (`native-app/Tests/ChannelTests.swift`).
+
+Running WFM at a third of a megahertz exposed one more thing: the
+discriminator's phase step is the frequency averaged over a sample, a sinc
+response that left the 38 kHz subcarrier 2% short of L+R at 343 kHz, which caps
+separation at 40 dB. `Demods` undoes it (`lmrDroop`); separation is 60.8 dB at
+the channel rate against 60.9 at 2.4 MHz, the remainder being the 250 kHz IF
+bandwidth. The multipath equaliser costs separation of its own on a clean
+signal — 60.9 to 51.4 dB at 2.4 MHz, 60.8 to 48.1 at the channel rate.
+
 ## CPU
+
+The figures below predate the channel stage (2026-10-25), when demodulation
+ran per IQ sample.
 
 Measured on a 2015 MacBook Air 11 (two Broadwell cores):
 

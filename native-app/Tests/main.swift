@@ -197,19 +197,30 @@ let audioRate = rate / Double(audioDec)
 
 /// Filter settings must match whatever the caller's config yields, or a
 /// comparison against LocalRadio measures the settings rather than the routing.
-func demodOutput(mode: Int, iq: Data,
+/// The detector is fed what LocalRadio feeds it: the channel ChannelPlan cuts
+/// out of the IQ, at the plan's rates.
+func demodOutput(mode: Int, iq wide: Data,
                  ifCutoff: Double = 75_000, tau: Double = 75e-6) -> [Float] {
-    let dec = audioDec
-    let aRate = audioRate
+    let c = RadioConfig()
+    let p = ChannelPlan.make(iqRate: rate, mode: mode == DSB ? NFM : mode, fmBandwidthHz: ifCutoff * 2,
+                             amBandwidthHz: c.amBandwidthHz, ssbBandwidthHz: c.ssbBandwidthHz)
+    let ch = Channelizer()
+    ch.configure(inRate: rate, plan: p)
+    let body = ch.process(wide)
+    let dec = p.audioDecimation
+    let aRate = p.audioRate
+    let r = p.channelRate
     let d = Demods()
-    d.setWfmAudioBand(iqRate: rate)
-    d.setWfmIfBandwidth(iqRate: rate, cutoffHz: ifCutoff)
+    d.setWfmAudioBand(iqRate: r)
+    d.setWfmIfBandwidth(iqRate: r, cutoffHz: ifCutoff)
     d.setDeemphasis(audioRate: aRate, tau: tau)
-    d.setupSSB(iqRate: rate, audioRate: aRate)
-    d.setupCW(iqRate: rate)
+    d.setupSSB(iqRate: r, audioRate: aRate)
+    d.setupCW(iqRate: r)
+    let fm = OutputScale.fm(iqRate: r)
+    let iq = body
     switch mode {
-    case NFM: return d.processFM(int16IQ: iq, decimate: dec)
-    case WFM: return d.processWFM(int16IQ: iq, decimate: dec)
+    case NFM: return d.processFM(int16IQ: iq, decimate: dec, gain: OutputScale.nfm * fm)
+    case WFM: return d.processWFM(int16IQ: iq, decimate: dec, gain: OutputScale.wfm * fm)
     // At the gains LocalRadio passes, so the comparison is about routing and
     // not about which default a caller happened to use.
     case USB: return d.processSSB(int16IQ: iq, decimate: dec, upperSideband: true, gain: OutputScale.ssb)
@@ -275,7 +286,8 @@ do {
     raw.mode = RAW
     let rawOut = raw.demodulateForTesting(wideIQ, iqRate: UInt32(rate))
     check("mode \(RAW) (RAW) plays silence, one sample per decimated IQ sample",
-          rawOut.count == (wideIQ.count / 4) / lrCfg.audioDecimate && rawOut.allSatisfy { $0 == 0 },
+          rawOut.count == (wideIQ.count / 4) / raw.plan.decimation / raw.audioDecimate
+            && rawOut.allSatisfy { $0 == 0 },
           "count \(rawOut.count) rms \(rms(rawOut))")
 }
 
@@ -315,9 +327,12 @@ StationMono.shared.set(freqHz: Double(toneRadio.frequency), mono: false)
 let toneRate = toneRadio.audioRate
 check("the audio rate leaves Nyquist above the 15 kHz anti-alias filter",
       toneRate / 2 > 15_000, "audio rate \(toneRate)")
-check("the decimation is the plugin's, with no extra factor",
-      toneRadio.audioDecimate == toneCfg.audioDecimate,
-      "\(toneRadio.audioDecimate) vs \(toneCfg.audioDecimate)")
+// The stored divisor (4 here) no longer decides it: the channel plan does.
+let tonePlan = ChannelPlan.make(iqRate: rate, mode: WFM, fmBandwidthHz: toneCfg.fmBandwidthHz,
+                                amBandwidthHz: toneCfg.amBandwidthHz, ssbBandwidthHz: toneCfg.ssbBandwidthHz)
+check("the decimation is the channel plan's, with no extra factor",
+      toneRadio.audioDecimate == tonePlan.audioDecimation && toneRate == tonePlan.audioRate,
+      "\(toneRadio.audioDecimate) vs \(tonePlan.audioDecimation)")
 let atTone = tonePower(toneOut, rate: toneRate, hz: toneHz)
 let atMirror = tonePower(toneOut, rate: toneRate, hz: 3_500)
 check("a 6 kHz tone is at 6 kHz, not folded to 3.5 kHz", atTone > atMirror * 10,
@@ -1438,9 +1453,11 @@ do {
     check("a station starts in stereo", !m.isMono(freqHz: 79_500_000))
     m.set(freqHz: 79_500_000, mono: true)
     check("kept mono, to the 100 Hz channel", m.isMono(freqHz: 79_500_040) && !m.isMono(freqHz: 80_000_000))
+    m.flush()   // written off the caller's thread
     check("and survives a reload", StationMono(path: path).isMono(freqHz: 79_500_000))
     m.apply(["79500000": nil, "82500000": 1])
     check("sync can clear and set", !m.isMono(freqHz: 79_500_000) && m.isMono(freqHz: 82_500_000))
+    m.flush()
     try? FileManager.default.removeItem(at: dir)
 }
 
@@ -1513,6 +1530,7 @@ do {
 
 runDeviceSettingsTests()
 runRtlTcpTests()
+runChannelTests()
 
 // 2026-10-11: the server address and source are changed with the link off —
 // Disconnect, change, Connect. A set never dials, and with Connect on (even

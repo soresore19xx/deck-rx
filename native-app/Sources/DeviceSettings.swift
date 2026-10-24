@@ -94,14 +94,33 @@ enum DeviceSettingsResolver {
 
     /// Keep a stored offset while the rate it produces is usable here; else the
     /// lowest rate that still covers the mode.
+    ///
+    /// `chosen` is a value this receiver's own profile holds on a source that
+    /// takes any rate it is given (rtl_tcp, the USB dongle): the cap above is
+    /// for picking on someone's behalf, and applying it to a pick turned a
+    /// 1.2 or 2.4 MHz choice on the V4 into 150 kHz without a word. A value
+    /// inherited from the top level is still capped — that is the 2026-09-21
+    /// case, the HF+'s 0 arriving on the V4 — and so is a SpyServer, whose V4
+    /// at 2.4 MHz never tuned at all that day.
     static func decimationOffset(for info: SpyClient.DeviceInfo,
-                                 stored: UInt32, mode: Int) -> UInt32 {
+                                 stored: UInt32, mode: Int, chosen: Bool = false) -> UInt32 {
         let floor = minIQRate(mode: mode)
         let storedRate = iqRate(info, offset: stored)
-        if storedRate >= floor && storedRate <= maxAutoIQRate { return stored }
+        let ceiling = chosen ? Double(info.maxSampleRate) : maxAutoIQRate
+        if storedRate >= floor && storedRate <= ceiling && stored <= info.decimationStages {
+            return stored
+        }
         var s: UInt32 = 0
         while s + 1 <= info.decimationStages, iqRate(info, offset: s + 1) >= floor { s += 1 }
         return s
+    }
+
+    /// The power-of-two divisor that brings `iqRate` nearest to `audioRate`:
+    /// a new IQ width keeps the demodulators where they were.
+    static func audioDecimation(keeping audioRate: Double, at iqRate: UInt32) -> Int {
+        guard audioRate > 0, iqRate > 0 else { return 1 }
+        let halvings = log2(Double(iqRate) / audioRate).rounded()
+        return halvings > 0 ? 1 << Int(halvings) : 1
     }
 
     /// Halve a stored divisor until the audio rate clears the mode's floor.
@@ -177,7 +196,9 @@ enum DeviceSettingsResolver {
 
         let offset = decimationOffset(for: info,
                                       stored: profile?.iqDecimation ?? config.iqDecimation,
-                                      mode: mode)
+                                      mode: mode,
+                                      chosen: profile?.iqDecimation != nil
+                                          && RadioConfig.takesAnyRate(config.source))
         let stage = offset + info.minIQDecimation
         let rate = UInt32(Double(info.maxSampleRate) / Double(1 << stage))
 

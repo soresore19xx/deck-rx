@@ -350,9 +350,9 @@ final class MainView: NSView {
     /// shows it — the plugin's endpoint has no such setting, so in the
     /// front-end it would be a dropdown that changes nothing.
     private let iqPop = NSPopUpButton()
-    /// The maximum the ladder was last built from, so it is rebuilt when the
-    /// device changes rather than on every status tick.
-    private var iqLadderMax: Double = 0
+    /// The menu last built, so it is rebuilt when the device changes rather
+    /// than on every status tick.
+    private var iqLadder: [IqChoice] = []
     private let fftPop = NSPopUpButton()
     private let fpsPop = NSPopUpButton()
     private let avgLabel = label("(0.3s)", mono(15), P.faint)
@@ -388,9 +388,9 @@ final class MainView: NSView {
     /// has one, so a later save of that config cannot write back stale values
     /// (MIN / MAX / zoom were being lost that way). nil: load, edit, save.
     var commitDisplay: ((_ edit: (inout RadioConfig) -> Void) -> Void)?
-    /// Decimation stage 0,1,2,... for the IQ dropdown. Returns true when the
-    /// bundle's own receiver took it.
-    var onIqDecimation: ((Int) -> Bool)?
+    /// A line of the IQ dropdown. Returns true when the bundle's own receiver
+    /// took it.
+    var onIqChoice: ((IqChoice) -> Bool)?
     lazy var srcAudioPad: TogglePad = TogglePad("AUDIO", font: mono(13), momentary: false) {
         [weak self] in self?.onAudioToggle?()
     }
@@ -586,7 +586,8 @@ final class MainView: NSView {
         ButtonBox.shared.actions[ObjectIdentifier(iqPop)] = { [weak self] in
             guard let self, let item = self.iqPop.selectedItem else { return }
 #if STANDALONE
-            if let set = self.onIqDecimation, set(item.tag) { return }
+            let i = self.iqPop.indexOfSelectedItem
+            if i >= 0, i < self.iqLadder.count, let set = self.onIqChoice, set(self.iqLadder[i]) { return }
 #endif
             Receiver.spectrum(decimation: item.tag) { size, rate, avg in
                 self.adoptSpectrum(size, rate, avg)
@@ -1036,23 +1037,29 @@ final class MainView: NSView {
     /// The selection describes the receiver being *displayed*; changing it
     /// applies to the one this bundle *owns*. Those are the same receiver
     /// whenever Solo is in DIRECT, which is the case this control is for.
-    func adoptIqLadder(rateHz: Double, stage: Int) {
+    ///
+    /// `choices` is the owned receiver's own menu (IqChoice.list), which on
+    /// the RTL-SDR's own sources is not a ladder at all; the plugin's is still
+    /// rebuilt from the rate and stage.
+    func adoptIqLadder(rateHz: Double, stage: Int, choices: [IqChoice] = []) {
         guard rateHz > 0, stage >= 0 else { return }
-        let maxRate = rateHz * pow(2, Double(stage))
-        if maxRate != iqLadderMax {
-            iqLadderMax = maxRate
+        let list = choices.isEmpty
+            ? IqChoice.list(topRate: UInt32(rateHz * pow(2, Double(stage))), decimationStages: 4,
+                            anyRate: false)
+            : choices
+        if list != iqLadder {
+            iqLadder = list
             iqPop.removeAllItems()
-            for st in 0...4 {
-                let r = maxRate / pow(2, Double(st))
-                guard r >= 100_000 else { break }
-                iqPop.addItem(withTitle: String(format: "%.0fk", r / 1000))
-                iqPop.lastItem?.tag = st
+            for c in list {
+                iqPop.addItem(withTitle: String(format: "%gk", Double(c.rateHz) / 1000))
+                iqPop.lastItem?.tag = Int(c.stage)
             }
         }
         // Not while the menu is open: reselecting under the pointer is how a
         // dropdown throws away the choice being made in it.
         guard iqPop.menu?.highlightedItem == nil else { return }
-        if let i = iqPop.itemArray.firstIndex(where: { $0.tag == stage }), iqPop.indexOfSelectedItem != i {
+        // By the rate in force: on an RTL-SDR source several lines share stage 0.
+        if let i = list.firstIndex(where: { Double($0.rateHz) == rateHz }), iqPop.indexOfSelectedItem != i {
             iqPop.selectItem(at: i)
         }
     }
@@ -1211,7 +1218,7 @@ final class MainView: NSView {
         deviceLabel.stringValue = s.device
         iqLabel.stringValue = s.iqRateHz > 0
             ? String(format: "IQ %.0fk  DEC %d", s.iqRateHz / 1000, s.decStage) : ""
-        adoptIqLadder(rateHz: s.iqRateHz, stage: s.decStage)
+        adoptIqLadder(rateHz: s.iqRateHz, stage: s.decStage, choices: s.iqChoices)
         dropsLabel.stringValue = s.iqRateHz > 0 ? "drops \(s.audioDrops)" : ""
         // A non-zero drop count is the audible-glitch signature, so it stops
         // being a grey footnote the moment it moves off zero.
@@ -1839,6 +1846,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // were the device's maximum — a receiver on 456k offered
                 // 456 / 228 / 114 and no way up to 912.
                 s.decStage = Int(self.radio.config.iqDecimation)
+                s.iqChoices = self.radio.iqChoices
                 s.tuneStepHz = self.radio.tuneStepHz
                 s.volume = self.radio.volume
                 s.muted = self.radio.muted
@@ -2058,15 +2066,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if ProcessInfo.processInfo.environment["DECKRX_AUDIO_DIAG"] == "1" {
             radio.startAudioDiag()
         }
-        v.onIqDecimation = { [weak self] stage in
+        // The rate is fixed when the stream starts, so it takes a reconnect —
+        // the same thing the control endpoint does for it (LocalRadio.chooseIq).
+        v.onIqChoice = { [weak self] c in
             guard let self else { return false }
-            var c = self.radio.config
-            c.iqDecimation = UInt32(max(0, min(8, stage)))
-            c.save()
-            self.radio.config = c
-            // The rate is fixed when the stream starts, so it takes a
-            // reconnect — the same thing the control endpoint does for it.
-            if self.radio.isConnected { self.radio.disconnect(); self.radio.connect() }
+            self.radio.chooseIq(c)
             return true
         }
         v.onAudioToggle = { [weak self] in self?.toggleAudio() }

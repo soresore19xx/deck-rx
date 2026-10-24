@@ -48,6 +48,10 @@ struct RadioConfig: Codable, Equatable {
     /// The two device sources — the Airspy on a Mac's USB, the RTL-SDR on an
     /// iPad's — have no address; the network one stays in the fields, dormant.
     static func hasAddress(_ id: String) -> Bool { id != "usb" && id != "rtlusb" }
+    /// The RTL-SDR's own sources, rtl_tcp and the dongle on this USB: the
+    /// client sets the chip's sample rate itself, so any rate in its windows
+    /// can be asked for — not only a SpyServer's halvings of one maximum.
+    static func takesAnyRate(_ id: String) -> Bool { id == "rtltcp" || id == "rtlusb" }
     static func sourceName(_ id: String) -> String {
         sourceNames.first { $0.id == id }?.name ?? id
     }
@@ -143,6 +147,10 @@ struct RadioConfig: Codable, Equatable {
     /// on different frontends: 0 is 912 kHz on an Airspy HF+ and 2.4 MHz on an
     /// RTL-SDR Blog V4. Hence `devices` below.
     var iqDecimation: UInt32 = 1
+    /// The RTL2832U rate that `iqDecimation` halves from, on the RTL-SDR's own
+    /// sources (`takesAnyRate`). A SpyServer reports its own maximum and this
+    /// is not consulted there.
+    var rtlSampleRate: UInt32 = RtlRates.defaultRate
 
     /// Per-receiver overrides, keyed `deviceType:deviceSerial`.
     ///
@@ -159,6 +167,7 @@ struct RadioConfig: Codable, Equatable {
     /// wherever it is applied.
     struct DeviceProfile: Codable, Equatable {
         var iqDecimation: UInt32?
+        var rtlSampleRate: UInt32?
         var amGain: UInt32?
         var fmGain: UInt32?
         /// Also a divisor rather than a rate, so it travels badly for exactly
@@ -182,12 +191,16 @@ struct RadioConfig: Codable, Equatable {
     static func deviceKey(type: UInt32, serial: UInt32) -> String {
         String(format: "%u:%08X", type, serial)
     }
+    /// SpyServer's device type 3, an RTL-SDR, as `deviceKey` spells it. Only
+    /// these profiles carry an `rtlSampleRate`.
+    static let rtlKeyPrefix = "3:"
 
     /// Adopt a stored profile. Returns what changed, so the caller can tell a
     /// first sighting (nothing stored) from a restore.
     mutating func applyProfile(for key: String) -> Bool {
         guard let p = devices[key] else { return false }
         if let v = p.iqDecimation  { iqDecimation = v }
+        if let v = p.rtlSampleRate { rtlSampleRate = v }
         if let v = p.amGain        { amGain = v }
         if let v = p.fmGain        { fmGain = v }
         if let v = p.audioDecimate { audioDecimate = v }
@@ -209,7 +222,9 @@ struct RadioConfig: Codable, Equatable {
     func profileInForce(for key: String, freqHz: Double) -> DeviceProfile {
         var gains = devices[key]?.gains ?? [:]
         gains[GainBand.of(freqHz).rawValue] = BandGain(am: amGain, fm: fmGain)
-        return DeviceProfile(iqDecimation: iqDecimation, amGain: amGain,
+        return DeviceProfile(iqDecimation: iqDecimation,
+                             rtlSampleRate: key.hasPrefix(Self.rtlKeyPrefix) ? rtlSampleRate : nil,
+                             amGain: amGain,
                              fmGain: fmGain, audioDecimate: audioDecimate, gains: gains)
     }
 
@@ -450,6 +465,7 @@ struct RadioConfig: Codable, Equatable {
         volume = (try? c.decodeIfPresent(Double.self, forKey: .volume)) .flatMap { $0 } ?? d.volume
         muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) .flatMap { $0 } ?? d.muted
         iqDecimation = (try? c.decodeIfPresent(UInt32.self, forKey: .iqDecimation)) .flatMap { $0 } ?? d.iqDecimation
+        rtlSampleRate = (try? c.decodeIfPresent(UInt32.self, forKey: .rtlSampleRate)) .flatMap { $0 } ?? d.rtlSampleRate
         devices = (try? c.decodeIfPresent([String: DeviceProfile].self, forKey: .devices)) .flatMap { $0 } ?? d.devices
         jpRegion = (try? c.decodeIfPresent(String.self, forKey: .jpRegion)) .flatMap { $0 } ?? d.jpRegion
         tuneStepHz = (try? c.decodeIfPresent(Double.self, forKey: .tuneStepHz)) .flatMap { $0 } ?? d.tuneStepHz
@@ -653,5 +669,72 @@ enum GainBand: String, CaseIterable {
     static func of(_ freqHz: Double) -> GainBand {
         if isMediumwave(freqHz) { return .mw }
         return freqHz < hfTopHz ? .hf : .vhf
+    }
+}
+
+/// The rates an RTL2832U is asked for directly (rtl_tcp, or the dongle on this
+/// machine's USB). Here rather than with the client because the IQ menus are
+/// built from it, and the front-end that draws one has no client.
+enum RtlRates {
+    /// What the client claimed before the rate could be chosen, and where a
+    /// receiver with nothing stored starts.
+    static let defaultRate: UInt32 = 2_400_000
+    /// SDR++'s RTL-SDR source list (rtl_sdr_source), less its 250 k: the
+    /// lower window lurches through rtl_tcp (RtlTcpClient.minDeviceRate).
+    static let deviceRates: [UInt32] = [3_200_000, 2_880_000, 2_560_000, 2_400_000, 2_160_000,
+                                        2_048_000, 1_920_000, 1_792_000, 1_536_000, 1_024_000]
+    /// A stored rate the chip will take; anything else falls back.
+    static func valid(_ hz: UInt32?) -> UInt32 {
+        guard let hz, deviceRates.contains(hz) else { return defaultRate }
+        return hz
+    }
+}
+
+/// One line of an IQ width menu: the rate it gives, and how it is asked for.
+struct IqChoice: Equatable {
+    var rateHz: UInt32
+    /// Halvings from the base, as `RadioConfig.iqDecimation` counts them.
+    var stage: UInt32
+    /// The RTL2832U rate to halve from; nil on a source that reports its own.
+    var rtlBase: UInt32?
+
+    /// Narrowest a menu offers. The modes' own floors are 96 and 200 kHz
+    /// (DeviceSettingsResolver.minIQRate); below 100 k nothing is gained.
+    static let menuFloor: Double = 100_000
+
+    /// What a receiver can be set to, widest first.
+    ///
+    /// A SpyServer (and the HF+ on USB, for now) halves one maximum: that is
+    /// its protocol. The RTL-SDR's own sources take any rate in the chip's
+    /// windows, so they offer SDR++'s list and then the 2.4 MHz halvings below
+    /// it — before this, they offered only 2.4 / 1.2 / 0.6 MHz.
+    ///
+    /// `topRate` is the rate at offset 0: the device maximum after its own
+    /// `minIQDecimation`. Unused when `anyRate`.
+    static func list(topRate: UInt32, decimationStages: UInt32,
+                     anyRate: Bool) -> [IqChoice] {
+        if anyRate {
+            var out = RtlRates.deviceRates.map { IqChoice(rateHz: $0, stage: 0, rtlBase: $0) }
+            var st: UInt32 = 1
+            while st <= decimationStages {
+                let r = RtlRates.defaultRate >> st
+                if Double(r) < menuFloor { break }
+                if !out.contains(where: { $0.rateHz == r }) {
+                    out.append(IqChoice(rateHz: r, stage: st, rtlBase: RtlRates.defaultRate))
+                }
+                st += 1
+            }
+            return out.sorted { $0.rateHz > $1.rateHz }
+        }
+        guard topRate > 0 else { return [] }
+        var out: [IqChoice] = []
+        var st: UInt32 = 0
+        while st <= decimationStages {
+            let r = topRate >> st
+            if Double(r) < menuFloor { break }
+            out.append(IqChoice(rateHz: r, stage: st, rtlBase: nil))
+            st += 1
+        }
+        return out
     }
 }

@@ -26,6 +26,33 @@ export interface AudioOutput {
   stop(): Promise<void>;
 }
 
+// ──── file (tests only) ───────────────────────────────────────────────────────
+//
+// Raw s16le PCM to a file, nothing to a device. Picked only when
+// DECK_RX_AUDIO_FILE is set — the harness (test/harness/streamDeckMock.ts) sets
+// it so the plugin's whole audio path can be measured end to end without a
+// sound being made. A JSON line with the rate and channel count goes to
+// `<path>.json` on start.
+export class FileOutput implements AudioOutput {
+  private fd: number | null = null;
+  constructor(private path: string) {}
+  async start(sampleRate: number, channels: number): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs');
+    this.fd = fs.openSync(this.path, 'w');
+    fs.writeFileSync(`${this.path}.json`, JSON.stringify({ sampleRate, channels }));
+  }
+  write(pcm: Int16Array): void {
+    if (this.fd === null) return;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('fs').writeSync(this.fd, Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+  }
+  async stop(): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    if (this.fd !== null) { require('fs').closeSync(this.fd); this.fd = null; }
+  }
+}
+
 // ──── ffmpeg (icecast publish only) ──────────────────────────────────────────
 //
 // Local audio output is handled by NaudiodonOutput (PortAudio → CoreAudio).

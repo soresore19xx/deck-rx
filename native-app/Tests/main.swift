@@ -776,6 +776,22 @@ check("a frame from a third frequency ends it too",
 check("the first frame of all is not a move",
       !SpectrumView.overrideDone(target: 1_134_000, previous: 0, frame: 954_000))
 
+section("a window wider than its centre stops at 0 Hz")
+// Zoomed all the way out on medium wave the IQ window reaches below 0 Hz; the
+// iPad labelled that part of the scale with negative frequencies (2026-10-25).
+do {
+    let v = SpectrumView(frame: CGRect(x: 0, y: 0, width: 900, height: 500))
+    v.idleCenterHz = 594_000
+    v.idleSpanHz = 2_400_000
+    let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
+    v.cacheDisplay(in: v.bounds, to: rep)
+    check("the drawn window does reach below 0 Hz", v.visibleLoHz < 0, "\(v.visibleLoHz)")
+    check("no frequency is given for the left edge", v.frequency(atX: 63) == nil)
+    let mid = v.frequency(atX: 62 + (900 - 62) / 2)
+    check("the centre still maps to 594 kHz", mid.map { near($0, 594_000, 3_000) } ?? false,
+          "\(String(describing: mid))")
+}
+
 section("frame smoothing actually smooths")
 // The transform takes the coefficient itself, SDR++'s way: 1 follows the frame
 // exactly (no averaging) and a small number barely moves. The port had this

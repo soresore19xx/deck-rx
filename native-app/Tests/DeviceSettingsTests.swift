@@ -364,7 +364,75 @@ func runDeviceSettingsTests() {
     check("a receiver never seen restores nothing",
           p.applyProfile(for: "9:DEADBEEF") == false)
 
+    runIqChoiceTests()
     runBandGainTests()
+}
+
+/// The IQ width menus, and the rule that a pick is not capped like a default.
+/// 2026-10-24: the iPad offered no IQ width at all, and the resolver turned a
+/// 1.2 / 2.4 MHz pick on the V4 into its narrowest rate without a word.
+func runIqChoiceTests() {
+    print("\nIQ width menus")
+
+    let rtl = IqChoice.list(topRate: 0, decimationStages: 7, anyRate: true)
+    let rtlRates = rtl.map(\.rateHz)
+    check("an RTL-SDR source offers SDR++'s rates, not only halvings of 2.4 MHz",
+          [3_200_000, 2_560_000, 2_048_000, 1_024_000].allSatisfy { rtlRates.contains($0) })
+    check("and the 2.4 MHz halvings below them, down to 150 kHz",
+          [1_200_000, 600_000, 300_000, 150_000].allSatisfy { rtlRates.contains($0) }
+            && !rtlRates.contains(75_000))
+    check("widest first, each rate once",
+          rtlRates == rtlRates.sorted(by: >) && Set(rtlRates).count == rtlRates.count)
+    check("every line reaches its rate from a rate the chip takes",
+          rtl.allSatisfy { c in
+              guard let b = c.rtlBase else { return false }
+              return RtlRates.deviceRates.contains(b) && b >> c.stage == c.rateHz
+          })
+
+    let hf = IqChoice.list(topRate: Rx.hfp.maxSampleRate, decimationStages: Rx.hfp.decimationStages,
+                           anyRate: false)
+    check("a SpyServer HF+ offers its own halvings, 912 down to 114 kHz",
+          hf.map(\.rateHz) == [912_000, 456_000, 228_000, 114_000] && hf.allSatisfy { $0.rtlBase == nil },
+          "\(hf.map(\.rateHz))")
+
+    // V4 at stage 0, as a pick filed under its own profile.
+    let picked = cfg(iqDec: 3, devices: ["3:00000001": .init(iqDecimation: 0)])
+    var usb = picked; usb.source = "rtlusb"
+    var tcp = picked; tcp.source = "rtltcp"
+    var spy = picked; spy.source = "spyserver"
+    check("a pick above 1 MHz is kept on the USB dongle",
+          DeviceSettingsResolver.resolve(info: Rx.v4, config: usb, mode: RxMode.am).iqRate == 2_400_000)
+    check("and on rtl_tcp",
+          DeviceSettingsResolver.resolve(info: Rx.v4, config: tcp, mode: RxMode.wfm).iqRate == 2_400_000)
+    check("but still capped through a SpyServer (2026-09-21: its V4 never tuned at 2.4 MHz)",
+          DeviceSettingsResolver.resolve(info: Rx.v4, config: spy, mode: RxMode.am).iqRate
+            <= UInt32(DeviceSettingsResolver.maxAutoIQRate))
+    var inherited = cfg(iqDec: 0); inherited.source = "rtlusb"
+    check("a value inherited from the top level is capped on the dongle too",
+          DeviceSettingsResolver.resolve(info: Rx.v4, config: inherited, mode: RxMode.am).iqRate
+            <= UInt32(DeviceSettingsResolver.maxAutoIQRate))
+
+    var c = RadioConfig()
+    c.rtlSampleRate = 2_048_000
+    check("an RTL-SDR profile files the chip rate",
+          c.profileInForce(for: "3:00000000", freqHz: 0).rtlSampleRate == 2_048_000)
+    check("an HF+ profile does not",
+          c.profileInForce(for: "2:31313038", freqHz: 0).rtlSampleRate == nil)
+    var d = RadioConfig()
+    d.devices["3:00000000"] = .init(iqDecimation: 0, rtlSampleRate: 3_200_000)
+    check("and restoring it brings the rate back",
+          d.applyProfile(for: "3:00000000") && d.rtlSampleRate == 3_200_000)
+    let round = try? JSONDecoder().decode(RadioConfig.self, from: JSONEncoder().encode(c))
+    check("the chip rate survives receiver.json", round?.rtlSampleRate == 2_048_000)
+    check("a wider IQ keeps the demodulators' rate: 300 kHz / 2 -> 2.4 MHz / 16",
+          DeviceSettingsResolver.audioDecimation(keeping: 150_000, at: 2_400_000) == 16)
+    check("and a narrower one lowers the divisor: 912 kHz / 4 -> 456 kHz / 2",
+          DeviceSettingsResolver.audioDecimation(keeping: 228_000, at: 456_000) == 2)
+    check("never below 1",
+          DeviceSettingsResolver.audioDecimation(keeping: 228_000, at: 114_000) == 1)
+    check("a rate the chip does not take falls back to 2.4 MHz",
+          RtlRates.valid(1_000_000) == 2_400_000 && RtlRates.valid(nil) == 2_400_000
+            && RtlRates.valid(2_880_000) == 2_880_000)
 }
 
 /// Gain per band, and inside a band per AM / the rest. The same numbers as the

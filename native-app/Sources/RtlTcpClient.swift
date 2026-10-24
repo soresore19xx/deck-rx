@@ -58,8 +58,19 @@ final class RtlTcpClient: IQSource {
         4: "FC2580", 5: "R820T", 6: "R828D",
     ]
 
-    /// Base sample rate this client claims, so decimation maths matches SpyServer's.
-    static let maxSampleRate: UInt32 = 2_400_000
+    /// Base sample rate this client claims when none is chosen, so decimation
+    /// maths matches SpyServer's.
+    static let maxSampleRate: UInt32 = RtlRates.defaultRate
+
+    /// The rate the decimation stages halve from, reported as the device's
+    /// maximum. Chosen from `RtlRates.deviceRates` (the IQ menu); a SpyServer's
+    /// V4 is fixed at 2.4 MHz, this one is not. Read when the handshake
+    /// arrives, so it is set before `open`.
+    var baseRate: UInt32 {
+        get { baseRateValue }
+        set { let v = RtlRates.valid(newValue); onQueue { [self] in baseRateValue = v } }
+    }
+    private var baseRateValue: UInt32 = RtlRates.defaultRate
 
     /// Default port for this protocol when the config carries none. Not rtl_tcp's
     /// own 1234: the V4 is served on 8890, next to the HF+'s 8888
@@ -359,7 +370,7 @@ final class RtlTcpClient: IQSource {
     }
 
     private func startStream() {
-        let target = (Double(Self.maxSampleRate) / pow(2, Double(decStage))).rounded()
+        let target = (Double(baseRateValue) / pow(2, Double(decStage))).rounded()
         let plan = Self.planRate(target)
         if plan.deviceRate != deviceRate || plan.decimation != decimation {
             deviceRate = plan.deviceRate
@@ -469,8 +480,8 @@ final class RtlTcpClient: IQSource {
             // for this hardware too, so the per-receiver profile key
             // ("3:00000000") is the same through either client.
             deviceSerial: 0,
-            maxSampleRate: Self.maxSampleRate,
-            maxBandwidth: Self.maxSampleRate,
+            maxSampleRate: baseRateValue,
+            maxBandwidth: baseRateValue,
             // 2.4 MS/s down to 18.75 kS/s, matching what the planner can reach.
             decimationStages: 7,
             gainStages: gainCount,

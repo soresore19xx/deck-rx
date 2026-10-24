@@ -104,6 +104,31 @@ func runRtlTcpTests() {
                   i.minIQDecimation == 0 && i.maxSampleRate == RtlTcpClient.maxSampleRate)
         }
         check("names tuner 6 R828D", RtlTcpClient.tunerNames[6] == "R828D")
+    }
+    do {
+        // The IQ menu's chip rate: reported as the maximum, and streamed at.
+        let r = Rig()
+        r.c.baseRate = 2_048_000
+        r.handshake()
+        check("reports a chosen chip rate as the maximum",
+              r.infos.first?.maxSampleRate == 2_048_000)
+        r.c.setSetting(.iqDecimation, 0)
+        r.c.setSetting(.streamingEnabled, 1)
+        check("and asks the chip for it at stage 0",
+              r.last(RtlTcpClient.cmdSetSampleRate) == 2_048_000,
+              "\(String(describing: r.last(RtlTcpClient.cmdSetSampleRate)))")
+        let s = Rig()
+        s.c.baseRate = 3_200_000
+        s.handshake()
+        s.c.setSetting(.iqDecimation, 2)
+        s.c.setSetting(.streamingEnabled, 1)
+        check("halves from it, running the chip in its upper window (800 kHz from 1.6 MHz)",
+              s.last(RtlTcpClient.cmdSetSampleRate) == 1_600_000)
+        let t = Rig()
+        t.c.baseRate = 1_000_000
+        t.handshake()
+        check("a rate the chip does not take is refused for 2.4 MHz",
+              t.infos.first?.maxSampleRate == 2_400_000)
         check("emits a sync that grants control — rtl_tcp has no exclusive owner",
               r.syncs.first?.canControl == true)
     }

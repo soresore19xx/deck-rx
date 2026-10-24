@@ -154,6 +154,9 @@ enum Receiver {
         var device = ""
         var iqRateHz: Double = 0
         var decStage = 0
+        /// The IQ menu of a receiver this window owns (LocalRadio.iqChoices).
+        /// Empty for the plugin's, which is built from the rate and stage.
+        var iqChoices: [IqChoice] = []
         var audioDrops = 0
         var audioDevice = ""
         var audioSink = "local"

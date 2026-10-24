@@ -316,6 +316,45 @@ final class LocalRadio {
     /// different rate (spyService.ts restartIfRateChanged). Streaming is
     /// stopped first: servers have been seen to ignore a decimation sent while
     /// they stream.
+    /// rtl_tcp and the USB dongle carry no serial, so one key covers both —
+    /// and the SpyServer that serves the same V4 (RtlTcpTests checks it).
+    static let rtlProfileKey = RadioConfig.deviceKey(type: SpyClient.DeviceType.rtlsdr.rawValue,
+                                                     serial: 0)
+
+    /// The IQ menu for the receiver connected now; empty without one.
+    var iqChoices: [IqChoice] {
+        guard let info = deviceInfo else { return [] }
+        return IqChoice.list(topRate: info.maxSampleRate >> info.minIQDecimation,
+                             decimationStages: info.decimationStages,
+                             anyRate: RadioConfig.takesAnyRate(config.source))
+    }
+
+    /// Take a line of the IQ menu. Filed under the receiver's own profile as
+    /// well as the top level: the profile is what the resolver reads first,
+    /// so a pick made with the link down was otherwise lost on the connect.
+    /// The rate is fixed when a stream starts, hence the reconnect.
+    ///
+    /// The audio divisor moves with it, so the demodulators keep the rate they
+    /// run at now: the resolver only ever lowers a divisor, and a V4 taken
+    /// from 300 kHz (divisor 2) to 2.4 MHz demodulated at 1.2 MHz (2026-10-24).
+    func chooseIq(_ c: IqChoice) {
+        var cfg = config
+        cfg.iqDecimation = c.stage
+        if let base = c.rtlBase { cfg.rtlSampleRate = base }
+        if audioRate > 0 {
+            cfg.audioDecimate = DeviceSettingsResolver.audioDecimation(keeping: audioRate, at: c.rateHz)
+        }
+        let key = activeDeviceKey ?? (RadioConfig.takesAnyRate(cfg.source) ? Self.rtlProfileKey : nil)
+        if let key, cfg.devices[key] != nil {
+            cfg.devices[key]?.iqDecimation = c.stage
+            cfg.devices[key]?.audioDecimate = cfg.audioDecimate
+            if let base = c.rtlBase { cfg.devices[key]?.rtlSampleRate = base }
+        }
+        config = cfg
+        config.save()
+        if isConnected { disconnect(); connect() }
+    }
+
     private func restartIfRateChanged() {
         guard isConnected, let info = deviceInfo else { return }
         let want = DeviceSettingsResolver.resolve(info: info, config: config,
@@ -582,6 +621,12 @@ final class LocalRadio {
         pipelineSize = 0
         syncPipeline()
         selectSource()
+        // The rate the handshake will report as the maximum, so the resolver
+        // halves from the one chosen. Before `open`: the header is answered
+        // from it.
+        if let rtl = client as? RtlTcpClient {
+            rtl.baseRate = config.devices[Self.rtlProfileKey]?.rtlSampleRate ?? config.rtlSampleRate
+        }
 
         client.onDeviceInfo = { [weak self] info in
             guard let self else { return }

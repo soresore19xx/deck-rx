@@ -2035,6 +2035,24 @@ final class OptionsViewController: UITableViewController {
                     }, tap: {
                         if r.stationGainSource == .saved { r.clearStationGain() } else { r.saveStationGain() }
                     })),
+                // The width the receiver streams at, which is the width of the
+                // spectrum. The Mac has it in its toolbar; here it was not
+                // offered at all, so each receiver stayed on whatever stage it
+                // was first given (300 kHz on the V4, 456 on the HF+).
+                // Shown as the config has it, so a pick reads as picked while
+                // the stream restarts at the new rate.
+            ] + (r.iqChoices.isEmpty ? [] : [
+                Row(title: "IQ rate", kind: .list(values: r.iqChoices.map { Double($0.rateHz) }, unit: "kHz",
+                    get: {
+                        let c = r.config
+                        let hit = r.iqChoices.first { $0.stage == c.iqDecimation
+                            && ($0.rtlBase == nil || $0.rtlBase == c.rtlSampleRate) }
+                        return Double(hit?.rateHz ?? r.iqRateHz)
+                    },
+                    set: { v in
+                        if let c = r.iqChoices.first(where: { Double($0.rateHz) == v }) { r.chooseIq(c) }
+                    })),
+            ]) + [
                 Row(title: "IQ NR", kind: .bool(get: { r.iqNrEnabled }, set: { r.iqNrEnabled = $0 })),
                 Row(title: "Levelling", kind: .bool(get: { r.levelingEnabled }, set: { r.levelingEnabled = $0 })),
             ]),

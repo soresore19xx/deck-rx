@@ -33,7 +33,7 @@ That is all of it. The rest, briefly:
 | **TUNE − +** | one step, and the step follows the mode: 9 kHz on AM, 100 kHz on FM |
 | **WFM … CW** | the mode. Bandwidth and the options panel follow it |
 | **BAND JUMP** | MW, the shortwave metre bands, FM |
-| **IQ** | the width the receiver runs at — the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). Changing it reconnects |
+| **IQ** | the width the receiver runs at, and so the width of the spectrum. Through a SpyServer, the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). On RTL-TCP and RTL-SDR (USB), the rates the chip itself takes — SDR++'s list, 3200k down to 1024k — and the 2.4 MHz halvings below them (600k / 300k / 150k). Changing it reconnects, with the demodulators kept at the rate they ran at |
 | **STEP / FFT / RATE / SMOOTH** | the spectrum: resolution, frame rate, how much it is averaged |
 | **HOLD** | freezes the trace; the waterfall keeps running |
 | **NR / LVL** | noise reduction, and the output leveller |
@@ -334,9 +334,16 @@ Host and port are editable from the options panel, so a copied app needs no
 hand-edited file. The station databases ship inside the bundle and seed
 `~/Library/Application Support/deck-rx/data` on first launch.
 
-`source` is `spyserver` or `usb`, and `iqDecimation` is the offset from the
-device's minimum — 0 is the device's full rate, 1 halves it. Both are on the
-toolbar and in the options panel; the file is where they persist.
+`source` is `spyserver`, `rtltcp`, `usb` or `rtlusb`, and `iqDecimation` is
+the offset from the device's minimum — 0 is the device's full rate, 1 halves
+it. On the two RTL-SDR sources the full rate is `rtlSampleRate`, the chip rate
+picked in the IQ menu. Both are on the toolbar and in the options panel; the
+file is where they persist, per receiver under `devices`.
+
+A width above 1 MHz is only ever picked by hand. One inherited from another
+receiver is not trusted that far — on 2026-09-21 the HF+'s stage 0 arrived on
+the V4 as 2.4 MHz — and through a SpyServer the V4 stays at 1 MHz or under even
+when picked, since its 2.4 MHz never tuned that day.
 
 `audioDevice` is the one row in the options panel that opens rather than
 cycles: a Mac has as many outputs as it has ever had devices attached, and

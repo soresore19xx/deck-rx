@@ -123,11 +123,20 @@ enum DeviceSettingsResolver {
         return halvings > 0 ? 1 << Int(halvings) : 1
     }
 
-    /// Halve a stored divisor until the audio rate clears the mode's floor.
+    /// Highest audio rate a divisor is left at. The demodulators have never
+    /// run above the HF+'s 912 kHz / 4; a V4 widened to 2.4 MHz on a divisor
+    /// chosen at 300 kHz ran them at 600 kHz (2026-10-24).
+    static let maxAudioRate: Double = 250_000
+
+    /// Halve a stored divisor until the audio rate clears the mode's floor;
+    /// double it while the rate is above `maxAudioRate` and the floor allows.
     static func audioDecimation(iqRate: UInt32, mode: Int, stored: Int) -> Int {
         let floor = minAudioRate(mode: mode)
         var d = max(1, stored)
         while d > 1 && Double(iqRate) / Double(d) < floor { d /= 2 }
+        while Double(iqRate) / Double(d) > maxAudioRate && Double(iqRate) / Double(d * 2) >= floor {
+            d *= 2
+        }
         return d
     }
 

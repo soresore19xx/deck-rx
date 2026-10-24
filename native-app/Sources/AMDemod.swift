@@ -184,7 +184,10 @@ final class AMDemod {
         for i in 0..<8 { ifI[i].reset(); ifQ[i].reset() }
         for i in 0..<4 { audioLpf[i].reset() }
         audioBrick.reset()
+        pickPhase = 0
     }
+    /// Input samples to skip before the next one kept, carried across packets.
+    private var pickPhase = 0
 
     /// Demodulates one packet of interleaved int16 LE IQ into mono float
     /// samples in -1...1, decimating by `decimate`.
@@ -196,7 +199,11 @@ final class AMDemod {
     func process(int16IQ iq: Data, decimate: Int, gainScale: Double = 1) -> [Float] {
         let inSamples = iq.count / 4
         guard inSamples > 0, decimate > 0 else { return [] }
-        let outSamples = inSamples / decimate
+        // Where the decimation stands carries over from the last packet (see
+        // Demods `pickPhase`).
+        let first = pickPhase
+        let outSamples = inSamples > first ? (inSamples - first - 1) / decimate + 1 : 0
+        pickPhase = first + outSamples * decimate - inSamples
         guard outSamples > 0 else { return [] }
 
         if postI.count != inSamples {
@@ -231,7 +238,7 @@ final class AMDemod {
 
         var out = [Float](repeating: 0, count: outSamples)
         var oi = 0
-        var i = 0
+        var i = first
         while i < inSamples && oi < outSamples {
             var I = postI[i]
             var Q = postQ[i]

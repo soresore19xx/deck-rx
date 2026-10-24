@@ -570,9 +570,29 @@ discriminator). Behind the IF filter it was handed a signal already trimmed,
 no longer constant in modulus, and "corrected" the trim into L-R: 10.6 dB of
 separation lost on a clean signal, averaged over 400 Hz to 7 kHz. For WFM the
 channel therefore passes the whole FM signal, ±181 kHz (75 kHz deviation plus
-twice the 53 kHz multiplex), which puts the channel at 400 kHz from 2.4 MHz. The
-equaliser now costs 0.55 dB on average (2.1 at 3 kHz, the worst) and cleans an
-8.8 µs echo at -10 dB by 15-35 dB.
+twice the 53 kHz multiplex), which puts the channel at 400 kHz from 2.4 MHz.
+Where there is nothing to decimate (the HF+'s 456 kHz) the channel filter stays
+all the same. The filter's history starts as the first sample, not zeros: the
+ramp out of zeros looked like an echo to the equaliser, which kept what it
+learnt from it on a narrow-band signal (mono SINAD 51 dB instead of 93).
+
+The equaliser assumes one constant-modulus signal, and a second station breaks
+that: a neighbour 200 kHz off, even 20 dB down, took a lone tone from 93 to
+about 50 dB SINAD, wherever the equaliser sat, and an equal one to -7 dB. An
+echo is the station itself and stays in its band; a neighbour brings power
+the IF filter then removes. So the equaliser stops while the IF filter takes
+more than -26 dB of what it is handed and resumes below -28 dB (a lone station
+measured at most -30.2 dB: full-deviation stereo at 15 kHz, an echo, or noise
+down to 28 dB SNR; a -20 dB neighbour -22 dB). With that, the equaliser costs
+no separation on a clean signal, cleans an 8.8 µs echo at -10 dB by 15-33 dB,
+and a neighbour at the same level leaves the wanted station at 65.7 dB SINAD.
+
+Every detector also keeps its decimation grid across packets. It used to keep
+sample i when i % divisor == 0 counting from each packet's start and drop the
+remainder, which broke the time base whenever a packet was not a multiple of
+the divisor — always, with the channel stage's divisors or rtl_tcp's reads: a
+1 kHz WFM tone at 13 dB SINAD instead of 93. The plugin had the same code and
+has the same fix (`test/demodPackets.test.ts`).
 
 ## CPU
 

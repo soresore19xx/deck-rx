@@ -269,6 +269,11 @@ struct RadioConfig: Codable, Equatable {
     /// 59.2. The old 150 was chosen for adjacent-channel rejection without
     /// anyone checking what it cost the thing FM is listened to for.
     var fmBandwidthHz: Double = 250_000
+    /// Narrow FM (and DSB, which rides its path) had no width of its own and
+    /// took the broadcast one: a 250 kHz IF on a 12.5 kHz channel, so a
+    /// station 25 kHz off came straight through (60 dB of SINAD lost on the
+    /// quality bench, 2026-10-25). 12.5 kHz is SDR++'s NFM default.
+    var nfmBandwidthHz: Double = 12_500
     var fmStereo = true
     var fmIfnr = false
     /// "50us" (JP/EU) or "75us" (US). Stored as the plugin stores it, and
@@ -424,10 +429,10 @@ struct RadioConfig: Codable, Equatable {
         return tuneStepHz
     }
 
-    /// 0 NFM and 1 WFM are the FM family; 3 DSB rides the FM path too, as it
+    /// 0 NFM and 1 WFM are the FM family; 3 DSB rides the NFM path, as it
     /// does in the plugin.
     func bandwidth(for mode: Int) -> Double {
-        mode == 0 || mode == 1 || mode == 3 ? fmBandwidthHz : amBandwidthHz
+        mode == 1 ? fmBandwidthHz : mode == 0 || mode == 3 ? nfmBandwidthHz : amBandwidthHz
     }
 
 
@@ -479,6 +484,7 @@ struct RadioConfig: Codable, Equatable {
         ssbNr = (try? c.decodeIfPresent(Bool.self, forKey: .ssbNr)) .flatMap { $0 } ?? d.ssbNr
         ssbAgc = (try? c.decodeIfPresent(Bool.self, forKey: .ssbAgc)) .flatMap { $0 } ?? d.ssbAgc
         fmBandwidthHz = (try? c.decodeIfPresent(Double.self, forKey: .fmBandwidthHz)) .flatMap { $0 } ?? d.fmBandwidthHz
+        nfmBandwidthHz = (try? c.decodeIfPresent(Double.self, forKey: .nfmBandwidthHz)) .flatMap { $0 } ?? d.nfmBandwidthHz
         fmStereo = (try? c.decodeIfPresent(Bool.self, forKey: .fmStereo)) .flatMap { $0 } ?? d.fmStereo
         fmIfnr = (try? c.decodeIfPresent(Bool.self, forKey: .fmIfnr)) .flatMap { $0 } ?? d.fmIfnr
         fmDeemphasis = (try? c.decodeIfPresent(String.self, forKey: .fmDeemphasis)) .flatMap { $0 } ?? d.fmDeemphasis

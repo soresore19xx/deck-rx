@@ -540,7 +540,7 @@ the filters that follow, not from a setting:
 | mode | channel rate | from |
 | --- | --- | --- |
 | WFM | the whole FM signal (±181 kHz) passed, no alias on the IF skirt, and room: 352.5 kHz at the 250 kHz bandwidth | the multipath equaliser ahead of the IF filter, and the IF FIR's cutoff and skirt |
-| NFM, DSB | at least 2.5 x the IF cutoff | the IF FIR's cutoff and its skirt, passed whole, with no alias landing on the skirt |
+| NFM, DSB | at least 24 kHz (12.5 kHz IF) | the IF FIR's cutoff and its skirt, passed whole, with no alias landing on the skirt. NFM and DSB have a width of their own, `nfmBandwidthHz` (12.5 kHz, SDR++'s default): they used to take the broadcast 250 kHz, and a station 25 kHz off came straight through |
 | AM | at least 24 kHz | the IF filter's cutoff, plus the 2.75 x its eighth-order skirt needs for 70 dB |
 | USB, LSB, CW | at least 24 kHz | the same rule on the SSB bandwidth |
 
@@ -586,6 +586,14 @@ measured at most -30.2 dB: full-deviation stereo at 15 kHz, an echo, or noise
 down to 28 dB SNR; a -20 dB neighbour -22 dB). With that, the equaliser costs
 no separation on a clean signal, cleans an 8.8 µs echo at -10 dB by 15-33 dB,
 and a neighbour at the same level leaves the wanted station at 65.7 dB SINAD.
+
+`native-app/run-quality.sh` measures all of this the way the receiver is used:
+every mode through LocalRadio, packet by packet, at the HF+'s and the V4's IQ
+rates, alone, with a neighbour, an echo, a weak signal and a station off the
+centre, and lists every rule that fails (about 20 minutes, -O). Its test
+signals are made at 2.4 MHz or more and decimated, as a receiver does it:
+sampling an FM signal straight at a low rate folds its tails into the band and
+reads as 26 dB of lost separation at 300 kHz that the receiver is not losing.
 
 Every detector also keeps its decimation grid across packets. It used to keep
 sample i when i % divisor == 0 counting from each packet's start and drop the

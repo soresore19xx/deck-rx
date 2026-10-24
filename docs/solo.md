@@ -539,7 +539,8 @@ the filters that follow, not from a setting:
 
 | mode | channel rate | from |
 | --- | --- | --- |
-| WFM, NFM, DSB | at least 2.5 x the IF cutoff (312.5 kHz at the 250 kHz bandwidth), and above twice the 53 kHz stereo multiplex | the IF FIR's cutoff and its skirt, passed whole, with no alias landing on the skirt |
+| WFM | the whole FM signal (±181 kHz) passed, no alias on the IF skirt, and room: 352.5 kHz at the 250 kHz bandwidth | the multipath equaliser ahead of the IF filter, and the IF FIR's cutoff and skirt |
+| NFM, DSB | at least 2.5 x the IF cutoff | the IF FIR's cutoff and its skirt, passed whole, with no alias landing on the skirt |
 | AM | at least 24 kHz | the IF filter's cutoff, plus the 2.75 x its eighth-order skirt needs for 70 dB |
 | USB, LSB, CW | at least 24 kHz | the same rule on the SSB bandwidth |
 
@@ -561,8 +562,17 @@ discriminator's phase step is the frequency averaged over a sample, a sinc
 response that left the 38 kHz subcarrier 2% short of L+R at 343 kHz, which caps
 separation at 40 dB. `Demods` undoes it (`lmrDroop`); separation is 60.8 dB at
 the channel rate against 60.9 at 2.4 MHz, the remainder being the 250 kHz IF
-bandwidth. The multipath equaliser costs separation of its own on a clean
-signal — 60.9 to 51.4 dB at 2.4 MHz, 60.8 to 48.1 at the channel rate.
+bandwidth.
+
+The multipath equaliser sits on the channel, ahead of the IF filter, as OnAir
+puts it (`fm_rx.cpp`: channel filter, then the equaliser, then the
+discriminator). Behind the IF filter it was handed a signal already trimmed,
+no longer constant in modulus, and "corrected" the trim into L-R: 10.6 dB of
+separation lost on a clean signal, averaged over 400 Hz to 7 kHz. For WFM the
+channel therefore passes the whole FM signal, ±181 kHz (75 kHz deviation plus
+twice the 53 kHz multiplex), which puts the channel at 400 kHz from 2.4 MHz. The
+equaliser now costs 0.55 dB on average (2.1 at 3 kHz, the worst) and cleans an
+8.8 µs echo at -10 dB by 15-35 dB.
 
 ## CPU
 

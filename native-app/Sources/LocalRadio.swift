@@ -1226,8 +1226,15 @@ final class LocalRadio {
         let g = settings.gainIndex
         // Safe to assign now: iqRate is already correct, so the didSet rebuilds
         // the demodulators with the rate they will actually be fed.
+        // Without filing it: `activeDeviceKey` is already the new receiver's
+        // while the rest of `config` is still the last one's, so the didSet's
+        // reconcile wrote the previous receiver's stage into this one's profile
+        // and saved it. `adopt` below files what was used. 2026-10-24: the
+        // HF+'s stage 1 landed in the V4's profile and came back as 1.2 MHz.
         if settings.audioDecimate != config.audioDecimate {
+            isCapturingProfile = true
             config.audioDecimate = settings.audioDecimate
+            isCapturingProfile = false
         }
         let digital = computeDigitalGain(deviceType: info.deviceType, deviceGain: g,
                                          decimationStage: decStage, maxGainIndex: info.maxGainIndex)
@@ -1272,12 +1279,16 @@ final class LocalRadio {
         // may have overridden a value that could not work here, and filing the
         // old one would repeat the fallback on every connect while leaving the
         // UI disagreeing with the stream.
-        let hadProfile = config.devices[activeDeviceKey ?? ""] != nil
+        let stored = config.devices[activeDeviceKey ?? ""]
         DeviceSettingsResolver.adopt(settings, into: &config, info: info, mode: mode,
                                      freqHz: Double(frequency))
-        // Saved only for a receiver seen for the first time: that changes no
-        // setting the user touched, so nothing else would ever write it out.
-        if !hadProfile { config.save() }
+        // Saved for a receiver seen for the first time, and when the resolver
+        // corrected what was stored: either way nothing else would write it
+        // out, and a stored value the resolver had to override is otherwise
+        // read — and overridden — again on every connect.
+        let filed = config.devices[activeDeviceKey ?? ""]
+        if stored == nil || stored?.iqDecimation != filed?.iqDecimation
+            || stored?.audioDecimate != filed?.audioDecimate { config.save() }
         // spyService.ts:1265 — covers the device's own start-up pop and the
         // demodulator's first samples (atan2 on a near-zero previous I/Q, AM's
         // DC settling).

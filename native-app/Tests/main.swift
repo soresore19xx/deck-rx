@@ -149,9 +149,11 @@ section("bandwidth follows the FM family")
 var cfg = RadioConfig()
 cfg.fmBandwidthHz = 150_000
 cfg.amBandwidthHz = 9_000
-check("NFM uses FM bandwidth", cfg.bandwidth(for: NFM) == 150_000)
+// NFM and DSB have a width of their own since 2026-10-25: on the broadcast one
+// a station 25 kHz off came straight through.
+check("NFM uses the narrow FM bandwidth", cfg.bandwidth(for: NFM) == cfg.nfmBandwidthHz && cfg.nfmBandwidthHz == 12_500)
 check("WFM uses FM bandwidth", cfg.bandwidth(for: WFM) == 150_000)
-check("DSB uses FM bandwidth", cfg.bandwidth(for: DSB) == 150_000)
+check("DSB uses the narrow FM bandwidth", cfg.bandwidth(for: DSB) == cfg.nfmBandwidthHz)
 check("AM uses AM bandwidth", cfg.bandwidth(for: AM) == 9_000)
 check("USB uses AM bandwidth", cfg.bandwidth(for: USB) == 9_000)
 
@@ -212,7 +214,7 @@ func demodOutput(mode: Int, iq wide: Data,
     let r = p.channelRate
     let d = Demods()
     d.setWfmAudioBand(iqRate: r)
-    d.setWfmIfBandwidth(iqRate: r, cutoffHz: ifCutoff)
+    d.setWfmIfBandwidth(iqRate: r, cutoffHz: ifCutoff, wide: mode == WFM)
     d.setDeemphasis(audioRate: aRate, tau: tau)
     d.setupSSB(iqRate: r, audioRate: aRate)
     d.setupCW(iqRate: r)
@@ -260,7 +262,7 @@ for (m, name) in [(NFM, "NFM"), (WFM, "WFM"), (USB, "USB"), (LSB, "LSB"), (CW, "
     let viaRadio = monoLeft(lr, lr.demodulateForTesting(wideIQ, iqRate: UInt32(rate)))
     StationMono.shared.set(freqHz: Double(lr.frequency), mono: false)
     let direct = demodOutput(mode: m, iq: wideIQ,
-                             ifCutoff: lrCfg.fmBandwidthHz / 2, tau: lrCfg.deemphasisTau)
+                             ifCutoff: lrCfg.bandwidth(for: m) / 2, tau: lrCfg.deemphasisTau)
     let n = min(viaRadio.count, direct.count)
     let same = n > 0 && zip(viaRadio.prefix(n), direct.prefix(n)).allSatisfy { abs($0 - $1) < 1e-6 }
     check("mode \(m) routes to \(name)", same,
@@ -275,7 +277,7 @@ do {
     lr.mode = DSB
     let viaRadio = lr.demodulateForTesting(wideIQ, iqRate: UInt32(rate))
     let direct = demodOutput(mode: NFM, iq: wideIQ,
-                             ifCutoff: lrCfg.fmBandwidthHz / 2, tau: lrCfg.deemphasisTau)
+                             ifCutoff: lrCfg.nfmBandwidthHz / 2, tau: lrCfg.deemphasisTau)
     let n = min(viaRadio.count, direct.count)
     check("mode \(DSB) (DSB) routes to NFM",
           n > 0 && zip(viaRadio.prefix(n), direct.prefix(n)).allSatisfy { abs($0 - $1) < 1e-6 },

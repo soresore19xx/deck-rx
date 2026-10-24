@@ -1299,13 +1299,20 @@ final class LocalRadio {
     /// Rebuilds every filter for the current rates and mode. Cheap enough to
     /// run on any change, and doing it in one place is what keeps the AM and
     /// non-AM paths from drifting into different ideas of the same rate.
+    /// The IF width of the FM detector in use: broadcast for WFM, narrow for
+    /// NFM and DSB (RadioConfig.nfmBandwidthHz). The other modes do not use
+    /// the FM IF; WFM's width is kept there so nothing changes for them.
+    private var fmFamilyBandwidth: Double {
+        mode == 0 || mode == 3 ? config.nfmBandwidthHz : config.fmBandwidthHz
+    }
+
     private func configureDemods() {
         guard iqRate > 0 else { return }
         // Derived here rather than at the call sites: it follows the mode as
         // well as the IQ rate, and a mode change that did not recompute it
         // left the FM detectors running at the rate AM had asked for.
         plan = ChannelPlan.make(iqRate: Double(iqRate), mode: mode,
-                                fmBandwidthHz: config.fmBandwidthHz,
+                                fmBandwidthHz: fmFamilyBandwidth,
                                 amBandwidthHz: config.amBandwidthHz,
                                 ssbBandwidthHz: config.ssbBandwidthHz)
         channel.configure(inRate: Double(iqRate), plan: plan)
@@ -1324,7 +1331,7 @@ final class LocalRadio {
         am.syncEnabled = config.amSync
         other.reset()
         other.setWfmAudioBand(iqRate: iq)
-        other.setWfmIfBandwidth(iqRate: iq, cutoffHz: config.fmBandwidthHz / 2)
+        other.setWfmIfBandwidth(iqRate: iq, cutoffHz: fmFamilyBandwidth / 2, wide: mode == 1)
         other.setDeemphasis(audioRate: audioRate, tau: config.deemphasisTau)
         other.setupSSB(iqRate: iq, audioRate: audioRate)
         other.setupCW(iqRate: iq)
@@ -1502,6 +1509,23 @@ final class LocalRadio {
             iqRate = rate
             configureDemods()
             return demodulate(body)
+        }
+    }
+
+    /// Test seam: configures once, then demodulates packet after packet with
+    /// the state carrying across, as a live stream does. The single-call seam
+    /// above hid every fault that lives between packets (339d897).
+    func demodulatePacketsForTesting(_ packets: [Data], iqRate rate: UInt32,
+                                     vfoOffsetHz offset: Double = 0,
+                                     equaliser: Bool = true) -> [Float] {
+        queue.sync {
+            iqRate = rate
+            vfoOffsetHz = offset
+            configureDemods()
+            other.setWfmEqualizer(equaliser)
+            var out = [Float]()
+            for p in packets { out += demodulate(p) }
+            return out
         }
     }
 

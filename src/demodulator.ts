@@ -86,6 +86,17 @@ export function fmOutputScale(iqRate: number): number {
   return iqRate > 0 ? iqRate / FM_REFERENCE_IQ_RATE : 1;
 }
 
+/** The FM IF cutoff in force for a requested one: wide FM is held at 30 kHz
+ *  or more (the 19 kHz pilot stays in the passband), narrow FM is not. */
+export function ifCutoff(hz: number, wide: boolean): number { return Math.max(hz, wide ? 30_000 : 1_500); }
+/** The FM IF FIR's transition band: 25 % of the cutoff, at least 5 kHz. */
+export function ifTransition(fc: number): number { return Math.max(5000, fc * 0.25); }
+
+/** The equaliser's gate (Demodulator `updateEqGate`): shut above -26 dB of
+ *  power removed by the IF filter, open again below -28 dB. */
+const EQ_GATE_CLOSE = Math.pow(10, -26 / 10);
+const EQ_GATE_OPEN = Math.pow(10, -28 / 10);
+
 export class Demodulator {
   private prevI = 0;
   private prevQ = 0;
@@ -742,17 +753,35 @@ export class Demodulator {
    *  Called when the user changes FM bandwidth or when iqRate changes.
    *  Transition bandwidth is 25 % of the cutoff: gives a tight skirt but
    *  bounded tap count (≈ 22·fs/fc taps with Blackman). */
-  setWfmIfBandwidth(iqRate: number, cutoffHz: number): void {
+  setWfmIfBandwidth(iqRate: number, cutoffHz: number, wide = true): void {
     // Clamp to a sane range: lower bound keeps the 19 kHz pilot inside the
-    // passband; upper bound stays under Nyquist so the FIR doesn't alias
-    // the stopband ripple back in.
-    const minCut = 30_000;
+    // passband (wide FM only: narrow FM is a 12.5 kHz channel); upper bound
+    // stays under Nyquist so the FIR doesn't alias the stopband ripple back in.
+    const minCut = ifCutoff(0, wide);
     const maxCut = Math.max(minCut + 1, iqRate * 0.45);
     const fc = Math.max(minCut, Math.min(maxCut, cutoffHz));
-    const transBw = Math.max(5000, fc * 0.25);
+    const transBw = ifTransition(fc);
     this.wfmIfLpf.setLowPass(iqRate, fc, transBw);
     if (this.wfmIfRate !== iqRate) this.wfmEq.configure(iqRate);
     this.wfmIfRate = iqRate;
+  }
+
+  /** The equaliser assumes one constant-modulus signal; a second station
+   *  breaks that (a neighbour 200 kHz off, even 20 dB down, took a lone tone
+   *  from 93 to about 50 dB SINAD). An echo is the station itself and stays
+   *  in its band; a neighbour brings power the IF filter then removes. So the
+   *  equaliser waits while the IF removes more than -26 dB of what it is
+   *  handed, and resumes below -28 dB (a lone station measured at most -30.2
+   *  dB, a -20 dB neighbour -22 dB). Measured in native-app (Demods.swift
+   *  `updateEqGate`, 2026-10-25). */
+  private eqGateOpen = true;
+  private updateEqGate(inBand: number, channel: number): void {
+    if (channel <= 0) return;
+    const outside = Math.max(0, 1 - inBand / channel);
+    const wasOpen = this.eqGateOpen;
+    if (this.eqGateOpen && outside > EQ_GATE_CLOSE) this.eqGateOpen = false;
+    else if (!this.eqGateOpen && outside < EQ_GATE_OPEN) this.eqGateOpen = true;
+    if (wasOpen && !this.eqGateOpen) this.wfmEq.reset();
   }
 
   /** Multipath equaliser on/off (WFM). On by default. */
@@ -830,9 +859,21 @@ export class Demodulator {
     const a = this.deempAlpha;
     const beta = 0.001;
     let inBandSumP = 0;
+    let chanSumP = 0;
+    const eqActive = this.wfmEqOn && this.wfmIfRate > 0 && this.eqGateOpen;
     for (let i = 0; i < inSamples; i++) {
       let I = iq.readInt16LE(i * 4);
       let Q = iq.readInt16LE(i * 4 + 2);
+      // The multipath equaliser ahead of the IF filter, as OnAir runs it on
+      // the channel (see `eqGateOpen`). Behind the IF it "corrected" the IF's
+      // trim into L-R: 10.6 dB of separation on a clean signal (native-app,
+      // 2026-10-25).
+      if (eqActive) {
+        this.wfmEq.step(I, Q);
+        I = this.wfmEq.lastI;
+        Q = this.wfmEq.lastQ;
+      }
+      chanSumP += I * I + Q * Q;
       // Complex IF LPF — bandlimit IQ to ±90 kHz before the discriminator
       // so wide-band noise can't click the atan2 output. No-op (passthrough)
       // when the filters haven't been configured yet (iqRate unknown).
@@ -842,11 +883,6 @@ export class Demodulator {
         Q = this.wfmIfLpf.lastQ;
       }
       inBandSumP += I * I + Q * Q;
-      if (this.wfmEqOn && this.wfmIfRate > 0) {
-        this.wfmEq.step(I, Q);
-        I = this.wfmEq.lastI;
-        Q = this.wfmEq.lastQ;
-      }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let r = 0;
@@ -878,6 +914,7 @@ export class Demodulator {
       }
     }
     this.wfmInBandMeanP = inSamples > 0 ? inBandSumP / inSamples : 0;
+    this.updateEqGate(inBandSumP, chanSumP);
     return out;
   }
 
@@ -893,9 +930,21 @@ export class Demodulator {
     let oi = 0;
     const a = this.deempAlpha;
     let inBandSumP = 0;
+    let chanSumP = 0;
+    const eqActive = this.wfmEqOn && this.wfmIfRate > 0 && this.eqGateOpen;
     for (let i = 0; i < inSamples; i++) {
       let I = iq.readInt16LE(i * 4);
       let Q = iq.readInt16LE(i * 4 + 2);
+      // The multipath equaliser ahead of the IF filter, as OnAir runs it on
+      // the channel (see `eqGateOpen`). Behind the IF it "corrected" the IF's
+      // trim into L-R: 10.6 dB of separation on a clean signal (native-app,
+      // 2026-10-25).
+      if (eqActive) {
+        this.wfmEq.step(I, Q);
+        I = this.wfmEq.lastI;
+        Q = this.wfmEq.lastQ;
+      }
+      chanSumP += I * I + Q * Q;
       // Complex IF LPF — bandlimit IQ to ±90 kHz before the discriminator
       // so wide-band noise can't click the atan2 output. No-op (passthrough)
       // when the filters haven't been configured yet (iqRate unknown).
@@ -905,11 +954,6 @@ export class Demodulator {
         Q = this.wfmIfLpf.lastQ;
       }
       inBandSumP += I * I + Q * Q;
-      if (this.wfmEqOn && this.wfmIfRate > 0) {
-        this.wfmEq.step(I, Q);
-        I = this.wfmEq.lastI;
-        Q = this.wfmEq.lastQ;
-      }
       const denom = I * this.prevI + Q * this.prevQ;
       const numer = Q * this.prevI - I * this.prevQ;
       let demod = 0;
@@ -1039,6 +1083,7 @@ export class Demodulator {
       }
     }
     this.wfmInBandMeanP = inSamples > 0 ? inBandSumP / inSamples : 0;
+    this.updateEqGate(inBandSumP, chanSumP);
     return out;
   }
 

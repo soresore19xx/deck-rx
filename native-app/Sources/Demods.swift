@@ -128,19 +128,21 @@ struct ChannelPlan: Equatable {
         let pass: Double, protect: Double, need: Double
         switch mode {
         case 0, 1, 3:
-            // NFM, WFM, DSB: the IF FIR's cutoff is half the FM bandwidth,
-            // clamped where that filter clamps it, and its skirt runs an eighth
-            // of the cutoff either side. The channel passes the whole skirt
-            // and keeps aliases off it, with a quarter of the cutoff of its own
-            // transition.
-            let fc = max(30_000, fmBandwidthHz / 2)
-            let edge = fc * (1 + fmTransition / 2)
+            // NFM, WFM, DSB: the IF FIR's cutoff is half the mode's bandwidth
+            // (`fmBandwidthHz` is the one in force: the broadcast width for
+            // WFM, the narrow one for NFM and DSB), clamped where that filter
+            // clamps it, and its skirt runs half its transition either side.
+            // The channel passes the whole skirt and keeps aliases off it,
+            // with the IF's transition again as room of its own.
+            let fc = Demods.ifCutoff(fmBandwidthHz / 2, wide: mode == 1)
+            let trans = Demods.ifTransition(fc)
+            let edge = fc + trans / 2
             // WFM's equaliser runs ahead of the IF filter and has to see the
             // whole FM signal, not the IF's share of it.
             pass = mode == 1 ? max(edge, fmEqualiserPassHz) : edge
             protect = edge
-            var r = pass + protect + fc * fmTransition
-            if mode == 1 { r = max(r, 2 * mpxTopHz * 1.1) }
+            var r = pass + protect + trans
+            if mode == 1 { r = max(r, 2 * mpxTopHz * 1.1) } else { r = max(r, minAudioRate) }
             need = r
         case 2:
             pass = amBandwidthHz > 0 ? amBandwidthHz / 2 : amWidestAudioHz
@@ -610,14 +612,22 @@ final class Demods {
     /// threshold — three different problems that look identical from outside.
     var pilotMetric: Double { pilotPower }
 
+    /// The IF cutoff in force for a requested one. Wide FM is held at 30 kHz
+    /// or more, which keeps the 19 kHz pilot in the passband; narrow FM is a
+    /// 12.5 kHz channel and is not.
+    static func ifCutoff(_ hz: Double, wide: Bool) -> Double { max(hz, wide ? 30_000 : 1_500) }
+    /// The IF FIR's transition band: 25 % of the cutoff, at least 5 kHz.
+    static func ifTransition(_ fc: Double) -> Double { max(5000, fc * 0.25) }
+
     /// Transition band is 25 % of the cutoff: a tight skirt with a bounded tap
-    /// count. The lower clamp keeps the 19 kHz pilot inside the passband; the
-    /// upper one stays under Nyquist so stopband ripple cannot alias back in.
-    func setWfmIfBandwidth(iqRate: Double, cutoffHz: Double) {
-        let minCut: Double = 30_000
+    /// count. The lower clamp keeps the 19 kHz pilot inside the passband (wide
+    /// FM only); the upper one stays under Nyquist so stopband ripple cannot
+    /// alias back in.
+    func setWfmIfBandwidth(iqRate: Double, cutoffHz: Double, wide: Bool = true) {
+        let minCut = Self.ifCutoff(0, wide: wide)
         let maxCut = max(minCut + 1, iqRate * 0.45)
         let fc = min(max(cutoffHz, minCut), maxCut)
-        wfmIf.setLowPass(fs: iqRate, fc: fc, transBw: max(5000, fc * 0.25))
+        wfmIf.setLowPass(fs: iqRate, fc: fc, transBw: Self.ifTransition(fc))
         if wfmIfRate != iqRate { wfmEq.configure(fs: iqRate) }
         wfmIfRate = iqRate
         quietReady = iqRate >= 200_000 && fc >= 90_000

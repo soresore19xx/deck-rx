@@ -23,6 +23,7 @@ import { OutputLeveler, MODE_MAKEUP, softLimit, DEFAULT_LEVELER_CFG } from './au
 import { Ifnr } from './ifnr.js';
 import { AutoNotch } from './autoNotch.js';
 import { IqNr, DemodMode } from './iqnr.js';
+import { Channelizer, ChannelPlan, channelPlan } from './channel.js';
 import { AudioOutput, FfmpegOutput, NaudiodonOutput, OutputErrorTag } from './AudioOutput.js';
 import { readFile, writeFile, rename, stat } from 'fs/promises';
 import { join } from 'path';
@@ -453,6 +454,11 @@ class SpyService {
   private currentAudioRate = 0;
   private currentDemodMode = 1; // 0=NFM 1=WFM 2=AM
   private currentAudioDecimate = 1;
+  // The channel stage (src/channel.ts): what the detectors run at, and how
+  // the IQ gets there for the mode in force.
+  private channelizer = new Channelizer();
+  private chPlan: ChannelPlan | null = null;
+  private currentChannelRate = 0;
   // RSSI tracking: smoothed RMS power (dBFS, gain-compensated)
   private rssiSmoothed = -120; // dBFS, very low default
   // SNR tracking: derived from instantaneous power variance
@@ -1415,13 +1421,46 @@ class SpyService {
 
   async setFMOption<K extends keyof FMOptions>(key: K, value: FMOptions[K]): Promise<void> {
     this.fmOptions = { ...this.fmOptions, [key]: value };
-    this.applyFMOptions();
+    this.applyChannelPlan();   // the FM bandwidth sets the WFM channel too
     for (const fn of this.optionsListeners) fn(this.fmOptions);
     // Persist: read raw without applying side effects, merge fm only
     const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
     const cfg = JSON.parse(raw) as Record<string, unknown>;
     cfg.fm = { ...this.fmOptions };
     await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  }
+
+  /** Narrow FM's IF width. It had none of its own and took the broadcast
+   *  one: a 250 kHz IF on a 12.5 kHz channel, so a station 25 kHz off came
+   *  straight through (native-app quality bench, 2026-10-25). 12.5 kHz is
+   *  SDR++'s NFM default. */
+  static readonly NFM_BANDWIDTH_HZ = 12_500;
+
+  /** The IF width of the FM detector in use: broadcast for WFM, narrow for
+   *  NFM and DSB. */
+  private fmFamilyBandwidth(): number {
+    const m = this.currentDemodMode;
+    return m === 0 || m === 3 ? SpyService.NFM_BANDWIDTH_HZ : this.fmOptions.bandwidth;
+  }
+
+  /** Cuts the mode's channel out of the stream (src/channel.ts) and sets
+   *  every detector filter up at the channel's rate. Runs when a stream
+   *  starts, when the mode changes, and when a bandwidth changes. */
+  private applyChannelPlan(): void {
+    if (this.currentIQRate > 0) {
+      this.chPlan = channelPlan(this.currentIQRate, this.currentAudioDecimate, this.currentDemodMode,
+                                this.fmFamilyBandwidth(), this.amOptions.bandwidth, this.ssbOptions.bandwidthHz);
+      this.channelizer.configure(this.currentIQRate, this.chPlan);
+      this.currentChannelRate = this.chPlan.channelRate;
+      log.info(`[spyService] channel: mode ${this.currentDemodMode} iqRate=${this.currentIQRate} ` +
+               `-> ${Math.round(this.currentChannelRate)} (/${this.chPlan.decimation}, ` +
+               `${this.channelizer.tapCount} taps), audio /${this.chPlan.audioDecimation}`);
+      this.demod.setStereo(this.currentChannelRate);
+    }
+    this.iqnr.setMode(this.currentDemodMode as DemodMode, this.currentChannelRate);
+    this.applyFMOptions();
+    this.applyAMOptions();
+    this.applySsbOptions();
   }
 
   private applyFMOptions(): void {
@@ -1444,11 +1483,14 @@ class SpyService {
     // IF passband — half the channel bandwidth becomes the LPF cutoff on
     // the complex IQ stream before the discriminator. 200 kHz channel →
     // 100 kHz cutoff; 150 kHz → 75 kHz; etc.
-    if (this.currentIQRate > 0) {
-      this.demod.setWfmIfBandwidth(this.currentIQRate, fm.bandwidth / 2);
-      log.info(`[spyService] setWfmIfBandwidth iqRate=${this.currentIQRate} bw=${fm.bandwidth} cutoff=${fm.bandwidth / 2}`);
+    // At the channel rate (src/channel.ts), with the width of the FM detector
+    // in use: the broadcast one for WFM, the narrow one for NFM and DSB.
+    if (this.currentChannelRate > 0) {
+      const bw = this.fmFamilyBandwidth();
+      this.demod.setWfmIfBandwidth(this.currentChannelRate, bw / 2, this.currentDemodMode === 1);
+      log.info(`[spyService] setWfmIfBandwidth channelRate=${this.currentChannelRate} bw=${bw} cutoff=${bw / 2}`);
     } else {
-      log.warn(`[spyService] applyFMOptions: currentIQRate=0, skipping setWfmIfBandwidth`);
+      log.warn(`[spyService] applyFMOptions: channel rate unknown, skipping setWfmIfBandwidth`);
     }
     log.info(`[spyService] applyFMOptions ${JSON.stringify(fm)}`);
   }
@@ -1463,7 +1505,7 @@ class SpyService {
   getAMOptions(): AMOptions { return { ...this.amOptions }; }
   async setAMOption<K extends keyof AMOptions>(key: K, value: AMOptions[K]): Promise<void> {
     this.amOptions = { ...this.amOptions, [key]: value };
-    this.applyAMOptions();
+    this.applyChannelPlan();   // the AM bandwidth sets the AM channel too
     for (const fn of this.amOptionsListeners) fn(this.amOptions);
     const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
     const cfg = JSON.parse(raw) as Record<string, unknown>;
@@ -1480,7 +1522,7 @@ class SpyService {
   async setSSBOption<K extends keyof SSBOptions>(key: K, value: SSBOptions[K]): Promise<void> {
     this.ssbOptions = { ...this.ssbOptions, [key]: value };
     // Re-setup the demodulator with the new value if SSB / CW is the active mode.
-    this.applySsbOptions();
+    this.applyChannelPlan();   // the SSB bandwidth sets the SSB channel too
     for (const fn of this.ssbOptionsListeners) fn(this.ssbOptions);
     const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
     const cfg = JSON.parse(raw) as Record<string, unknown>;
@@ -1493,17 +1535,17 @@ class SpyService {
   }
   unsubscribeSSBOptions(fn: SSBOptionsListener): void { this.ssbOptionsListeners.delete(fn); }
   private applySsbOptions(): void {
-    if (this.currentIQRate <= 0 || this.currentAudioRate <= 0) return;
+    if (this.currentChannelRate <= 0 || this.currentAudioRate <= 0) return;
     const m = this.currentDemodMode;
     if (m === 4 || m === 6) {
       // USB / LSB — Weaver f_off = bandwidth / 2 (so audio band 0..bandwidth)
-      this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
+      this.demod.setupSsb(this.currentChannelRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
     } else if (m === 5) {
       // CW — BFO pitch directly + AGC defaults. Attack ≈ 30 Hz (~33 ms
       // time constant) catches new stations quickly; decay ≈ 2 Hz
       // (~500 ms) keeps the gain up across the key-up gaps in CW
       // telegraphy so it doesn't pump on every dot/dash pause.
-      this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
+      this.demod.setupCw(this.currentChannelRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
       const fs = this.currentAudioRate;
       this.demod.setCwAgc(true, 30 / fs, 2 / fs);
     }
@@ -1513,7 +1555,7 @@ class SpyService {
   private applyAMOptions(): void {
     const am = this.amOptions;
     if (this.currentAudioRate > 0) {
-      this.demod.setAmBandwidth(this.currentAudioRate, am.bandwidth, this.currentIQRate);
+      this.demod.setAmBandwidth(this.currentAudioRate, am.bandwidth, this.currentChannelRate);
     }
     // Convert SDR++ rate (per-second) → per-sample α at our audio rate. The
     // demod operates the AGC at the decimated audio rate (carrierAmp is
@@ -1709,7 +1751,9 @@ class SpyService {
     this.currentDemodMode = mode;
     this.muteUntil = Math.max(this.muteUntil, Date.now() + 100);
     this.demod.reset();
-    this.iqnr.setMode(mode as DemodMode, this.currentIQRate);
+    // Each mode has a channel of its own (src/channel.ts); this also sets
+    // the IF NR up at that channel's rate.
+    this.applyChannelPlan();
     // Restore the step we last used in this mode, if known and still
     // valid for the mode's candidate list. Otherwise fall back to
     // snapping the previous step into the new mode's range.
@@ -1852,14 +1896,9 @@ class SpyService {
                  `iqRate=${iqRate} audioDecimate=${audioDecimate} gain=${gain}`);
       }
     }
-    // Configure stereo decode at IQ rate (filters need iqRate, not audioRate)
-    this.demod.setStereo(iqRate);
-    // Apply FM/AM/SSB options (de-emph + audio filters + AM bandwidth/AGC,
-    // Weaver oscillator + BFO for SSB/CW). All three are no-ops when the
-    // current demod mode does not need them.
-    this.applyFMOptions();
-    this.applyAMOptions();
-    this.applySsbOptions();
+    // The channel for the mode in force, then every detector filter at its
+    // rate (stereo decode, FM/AM/SSB options).
+    this.applyChannelPlan();
 
     log.info(`[spyService] startAudio decStage=${decStage} iqRate=${iqRate} audioRate=${audioRate} gain=${gain}`);
 
@@ -1892,7 +1931,7 @@ class SpyService {
     await this.audioOutput.start(audioRate, channels);
     this.demod.reset();
     this.currentIQRate = iqRate;
-    this.iqnr.setMode(this.currentDemodMode as DemodMode, iqRate);
+    this.iqnr.setMode(this.currentDemodMode as DemodMode, this.currentChannelRate);
     // Mute initial period to suppress device-startup pop and demodulator
     // transient (atan2 with near-zero prev I/Q, AM DC settling).
     this.muteUntil = Math.max(this.muteUntil, Date.now() + 500);
@@ -1969,14 +2008,15 @@ class SpyService {
         }
       }
       if (!this.audioOutput) return;
-      const dec = this.currentAudioDecimate;
-      // IF-domain NR — when enabled, run the full IQ buffer through IqNr
-      // BEFORE demodulation. This is the proper "IF noise reduction": we
-      // operate on the broadband complex stream where there are real
-      // noise-only frequency bins to estimate the floor from. Output is a
-      // new Buffer of the same length / format that we feed into the
-      // existing demod functions unchanged.
-      const iqBody = this.fmOptions.ifnr ? this.iqnr.processBuffer(p.body) : p.body;
+      // The channel first (src/channel.ts): the detectors run at its rate and
+      // drop from there to the stream's fixed audio rate.
+      const dec = this.chPlan?.audioDecimation ?? this.currentAudioDecimate;
+      const channelBody = this.channelizer.process(p.body);
+      // IF-domain NR — when enabled, run the channel through IqNr BEFORE
+      // demodulation, where SDR++ runs its IF NR (on the VFO's output).
+      // Output is a new Buffer of the same length / format that we feed into
+      // the existing demod functions unchanged.
+      const iqBody = this.fmOptions.ifnr ? this.iqnr.processBuffer(channelBody) : channelBody;
       // The RF gain is not a volume control any more. It used to be carried
       // into the audio as gain/maxGain so that the Gain row audibly did
       // something on FM, which is amplitude-invariant. That assumed one kind
@@ -1990,7 +2030,7 @@ class SpyService {
       // phase step per sample, so it is scaled back to the reference rate
       // (fmOutputScale in demodulator.ts). SSB and CW are amplitudes and are
       // not scaled.
-      const fmScale = fmOutputScale(this.currentIQRate);
+      const fmScale = fmOutputScale(this.currentChannelRate);
       let pcm: Int16Array;
       if (this.currentDemodMode === 2) {
         // Constants, not the gain ratio; why and how they were chosen is at
@@ -2003,12 +2043,12 @@ class SpyService {
       } else if (this.currentDemodMode === 4 || this.currentDemodMode === 6) {
         // USB (mode 4) / LSB (mode 6) — Weaver SSB demod. f_off = bandwidth/2
         // so the audio band ends up 0..bandwidth (default 2.4 kHz).
-        this.demod.setupSsb(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
+        this.demod.setupSsb(this.currentChannelRate, this.currentAudioRate, this.ssbOptions.bandwidthHz / 2);
         this.demod.setSsbAgc(this.ssbOptions.agc, this.currentAudioRate);
         pcm = this.demod.processSSB(iqBody, dec, this.currentDemodMode === 4 ? 'USB' : 'LSB', SSB_GAIN);
       } else if (this.currentDemodMode === 5) {
         // CW (mode 5) — direct frequency-shift by BFO (default 700 Hz).
-        this.demod.setupCw(this.currentIQRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
+        this.demod.setupCw(this.currentChannelRate, this.currentAudioRate, this.ssbOptions.bfoPitchHz);
         pcm = this.demod.processCW(iqBody, dec, CW_GAIN);
       } else if (this.currentDemodMode === 7) {
         // RAW is SDR++'s "no demodulation": the IQ itself goes out as audio,
@@ -2081,7 +2121,7 @@ class SpyService {
       if (this.currentDemodMode === 2 && _now - lastSpec > 2000 && this.currentIQRate > 0) {
         const raw  = this.demod.measureChannelPowers(p.body, this.currentIQRate, SPEC_OFFSETS);
         const filt = this.demod.measureFilteredChannelPowers(p.body, this.currentIQRate, this.amOptions.bandwidth, SPEC_OFFSETS);
-        const prod = this.demod.measurePostIfChannelPowers(this.currentIQRate, SPEC_OFFSETS);
+        const prod = this.demod.measurePostIfChannelPowers(this.currentChannelRate, SPEC_OFFSETS);
         const fmt = (vals: number[]) => SPEC_OFFSETS.map((f, i) => {
           const k = f === 0 ? '  0k' : `${f >= 0 ? '+' : ''}${(f / 1000).toFixed(0)}k`.padStart(4);
           return `${k}=${vals[i].toFixed(0).padStart(4)}`;

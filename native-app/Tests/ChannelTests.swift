@@ -41,19 +41,40 @@ private func channelIQ(rate: Double, seconds: Double, _ cs: [TestCarrier], noise
     return d
 }
 
+/// Least-squares DC + tone. Projecting onto cos and sin alone is exact only
+/// over a whole number of cycles; otherwise it leaves the tone's own residue
+/// at about -68 dB, and a 50.7 kHz audio rate read 57 dB short of a 51.2 kHz
+/// one for the same, perfect output (2026-10-25).
+func fitTone(_ v: [Double], rate: Double, tone: Double) -> (dc: Double, c: Double, s: Double) {
+    var a = [[Double]](repeating: [0, 0, 0], count: 3), b = [0.0, 0.0, 0.0]
+    for i in 0..<v.count {
+        let t = 2 * Double.pi * tone * Double(i) / rate
+        let f = [1, cos(t), sin(t)]
+        for r in 0..<3 { b[r] += f[r] * v[i]; for c in 0..<3 { a[r][c] += f[r] * f[c] } }
+    }
+    for p in 0..<3 {
+        for r in (p + 1)..<3 {
+            let m = a[r][p] / a[p][p]
+            for c in p..<3 { a[r][c] -= m * a[p][c] }
+            b[r] -= m * b[p]
+        }
+    }
+    var x = [0.0, 0.0, 0.0]
+    for r in stride(from: 2, through: 0, by: -1) {
+        var s = b[r]
+        for c in (r + 1)..<3 { s -= a[r][c] * x[c] }
+        x[r] = s / a[r][r]
+    }
+    return (x[0], x[1], x[2])
+}
+
 /// SINAD (dB) of the `tone` in [lo, hi] over a power-of-two tail inside the
 /// second half, so two rates are judged over the same settled stretch of time.
 func toneSinad(_ x: [Float], rate: Double, lo: Double, hi: Double, tone: Double = 1000) -> Double {
     var n = 1; while n * 2 <= x.count / 2 { n *= 2 }
     guard n >= 1024 else { return -999 }
     let raw = x[(x.count - n)...].map(Double.init)
-    let mean = raw.reduce(0, +) / Double(n)
-    var c = 0.0, s = 0.0
-    for i in 0..<n {
-        let t = 2 * .pi * tone * Double(i) / rate
-        c += (raw[i] - mean) * cos(t); s += (raw[i] - mean) * sin(t)
-    }
-    c *= 2 / Double(n); s *= 2 / Double(n)
+    let (mean, c, s) = fitTone(raw, rate: rate, tone: tone)
     var seg = (0..<n).map { i -> Float in
         let t = 2 * .pi * tone * Double(i) / rate
         return Float(raw[i] - mean - c * cos(t) - s * sin(t))
@@ -114,13 +135,10 @@ private func bandRms(_ x: [Float], rate: Double, lo: Double, hi: Double) -> Doub
     return (Double(ms) * band / max(all, 1e-30)).squareRoot()
 }
 
+/// Amplitude of the `hz` tone, least squares (fitTone).
 private func toneLevel(_ x: [Float], hz: Double, rate: Double) -> Double {
-    var re = 0.0, im = 0.0
-    for (i, v) in x.enumerated() {
-        let t = 2 * .pi * hz * Double(i) / rate
-        re += Double(v) * cos(t); im += Double(v) * sin(t)
-    }
-    return (re * re + im * im).squareRoot() / Double(max(1, x.count))
+    let f = fitTone(x.map(Double.init), rate: rate, tone: hz)
+    return (f.c * f.c + f.s * f.s).squareRoot()
 }
 
 func runChannelTests() {
@@ -375,7 +393,7 @@ func runChannelTests() {
         let r = 456_000.0
         let wanted = TestCarrier(offset: 0, amp: 0.3, dev: 75_000, fm: { t in sin(2 * Double.pi * 1000 * t) / 2 })
         let neighbour = TestCarrier(offset: 200_000, amp: 0.3, dev: 75_000, fm: { t in sin(2 * Double.pi * 2700 * t) })
-        func sinad(_ cs: [TestCarrier]) -> Double {
+        func sinad(_ cs: [TestCarrier], eq: Bool = true) -> Double {
             let iq = channelIQ(rate: r, seconds: 1.0, cs, noise: 0.002)
             let p = plan(r, RxMode.wfm)
             let ch = Channelizer(); ch.configure(inRate: r, plan: p)
@@ -383,7 +401,7 @@ func runChannelTests() {
             d.setWfmAudioBand(iqRate: p.channelRate)
             d.setWfmIfBandwidth(iqRate: p.channelRate, cutoffHz: c.fmBandwidthHz / 2)
             d.setDeemphasis(audioRate: p.audioRate, tau: 50e-6)
-            d.setWfmEqualizer(true)
+            d.setWfmEqualizer(eq)
             // In packets, as the receiver gets them: the equaliser's gate
             // decides per packet.
             var o = [Float](), off = 0
@@ -394,10 +412,16 @@ func runChannelTests() {
             }
             return toneSinad(o, rate: p.audioRate, lo: 50, hi: 15_000)
         }
-        let alone = sinad([wanted]), withN = sinad([wanted, neighbour])
-        print(String(format: "  456 kHz, equaliser on: SINAD %.1f dB alone, %.1f with a neighbour at +200 kHz", alone, withN))
-        check("at 456 kHz the channel filter keeps a +200 kHz neighbour off the equaliser",
-              plan(r, RxMode.wfm).decimation == 1 && withN >= alone - 1, String(format: "%.1f vs %.1f", withN, alone))
+        let alone = sinad([wanted]), withN = sinad([wanted, neighbour]), withNoEq = sinad([wanted, neighbour], eq: false)
+        print(String(format: "  456 kHz: SINAD %.1f dB alone, %.1f with a neighbour at +200 kHz, %.1f with it and no equaliser",
+                     alone, withN, withNoEq))
+        // The neighbour's lower skirt reaches inside the 125 kHz IF whatever
+        // is done (75.8 dB with the equaliser off); what is checked is that
+        // the equaliser adds nothing to that. Without the channel filter and
+        // the gate it took the station to -9.5 dB.
+        check("at 456 kHz a +200 kHz neighbour costs the equaliser nothing",
+              plan(r, RxMode.wfm).decimation == 1 && withN >= withNoEq - 1,
+              String(format: "%.1f with the equaliser vs %.1f without", withN, withNoEq))
     }
     // It sat after the IF filter until 2026-10-25 and cost 10.6 dB here on
     // average (Demods `wfmEq`); ahead of it, 2.1 dB at 3 kHz were left until
@@ -422,7 +446,9 @@ func runChannelTests() {
                              rate: p.audioRate, lo: 50, hi: 15_000)
         }
         let off = sinad(false), on = sinad(true)
+        // Thrown, it read 51 dB (2026-10-25); both now sit near the limit of
+        // the arithmetic, where a dB or two is nothing.
         check("the channel filter's start does not throw the equaliser (lone station, 456 kHz)",
-              on >= off - 0.5, String(format: "%.1f on vs %.1f off", on, off))
+              on > 100, String(format: "%.1f on vs %.1f off", on, off))
     }
 }

@@ -115,28 +115,13 @@ enum DeviceSettingsResolver {
         return s
     }
 
-    /// The power-of-two divisor that brings `iqRate` nearest to `audioRate`:
-    /// a new IQ width keeps the demodulators where they were.
-    static func audioDecimation(keeping audioRate: Double, at iqRate: UInt32) -> Int {
-        guard audioRate > 0, iqRate > 0 else { return 1 }
-        let halvings = log2(Double(iqRate) / audioRate).rounded()
-        return halvings > 0 ? 1 << Int(halvings) : 1
-    }
-
-    /// Highest audio rate a divisor is left at. The demodulators have never
-    /// run above the HF+'s 912 kHz / 4; a V4 widened to 2.4 MHz on a divisor
-    /// chosen at 300 kHz ran them at 600 kHz (2026-10-24).
-    static let maxAudioRate: Double = 250_000
-
-    /// Halve a stored divisor until the audio rate clears the mode's floor;
-    /// double it while the rate is above `maxAudioRate` and the floor allows.
+    /// Halve a stored divisor until the audio rate clears the mode's floor.
+    /// What the plugin applies (src/deviceSettings.ts). This app only keeps the
+    /// result in the file for it; its own audio rate is ChannelPlan's.
     static func audioDecimation(iqRate: UInt32, mode: Int, stored: Int) -> Int {
         let floor = minAudioRate(mode: mode)
         var d = max(1, stored)
         while d > 1 && Double(iqRate) / Double(d) < floor { d /= 2 }
-        while Double(iqRate) / Double(d) > maxAudioRate && Double(iqRate) / Double(d * 2) >= floor {
-            d *= 2
-        }
         return d
     }
 

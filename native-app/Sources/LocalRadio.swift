@@ -256,17 +256,15 @@ final class LocalRadio {
     /// What the server is told to use. AM is the split, exactly as
     /// spyService.ts:1214 draws it — every other mode takes the FM value.
     var gain: UInt32 { stationGain.map { min($0, maxGainIndex) } ?? (mode == 2 ? amGainIndex : fmGainIndex) }
-    /// Audio decimation from the IQ rate; the audio rate is the IQ rate over
-    /// this. Exactly what the plugin does — `Math.max(1, cfg.audioDecimate)`,
-    /// spyService.ts:1206 — and nothing else.
-    ///
-    /// This used to be `config.audioDecimate * 12`, a factor that exists in no
-    /// other implementation. With the plugin's own config (audioDecimate 4,
-    /// iqDecimation 1) it turned a 114 kHz audio rate into 9.5 kHz, whose
-    /// Nyquist is 4.75 kHz — below the 15 kHz the anti-alias filter in front of
-    /// the decimator is set to. Measured: a 6 kHz tone came out at 3.5 kHz.
-    /// That is what made sibilants sound wrong, and it was invented here.
-    var audioDecimate: Int { max(1, config.audioDecimate) }
+    /// How the IQ becomes a channel and the channel becomes audio, derived
+    /// from the IQ rate, the mode and its bandwidth (ChannelPlan in
+    /// Demods.swift has why). `config.audioDecimate` is still read from and
+    /// written to the file, for the plugin's sake, and no longer decides
+    /// anything here: a stored divisor was a guess made for one IQ rate.
+    private(set) var plan = ChannelPlan(decimation: 1, channelRate: 0, passHz: 0, protectHz: 0, audioDecimation: 1)
+    private let channel = Channelizer()
+    /// Channel samples per audio sample.
+    var audioDecimate: Int { plan.audioDecimation }
 
     var bandwidthHz: Double { config.bandwidth(for: mode) }
     /// Demod mode. The numbering is not ours to choose: SDR++ assigns it, the
@@ -332,22 +330,16 @@ final class LocalRadio {
     /// Take a line of the IQ menu. Filed under the receiver's own profile as
     /// well as the top level: the profile is what the resolver reads first,
     /// so a pick made with the link down was otherwise lost on the connect.
-    /// The rate is fixed when a stream starts, hence the reconnect.
-    ///
-    /// The audio divisor moves with it, so the demodulators keep the rate they
-    /// run at now: the resolver only ever lowers a divisor, and a V4 taken
-    /// from 300 kHz (divisor 2) to 2.4 MHz demodulated at 1.2 MHz (2026-10-24).
+    /// The rate is fixed when a stream starts, hence the reconnect. The
+    /// demodulators' own rate does not follow it: ChannelPlan derives that
+    /// from the mode, whatever the IQ width.
     func chooseIq(_ c: IqChoice) {
         var cfg = config
         cfg.iqDecimation = c.stage
         if let base = c.rtlBase { cfg.rtlSampleRate = base }
-        if audioRate > 0 {
-            cfg.audioDecimate = DeviceSettingsResolver.audioDecimation(keeping: audioRate, at: c.rateHz)
-        }
         let key = activeDeviceKey ?? (RadioConfig.takesAnyRate(cfg.source) ? Self.rtlProfileKey : nil)
         if let key, cfg.devices[key] != nil {
             cfg.devices[key]?.iqDecimation = c.stage
-            cfg.devices[key]?.audioDecimate = cfg.audioDecimate
             if let base = c.rtlBase { cfg.devices[key]?.rtlSampleRate = base }
         }
         config = cfg
@@ -1312,8 +1304,16 @@ final class LocalRadio {
         // Derived here rather than at the call sites: it follows the mode as
         // well as the IQ rate, and a mode change that did not recompute it
         // left the FM detectors running at the rate AM had asked for.
-        audioRate = Double(iqRate) / Double(max(1, audioDecimate))
-        let iq = Double(iqRate)
+        plan = ChannelPlan.make(iqRate: Double(iqRate), mode: mode,
+                                fmBandwidthHz: config.fmBandwidthHz,
+                                amBandwidthHz: config.amBandwidthHz,
+                                ssbBandwidthHz: config.ssbBandwidthHz)
+        channel.configure(inRate: Double(iqRate), plan: plan)
+        let previousAudioRate = audioRate
+        audioRate = plan.audioRate
+        // Every detector filter below is at the rate the detectors are fed,
+        // which is the channel's, not the device's.
+        let iq = plan.channelRate
         am.reset()
         am.setBandwidth(audioRate: audioRate, bandwidthHz: config.amBandwidthHz, iqRate: iq)
         am.configureSync(rate: audioRate)
@@ -1343,6 +1343,9 @@ final class LocalRadio {
         // first DeviceInfo would otherwise run at the wrong speed for the rest
         // of the session.
         applyVfo()
+        // The FM bandwidth moves the channel rate, and with it the audio rate
+        // the output graph was built for. A no-op when nothing changed.
+        if audioRate != previousAudioRate, previousAudioRate > 0, audioEnabled { restartAudio() }
     }
 
     /// Samples the output asked for and the ring did not have. The honest
@@ -1511,7 +1514,11 @@ final class LocalRadio {
         // the demodulator's own frequency, and nothing below has to know that
         // the device is somewhere else.
         let centred = shifter.isIdentity ? rawBody : shifter.process(rawBody)
-        let body = iqNrEnabled ? iqnr.process(centred) : centred
+        // The channel is cut out before the NR as well, which is where SDR++
+        // runs its IF NR (on the VFO's output), and what keeps the NR's cost
+        // from growing with the IQ width.
+        let channelIQ = channel.process(centred)
+        let body = iqNrEnabled ? iqnr.process(channelIQ) : channelIQ
         // The gain index as a ratio of the device's maximum, which is what the
         // plugin scales the demodulators with (spyService.ts:1349). AM detects
         // an amplitude, so the RF gain reaches its audio on its own; every
@@ -1528,7 +1535,7 @@ final class LocalRadio {
         // Constants, not the gain ratio (OutputScale in Demods.swift has why).
         // The FM detectors follow the IQ rate, so their gains are scaled back
         // to the reference rate; SSB and CW are amplitudes and are not.
-        let fmScale = OutputScale.fm(iqRate: Double(iqRate))
+        let fmScale = OutputScale.fm(iqRate: plan.channelRate)
         let amScale = OutputScale.amAgcOff
         switch mode {
         // DSB (3) has no detector of its own; it falls to narrow FM, as in

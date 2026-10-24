@@ -386,11 +386,13 @@ final class StationMono {
     }
 
     func set(freqHz: Double, mono: Bool) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         let k = Self.key(freqHz: freqHz)
-        guard (file.mono[k] != nil) != mono else { return }
+        guard (file.mono[k] != nil) != mono else { lock.unlock(); return }
         file.mono[k] = mono ? 1 : nil
-        write()
+        let snapshot = file
+        lock.unlock()
+        write(snapshot)
     }
 
     /// For sync (Sync.swift).
@@ -401,20 +403,34 @@ final class StationMono {
 
     /// Apply what sync settled on: `nil` deletes the key.
     func apply(_ changes: [String: Int?]) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         for (k, v) in changes { file.mono[k] = v }
-        write()
+        let snapshot = file
+        lock.unlock()
+        write(snapshot)
     }
 
     var mtimeMs: Double {
+        flush()
         let a = try? FileManager.default.attributesOfItem(atPath: path)
         return ((a?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) * 1000
     }
 
-    private func write() {
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let d = try? enc.encode(file) else { return }
-        try? d.write(to: URL(fileURLWithPath: path), options: .atomic)
+    /// Waits for the writes already handed over.
+    func flush() { writer.sync {} }
+
+    /// Off the caller's thread and outside the lock. The badge is tapped on the
+    /// main thread and the demodulator asks `isMono` once per packet; a write
+    /// to disk under the lock made every packet behind a tap wait for the
+    /// disk, and the audio, already short of time on a wide IQ, ran dry.
+    private let writer = DispatchQueue(label: "deckrx.stationmono.write")
+    private func write(_ f: File) {
+        let path = self.path
+        writer.async {
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            guard let d = try? enc.encode(f) else { return }
+            try? d.write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
     }
 }

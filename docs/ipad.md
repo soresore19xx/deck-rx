@@ -49,7 +49,9 @@ Landscape, and the width goes to the spectrum.
   spectrum — the Mac's IQ menu, with the same lines (see
   [Solo](solo.md)): 912 / 456 / 228 / 114 kHz on the HF+ through its
   SpyServer, 3.2 MHz down to 150 kHz on an RTL-SDR over RTL-TCP or USB. It
-  is offered while a receiver is connected, and picking one reconnects.
+  is offered while a receiver is connected, and picking one reconnects. The
+  width costs the audio nothing: each mode is cut out of the IQ at a rate of
+  its own before it is demodulated ([Solo: channel stage](solo.md#channel-stage)).
 - **a display rail**: zoom and waterfall depth as sliders, the dB ceiling and
   floor as rails beside the trace. The ceiling and floor also set the
   waterfall's colour range (as in SDR++), and moving them recolours its history.

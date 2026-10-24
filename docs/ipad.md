@@ -136,6 +136,18 @@ under **Recent** in the source menu (and in a **Recent** row in Solo's
 Options), and one pick sets the source and both boxes together. The list is
 the app's own (UserDefaults), not part of `receiver.json`.
 
+## An RTL-SDR plugged into the iPad
+
+On an iPad with an M-series chip, a build made after
+[`native-app/rtlusb/build-driver.sh`](../native-app/rtlusb/) carries a driver
+for RTL2832U dongles, and the source menu offers **RTL-SDR (USB)**: the dongle
+on the iPad's own port, no server, no second app. Turn the driver on once in
+Settings > Apps > Deck RX, then plug the dongle in. The address boxes do not
+apply to it and are left as they were, for going back to a server.
+
+Underneath it is the RTL-TCP source's own client reading the driver instead of
+a socket, so gain steps, sample rates and the pacing are the same either way.
+
 ## When the SpyServer is on the other segment
 
 A tablet on a wired adapter is usually on a different subnet from its Wi-Fi,

@@ -53,10 +53,14 @@ case "$TARGET" in
   device) DRM_SLICE=ios ;;
 esac
 DRM_FLAGS=""
+# swiftc takes one bridging header; DRM and the RTL-SDR driver both need one,
+# so each adds its headers to a list and one file includes them all.
+BRIDGE_HEADERS=()
 if [ -f "$DRM_CORE_DIR/out/$DRM_SLICE/libdrmcore.a" ] && \
    [ -f "$DRM_FDK_DIR/$DRM_SLICE/libfdk-aac.a" ]; then
   SRC="$SRC Sources/DrmDecode.swift Sources/DrmScreen.swift"
-  DRM_FLAGS="-D DRM_ENABLED -import-objc-header $DRM_CORE_DIR/drm_bridge.h -L$DRM_CORE_DIR/out/$DRM_SLICE -ldrmcore -L$DRM_FDK_DIR/$DRM_SLICE -lfdk-aac -lc++"
+  BRIDGE_HEADERS+=("$DRM_CORE_DIR/drm_bridge.h")
+  DRM_FLAGS="-D DRM_ENABLED -L$DRM_CORE_DIR/out/$DRM_SLICE -ldrmcore -L$DRM_FDK_DIR/$DRM_SLICE -lfdk-aac -lc++"
   echo "DRM: linking $DRM_CORE_DIR/out/$DRM_SLICE/libdrmcore.a"
 else
   echo "DRM: core not built for $DRM_SLICE - no DRM in this bundle"
@@ -65,9 +69,37 @@ fi
 APP="$HERE/build/$TARGET/$NAME.app"
 rm -rf "$APP"; mkdir -p "$APP" || exit 1
 
+# --- the RTL-SDR driver, carried only when rtlusb/build-driver.sh has run ---
+# A DriverKit extension runs on the device only, so the simulator never gets it.
+RTLUSB_DIR="${RTLUSB_DIR:-$HERE/rtlusb/build}"
+DEXT="$RTLUSB_DIR/$BUNDLE_ID.driver.dext"
+RTLUSB_FLAGS=""
+if [ "$TARGET" = "device" ] && [ -d "$DEXT" ]; then
+  RB="$RTLUSB_DIR/rtlbridge"
+  OBJ="$HERE/build/$TARGET/rtlsdrbridge.o"
+  xcrun -sdk "$SDK" clang -c "$RB/RTL-SDR Host/RTLSDRBridge.c" -I "$RB/RTL-SDR/include" \
+      -target "$TRIPLE" -O2 -fblocks -o "$OBJ" \
+    || { echo "ERROR: RTLSDRBridge.c failed"; exit 1; }
+  SRC="$SRC Sources/RtlUsbLink.swift"
+  BRIDGE_HEADERS+=("$RB/RTL-SDR Host/RTLSDRBridge.h" "$RB/RTL-SDR/include/RTLSDRShared.h")
+  RTLUSB_FLAGS="-D RTLUSB_ENABLED $OBJ -framework IOKit"
+  mkdir -p "$APP/SystemExtensions" && cp -R "$DEXT" "$APP/SystemExtensions/" || exit 1
+  echo "RTL-SDR: carrying $(basename "$DEXT")"
+else
+  echo "RTL-SDR: no driver built - no RTL-SDR (USB) source in this bundle"
+fi
+
+BRIDGE_FLAGS=()
+if [ ${#BRIDGE_HEADERS[@]} -gt 0 ]; then
+  BRIDGE="$HERE/build/$TARGET/bridge.h"
+  : > "$BRIDGE"
+  for h in "${BRIDGE_HEADERS[@]}"; do printf '#include "%s"\n' "$h" >> "$BRIDGE"; done
+  BRIDGE_FLAGS=(-import-objc-header "$BRIDGE")
+fi
+
 echo "==> swiftc ($TRIPLE) ..."
 ( cd "$HERE" && xcrun -sdk "$SDK" swiftc $SRC -o "$APP/DeckRX" -target "$TRIPLE" -O \
-      -module-name DeckRX $DRM_FLAGS ) \
+      -module-name DeckRX $DRM_FLAGS $RTLUSB_FLAGS ${BRIDGE_FLAGS[@]+"${BRIDGE_FLAGS[@]}"} ) \
   || { echo "ERROR: swiftc build failed"; exit 1; }
 
 # iOS reads a flat bundle: the executable and the resources sit at the top,
@@ -217,28 +249,41 @@ echo "==> identity: $IDENTITY"
 # Newest is right exactly once — the first time a profile exists at all. After
 # that, any other app built on this Mac leaves a newer one, and signing with it
 # fails on the device with a mismatch that reads like a certificate problem.
+#
+# Carrying the RTL-SDR driver needs the communicates-with-drivers entitlement,
+# which only an explicit App ID can hold — a wildcard profile is then no use,
+# and an exact one without the entitlement installs an app the driver will not
+# talk to. rtlusb/build-driver.sh has Xcode leave the right one.
 PROFILE=""
+WILD=""
 for f in ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/*.mobileprovision \
          ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision; do
   [ -f "$f" ] || continue
-  appid="$(security cms -D -i "$f" 2>/dev/null \
-           | plutil -extract Entitlements.application-identifier raw - 2>/dev/null)"
+  plist="$(security cms -D -i "$f" 2>/dev/null)"
+  appid="$(printf '%s' "$plist" | plutil -extract Entitlements.application-identifier raw - 2>/dev/null)"
+  if [ -n "$RTLUSB_FLAGS" ]; then
+    printf '%s' "$plist" \
+      | plutil -extract 'Entitlements.com\.apple\.developer\.driverkit\.communicates-with-drivers' raw - \
+        >/dev/null 2>&1 || continue
+  fi
   # The value is TEAMID.<app id>. Strip the team, then take an exact match, or
   # a wildcard whose prefix this bundle actually sits under: com.hogehoge.*
   # covers com.hogehoge.deckrx.ipad and com.other.* does not. Matching any
   # wildcard would sign with a profile the device then refuses, which reads on
-  # the iPad as a corrupt app rather than as the wrong profile.
+  # the iPad as a corrupt app rather than as the wrong profile. An exact match
+  # wins over a wildcard wherever the two turn up in the listing.
   want="${appid#*.}"
   case "$want" in
     "$BUNDLE_ID") PROFILE="$f"; break ;;
     *".*")
       prefix="${want%\*}"
       case "$BUNDLE_ID" in
-        "$prefix"*) PROFILE="$f"; break ;;
+        "$prefix"*) [ -n "$WILD" ] || WILD="$f" ;;
       esac
       ;;
   esac
 done
+[ -n "$PROFILE" ] || PROFILE="$WILD"
 if [ -z "$PROFILE" ]; then
   echo "ERROR: no provisioning profile for $BUNDLE_ID."
   echo
@@ -272,6 +317,7 @@ cat > "$ENT" <<ENTS
 	<key>application-identifier</key><string>$TEAM.$BUNDLE_ID</string>
 	<key>com.apple.developer.team-identifier</key><string>$TEAM</string>
 	<key>get-task-allow</key><true/>
+$( [ -n "$RTLUSB_FLAGS" ] && printf '\t<key>com.apple.developer.driverkit.communicates-with-drivers</key><true/>' )
 </dict>
 </plist>
 ENTS

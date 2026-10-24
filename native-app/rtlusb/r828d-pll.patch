@@ -1,0 +1,56 @@
+diff --git a/blocks/sdr/include/gnuradio-4.0/sdr/RTL2832Device.hpp b/blocks/sdr/include/gnuradio-4.0/sdr/RTL2832Device.hpp
+index 66023c3..0bedf69 100644
+--- a/blocks/sdr/include/gnuradio-4.0/sdr/RTL2832Device.hpp
++++ b/blocks/sdr/include/gnuradio-4.0/sdr/RTL2832Device.hpp
+@@ -1142,19 +1142,32 @@ struct RTL2832Device {
+             if (!gate) {
+                 return std::unexpected(gate.error());
+             }
++            if (_tunerType == TunerType::r828d) {
++                // as librtlsdr (rtl-sdr-blog) r82xx_set_pll: refdiv2 off,
++                // PLL autotune 128 kHz while locking, VCO current to max
++                if (auto r = writeTunerBatch({{0x10, 0x00, 0x10}, {0x1A, 0x00, 0x0C}, {0x12, 0x06, 0xFF}}); !r) {
++                    return std::unexpected(r.error());
++                }
++            }
+             regBuf = readTunerBuf(0x00, 5);
+         }
+         if (!regBuf) {
+             return std::unexpected(regBuf.error());
+         }
+         int vcoFineTune = ((*regBuf)[4] & 0x30) >> 4;
+-        if (vcoFineTune > kVcoPowerRef) {
++        // R828D: 1, as librtlsdr's r82xx_set_pll. With 2 the divider stepped
++        // once too far on the RTL-SDR Blog V4 and the LO sat at half the
++        // wanted frequency (noise on every band).
++        const int vcoPowerRef = _tunerType == TunerType::r828d ? 1 : kVcoPowerRef;
++        if (vcoFineTune > vcoPowerRef) {
+             --divNum;
+-        } else if (vcoFineTune < kVcoPowerRef) {
++        } else if (vcoFineTune < vcoPowerRef) {
+             ++divNum;
+         }
+         divNum = std::clamp(divNum, 0, 6);
+-        mixDiv = 1U << (divNum + 1);
++        // The fine tune only moves SEL_DIV. librtlsdr keeps mix_div for the
++        // VCO and SDM maths; recomputing it here put the VCO at half (or
++        // double) its range whenever the adjustment fired, so no lock.
+ 
+         auto gate = i2cGate();
+         if (!gate) {
+@@ -1194,6 +1207,15 @@ struct RTL2832Device {
+             if (auto r = writeTunerRegMask(0x12, 0x60, 0xE0); !r) {
+                 return std::unexpected(r.error()); // R18: increase VCO current
+             }
++            regBuf = readTunerBuf(0x00, 3);
++        }
++        if (regBuf && !((*regBuf)[2] & 0x40)) {
++            std::println(stderr, "[RTL2832] PLL not locked at {:.0f} Hz", freq);
++        }
++        if (_tunerType == TunerType::r828d) {
++            if (auto r = writeTunerRegMask(0x1A, 0x08, 0x08); !r) { // R26: PLL autotune 8 kHz
++                return std::unexpected(r.error());
++            }
+         }
+         // gate closes I2C on return
+ 

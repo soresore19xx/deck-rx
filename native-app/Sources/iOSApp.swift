@@ -75,7 +75,13 @@ final class RadioViewController: UIViewController {
     /// one puts its host and port back in the boxes.
     private let sourceButton = UIButton(type: .system)
     /// What the iPad can open. No "usb": an iPad has no Airspy library.
+    /// "rtlusb" is an RTL-SDR on the iPad's own port, through the driver the
+    /// app carries — only in a build that has it (rtlusb/build-driver.sh).
+#if RTLUSB_ENABLED
+    private static let sources = ["spyserver", "rtltcp", "rtlusb"]
+#else
     private static let sources = ["spyserver", "rtltcp"]
+#endif
     private let connectButton = UIButton(type: .custom)
     private let statusLabel = UILabel()
     /// The same views the Mac window draws. Not UIKit copies of them: a second

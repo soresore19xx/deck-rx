@@ -43,7 +43,11 @@ struct RadioConfig: Codable, Equatable {
     /// "usb" needs the Airspy library and is offered only by builds that have it.
     static let sourceNames: [(id: String, name: String)] = [
         ("spyserver", "SpyServer"), ("rtltcp", "RTL-TCP"), ("usb", "Airspy HF+ (USB)"),
+        ("rtlusb", "RTL-SDR (USB)"),
     ]
+    /// The two device sources — the Airspy on a Mac's USB, the RTL-SDR on an
+    /// iPad's — have no address; the network one stays in the fields, dormant.
+    static func hasAddress(_ id: String) -> Bool { id != "usb" && id != "rtlusb" }
     static func sourceName(_ id: String) -> String {
         sourceNames.first { $0.id == id }?.name ?? id
     }
@@ -55,9 +59,9 @@ struct RadioConfig: Codable, Equatable {
     /// fields, dormant, for coming back to.
     mutating func selectSource(_ s: String) {
         guard s != source else { return }
-        if source != "usb" { sourceAddrs[source] = SourceAddr(host: host, port: port) }
+        if RadioConfig.hasAddress(source) { sourceAddrs[source] = SourceAddr(host: host, port: port) }
         source = s
-        guard s != "usb" else { return }
+        guard RadioConfig.hasAddress(s) else { return }
         if let a = sourceAddrs[s] {
             host = a.host
             port = a.port
@@ -71,7 +75,7 @@ struct RadioConfig: Codable, Equatable {
     mutating func setAddress(host h: String? = nil, port p: Int? = nil) {
         if let h { host = h }
         if let p { port = p }
-        if source != "usb" { sourceAddrs[source] = SourceAddr(host: host, port: port) }
+        if RadioConfig.hasAddress(source) { sourceAddrs[source] = SourceAddr(host: host, port: port) }
     }
 
     /// rtl_tcp's port here: the V4 is served on 8890, next to the HF+'s 8888,

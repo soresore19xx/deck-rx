@@ -922,6 +922,15 @@ check("and leaves nothing claiming a connection", !sd.isConnected)
 check("a source with no hardware to release still answers shutdown",
       { let c = SpyClient(); c.shutdown(); return true }())
 
+section("a mute window tops the ring back up to its depth")
+// SpyServer drops IQ on every setting without a sequence gap; the silence
+// written in the mute window is what keeps a run of jumps from emptying it.
+check("a ring short of the target gets the difference",
+      AudioSink.topUpFrames(usedFrames: 1000, target: 2880) == 1880)
+check("a ring at or past the target gets nothing",
+      AudioSink.topUpFrames(usedFrames: 2880, target: 2880) == 0
+      && AudioSink.topUpFrames(usedFrames: 5000, target: 2880) == 0)
+
 section("the reader tracks the ring depth instead of drifting off it")
 // The sender's clock and the device's differ by tens of ppm. With a fixed
 // ratio the ring can only fill until it overflows or empty until it underruns;

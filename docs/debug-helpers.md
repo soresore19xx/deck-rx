@@ -96,6 +96,17 @@ than at the request. A rate change waits for its command the same way instead
 of the fixed 0.4 s it still uses over a socket. A run with no retunes, however long, was never the case to
 test.
 
+SpyServer loses samples on retunes too, and leaves no trace of it: every
+frequency or gain setting costs the HF+ about 6.5 ms of IQ with no gap in the
+sequence numbers and no late packet (`gapMs` stays at 14-20). A preset jump
+with auto gain sends four to six settings, so a run of jumps emptied the ring
+the same way (37 drops for 12 jumps 0.6 s apart). The audio is muted around
+every one of those settings anyway, so while the mute is open the sink is
+topped back up to its 0.12 s depth with silence (`AudioSink.padToTarget`) —
+measured from the ring itself, not from a guess at what the source lost, so
+it covers rtl_tcp over a socket as well. Afterwards: 0 drops for jumps 80 ms,
+250 ms and 600 ms apart, on the Mac and on the iOS build.
+
 The iPad reads the same switch. Its stderr goes nowhere unless the app is
 started with `xcrun devicectl device process launch --console
 --environment-variables '{"DECKRX_AUDIO_DIAG":"1"}' ...`, and nothing is

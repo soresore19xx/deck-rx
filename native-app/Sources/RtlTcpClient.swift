@@ -10,6 +10,13 @@ protocol RtlByteLink: AnyObject {
     func start(queue: DispatchQueue, onBytes: @escaping (Data) -> Void) -> Error?
     func command(_ d: Data)
     func close()
+    /// Appended to `RtlTcpClient.diagLine`; empty unless the link has
+    /// something of its own to report.
+    var diagNote: String { get }
+}
+
+extension RtlByteLink {
+    var diagNote: String { "" }
 }
 
 /// rtl_tcp client, presented to LocalRadio as an `IQSource`.
@@ -210,7 +217,7 @@ final class RtlTcpClient: IQSource {
                           Double(rxBytes / 2) / secs, deviceRate,
                           pacer.underruns, pacer.trims,
                           pacer.rate > 0 ? Double(pacer.held) / pacer.rate : 0,
-                          pacer.prefill, pacer.maxGap * 1000)
+                          pacer.prefill, pacer.maxGap * 1000) + (link?.diagNote ?? "")
         rxBytes = 0
         diagSince = now
         return line
@@ -367,8 +374,11 @@ final class RtlTcpClient: IQSource {
     private func applyFrequency(_ hz: UInt32) {
         freqHz = hz
         // What is held was received on the old frequency; releasing it after
-        // the retune would play the previous station for up to a second.
-        pacer.clear()
+        // the retune would play the previous station for up to a second. It is
+        // blanked, not dropped: dropping it left a hole of the held depth plus
+        // a fresh prefill (60 ms on the stand-in, more over USB) that the audio
+        // sink refills at 0.4%, so a few quick retunes ran it dry (2026-10-25).
+        pacer.silenceHeld()
         sendCmd(Self.cmdSetFreq, freqHz)
         emitSync()
     }
@@ -693,8 +703,18 @@ final class IQPacer {
         return out
     }
 
-    /// Forget what is held: it belongs to a frequency or a rate no longer in
-    /// force. The observed gap is kept — it is a property of the server.
+    /// Zero what is held but keep releasing it on time: the content belongs to
+    /// the old frequency, the count is the stream's timeline. Downstream mutes
+    /// across a retune anyway, so silence costs nothing and keeps the audio
+    /// sink from losing the held depth on every retune.
+    func silenceHeld() {
+        guard head < store.count else { return }
+        for i in head ..< store.count { store[i] = 0 }
+    }
+
+    /// Forget what is held: it belongs to a rate no longer in force (a new
+    /// stream, where the audio restarts too). The observed gap is kept — it is
+    /// a property of the server.
     func clear() {
         store.removeAll(keepingCapacity: true)
         head = 0

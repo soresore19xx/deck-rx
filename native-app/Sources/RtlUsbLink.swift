@@ -43,6 +43,24 @@ final class RtlUsbLink: RtlByteLink {
     private var cursor: UInt64 = 0
     private var timer: DispatchSourceTimer?
 
+    /// Commands run here, not on the caller's queue. A retune is a run of
+    /// tuner register writes over USB control transfers, and the call blocks
+    /// until they are done; on the caller's queue that also stopped the ring
+    /// poll and RtlTcpClient's pacer, which share it, so every retune was an
+    /// audio gap as long as the tuning (2026-10-25). The driver streams on a
+    /// queue of its own meanwhile, so nothing is lost by not waiting.
+    private let cmdQueue = DispatchQueue(label: "deck-rx.rtlusb.cmd", qos: .userInitiated)
+    /// The slowest command since the last `diagNote`, in seconds.
+    private var slowestCmd: Double = 0
+    private let slowLock = NSLock()
+
+    var diagNote: String {
+        slowLock.lock(); defer { slowLock.unlock() }
+        let s = String(format: " usbCmdMax=%.0fms", slowestCmd * 1000)
+        slowestCmd = 0
+        return s
+    }
+
     /// The rtl_tcp header's gain-step count, per tuner type, as librtlsdr
     /// reports it (RTLTCPServer.gainCount in RTLBridge).
     static func gainCount(tuner: UInt32) -> UInt32 {
@@ -102,7 +120,14 @@ final class RtlUsbLink: RtlByteLink {
     }
 
     func command(_ d: Data) {
-        guard d.count == 5, conn != 0 else { return }
+        guard d.count == 5 else { return }
+        // In order, after any earlier command; `conn` is read on this queue,
+        // which is also where `close` clears it.
+        cmdQueue.async { [weak self] in self?.run(d) }
+    }
+
+    private func run(_ d: Data) {
+        guard conn != 0 else { return }
         let b = [UInt8](d)
         let param = UInt64(UInt32(b[1]) << 24 | UInt32(b[2]) << 16 | UInt32(b[3]) << 8 | UInt32(b[4]))
         let sel: UInt32
@@ -121,16 +146,22 @@ final class RtlUsbLink: RtlByteLink {
         default:   return
         }
         var out: UInt64 = 0
+        let t0 = ProcessInfo.processInfo.systemUptime
         _ = rtlsdrhost_call(conn, sel, param, &out)
+        let took = ProcessInfo.processInfo.systemUptime - t0
+        slowLock.lock(); slowestCmd = max(slowestCmd, took); slowLock.unlock()
     }
 
     func close() {
         timer?.cancel()
         timer = nil
-        if conn != 0 {
-            call(kRTLSDRMethodStopStream)
-            rtlsdrhost_close(conn)
-            conn = 0
+        // Behind any command still queued, so none runs on a closed handle.
+        cmdQueue.sync {
+            if conn != 0 {
+                call(kRTLSDRMethodStopStream)
+                rtlsdrhost_close(conn)
+                conn = 0
+            }
         }
         ring = nil
     }

@@ -121,6 +121,15 @@ final class AirspyDevice: IQSource {
         statLock.lock(); jumpEdge += edge; jumpInside += inside; statLock.unlock()
     }
 
+#if AIRSPYHF_PATCHED
+    /// The library's zero-IF IQ correction off (broadcast FM) or on, through
+    /// rtlusb/airspyhf.patch. A library-wide switch, so a static here: the
+    /// library is reached from this file only.
+    static func skipIqCorrection(_ skip: Bool) {
+        airspyhf_deckrx_skip_iq_balancer(skip ? 1 : 0)
+    }
+#endif
+
     func diagLine() -> String {
         statLock.lock()
         let secs = max(Date().timeIntervalSince(statSince), 0.001)

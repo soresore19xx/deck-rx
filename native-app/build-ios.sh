@@ -112,7 +112,7 @@ module CAirspyHF {
 }
 MODMAP
     SRC="$SRC Sources/AirspyDevice.swift"
-    RTLUSB_FLAGS="$RTLUSB_FLAGS -D AIRSPYHF_ENABLED -Xcc -fmodule-map-file=$AHO/module.modulemap \
+    RTLUSB_FLAGS="$RTLUSB_FLAGS -D AIRSPYHF_ENABLED -D AIRSPYHF_PATCHED -Xcc -fmodule-map-file=$AHO/module.modulemap \
                   $AHO/airspyhf.o $AHO/iqbalancer.o $AHO/libusb_dext.o"
     echo "HF+: libairspyhf $(git -C "$RTLUSB_DIR/airspyhf" rev-parse --short HEAD 2>/dev/null) on the driver"
   else

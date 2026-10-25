@@ -572,6 +572,18 @@ export class SpyDialTune extends SingletonAction<DialTuneSettings> {
         });
       }
     }
+    // The IQ rate row. A pick answers with the menu as it now stands, so the
+    // row shows the width the stream actually came back at.
+    if (ev.payload['action'] === 'getIqChoices' || ev.payload['action'] === 'setIqDecimation') {
+      if (ev.payload['action'] === 'setIqDecimation') {
+        const off = Number(ev.payload['offset']);
+        if (Number.isInteger(off)) {
+          await spyService.setIqDecimation(off)
+            .catch((e) => streamDeck.logger.error(`[spyDialTune] setIqDecimation: ${e}`));
+        }
+      }
+      await streamDeck.ui.sendToPropertyInspector({ action: 'iqChoices', ...spyService.getIqChoices() });
+    }
     if (ev.payload['action'] === 'getEibiStatus') {
       const st = await spyService.getEibiStatus();
       await streamDeck.ui.sendToPropertyInspector({

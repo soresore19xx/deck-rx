@@ -115,6 +115,8 @@ function tick(): void {
     device: deviceLabel(),
     iqRateHz: spyService.getCurrentIQRate(),
     decStage: spyService.getDecStage(),
+    // The IQ menu (`/iq`), so a front-end draws the receiver's own widths.
+    iqChoices: spyService.getIqChoices().choices,
     audioDrops: spyService.getAudioDrops(),
     audioDevice: spyService.getAudioDeviceName(),
     audioSink: spyService.getAudioSink(),

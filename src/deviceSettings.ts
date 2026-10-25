@@ -134,6 +134,27 @@ export function iqRateFor(info: DeviceInfo, offset: number): number {
   return info.maxSampleRate / Math.pow(2, offset + info.minIQDecimation);
 }
 
+/** Narrowest width the IQ menu offers. The modes' own floors are 96 and
+ *  200 kHz (minIQRate); below 100 k nothing is gained. */
+export const IQ_MENU_FLOOR = 100_000;
+
+/**
+ * The IQ widths this receiver can be set to, widest first: its maximum halved,
+ * as SpyServer's protocol has it, no wider than MAX_AUTO_IQ_RATE and no
+ * narrower than IQ_MENU_FLOOR. The ceiling is the resolver's own: a stored
+ * offset wider than it is replaced on connect (the V4 at 2.4 MHz over
+ * SpyServer never tuned, 2026-09-21), so offering it would be a choice that
+ * silently does not happen. The Swift app's menu is IqChoice.list.
+ */
+export function iqChoices(info: DeviceInfo): { offset: number; rateHz: number }[] {
+  const out: { offset: number; rateHz: number }[] = [];
+  for (let s = 0; s <= info.decimationStages; s++) {
+    const rateHz = iqRateFor(info, s);
+    if (rateHz <= MAX_AUTO_IQ_RATE && rateHz >= IQ_MENU_FLOOR) out.push({ offset: s, rateHz });
+  }
+  return out;
+}
+
 /**
  * Keep a stored offset while the rate it produces is usable here; otherwise the
  * lowest rate that still covers the mode.

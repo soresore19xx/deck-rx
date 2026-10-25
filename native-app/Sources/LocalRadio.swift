@@ -278,13 +278,13 @@ final class LocalRadio {
             guard mode != oldValue else { return }
             config.mode = mode
             config.save()
-#if os(iOS) && AIRSPYHF_ENABLED
+#if AIRSPYHF_PATCHED
             // The HF+'s zero-IF IQ correction is heard as noise on broadcast
             // FM (rtlusb/airspyhf.patch); it stays on for everything else,
             // where it keeps strong stations' images down. A switch inside
             // the library, so it applies whichever rate the device runs at
             // and costs nothing at the low-IF rates, where it never runs.
-            airspyhf_deckrx_skip_iq_balancer(mode == 1 ? 1 : 0)
+            AirspyDevice.skipIqCorrection(mode == 1)
 #endif
             // spyService.ts:1135 and :1168. Crossing the AM boundary changes
             // the gain the server is holding as well as the detector, and that

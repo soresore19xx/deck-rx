@@ -256,6 +256,31 @@ MODMAP
                 $AIRSPYHF_PREFIX/lib/libairspyhf.a $AIRSPYHF_PREFIX/lib/libusb-1.0.a \
                 -framework IOKit -framework CoreFoundation -framework Security -lobjc"
   echo "USB: linking $AIRSPYHF_PREFIX/lib/libairspyhf.a (arm64 slice only)"
+  # The library as rtlusb/build-driver.sh fetched and patched it, when it is
+  # there (rtlusb/airspyhf.patch): its zero-IF IQ correction is heard as
+  # crackle on broadcast FM at 912 kHz, and the patch lets the app skip it.
+  # Compiled against MacPorts' libusb, in place of MacPorts' libairspyhf.a.
+  AHS="$HERE/rtlusb/build/airspyhf/libairspyhf/src"
+  if [ -f "$AHS/airspyhf.c" ] && grep -q airspyhf_deckrx_skip_iq_balancer "$AHS/airspyhf.c"; then
+    AHO="$HERE/.airspyhf/obj"
+    mkdir -p "$AHO" || exit 1
+    for c in airspyhf iqbalancer; do
+      xcrun clang -c "$AHS/$c.c" -I "$AHS" -I "$AIRSPYHF_PREFIX/include/libusb-1.0" \
+          -target arm64-apple-macos12.0 -O2 -w -o "$AHO/$c.o" \
+        || { echo "ERROR: $c.c failed"; exit 1; }
+    done
+    cat > "$HERE/.airspyhf/module.modulemap" <<MODMAP
+module CAirspyHF {
+    header "$AHS/airspyhf.h"
+    header "$HERE/rtlusb/airspyhf/deckrx_airspyhf.h"
+    export *
+}
+MODMAP
+    AIRSPY_FLAGS="-D AIRSPYHF_ENABLED -D AIRSPYHF_PATCHED -Xcc -fmodule-map-file=$HERE/.airspyhf/module.modulemap \
+                  $AHO/airspyhf.o $AHO/iqbalancer.o $AIRSPYHF_PREFIX/lib/libusb-1.0.a \
+                  -framework IOKit -framework CoreFoundation -framework Security -lobjc"
+    echo "USB: libairspyhf $(git -C "$HERE/rtlusb/build/airspyhf" rev-parse --short HEAD 2>/dev/null) with rtlusb/airspyhf.patch instead"
+  fi
 else
   echo "USB: libairspyhf not found under $AIRSPYHF_PREFIX - Solo will offer the server only"
   echo "     (sudo port install libairspyhf, or set AIRSPYHF_PREFIX)"

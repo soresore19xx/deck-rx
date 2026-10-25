@@ -181,6 +181,13 @@ into the arm64 slice — MacPorts ships them arm64-only, so the Intel slice stay
 what it was — and says which it did. Without them the app is exactly what it
 was and the Source row offers the server alone.
 
+When `native-app/rtlusb/build-driver.sh` has fetched libairspyhf for the iPad,
+`build-app.sh` compiles that copy instead of linking MacPorts' library (still
+against MacPorts' libusb), because it carries `rtlusb/airspyhf.patch`: at
+912 kHz, the HF+'s zero-IF rate, the library's own IQ correction is heard as
+crackle on broadcast FM, and the patch lets the app skip it in WFM, as the
+iPad does (see [the iPad page](ipad.md)). The build says which library it used.
+
 ## Weather fax and DRM
 
 Both are in the **ツール** menu and take a copy of the same IQ the receiver is

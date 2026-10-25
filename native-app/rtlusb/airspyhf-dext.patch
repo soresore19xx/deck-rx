@@ -1,71 +1,3 @@
-diff --git a/RTL-SDR/Info.plist b/RTL-SDR/Info.plist
-index f2024ec..ce1cf86 100644
---- a/RTL-SDR/Info.plist
-+++ b/RTL-SDR/Info.plist
-@@ -65,6 +65,63 @@
- 				<string>RTL_SDR_UserClient</string>
- 			</dict>
- 		</dict>
-+		<key>Airspy HF+ Device</key>
-+		<dict>
-+			<key>CFBundleIdentifier</key>
-+			<string>com.m0kds.RTL-SDR-Host.driver</string>
-+			<key>CFBundleIdentifierKernel</key>
-+			<string>com.apple.kpi.iokit</string>
-+			<key>IOClass</key>
-+			<string>IOUserService</string>
-+			<key>IOMatchCategory</key>
-+			<string>com.apple.null.driver</string>
-+			<key>IOProviderClass</key>
-+			<string>IOUSBHostDevice</string>
-+			<key>IOResourceMatch</key>
-+			<string>IOKit</string>
-+			<key>IOUserClass</key>
-+			<string>RTL_SDR_DEV</string>
-+			<key>IOUserServerName</key>
-+			<string>com.m0kds.RTL-SDR-Host.driver</string>
-+			<key>idVendor</key>
-+			<integer>1003</integer>
-+			<key>idProduct</key>
-+			<integer>32780</integer>
-+		</dict>
-+		<key>Airspy HF+ Interface</key>
-+		<dict>
-+			<key>CFBundleIdentifier</key>
-+			<string>com.m0kds.RTL-SDR-Host.driver</string>
-+			<key>CFBundleIdentifierKernel</key>
-+			<string>com.apple.kpi.iokit</string>
-+			<key>IOClass</key>
-+			<string>IOUserService</string>
-+			<key>IOMatchCategory</key>
-+			<string>com.apple.null.driver</string>
-+			<key>IOProviderClass</key>
-+			<string>IOUSBHostInterface</string>
-+			<key>IOResourceMatch</key>
-+			<string>IOKit</string>
-+			<key>IOUserClass</key>
-+			<string>RTL_SDR</string>
-+			<key>IOUserServerName</key>
-+			<string>com.m0kds.RTL-SDR-Host.driver</string>
-+			<key>idVendor</key>
-+			<integer>1003</integer>
-+			<key>idProduct</key>
-+			<integer>32780</integer>
-+			<key>bConfigurationValue</key>
-+			<integer>1</integer>
-+			<key>bInterfaceNumber</key>
-+			<integer>0</integer>
-+			<key>UserClientProperties</key>
-+			<dict>
-+				<key>IOClass</key>
-+				<string>IOUserUserClient</string>
-+				<key>IOUserClass</key>
-+				<string>RTL_SDR_UserClient</string>
-+			</dict>
-+		</dict>
- 	</dict>
- </dict>
- </plist>
 diff --git a/RTL-SDR/RTL-SDR.entitlements b/RTL-SDR/RTL-SDR.entitlements
 index 317b28b..4ecec8a 100644
 --- a/RTL-SDR/RTL-SDR.entitlements
@@ -298,10 +230,24 @@ index 5ff8d35..3cb5bda 100644
      
  };
 diff --git a/RTL-SDR/RTL_SDR_UserClient.cpp b/RTL-SDR/RTL_SDR_UserClient.cpp
-index 09a901d..0c3becc 100644
+index 09a901d..9adec50 100644
 --- a/RTL-SDR/RTL_SDR_UserClient.cpp
 +++ b/RTL-SDR/RTL_SDR_UserClient.cpp
-@@ -123,6 +123,29 @@ RTL_SDR_UserClient::ExternalMethod(uint64_t selector,
+@@ -64,6 +64,13 @@ kern_return_t
+ IMPL(RTL_SDR_UserClient, Stop)
+ {
+     os_log(OS_LOG_DEFAULT, "RTL_SDR_UserClient::Stop");
++    //  The app closed the connection or went away without stopping the
++    //  stream (killed, crashed, relaunched): stop it here, or the device keeps
++    //  streaming into a ring nobody reads until it is unplugged.
++    if (ivars && ivars->owner) {
++        uint64_t r = 0;
++        ivars->owner->HandleScalarCommand(kRTLSDRMethodStopStream, 0, &r);
++    }
+     if (ivars)
+         ivars->owner = nullptr;
+     return Stop(provider, SUPERDISPATCH);
+@@ -123,6 +130,29 @@ RTL_SDR_UserClient::ExternalMethod(uint64_t selector,
                     ? kIOReturnSuccess : kIOReturnNoMemory;
      }
  
@@ -376,3 +322,71 @@ index a60a419..aa3e28a 100644
 +#define RTLSDR_AIRSPYHF_PID 0x800Cu
 +
  #endif /* RTLSDR_SHARED_H */
+diff --git a/RTL-SDR/Info.plist b/RTL-SDR/Info.plist
+index f2024ec..ce1cf86 100644
+--- a/RTL-SDR/Info.plist
++++ b/RTL-SDR/Info.plist
+@@ -65,6 +65,63 @@
+ 				<string>RTL_SDR_UserClient</string>
+ 			</dict>
+ 		</dict>
++		<key>Airspy HF+ Device</key>
++		<dict>
++			<key>CFBundleIdentifier</key>
++			<string>com.m0kds.RTL-SDR-Host.driver</string>
++			<key>CFBundleIdentifierKernel</key>
++			<string>com.apple.kpi.iokit</string>
++			<key>IOClass</key>
++			<string>IOUserService</string>
++			<key>IOMatchCategory</key>
++			<string>com.apple.null.driver</string>
++			<key>IOProviderClass</key>
++			<string>IOUSBHostDevice</string>
++			<key>IOResourceMatch</key>
++			<string>IOKit</string>
++			<key>IOUserClass</key>
++			<string>RTL_SDR_DEV</string>
++			<key>IOUserServerName</key>
++			<string>com.m0kds.RTL-SDR-Host.driver</string>
++			<key>idVendor</key>
++			<integer>1003</integer>
++			<key>idProduct</key>
++			<integer>32780</integer>
++		</dict>
++		<key>Airspy HF+ Interface</key>
++		<dict>
++			<key>CFBundleIdentifier</key>
++			<string>com.m0kds.RTL-SDR-Host.driver</string>
++			<key>CFBundleIdentifierKernel</key>
++			<string>com.apple.kpi.iokit</string>
++			<key>IOClass</key>
++			<string>IOUserService</string>
++			<key>IOMatchCategory</key>
++			<string>com.apple.null.driver</string>
++			<key>IOProviderClass</key>
++			<string>IOUSBHostInterface</string>
++			<key>IOResourceMatch</key>
++			<string>IOKit</string>
++			<key>IOUserClass</key>
++			<string>RTL_SDR</string>
++			<key>IOUserServerName</key>
++			<string>com.m0kds.RTL-SDR-Host.driver</string>
++			<key>idVendor</key>
++			<integer>1003</integer>
++			<key>idProduct</key>
++			<integer>32780</integer>
++			<key>bConfigurationValue</key>
++			<integer>1</integer>
++			<key>bInterfaceNumber</key>
++			<integer>0</integer>
++			<key>UserClientProperties</key>
++			<dict>
++				<key>IOClass</key>
++				<string>IOUserUserClient</string>
++				<key>IOUserClass</key>
++				<string>RTL_SDR_UserClient</string>
++			</dict>
++		</dict>
+ 	</dict>
+ </dict>
+ </plist>

@@ -193,6 +193,17 @@ which `RadioConfig.ownPath` honours. Anything else that links these sources
 outside an app bundle should set it too. To check a runner is behaving, read
 `host` out of the real file before and after — it must not move.
 
+The plugin's suite (`npm test`) has the same rule. Its harness
+(`test/harness/streamDeckMock.ts`) starts the real plugin entry in a temporary
+sandbox: config, PID file, gain memory, sync state, and — since 2026-10-25 —
+the working directory too. The Stream Deck SDK writes its log files to
+`<cwd>/logs` and keeps ten; started from the `.sdPlugin` folder, every test run
+wrote into the live plugin's `logs/` and rotated its real log away (on
+2026-10-25 all nine older files were the 03:51 test run's). The sandbox gets a
+copy of `manifest.json` and is removed at shutdown. To check, list
+`com.hogehoge.deck-rx.sdPlugin/logs/` before and after `npm test` — nothing in
+it may change.
+
 ## Demodulator benchmarks
 
 `native-app/run-bench.sh` builds the receiver sources at `-O` with

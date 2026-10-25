@@ -45,15 +45,21 @@ static struct libusb_context g_ctx;
 static struct libusb_device  g_hfplus = { RTLSDR_AIRSPYHF_VID, RTLSDR_AIRSPYHF_PID };
 /* The open handle the event loop serves. libairspyhf opens one device. */
 static libusb_device_handle *g_handle;
+/* Guards g_handle where another thread reads it (deckrx_hf_stats, from the
+ * app's diagnostics timer) against libusb_close freeing it and unmapping its
+ * ring under that read. */
+static pthread_mutex_t g_handle_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Bytes skipped because the driver had lapped this reader, since start. */
 static uint64_t g_lapped;
 
 void deckrx_hf_stats(uint64_t *ringDrop, uint64_t *lapped)
 {
+    pthread_mutex_lock(&g_handle_lock);
     libusb_device_handle *h = g_handle;
     if (ringDrop) *ringDrop = (h && h->ring) ? h->ring->dropCount : 0;
-    if (lapped) *lapped = g_lapped;
+    pthread_mutex_unlock(&g_handle_lock);
+    if (lapped) *lapped = __atomic_load_n(&g_lapped, __ATOMIC_RELAXED);
 }
 
 
@@ -114,7 +120,9 @@ int libusb_open(libusb_device *dev, libusb_device_handle **out)
     h->conn = conn;
     h->ring = ring;
     pthread_mutex_init(&h->lock, NULL);
+    pthread_mutex_lock(&g_handle_lock);
     g_handle = h;
+    pthread_mutex_unlock(&g_handle_lock);
     *out = h;
     return 0;
 }
@@ -135,10 +143,14 @@ void libusb_close(libusb_device_handle *h)
     pthread_mutex_lock(&h->lock);
     stop_stream(h);
     pthread_mutex_unlock(&h->lock);
-    rtlsdrhost_close(h->conn);
-    pthread_mutex_destroy(&h->lock);
+    /* Unpublished before the connection (and with it the ring's mapping)
+     * goes, so the stats never read a ring that is being unmapped. */
+    pthread_mutex_lock(&g_handle_lock);
     if (g_handle == h)
         g_handle = NULL;
+    pthread_mutex_unlock(&g_handle_lock);
+    rtlsdrhost_close(h->conn);
+    pthread_mutex_destroy(&h->lock);
     free(h);
 }
 
@@ -283,7 +295,7 @@ static int deliver(libusb_device_handle *h)
             uint64_t w = ring->writeCount;
             uint64_t size = ring->dataSize ? ring->dataSize : RTLSDR_RING_DATA_SIZE;
             if (w - h->cursor > size) {         /* lapped: skip to what is left */
-                g_lapped += (w - size) - h->cursor;
+                __atomic_fetch_add(&g_lapped, (w - size) - h->cursor, __ATOMIC_RELAXED);
                 h->cursor = w - size;
             }
             if (w - h->cursor >= (uint64_t)head->length) {

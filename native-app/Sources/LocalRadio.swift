@@ -16,6 +16,10 @@ final class LocalRadio {
     /// USB device, and swapped in `openConnection` rather than at construction
     /// so the setting can be changed without a relaunch.
     private var client: IQSource = SpyClient()
+    /// `client` for the diagnostics timer, which runs on `auxQueue` while
+    /// `client` is replaced on the main thread. Set with it, under the lock.
+    private var diagClient: IQSource?
+    private let diagClientLock = NSLock()
     private var fft: FFTPipeline?
     private let am = AMDemod()
     private let other = Demods()
@@ -607,6 +611,7 @@ final class LocalRadio {
         old.onError = nil
         old.disconnect()
         client = new
+        diagClientLock.lock(); diagClient = new; diagClientLock.unlock()
     }
 
     /// The connection attempt itself, separated from `connect` so a retry does
@@ -1862,11 +1867,14 @@ final class LocalRadio {
                               self.pcmRms, 20 * log10(max(self.pcmRms, 1e-9)),
                               self.rssiDbfs, self.volume)
             FileHandle.standardError.write(line.data(using: .utf8)!)
-            if let rtl = self.client as? RtlTcpClient {
+            self.diagClientLock.lock()
+            let source = self.diagClient
+            self.diagClientLock.unlock()
+            if let rtl = source as? RtlTcpClient {
                 FileHandle.standardError.write("[diag] \(rtl.diagLine())\n".data(using: .utf8)!)
             }
 #if AIRSPYHF_ENABLED
-            if let hf = self.client as? AirspyDevice {
+            if let hf = source as? AirspyDevice {
                 FileHandle.standardError.write("[diag] \(hf.diagLine())\n".data(using: .utf8)!)
             }
 #endif

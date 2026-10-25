@@ -88,6 +88,11 @@ final class AirspyDevice: IQSource {
     private var lastIQ: (Float, Float) = (0, 0)
     private var ampAvg: Float = 0
     private var statSince = Date()
+    /// The rate and IF mode in force, filed under `statLock` where `queue`
+    /// sets them, so the diagnostics timer reads neither `deviceRate` nor
+    /// the device handle across threads. nil: not known yet.
+    private var statRate: UInt32 = 0
+    private var statLowIF: Bool? = nil
     private let statLock = NSLock()
 
     /// DECKRX_AUDIO_DIAG's second line on this source: what arrived per second
@@ -138,10 +143,11 @@ final class AirspyDevice: IQSource {
         let je = jumpEdge, ji = jumpInside
         statSamples = 0; statDropped = 0; statSince = Date()
         jumpEdge = 0; jumpInside = 0
+        let rate = statRate, lowIF = statLowIF
         statLock.unlock()
         var s = String(format: "hf: in=%.0f/s of %u  libDropped=%llu  jumps edge=%llu inside=%llu",
-                       got, deviceRate, dropped, je, ji)
-        if let dev { s += airspyhf_is_low_if(dev) != 0 ? "  lowIF" : "  zeroIF" }
+                       got, rate, dropped, je, ji)
+        if let lowIF { s += lowIF ? "  lowIF" : "  zeroIF" }
 #if os(iOS)
         var ringDrop: UInt64 = 0, lapped: UInt64 = 0
         deckrx_hf_stats(&ringDrop, &lapped)
@@ -343,7 +349,11 @@ final class AirspyDevice: IQSource {
         decimator = extra > 1 ? IQDecimator(stages: Int(log2(Double(extra)))) : nil
         pending.removeAll(keepingCapacity: true)
         bufLock.unlock()
-        if let dev { airspyhf_set_samplerate(dev, chosen) }
+        if let dev {
+            airspyhf_set_samplerate(dev, chosen)
+            let low = airspyhf_is_low_if(dev) != 0
+            statLock.lock(); statRate = chosen; statLowIF = low; statLock.unlock()
+        }
     }
 
     /// On `queue`.

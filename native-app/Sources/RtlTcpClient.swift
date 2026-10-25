@@ -234,7 +234,15 @@ final class RtlTcpClient: IQSource {
     private var diagSince = ProcessInfo.processInfo.systemUptime
 
     /// For LocalRadio's audio diagnostics (DECKRX_AUDIO_DIAG=1).
+    /// Built on the client's queue: the counters, the pacer and the link all
+    /// live there, and the diagnostics timer runs on another (it read them
+    /// across threads until 2026-10-26). The queue is never held for long —
+    /// driver commands run on the link's own.
     func diagLine() -> String {
+        inline ? diagLineHere() : queue.sync { diagLineHere() }
+    }
+
+    private func diagLineHere() -> String {
         let now = ProcessInfo.processInfo.systemUptime
         let secs = max(1e-3, now - diagSince)
         let line = String(format: "rtl: in=%.0f/s of %u  pacer underruns=%d trims=%d held=%.3fs prefill=%.3fs maxGap=%.0fms",

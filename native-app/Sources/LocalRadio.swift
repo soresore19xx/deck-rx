@@ -1705,11 +1705,15 @@ final class LocalRadio {
                     for v in pcm { sq += Double(v) * Double(v) }
                     self.pcmRms = (sq / Double(pcm.count)).squareRoot()
                     // spyService.ts:1418 — silence while the window is open.
-                    if Date() < self.muteUntil {
+                    let silent = Date() < self.muteUntil
+                    if silent {
                         for i in 0..<pcm.count { pcm[i] = 0 }
                     }
                     self.tapAudio(pcm)
                     self.sink.write(pcm)
+                    // What the source lost around the command is made up here,
+                    // where nobody can hear it (AudioSink.padToTarget).
+                    if silent { self.sink.padToTarget() }
                 }
             }
             // Independent of audioEnabled: a fax capture is not listening.

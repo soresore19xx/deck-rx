@@ -89,6 +89,44 @@ final class AudioSink {
         return current + 0.02 * (wanted - current)
     }
 
+    /// Frames of silence that bring a ring holding `usedFrames` back to `target`.
+    static func topUpFrames(usedFrames: Int, target: Int) -> Int {
+        max(0, target - usedFrames)
+    }
+
+    /// Silence written straight into the ring, up to the prime depth.
+    ///
+    /// For the stretches where the output is silent anyway — LocalRadio's
+    /// mute window after a retune or a gain change. A source can lose samples
+    /// there without a trace: SpyServer drops about 6.5 ms of IQ on every
+    /// frequency or gain setting with no gap in its sequence numbers
+    /// (measured on the HF+, 2026-10-25), and a jump with the gain search
+    /// sends four to six of them. trackedRate refills at 0.4%, far slower than
+    /// a few jumps empty the ring, so a run of presets ran it dry and every
+    /// dry run cost another prime's worth of silence after the mute had
+    /// ended. Topping up to the depth itself, rather than by a guess at what
+    /// the source lost, works for any source and adds no delay.
+    ///
+    /// Not while priming: the reader is not running yet, so silence written
+    /// then is played on top of everything that arrives before it starts —
+    /// the first try left the ring at 0.26 s after a connect instead of 0.12.
+    func padToTarget() {
+        guard engine.isRunning, !priming, primeFrames > 0, channels > 0 else { return }
+        lock.lock()
+        var used = writeIndex - readIndex
+        if used < 0 { used += capacity }
+        let chans = Int(channels)
+        let add = Self.topUpFrames(usedFrames: used / chans, target: primeFrames) * chans
+        var w = writeIndex
+        for _ in 0..<add {
+            ring[w] = 0
+            w += 1
+            if w == capacity { w = 0 }
+        }
+        writeIndex = w
+        lock.unlock()
+    }
+
     var volume: Double = 0.9
     var muted = false
     /// The gain the last sample actually left with. A buffer ramps from here

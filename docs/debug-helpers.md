@@ -112,10 +112,21 @@ The iPad cannot be tuned from outside (no control server on iOS), and its UI
 tests need the passcode typed on the device for every run. For the retune
 case it tests itself instead: launched with `DECKRX_RETUNE_SELFTEST=1`, it
 waits for a connection with control, presses the MW and 49m band buttons
-12 times 0.3 s apart and 8 times 0.8 s apart, then steps +1 ten times, and
+12 times 0.3 s apart and 8 times 0.8 s apart, then steps +1 ten times, then
+does the same between the first two FM presets (0.3 s and 2 s apart), and
 prints `[selftest] <run> drops=<n> gapMs=<n>` after each run to the
-`--console` stderr. It puts the starting frequency and mode back at the end.
-Nothing is stored, so a launch without the variable is an ordinary launch.
+`--console` stderr, with a `[selftest] jump <hz> at <unix time>` line per
+jump. `DECKRX_RETUNE_SELFTEST_HOLD=<s>` adds that many seconds of sitting
+still, reported each minute. It puts the starting frequency and mode back at
+the end. Nothing is stored, so a launch without the variable is an ordinary
+launch.
+
+Run on 2026-10-25 on the iPad Pro against both SpyServers (HF+ on 8888, V4
+on 8889): 0 drops in every run, including 10 minutes held. With the audio tap
+on, the audio after each mute window rises and stays level, with no spike.
+Over SpyServer the V4's IQ still describes the old frequency for 44-59 ms
+after a retune is asked for, well inside the mute window (100 ms at the
+least, 226 ms and more as measured), so the old station is never heard.
 
 The iPad reads the same switch. Its stderr goes nowhere unless the app is
 started with `xcrun devicectl device process launch --console

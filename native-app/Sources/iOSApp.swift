@@ -1138,6 +1138,10 @@ final class RadioViewController: UIViewController {
         }
         let mw = Receiver.bands.firstIndex { $0.name == "MW" } ?? 0
         let sw = Receiver.bands.firstIndex { $0.name == "49m" } ?? 1
+        func band(_ i: Int) {
+            jumpToBand(i)
+            fputs(String(format: "[selftest] jump %u at %.3f\n", radio.frequency, Date().timeIntervalSince1970), stderr)
+        }
         var steps: [(Double, () -> Void)] = []
         func run(_ what: String, _ count: Int, every: Double, _ act: @escaping (Int) -> Void) {
             for i in 0..<count { steps.append((every, { act(i) })) }
@@ -1149,9 +1153,42 @@ final class RadioViewController: UIViewController {
             say("start \(startFreq) Hz mode \(startMode)")
         }))
         steps.append((10, { say("idle 10 s") }))
-        run("12 band jumps 0.3 s apart", 12, every: 0.3) { self.jumpToBand($0 % 2 == 0 ? mw : sw) }
-        run("8 band jumps 0.8 s apart", 8, every: 0.8) { self.jumpToBand($0 % 2 == 0 ? mw : sw) }
+        run("12 band jumps 0.3 s apart", 12, every: 0.3) { band($0 % 2 == 0 ? mw : sw) }
+        run("8 band jumps 0.8 s apart", 8, every: 0.8) { band($0 % 2 == 0 ? mw : sw) }
         run("10 x +1 0.15 s apart", 10, every: 0.15) { _ in self.radio.tune(ticks: 1); self.refresh() }
+        // FM: station to station inside the band, which is where an RTL-SDR
+        // is mostly used, then the same steps. Each jump is logged with its
+        // time so a recording of the run can be cut at the retunes.
+        // The presets are read after viewDidLoad, so the pair is picked when
+        // the FM runs start, not when the plan is made.
+        let fmBand = Receiver.bands.first { $0.name == "FM" }
+        var pair: [Receiver.Preset] = []
+        func jumpFm(_ i: Int) {
+            guard pair.count == 2 else { return }
+            let p = pair[i % 2]
+            fputs(String(format: "[selftest] jump %.0f at %.3f\n", p.freq, Date().timeIntervalSince1970), stderr)
+            radio.mode = p.mode
+            radio.config.mode = p.mode
+            radio.setFrequency(UInt32(p.freq), recenter: true)
+            refresh()
+        }
+        steps.append((0, {
+            pair = Array(self.presets.filter { p in
+                fmBand.map { p.freq >= $0.lo && p.freq <= $0.hi } ?? false
+            }.prefix(2))
+            if pair.count < 2 { fputs("[selftest] no two FM presets, FM runs do nothing\n", stderr) }
+            jumpFm(1)
+        }))
+        steps.append((8, { say("FM settled") }))
+        run("FM 12 station jumps 0.3 s apart", 12, every: 0.3) { jumpFm($0) }
+        run("FM 8 station jumps 2 s apart", 8, every: 2) { jumpFm($0) }
+        run("FM 10 x +1 0.15 s apart", 10, every: 0.15) { _ in self.radio.tune(ticks: 1); self.refresh() }
+        // DECKRX_RETUNE_SELFTEST_HOLD=<s>: then sit still that long, reporting
+        // every minute, for drops that come with time rather than with tuning.
+        let hold = Int(ProcessInfo.processInfo.environment["DECKRX_RETUNE_SELFTEST_HOLD"] ?? "") ?? 0
+        for m in stride(from: 60, through: hold, by: 60) {
+            steps.append((60, { say("held \(m) s") }))
+        }
         steps.append((0, {
             self.radio.mode = startMode
             self.radio.config.mode = startMode

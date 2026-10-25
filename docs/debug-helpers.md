@@ -105,7 +105,17 @@ every one of those settings anyway, so while the mute is open the sink is
 topped back up to its 0.12 s depth with silence (`AudioSink.padToTarget`) —
 measured from the ring itself, not from a guess at what the source lost, so
 it covers rtl_tcp over a socket as well. Afterwards: 0 drops for jumps 80 ms,
-250 ms and 600 ms apart, on the Mac and on the iOS build.
+250 ms and 600 ms apart, on the Mac, on the iOS build in the simulator, and on
+the iPad Pro itself over Wi-Fi.
+
+The iPad cannot be tuned from outside (no control server on iOS), and its UI
+tests need the passcode typed on the device for every run. For the retune
+case it tests itself instead: launched with `DECKRX_RETUNE_SELFTEST=1`, it
+waits for a connection with control, presses the MW and 49m band buttons
+12 times 0.3 s apart and 8 times 0.8 s apart, then steps +1 ten times, and
+prints `[selftest] <run> drops=<n> gapMs=<n>` after each run to the
+`--console` stderr. It puts the starting frequency and mode back at the end.
+Nothing is stored, so a launch without the variable is an ordinary launch.
 
 The iPad reads the same switch. Its stderr goes nowhere unless the app is
 started with `xcrun devicectl device process launch --console

@@ -204,6 +204,9 @@ final class RadioViewController: UIViewController {
         if ProcessInfo.processInfo.environment["DECKRX_AUDIO_DIAG"] == "1" {
             radio.startAudioDiag()
         }
+        if ProcessInfo.processInfo.environment["DECKRX_RETUNE_SELFTEST"] == "1" {
+            retuneSelfTest()
+        }
         // Before anything is built: every constant and font size below is baked
         // in at construction, the way the Mac window bakes them (main.swift:1192).
         // The iPad mini (744 pt short side) does not fit at "max": the station
@@ -1122,8 +1125,65 @@ final class RadioViewController: UIViewController {
         return s
     }
 
-    @objc private func bandTapped(_ sender: UIButton) {
-        let b = Receiver.bands[sender.tag]
+    @objc private func bandTapped(_ sender: UIButton) { jumpToBand(sender.tag) }
+
+    /// `DECKRX_RETUNE_SELFTEST=1`: the band buttons pressed in quick runs, as a
+    /// user steps through presets, with the drop count after each run on stderr
+    /// (`devicectl device process launch --console`). The device's UI tests
+    /// need its passcode on every run; this needs nothing. The frequency and
+    /// mode the app started on are put back at the end.
+    private func retuneSelfTest() {
+        func say(_ s: String) {
+            fputs("[selftest] \(s) drops=\(radio.audioUnderruns) gapMs=\(Int(radio.maxPacketGapMs))\n", stderr)
+        }
+        let mw = Receiver.bands.firstIndex { $0.name == "MW" } ?? 0
+        let sw = Receiver.bands.firstIndex { $0.name == "49m" } ?? 1
+        var steps: [(Double, () -> Void)] = []
+        func run(_ what: String, _ count: Int, every: Double, _ act: @escaping (Int) -> Void) {
+            for i in 0..<count { steps.append((every, { act(i) })) }
+            steps.append((6, { say(what) }))
+        }
+        var startFreq: UInt32 = 0, startMode = 0
+        steps.append((0, {
+            startFreq = self.radio.frequency; startMode = self.radio.mode
+            say("start \(startFreq) Hz mode \(startMode)")
+        }))
+        steps.append((10, { say("idle 10 s") }))
+        run("12 band jumps 0.3 s apart", 12, every: 0.3) { self.jumpToBand($0 % 2 == 0 ? mw : sw) }
+        run("8 band jumps 0.8 s apart", 8, every: 0.8) { self.jumpToBand($0 % 2 == 0 ? mw : sw) }
+        run("10 x +1 0.15 s apart", 10, every: 0.15) { _ in self.radio.tune(ticks: 1); self.refresh() }
+        steps.append((0, {
+            self.radio.mode = startMode
+            self.radio.config.mode = startMode
+            self.radio.setFrequency(startFreq, recenter: true)
+            self.radio.config.frequencyHz = Double(startFreq)
+            self.radio.config.save()
+            self.refresh()
+        }))
+        steps.append((10, { say("back, idle 10 s"); fputs("[selftest] done\n", stderr) }))
+        func next(_ i: Int) {
+            guard i < steps.count else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + steps[i].0) {
+                steps[i].1()
+                next(i + 1)
+            }
+        }
+        // Starts once connected with control: a jump refused for want of it
+        // measures nothing.
+        func wait(_ tries: Int) {
+            if radio.isConnected && radio.canControl {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 8) { next(0) }
+            } else if tries > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { wait(tries - 1) }
+            } else {
+                fputs("[selftest] gave up: connected \(radio.isConnected) control \(radio.canControl)\n", stderr)
+            }
+        }
+        wait(60)
+    }
+
+    private func jumpToBand(_ index: Int) {
+        let b = Receiver.bands[index]
         let target = presets.first { $0.freq >= b.lo && $0.freq <= b.hi }
         radio.mode = target?.mode ?? b.mode
         radio.config.mode = radio.mode

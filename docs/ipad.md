@@ -157,6 +157,20 @@ picked again.
 Underneath it is the RTL-TCP source's own client reading the driver instead of
 a socket, so gain steps, sample rates and the pacing are the same either way.
 
+## An Airspy HF+ plugged into the iPad
+
+The same driver also takes an Airspy HF+, and the source menu then offers
+**Airspy HF+ (USB)** as well. The device is run by libairspyhf, the HF+'s own
+library, exactly as on the Mac — its sample rates, calibration, IQ correction
+and attenuator — through the same `AirspyDevice` code. Only what is under the
+library differs: there is no libusb on an iPad, so the build links it against
+a small stand-in that hands its control transfers to the driver and fills its
+transfers from the driver's sample ring. A V4 and an HF+ can be plugged in at
+once; each source opens its own device.
+
+Measured 2026-10-25 on an iPad Pro 12.9" (M1): 594 kHz at 912 kS/s, SNR 71 dB,
+no drops.
+
 ## When the SpyServer is on the other segment
 
 A tablet on a wired adapter is usually on a different subnet from its Wi-Fi,

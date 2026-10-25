@@ -52,3 +52,21 @@ autotune 128 kHz then 8 kHz, VCO current at its maximum), and logs
 
 Measured 2026-10-24 on an iPad Pro 12.9" (M1) with a Blog V4: noise before,
 stations after.
+
+## The Airspy HF+ (`airspyhf-dext.patch`, `airspyhf/`)
+
+The same driver also matches the HF+ (03eb:800c). For it, `airspyhf-dext.patch`
+makes the driver skip the RTL2832 set-up, select the interface's alternate
+setting 1 (the only one with the IQ endpoint), stream the endpoint into the
+same ring in 16 KiB transfers, and pass raw control transfers through
+(`kRTLSDRMethodControlTransfer`, plus `kRTLSDRMethodClearHalt`). The device
+info now says which USB device a service drives, and `usb_open.c` picks the
+service by vendor, so a V4 and an HF+ plugged in together each reach their own.
+
+Everything the HF+ needs beyond that is libairspyhf's
+([airspy/airspyhf](https://github.com/airspy/airspyhf), BSD), which
+`build-driver.sh` fetches at a pinned commit and `build-ios.sh` compiles
+unmodified against `airspyhf/libusb.h` and `airspyhf/libusb_dext.c` — the
+part of libusb the library uses, implemented on the driver. Its transfers are
+filled from the ring a whole transfer at a time, oldest first, as the library's
+callback wants them. The Mac's `Sources/AirspyDevice.swift` drives it.

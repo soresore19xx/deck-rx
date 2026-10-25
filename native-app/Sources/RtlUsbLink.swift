@@ -34,6 +34,9 @@ final class RtlUsbLink: RtlByteLink {
         }
     }
 
+    /// Realtek: every RTL-SDR the driver matches (the V4 is 0bda:2838).
+    static let rtlVendor: UInt16 = 0x0bda
+
     /// RTLSDRRingBuffer's header: writeCount, readCount, dropCount, dataSize.
     private static let ringHeader = 32
     private static let pollInterval: TimeInterval = 0.005
@@ -77,7 +80,9 @@ final class RtlUsbLink: RtlByteLink {
 
     func start(queue: DispatchQueue, onBytes: @escaping (Data) -> Void) -> Error? {
         clientQueue = queue
-        conn = rtlsdrhost_open()
+        // The RTL-SDR's own service: the driver serves an HF+ under the same
+        // name, and the first service found may be that one.
+        conn = deckrx_usb_open(Self.rtlVendor, 0)
         guard conn != 0 else { return LinkError.noDriver }
         var size: UInt64 = 0
         guard let p = rtlsdrhost_map_memory(conn, UInt32(kRTLSDRMemoryTypeIQRing), &size) else {

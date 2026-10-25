@@ -80,11 +80,44 @@ if [ "$TARGET" = "device" ] && [ -d "$DEXT" ]; then
   xcrun -sdk "$SDK" clang -c "$RB/RTL-SDR Host/RTLSDRBridge.c" -I "$RB/RTL-SDR/include" \
       -target "$TRIPLE" -O2 -fblocks -o "$OBJ" \
     || { echo "ERROR: RTLSDRBridge.c failed"; exit 1; }
+  # The driver serves every device under one service name; this picks one.
+  OBJ_OPEN="$HERE/build/$TARGET/usb_open.o"
+  xcrun -sdk "$SDK" clang -c "$HERE/rtlusb/usb_open.c" -I "$RB/RTL-SDR/include" -I "$RB/RTL-SDR Host" \
+      -target "$TRIPLE" -O2 -o "$OBJ_OPEN" \
+    || { echo "ERROR: usb_open.c failed"; exit 1; }
   SRC="$SRC Sources/RtlUsbLink.swift"
-  BRIDGE_HEADERS+=("$RB/RTL-SDR Host/RTLSDRBridge.h" "$RB/RTL-SDR/include/RTLSDRShared.h")
-  RTLUSB_FLAGS="-D RTLUSB_ENABLED $OBJ -framework IOKit"
+  BRIDGE_HEADERS+=("$RB/RTL-SDR Host/RTLSDRBridge.h" "$RB/RTL-SDR/include/RTLSDRShared.h"
+                   "$HERE/rtlusb/usb_open.h")
+  RTLUSB_FLAGS="-D RTLUSB_ENABLED $OBJ $OBJ_OPEN -framework IOKit"
   mkdir -p "$APP/SystemExtensions" && cp -R "$DEXT" "$APP/SystemExtensions/" || exit 1
   echo "RTL-SDR: carrying $(basename "$DEXT")"
+
+  # The Airspy HF+ through the same driver: libairspyhf itself, linked
+  # against rtlusb/airspyhf/libusb_dext.c instead of libusb. The Mac's
+  # AirspyDevice.swift drives it, as on the Mac.
+  AH="$RTLUSB_DIR/airspyhf/libairspyhf/src"
+  if [ -f "$AH/airspyhf.c" ]; then
+    AHO="$HERE/build/$TARGET/airspyhf"
+    mkdir -p "$AHO" || exit 1
+    for c in "$AH/airspyhf.c" "$AH/iqbalancer.c" "$HERE/rtlusb/airspyhf/libusb_dext.c"; do
+      xcrun -sdk "$SDK" clang -c "$c" -I "$HERE/rtlusb/airspyhf" -I "$HERE/rtlusb" -I "$AH" \
+          -I "$RB/RTL-SDR/include" -I "$RB/RTL-SDR Host" \
+          -target "$TRIPLE" -O2 -w -o "$AHO/$(basename "$c" .c).o" \
+        || { echo "ERROR: $(basename "$c") failed"; exit 1; }
+    done
+    cat > "$AHO/module.modulemap" <<MODMAP
+module CAirspyHF {
+    header "$AH/airspyhf.h"
+    export *
+}
+MODMAP
+    SRC="$SRC Sources/AirspyDevice.swift"
+    RTLUSB_FLAGS="$RTLUSB_FLAGS -D AIRSPYHF_ENABLED -Xcc -fmodule-map-file=$AHO/module.modulemap \
+                  $AHO/airspyhf.o $AHO/iqbalancer.o $AHO/libusb_dext.o"
+    echo "HF+: libairspyhf $(git -C "$RTLUSB_DIR/airspyhf" rev-parse --short HEAD 2>/dev/null) on the driver"
+  else
+    echo "HF+: libairspyhf not fetched (rtlusb/build-driver.sh) - no Airspy HF+ (USB) source"
+  fi
 else
   echo "RTL-SDR: no driver built - no RTL-SDR (USB) source in this bundle"
 fi

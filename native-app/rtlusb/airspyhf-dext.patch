@@ -1,0 +1,378 @@
+diff --git a/RTL-SDR/Info.plist b/RTL-SDR/Info.plist
+index f2024ec..ce1cf86 100644
+--- a/RTL-SDR/Info.plist
++++ b/RTL-SDR/Info.plist
+@@ -65,6 +65,63 @@
+ 				<string>RTL_SDR_UserClient</string>
+ 			</dict>
+ 		</dict>
++		<key>Airspy HF+ Device</key>
++		<dict>
++			<key>CFBundleIdentifier</key>
++			<string>com.m0kds.RTL-SDR-Host.driver</string>
++			<key>CFBundleIdentifierKernel</key>
++			<string>com.apple.kpi.iokit</string>
++			<key>IOClass</key>
++			<string>IOUserService</string>
++			<key>IOMatchCategory</key>
++			<string>com.apple.null.driver</string>
++			<key>IOProviderClass</key>
++			<string>IOUSBHostDevice</string>
++			<key>IOResourceMatch</key>
++			<string>IOKit</string>
++			<key>IOUserClass</key>
++			<string>RTL_SDR_DEV</string>
++			<key>IOUserServerName</key>
++			<string>com.m0kds.RTL-SDR-Host.driver</string>
++			<key>idVendor</key>
++			<integer>1003</integer>
++			<key>idProduct</key>
++			<integer>32780</integer>
++		</dict>
++		<key>Airspy HF+ Interface</key>
++		<dict>
++			<key>CFBundleIdentifier</key>
++			<string>com.m0kds.RTL-SDR-Host.driver</string>
++			<key>CFBundleIdentifierKernel</key>
++			<string>com.apple.kpi.iokit</string>
++			<key>IOClass</key>
++			<string>IOUserService</string>
++			<key>IOMatchCategory</key>
++			<string>com.apple.null.driver</string>
++			<key>IOProviderClass</key>
++			<string>IOUSBHostInterface</string>
++			<key>IOResourceMatch</key>
++			<string>IOKit</string>
++			<key>IOUserClass</key>
++			<string>RTL_SDR</string>
++			<key>IOUserServerName</key>
++			<string>com.m0kds.RTL-SDR-Host.driver</string>
++			<key>idVendor</key>
++			<integer>1003</integer>
++			<key>idProduct</key>
++			<integer>32780</integer>
++			<key>bConfigurationValue</key>
++			<integer>1</integer>
++			<key>bInterfaceNumber</key>
++			<integer>0</integer>
++			<key>UserClientProperties</key>
++			<dict>
++				<key>IOClass</key>
++				<string>IOUserUserClient</string>
++				<key>IOUserClass</key>
++				<string>RTL_SDR_UserClient</string>
++			</dict>
++		</dict>
+ 	</dict>
+ </dict>
+ </plist>
+diff --git a/RTL-SDR/RTL-SDR.entitlements b/RTL-SDR/RTL-SDR.entitlements
+index 317b28b..4ecec8a 100644
+--- a/RTL-SDR/RTL-SDR.entitlements
++++ b/RTL-SDR/RTL-SDR.entitlements
+@@ -10,6 +10,10 @@
+ 			<key>idVendor</key>
+ 			<integer>3034</integer>
+ 		</dict>
++		<dict>
++			<key>idVendor</key>
++			<integer>1003</integer>
++		</dict>
+ 	</array>
+ </dict>
+ </plist>
+diff --git a/RTL-SDR/RTL_SDR.cpp b/RTL-SDR/RTL_SDR.cpp
+index 58f266b..4d67a84 100644
+--- a/RTL-SDR/RTL_SDR.cpp
++++ b/RTL-SDR/RTL_SDR.cpp
+@@ -108,6 +108,13 @@ struct RTLSDRTransport {
+     IOUSBHostPipe            *iqPipe;       /* bulk-IN endpoint 0x81           */
+     RTLSDRStreamTransfer      transfers[RTLSDR_STREAM_BUF_NUM];
+ 
++    /* An Airspy HF+: streamed here, programmed by libairspyhf in the app
++     * through kRTLSDRMethodControlTransfer. No RTL2832Radio. */
++    bool                      airspy;
++    uint16_t                  idVendor;
++    uint16_t                  idProduct;
++    uint32_t                  bufLen;       /* bytes per stream transfer       */
++
+     /* set while the stream runs: completed transfers are resubmitted */
+     bool                      streaming;    /* atomic                          */
+     uint32_t                  inFlight;     /* atomic: submitted, not completed*/
+@@ -179,7 +186,7 @@ static uint32_t RTLSDR_InFlight(RTLSDRTransport *t)
+ /* Stream queue only. */
+ static bool RTLSDR_Submit(RTLSDRStreamTransfer *x)
+ {
+-    kern_return_t ret = x->t->iqPipe->AsyncIO(x->buffer, RTLSDR_STREAM_BUF_LEN,
++    kern_return_t ret = x->t->iqPipe->AsyncIO(x->buffer, x->t->bufLen,
+                                               x->action, 0);
+     if (ret != kIOReturnSuccess) {
+         os_log(OS_LOG_DEFAULT, "[rtlsdr] AsyncIO failed: 0x%x", ret);
+@@ -386,6 +393,23 @@ IMPL(RTL_SDR, Start)
+     }
+     t->usbAttached = true;
+ 
++    usb_driverkit_get_info(&t->idVendor, &t->idProduct, nullptr, nullptr);
++    t->airspy = (t->idVendor == RTLSDR_AIRSPYHF_VID && t->idProduct == RTLSDR_AIRSPYHF_PID);
++    /* libairspyhf's transfer: 4096 complex int16 samples. Its callback
++     * takes whole transfers only, and the app's shim cuts the ring into
++     * pieces of that size, so any size works here; the same keeps the
++     * latency the library was written for. */
++    t->bufLen = t->airspy ? 16384u : RTLSDR_STREAM_BUF_LEN;
++    if (t->airspy) {
++        /* The HF+'s IQ endpoint exists in alternate setting 1 only
++         * (libairspyhf: libusb_set_interface_alt_setting(dev, 0, 1)). */
++        ret = t->interface->SelectAlternateSetting(1);
++        if (ret != kIOReturnSuccess) {
++            os_log(OS_LOG_DEFAULT, "RTL_SDR: HF+ alternate setting 1 failed: 0x%x", ret);
++            goto fail;
++        }
++    }
++
+     /* IQ stream: the pipe and the transfers, each with a DMA buffer and the
+      * OSAction its completion arrives on. */
+     ret = t->interface->CopyPipe(RTLSDR_IQ_ENDPOINT, &t->iqPipe);
+@@ -399,7 +423,7 @@ IMPL(RTL_SDR, Start)
+     for (uint32_t i = 0; i < RTLSDR_STREAM_BUF_NUM; ++i) {
+         RTLSDRStreamTransfer *x = &t->transfers[i];
+         x->t = t;
+-        ret = t->interface->CreateIOBuffer(kIOMemoryDirectionIn, RTLSDR_STREAM_BUF_LEN,
++        ret = t->interface->CreateIOBuffer(kIOMemoryDirectionIn, t->bufLen,
+                                            &x->buffer);
+         if (ret != kIOReturnSuccess || !x->buffer) {
+             os_log(OS_LOG_DEFAULT, "RTL_SDR: stream buffer alloc failed: 0x%x", ret);
+@@ -424,8 +448,9 @@ IMPL(RTL_SDR, Start)
+     }
+ 
+     /* Initialise the dongle. We are on the device queue, so this (and all
+-     * the control transfers it performs) runs serialised with the commands. */
+-    if (RTL2832Radio_Open(&t->radio) != 0 || !t->radio) {
++     * the control transfers it performs) runs serialised with the commands.
++     * The HF+ is left to libairspyhf in the app. */
++    if (!t->airspy && (RTL2832Radio_Open(&t->radio) != 0 || !t->radio)) {
+         os_log(OS_LOG_DEFAULT, "RTL_SDR: radio open failed");
+         t->radio = nullptr;
+         ret = kIOReturnError;
+@@ -441,8 +466,9 @@ IMPL(RTL_SDR, Start)
+     }
+ 
+     RegisterService();
+-    os_log(OS_LOG_DEFAULT, "RTL_SDR: started, tuner type = %u, device = %{public}s / %{public}s",
+-           RTL2832Radio_GetTunerType(t->radio), t->manufact, t->product);
++    os_log(OS_LOG_DEFAULT, "RTL_SDR: started, %04x:%04x, tuner type = %u, device = %{public}s / %{public}s",
++           t->idVendor, t->idProduct, t->radio ? RTL2832Radio_GetTunerType(t->radio) : 0u,
++           t->manufact, t->product);
+     return kIOReturnSuccess;
+ 
+ fail:
+@@ -507,8 +533,7 @@ IMPL(RTL_SDR, ReadComplete)
+ 
+     bool ok = (status == kIOReturnSuccess || status == kIOReturnUnderrun);  /* short packet */
+     if (ok && actualByteCount > 0) {
+-        uint32_t n = (actualByteCount < RTLSDR_STREAM_BUF_LEN) ? actualByteCount
+-                                                               : RTLSDR_STREAM_BUF_LEN;
++        uint32_t n = (actualByteCount < t->bufLen) ? actualByteCount : t->bufLen;
+         RTLSDR_iqSink(t, x->bytes, n);
+     }
+     if (ok && RTLSDR_IsStreaming(t) && RTLSDR_Submit(x))
+@@ -531,7 +556,7 @@ static const char *const kRTLSDRCommandNames[] = {
+     "SetTunerGainMode", "SetTunerGain", "SetAgcMode", "SetFreqCorrection",
+     "SetTunerBandwidth", "SetTestmode", "SetDirectSampling", "SetBiasTee",
+     "ResetBuffer", "SetGainByIndex", "GetTunerType", "GetDeviceInfo",
+-    "SetOffsetTuning",
++    "SetOffsetTuning", "ControlTransfer", "ClearHalt",
+ };
+ static_assert(sizeof(kRTLSDRCommandNames) / sizeof(kRTLSDRCommandNames[0]) == kRTLSDRMethodCount,
+               "one name per kRTLSDRMethod* selector");
+@@ -562,7 +587,7 @@ kern_return_t
+ RTL_SDR::HandleScalarCommand(uint32_t selector, uint64_t arg, uint64_t *result)
+ {
+     RTLSDRTransport *t = (ivars ? ivars->t : nullptr);
+-    if (!t || !t->radio || !t->deviceQueue)
++    if (!t || (!t->radio && !t->airspy) || !t->deviceQueue)
+         return kIOReturnNotReady;
+ 
+     __block int      r   = 0;
+@@ -571,6 +596,22 @@ RTL_SDR::HandleScalarCommand(uint32_t selector, uint64_t arg, uint64_t *result)
+     /* Run the command serialised on the device queue. */
+     t->deviceQueue->DispatchSync(^{
+         RTL2832Radio *d = t->radio;
++        if (t->airspy) {
++            /* The stream only: the rest is libairspyhf's, by control transfer. */
++            switch (selector) {
++            case kRTLSDRMethodStartStream: r = RTLSDR_StartStream(t); break;
++            case kRTLSDRMethodStopStream:  r = RTLSDR_StopStream(t);  break;
++            case kRTLSDRMethodResetBuffer: r = 0; break;
++            case kRTLSDRMethodClearHalt:
++                if (RTLSDR_IsStreaming(t) || RTLSDR_InFlight(t) > 0)
++                    r = 0;      /* a running pipe is not stalled */
++                else
++                    r = (t->iqPipe->ClearStall(true) == kIOReturnSuccess) ? 0 : -1;
++                break;
++            default: r = -1; break;
++            }
++            return;
++        }
+         switch (selector) {
+         case kRTLSDRMethodStartStream:
+             r = RTLSDR_StartStream(t);
+@@ -661,12 +702,14 @@ RTL_SDR::FillDeviceInfo(void *infop)
+     memset(info, 0, sizeof(*info));
+ 
+     RTLSDRTransport *t = (ivars ? ivars->t : nullptr);
+-    if (!t || !t->radio)
++    if (!t || (!t->radio && !t->airspy))
+         return kIOReturnNotReady;
+ 
+     info->valid      = 1;
+-    info->tunerType  = RTL2832Radio_GetTunerType(t->radio);
+-    info->sampleRate = RTL2832Radio_GetSampleRate(t->radio);
++    info->tunerType  = t->radio ? RTL2832Radio_GetTunerType(t->radio) : 0u;
++    info->sampleRate = t->radio ? RTL2832Radio_GetSampleRate(t->radio) : 0u;
++    info->idVendor   = t->idVendor;
++    info->idProduct  = t->idProduct;
+     info->streaming  = RTLSDR_IsStreaming(t) ? 1u : 0u;
+     /* both sides are NUL-terminated 256-byte buffers */
+     memcpy(info->manufacturer, t->manufact, sizeof(info->manufacturer));
+@@ -676,3 +719,41 @@ RTL_SDR::FillDeviceInfo(void *infop)
+     memcpy(info->dextVersion, RTLSDR_DEXT_VERSION_STRING, sizeof(RTLSDR_DEXT_VERSION_STRING));
+     return kIOReturnSuccess;
+ }
++
++kern_return_t
++RTL_SDR::HandleControl(const void *setupp, uint32_t setupLength,
++                       void *data, uint32_t dataCapacity, uint32_t *transferred)
++{
++    if (transferred)
++        *transferred = 0;
++    RTLSDRTransport *t = (ivars ? ivars->t : nullptr);
++    if (!t || !t->deviceQueue || !t->usbAttached)
++        return kIOReturnNotReady;
++    if (!setupp || setupLength < sizeof(RTLSDRControlSetup))
++        return kIOReturnBadArgument;
++
++    RTLSDRControlSetup s;
++    memcpy(&s, setupp, sizeof(s));
++    const bool isIn = (s.bmRequestType & 0x80u) != 0;
++    if (s.wLength > RTLSDR_CONTROL_MAX_DATA)
++        return kIOReturnBadArgument;
++    if (isIn && s.wLength > dataCapacity)
++        return kIOReturnBadArgument;
++    if (!isIn && setupLength < sizeof(s) + s.wLength)
++        return kIOReturnBadArgument;
++
++    /* OUT data follows the setup; IN data comes back in `data`. */
++    void *buf = isIn ? data : (void *)((const uint8_t *)setupp + sizeof(s));
++    __block int32_t  ret = 0;
++    __block uint16_t got = 0;
++    t->deviceQueue->DispatchSync(^{
++        ret = usb_driverkit_control(s.bmRequestType, s.bRequest, s.wValue, s.wIndex,
++                                    buf, s.wLength, s.timeoutMs ? s.timeoutMs : 1000, &got);
++    });
++    if (RTLSDR_LOG_COMMANDS)
++        os_log(OS_LOG_DEFAULT, "[rtlsdr] ControlTransfer(%02x %02x %04x %04x %u) -> 0x%x, %u",
++               s.bmRequestType, s.bRequest, s.wValue, s.wIndex, s.wLength, ret, got);
++    if (transferred)
++        *transferred = got;
++    return ret;
++}
+diff --git a/RTL-SDR/RTL_SDR.iig b/RTL-SDR/RTL_SDR.iig
+index 5ff8d35..3cb5bda 100644
+--- a/RTL-SDR/RTL_SDR.iig
++++ b/RTL-SDR/RTL_SDR.iig
+@@ -70,6 +70,16 @@ public:
+     //  Fills an RTLSDRDeviceInfo struct (passed as void* to keep iig simple).
+     virtual kern_return_t
+     FillDeviceInfo(void * info) LOCALONLY;
++
++    //  A raw control transfer (kRTLSDRMethodControlTransfer), serialised on
++    //  the device dispatch queue. `setup` is an RTLSDRControlSetup followed by
++    //  the OUT data; IN data lands in `data`.
++    virtual kern_return_t
++    HandleControl(const void * setup,
++                  uint32_t     setupLength,
++                  void *       data,
++                  uint32_t     dataCapacity,
++                  uint32_t *   transferred) LOCALONLY;
+     
+     
+ };
+diff --git a/RTL-SDR/RTL_SDR_UserClient.cpp b/RTL-SDR/RTL_SDR_UserClient.cpp
+index 09a901d..0c3becc 100644
+--- a/RTL-SDR/RTL_SDR_UserClient.cpp
++++ b/RTL-SDR/RTL_SDR_UserClient.cpp
+@@ -123,6 +123,29 @@ RTL_SDR_UserClient::ExternalMethod(uint64_t selector,
+                    ? kIOReturnSuccess : kIOReturnNoMemory;
+     }
+ 
++    //  A raw control transfer: setup (+ OUT data) in, IN data out.
++    if (selector == kRTLSDRMethodControlTransfer) {
++        if (!arguments || !arguments->structureInput)
++            return kIOReturnBadArgument;
++        OSData *in = arguments->structureInput;
++        uint8_t *inData = (uint8_t *)IOMalloc(RTLSDR_CONTROL_MAX_DATA);
++        if (!inData)
++            return kIOReturnNoMemory;
++        uint32_t got = 0;
++        kern_return_t ret = ivars->owner->HandleControl(in->getBytesNoCopy(),
++                                                        (uint32_t)in->getLength(),
++                                                        inData, RTLSDR_CONTROL_MAX_DATA,
++                                                        &got);
++        if (ret == kIOReturnSuccess && got > 0)
++            arguments->structureOutput = OSData::withBytes(inData, got);
++        IOFree(inData, RTLSDR_CONTROL_MAX_DATA);
++        if (arguments->scalarOutput && arguments->scalarOutputCount > 0) {
++            arguments->scalarOutput[0]   = got;
++            arguments->scalarOutputCount = 1;
++        }
++        return ret;
++    }
++
+     //  Everything else is a scalar command (selectors 0 .. GetTunerType).
+     if (selector >= kRTLSDRMethodCount)
+         return kIOReturnBadArgument;
+diff --git a/RTL-SDR/include/RTLSDRShared.h b/RTL-SDR/include/RTLSDRShared.h
+index a60a419..aa3e28a 100644
+--- a/RTL-SDR/include/RTLSDRShared.h
++++ b/RTL-SDR/include/RTLSDRShared.h
+@@ -62,6 +62,12 @@ enum {
+     kRTLSDRMethodGetTunerType      = 14, /* scalarOutput[0] = enum rtlsdr_tuner       */
+     kRTLSDRMethodGetDeviceInfo     = 15, /* structOutput   = RTLSDRDeviceInfo         */
+     kRTLSDRMethodSetOffsetTuning   = 16, /* scalarInput[0] = 1 on / 0 off             */
++    /* Raw USB, for devices the dext streams but does not program itself
++     * (the Airspy HF+: libairspyhf runs in the app). */
++    kRTLSDRMethodControlTransfer   = 17, /* structInput = RTLSDRControlSetup + OUT data,
++                                            structOutput = IN data,
++                                            scalarOutput[0] = bytes transferred      */
++    kRTLSDRMethodClearHalt         = 18, /* clears the IQ endpoint (stream stopped)  */
+     kRTLSDRMethodCount
+ };
+ 
+@@ -106,6 +112,27 @@ typedef struct RTLSDRDeviceInfo {
+     char     product[256];
+     char     dextVersion[32];       /* "1.0 (7)": version (build) of the     */
+                                     /* running dext, empty from older dexts */
++    uint16_t idVendor;              /* the USB device this service drives    */
++    uint16_t idProduct;
+ } RTLSDRDeviceInfo;
+ 
++/* ---------------------------------------------------------------------------
++ * kRTLSDRMethodControlTransfer: the setup, then wLength bytes of data for an
++ * OUT request. An IN request returns its data as the structure output.
++ * ------------------------------------------------------------------------- */
++typedef struct RTLSDRControlSetup {
++    uint8_t  bmRequestType;
++    uint8_t  bRequest;
++    uint16_t wValue;
++    uint16_t wIndex;
++    uint16_t wLength;
++    uint32_t timeoutMs;
++} RTLSDRControlSetup;
++
++#define RTLSDR_CONTROL_MAX_DATA 4096u
++
++/* The Airspy HF+, which the same dext streams. */
++#define RTLSDR_AIRSPYHF_VID 0x03EBu
++#define RTLSDR_AIRSPYHF_PID 0x800Cu
++
+ #endif /* RTLSDR_SHARED_H */

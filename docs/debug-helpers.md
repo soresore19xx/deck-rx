@@ -113,7 +113,10 @@ tests need the passcode typed on the device for every run. For the retune
 case it tests itself instead: launched with `DECKRX_RETUNE_SELFTEST=1`, it
 waits for a connection with control, presses the MW and 49m band buttons
 12 times 0.3 s apart and 8 times 0.8 s apart, then steps +1 ten times, then
-does the same between the first two FM presets (0.3 s and 2 s apart), and
+does the same between the first two FM presets (0.3 s and 2 s apart), then
+taps the STEREO / MONO badge six times 3 s apart on the first FM preset
+(the audio graph is rebuilt for one or two channels each time; the station's
+own choice is put back), and
 prints `[selftest] <run> drops=<n> gapMs=<n>` after each run to the
 `--console` stderr, with a `[selftest] jump <hz> at <unix time>` line per
 jump. `DECKRX_RETUNE_SELFTEST_HOLD=<s>` adds that many seconds of sitting
@@ -127,6 +130,10 @@ on, the audio after each mute window rises and stays level, with no spike.
 Over SpyServer the V4's IQ still describes the old frequency for 44-59 ms
 after a retune is asked for, well inside the mute window (100 ms at the
 least, 226 ms and more as measured), so the old station is never heard.
+The badge run, on the HF+ over the iPad's USB and on the V4 over SpyServer:
+0 drops, the pilot held throughout. The quality bench (run-quality.sh) gives
+the same table as before any of this, CPU aside: stereo separation 63-64 dB at
+every rate wide enough for it.
 
 The iPad reads the same switch. Its stderr goes nowhere unless the app is
 started with `xcrun devicectl device process launch --console

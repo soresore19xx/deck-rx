@@ -1675,6 +1675,17 @@ final class LocalRadio {
             maxPacketGapMs = 0
         }
         queue.async {
+            if pkt.landed {
+                // The retune reached the stream here, not when it was asked
+                // for: over the iPad's USB the tuner takes about 110 ms, and
+                // the window started at the request ran out before the new
+                // station arrived. Same settling as at the request.
+                self.muteUntil = max(self.muteUntil, Date().addingTimeInterval(self.mode == 2 ? 0.2 : 0.1))
+                self.am.resetForRetune()
+                self.other.resetForRetune()
+                self.autoNotch.reset()
+                self.audioNr.reset()
+            }
             // Demodulate per packet, not per display frame: audio has to be
             // continuous, and the frame timer deliberately skips samples.
 #if DRM_ENABLED

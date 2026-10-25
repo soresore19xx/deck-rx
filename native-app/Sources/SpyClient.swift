@@ -86,6 +86,9 @@ final class SpyClient {
         var body: Data
         /// Upper 16 bits of MessageType.
         var gainDb: UInt16
+        /// The first packet with real samples after a retune the source could
+        /// see land (RtlTcpClient over the iPad's USB). SpyServer never sets it.
+        var landed = false
     }
 
     // MARK: callbacks

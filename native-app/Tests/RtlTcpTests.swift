@@ -16,8 +16,9 @@ private final class Rig {
     var packets = [SpyClient.IQPacket]()
     var errors = [Error]()
 
-    init(settle: TimeInterval = 0) {
-        c = RtlTcpClient(rateSettle: settle, inline: true)
+    init(settle: TimeInterval = 0, link: Bool = false) {
+        c = RtlTcpClient(rateSettle: settle, inline: true,
+                         link: link ? { NullLink() } : nil)
         c.send = { [unowned self] d in self.sent.append(d) }
         c.onDeviceInfo = { [unowned self] in self.infos.append($0) }
         c.onSync = { [unowned self] in self.syncs.append($0) }
@@ -51,6 +52,14 @@ private final class Rig {
             p.body.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
         }
     }
+}
+
+/// Stands in for the USB link only so the client knows commands report done;
+/// the tests call `commandDone` themselves.
+private final class NullLink: RtlByteLink {
+    func start(queue: DispatchQueue, onBytes: @escaping (Data) -> Void) -> Error? { nil }
+    func command(_ d: Data, done: @escaping (UInt8) -> Void) {}
+    func close() {}
 }
 
 func runRtlTcpTests() {
@@ -298,6 +307,57 @@ func runRtlTcpTests() {
               r.last(RtlTcpClient.cmdSetSampleRate) == nil)
         r.c.feed(Data([255, 0, 128, 128]))
         check("and streams straight away on restart", r.packets.count == 1)
+    }
+
+    print("\nrtl_tcp — over a link that says when a command is done")
+    do {
+        let r = Rig(link: true)
+        r.handshake()
+        r.c.setSetting(.iqDecimation, 1)      // 1.2 MS/s, native: one pair in, one out
+        r.c.setSetting(.streamingEnabled, 1)
+        r.c.commandDone(RtlTcpClient.cmdSetSampleRate)
+        r.c.commandDone(RtlTcpClient.cmdSetFreq)
+        let settle = RtlTcpClient.linkSettleBytes
+        r.c.feed(Data(repeating: 200, count: settle))
+        r.packets = []
+        r.c.feed(Data(repeating: 200, count: 400))
+        check("streams real samples once the start-up commands are done",
+              r.samples.count == 400 && r.samples.allSatisfy { $0 != 0 })
+
+        r.packets = []
+        r.c.setFrequency(81_300_000)
+        r.c.feed(Data(repeating: 200, count: 4000))
+        check("while the tuner is still moving the stream keeps its length, as silence",
+              r.samples.count == 4000 && r.samples.allSatisfy { $0 == 0 }
+                && !r.packets.contains { $0.landed })
+        r.packets = []
+        r.c.commandDone(RtlTcpClient.cmdSetFreq)
+        r.c.feed(Data(repeating: 200, count: settle + 400))
+        let s = r.samples
+        check("and one more driver transfer after it lands is silence too",
+              s.count == settle + 400 && s.prefix(settle).allSatisfy { $0 == 0 }
+                && s.suffix(400).allSatisfy { $0 != 0 }, "\(s.count)")
+        check("the packet where the new station starts says so, once",
+              r.packets.filter { $0.landed }.count == 1)
+
+        r.packets = []
+        r.c.setFrequency(80_000_000)
+        r.c.setFrequency(82_500_000)
+        r.c.commandDone(RtlTcpClient.cmdSetFreq)
+        r.c.feed(Data(repeating: 200, count: settle + 400))
+        check("two retunes in a row wait for the second",
+              r.samples.allSatisfy { $0 == 0 } && !r.packets.contains { $0.landed })
+
+        r.packets = []
+        r.c.commandDone(RtlTcpClient.cmdSetFreq)
+        r.c.setSetting(.iqDecimation, 3)      // another rate
+        r.c.setSetting(.streamingEnabled, 1)
+        r.c.feed(Data(repeating: 200, count: 4000))
+        check("a rate change drops samples until the device has changed rate",
+              r.packets.isEmpty)
+        r.c.commandDone(RtlTcpClient.cmdSetSampleRate)
+        r.c.feed(Data(repeating: 200, count: settle))
+        check("and for one transfer after", r.packets.isEmpty)
     }
 
     print("\nrtl_tcp — pacing the lurches")

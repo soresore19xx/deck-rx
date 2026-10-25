@@ -88,7 +88,12 @@ what the pacer held and, over USB, also stalled the pacer for as long as the
 tuner took, so a few quick `+1` taps or preset jumps emptied the 0.12 s audio
 buffer (a 223 ms gap on the device; 10 taps on the simulator gave 174 drops).
 Both are fixed — held IQ is blanked instead of dropped, and driver commands run
-on their own queue. A run with no retunes, however long, was never the case to
+on their own queue. Over USB the client is also told when a command is done:
+until a retune is done, and for one more driver transfer (64 KB), the IQ is
+zeroed but keeps its length; the packet where the new station starts is marked
+`landed`, and LocalRadio starts its retune mute and detector reset there rather
+than at the request. A rate change waits for its command the same way instead
+of the fixed 0.4 s it still uses over a socket. A run with no retunes, however long, was never the case to
 test.
 
 The iPad reads the same switch. Its stderr goes nowhere unless the app is

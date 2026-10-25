@@ -8,7 +8,9 @@ protocol RtlByteLink: AnyObject {
     /// Starts the stream; `onBytes` is called on `queue`. An error means
     /// nothing was started and nothing needs closing.
     func start(queue: DispatchQueue, onBytes: @escaping (Data) -> Void) -> Error?
-    func command(_ d: Data)
+    /// `done` is called on the `start` queue once the device has carried the
+    /// command out, with the command byte.
+    func command(_ d: Data, done: @escaping (UInt8) -> Void)
     func close()
     /// Appended to `RtlTcpClient.diagLine`; empty unless the link has
     /// something of its own to report.
@@ -185,6 +187,28 @@ final class RtlTcpClient: IQSource {
     /// Where commands go. The socket in normal use; a recorder in the tests.
     var send: ((Data) -> Void)?
 
+    /// Over a link that reports when a command is done (the iPad's USB), a
+    /// retune and a rate change are bounded by that, not by a guessed time.
+    /// Until a frequency command is done the samples are the old station or
+    /// the tuner settling, and they are zeroed, not dropped, so the stream
+    /// keeps its length; until a rate command is done they are at the old
+    /// rate and are dropped, as `flushUntil` does over a socket. After either,
+    /// one more driver transfer is treated the same way: it may hold samples
+    /// taken before the command landed. The packet where real samples start
+    /// again carries `landed`, so LocalRadio starts its settling there.
+    private let awaitsDone: Bool
+    private var pendingTunes = 0
+    private var pendingRates = 0
+    private var blankBytes = 0
+    private var dropBytes = 0
+    /// Two of the driver's 32 KB bulk transfers (RTLSDR_STREAM_BUF_LEN).
+    static let linkSettleBytes = 2 * 32768
+    /// Pairs pushed into / released from the pacer, and the push position
+    /// where the blank ended, to flag the released packet that reaches it.
+    private var pushedPairs = 0
+    private var releasedPairs = 0
+    private var landingAt: Int?
+
     /// rtl_tcp does not stream, it lurches. It forwards whatever librtlsdr
     /// hands it, and librtlsdr hands over 256 KB at a time (the library's
     /// default buffer, which rtl_tcp has no option to change). At the 300 kS/s
@@ -238,6 +262,7 @@ final class RtlTcpClient: IQSource {
         self.inline = inline
         self.pace = !inline
         self.makeLink = link
+        self.awaitsDone = link != nil
     }
 
     private func onQueue(_ f: @escaping () -> Void) {
@@ -264,6 +289,8 @@ final class RtlTcpClient: IQSource {
             // A fresh rtl_tcp session remembers nothing, so the rate has to be
             // sent again on the next stream start even if it has not changed.
             deviceRate = 0
+            // A closed link reports nothing more, so nothing is still pending.
+            pendingTunes = 0; pendingRates = 0; blankBytes = 0; dropBytes = 0
 
             if let makeLink {
                 // No address and nothing to wait for: the driver is there or not.
@@ -273,7 +300,9 @@ final class RtlTcpClient: IQSource {
                     return
                 }
                 link = l
-                send = { [weak l] d in l?.command(d) }
+                send = { [weak l, weak self] d in
+                    l?.command(d) { cmd in self?.commandDone(cmd) }
+                }
                 startWatchdog()
                 completion(.success(()))
                 return
@@ -406,7 +435,7 @@ final class RtlTcpClient: IQSource {
             decimation = plan.decimation
             decimator.configure(deviceRate: Double(plan.deviceRate), factor: plan.decimation)
             sendCmd(Self.cmdSetSampleRate, plan.deviceRate)
-            flushUntil = Date().addingTimeInterval(rateSettleTime)
+            if !awaitsDone { flushUntil = Date().addingTimeInterval(rateSettleTime) }
         }
         // Re-assert frequency and gain: a reconnect gets a fresh rtl_tcp session
         // that remembers nothing, and LocalRadio sets them once per start.
@@ -417,10 +446,15 @@ final class RtlTcpClient: IQSource {
         streaming = true
         streamedOnce = true
         pacer.clear()
+        pushedPairs = 0; releasedPairs = 0; landingAt = nil
         startPacing()
     }
 
     private func sendCmd(_ cmd: UInt8, _ param: UInt32) {
+        if awaitsDone {
+            if cmd == Self.cmdSetFreq { pendingTunes += 1 }
+            if cmd == Self.cmdSetSampleRate { pendingRates += 1 }
+        }
         var d = Data(capacity: 5)
         d.append(cmd)
         var be = param.bigEndian
@@ -541,7 +575,24 @@ final class RtlTcpClient: IQSource {
     /// 8-bit unsigned IQ in, int16 IQ out, with the decimation digital gain
     /// SpyServer would have applied. rtl_tcp writes whole IQ pairs, but a TCP
     /// read can split one, so a trailing byte is carried into the next chunk.
+    /// The link has carried out `cmd` (see `awaitsDone`). Internal for the tests.
+    func commandDone(_ cmd: UInt8) {
+        if cmd == Self.cmdSetFreq, pendingTunes > 0 {
+            pendingTunes -= 1
+            if pendingTunes == 0 { blankBytes = Self.linkSettleBytes }
+        }
+        if cmd == Self.cmdSetSampleRate, pendingRates > 0 {
+            pendingRates -= 1
+            if pendingRates == 0 { dropBytes = Self.linkSettleBytes }
+        }
+    }
+
     private func emitIQ(_ incoming: Data) {
+        if pendingRates > 0 || dropBytes > 0 {
+            dropBytes = max(0, dropBytes - incoming.count)
+            buf = Data()
+            return
+        }
         if Date() < flushUntil {
             // Still draining samples taken at the previous rate. Drop them, and
             // the half-pair carry with them, so the next real sample starts on I.
@@ -580,6 +631,21 @@ final class RtlTcpClient: IQSource {
             }
         }
         guard !out.isEmpty else { return }
+        var landed = false
+        if pendingTunes > 0 || blankBytes > 0 {
+            // Zero up to where the settle ends inside this chunk, if it does.
+            var zeroPairs = out.count / 2
+            if pendingTunes == 0 {
+                let rawPairsLeft = blankBytes / 2
+                zeroPairs = min(zeroPairs, (rawPairsLeft + decimation - 1) / decimation)
+                blankBytes = max(0, blankBytes - chunk.count)
+            }
+            for i in 0 ..< zeroPairs * 2 { out[i] = 0 }
+            if pendingTunes == 0 && blankBytes == 0 {
+                landed = true
+                landingAt = pushedPairs + zeroPairs
+            }
+        }
         let body = out.withUnsafeBufferPointer { ptr -> Data in
             // int16 little-endian, as SpyServer sends it. Apple platforms are
             // little-endian, so the in-memory layout is already the wire layout.
@@ -587,15 +653,19 @@ final class RtlTcpClient: IQSource {
         }
         if pace {
             pacer.push(out, now: ProcessInfo.processInfo.systemUptime)
+            pushedPairs += out.count / 2
             return
         }
-        deliver(body)
+        deliver(body, landed: landed)
+        if landed { landingAt = nil }
     }
 
     /// SpyServer reports the gain the stream was produced at in the message
     /// header; rtl_tcp has no such field, so report what was asked for.
-    private func deliver(_ body: Data) {
-        onIQ?(SpyClient.IQPacket(format: .int16, body: body, gainDb: UInt16(truncatingIfNeeded: gainIndex)))
+    private func deliver(_ body: Data, landed: Bool = false) {
+        var pkt = SpyClient.IQPacket(format: .int16, body: body, gainDb: UInt16(truncatingIfNeeded: gainIndex))
+        pkt.landed = landed
+        onIQ?(pkt)
     }
 
     // MARK: pacing
@@ -611,7 +681,13 @@ final class RtlTcpClient: IQSource {
             guard let self, self.streaming else { return }
             let s = self.pacer.take(now: ProcessInfo.processInfo.systemUptime)
             guard !s.isEmpty else { return }
-            self.deliver(s.withUnsafeBufferPointer { Data(buffer: $0) })
+            self.releasedPairs += s.count / 2
+            var landed = false
+            if let at = self.landingAt, self.releasedPairs >= at {
+                landed = true
+                self.landingAt = nil
+            }
+            self.deliver(s.withUnsafeBufferPointer { Data(buffer: $0) }, landed: landed)
         }
         paceTimer = t
         t.resume()

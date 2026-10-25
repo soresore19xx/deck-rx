@@ -171,6 +171,16 @@ once; each source opens its own device.
 Measured 2026-10-25 on an iPad Pro 12.9" (M1): 594 kHz at 912 kS/s, SNR 71 dB,
 no drops.
 
+At 912 kHz the HF+ runs zero IF (456 kHz and below are low IF), and there
+libairspyhf corrects the IQ balance itself, re-estimating it block by block.
+On broadcast FM that wandering correction is heard as crackle: about 10 dB more
+noise in the quiet band between the programme and the pilot than at 456 kHz.
+The build patches the library (`rtlusb/airspyhf.patch`) with a switch to skip
+that correction, and the app sets it for WFM only — after it, 912 and 456 kHz
+measure the same (-70 dB). Everything else keeps the correction, which holds
+strong stations' images down. The same patch fixes the correction's ramp
+(the weights were reversed, so each update stepped at a block boundary).
+
 ## When the SpyServer is on the other segment
 
 A tablet on a wired adapter is usually on a different subnet from its Wi-Fi,

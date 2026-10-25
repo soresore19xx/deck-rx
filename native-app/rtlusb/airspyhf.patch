@@ -1,0 +1,43 @@
+diff --git a/libairspyhf/src/airspyhf.c b/libairspyhf/src/airspyhf.c
+index a4400f6..df0d8a5 100644
+--- a/libairspyhf/src/airspyhf.c
++++ b/libairspyhf/src/airspyhf.c
+@@ -313,6 +313,14 @@ static inline void rotate_complex(airspyhf_complex_float_t *vec, const airspyhf_
+ 	multiply_complex_real(vec, norm);
+ }
+ 
++/* deck-rx: the zero-IF IQ correction off, for broadcast FM. Its estimates
++ * wander from block to block, and on a wide FM signal that wandering is
++ * heard: about 10 dB more noise in the quiet band between programme and
++ * pilot at 912 kHz than at 456 kHz (low IF), back to within 2 dB with the
++ * correction skipped (measured 2026-10-25, iPad Pro, HF+ R5.0.1). */
++static volatile int deckrx_skip_iq_balancer = 0;
++void airspyhf_deckrx_skip_iq_balancer(int skip) { deckrx_skip_iq_balancer = skip ? 1 : 0; }
++
+ static void convert_samples(airspyhf_device_t* device, airspyhf_complex_int16_t *src, airspyhf_complex_float_t *dest, int count)
+ {
+ 	const float scale = 1.0f / 32768;
+@@ -333,7 +341,7 @@ static void convert_samples(airspyhf_device_t* device, airspyhf_complex_int16_t
+ 
+ 	if (device->enable_dsp)
+ 	{
+-		if (!device->is_low_if)
++		if (!device->is_low_if && !deckrx_skip_iq_balancer)
+ 		{
+ 			// Zero IF requires external IQ correction
+ 			iq_balancer_process(device->iq_balancer, dest, count, 0);
+diff --git a/libairspyhf/src/iqbalancer.c b/libairspyhf/src/iqbalancer.c
+index 2bf5901..ae301ab 100644
+--- a/libairspyhf/src/iqbalancer.c
++++ b/libairspyhf/src/iqbalancer.c
+@@ -452,8 +452,8 @@ static void adjust_phase_amplitude(struct iq_balancer_t *iq_balancer, complex_t*
+ 
+ 	for (i = 0; i < length; i++)
+ 	{
+-		float phase = (i * iq_balancer->last_phase + (length - 1 - i) * iq_balancer->phase) * scale;
+-		float amplitude = (i * iq_balancer->last_amplitude + (length - 1 - i) * iq_balancer->amplitude) * scale;
++		float phase = (i * iq_balancer->phase + (length - 1 - i) * iq_balancer->last_phase) * scale;
++		float amplitude = (i * iq_balancer->amplitude + (length - 1 - i) * iq_balancer->last_amplitude) * scale;
+ 
+ 		float re = iq[i].re;
+ 		float im = iq[i].im;

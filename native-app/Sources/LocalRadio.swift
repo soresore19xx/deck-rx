@@ -278,6 +278,14 @@ final class LocalRadio {
             guard mode != oldValue else { return }
             config.mode = mode
             config.save()
+#if os(iOS) && AIRSPYHF_ENABLED
+            // The HF+'s zero-IF IQ correction is heard as noise on broadcast
+            // FM (rtlusb/airspyhf.patch); it stays on for everything else,
+            // where it keeps strong stations' images down. A switch inside
+            // the library, so it applies whichever rate the device runs at
+            // and costs nothing at the low-IF rates, where it never runs.
+            airspyhf_deckrx_skip_iq_balancer(mode == 1 ? 1 : 0)
+#endif
             // spyService.ts:1135 and :1168. Crossing the AM boundary changes
             // the gain the server is holding as well as the detector, and that
             // transient is the loudest in the system.
@@ -763,6 +771,41 @@ final class LocalRadio {
     private var tapBytes = 0
     private var tapPath = ""
     private var tapLastCheck = Date.distantPast
+
+    /// The IQ as it arrived, packet by packet: `touch <tapDir>deck-rx-solo-iq-record`
+    /// to start, remove it to stop. Each packet is written as a little-endian
+    /// UInt32 byte count and its int16 IQ, to `deck-rx-solo-iq-<rate>-<stamp>.bin`,
+    /// so a fault can be replayed offline through the same demodulator with
+    /// the same packet boundaries (2026-10-25: the HF+ at 912 kHz, where
+    /// recording the audio twice only ever compared two different minutes of
+    /// programme). About 3.6 MB a second at 912 kHz: remove the flag.
+    private var iqTapFd: Int32 = -1
+    private var iqTapLastCheck = Date.distantPast
+
+    /// On the audio queue.
+    private func tapIQ(_ body: Data) {
+        let now = Date()
+        if now.timeIntervalSince(iqTapLastCheck) > 0.5 {
+            iqTapLastCheck = now
+            let wanted = FileManager.default.fileExists(atPath: Self.tapDir + "deck-rx-solo-iq-record")
+            if wanted, iqTapFd < 0 {
+                let stamp = ISO8601DateFormatter().string(from: now)
+                    .replacingOccurrences(of: ":", with: "-")
+                    .replacingOccurrences(of: "T", with: "-")
+                    .replacingOccurrences(of: "Z", with: "")
+                let path = Self.tapDir + "deck-rx-solo-iq-\(iqRate)-\(stamp).bin"
+                iqTapFd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+                if iqTapFd >= 0 { NSLog("[tap] iq → \(path)") }
+            } else if !wanted, iqTapFd >= 0 {
+                close(iqTapFd); iqTapFd = -1
+                NSLog("[tap] iq closed")
+            }
+        }
+        guard iqTapFd >= 0 else { return }
+        var n = UInt32(body.count).littleEndian
+        _ = withUnsafeBytes(of: &n) { write(iqTapFd, $0.baseAddress, 4) }
+        _ = body.withUnsafeBytes { write(iqTapFd, $0.baseAddress, $0.count) }
+    }
 
     /// Flag-gated WAV of the audio this receiver is producing — the same idiom
     /// as the plugin's `/tmp/deck-rx-audio-record` and the fax IQ dump:
@@ -1675,6 +1718,7 @@ final class LocalRadio {
             maxPacketGapMs = 0
         }
         queue.async {
+            self.tapIQ(pkt.body)
             if pkt.landed {
                 // The retune reached the stream here, not when it was asked
                 // for: over the iPad's USB the tuner takes about 110 ms, and
@@ -1821,6 +1865,11 @@ final class LocalRadio {
             if let rtl = self.client as? RtlTcpClient {
                 FileHandle.standardError.write("[diag] \(rtl.diagLine())\n".data(using: .utf8)!)
             }
+#if AIRSPYHF_ENABLED
+            if let hf = self.client as? AirspyDevice {
+                FileHandle.standardError.write("[diag] \(hf.diagLine())\n".data(using: .utf8)!)
+            }
+#endif
         }
         diagTimer = t
         t.resume()

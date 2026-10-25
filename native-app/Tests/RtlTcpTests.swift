@@ -371,6 +371,35 @@ func runRtlTcpTests() {
         check("and nothing is released until a new prefill is held",
               p.take(now: 1).isEmpty && p.take(now: 2).isEmpty)
     }
+    do {
+        // A retune: the held IQ is the old station, but the stream must not
+        // lose its length. Dropping it cost the audio sink 60 ms per retune and
+        // ten quick +1 taps ran it dry (2026-10-25).
+        let p = IQPacer()
+        p.rate = 1000
+        var t = 0.0, released = 0
+        for _ in 0..<50 {                       // 10 ms deliveries, released every 10 ms
+            p.push([Int16](repeating: 7, count: 20), now: t)
+            released += p.take(now: t).count / 2
+            t += 0.010
+        }
+        let heldBefore = p.held
+        p.silenceHeld()
+        check("a retune keeps the held count", p.held == heldBefore && heldBefore > 0)
+        var firstAfter = [Int16]()
+        var gapTicks = 0
+        for _ in 0..<50 {
+            p.push([Int16](repeating: 7, count: 20), now: t)
+            let got = p.take(now: t)
+            if got.isEmpty { gapTicks += 1 }
+            if firstAfter.isEmpty { firstAfter = got }
+            released += got.count / 2
+            t += 0.010
+        }
+        check("releases the old station as silence", !firstAfter.isEmpty && firstAfter.allSatisfy { $0 == 0 })
+        check("with no gap and no underrun across the retune",
+              gapTicks == 0 && p.underruns == 0, "empty ticks \(gapTicks) underruns \(p.underruns)")
+    }
 
     print("\nrtl_tcp — source selection")
     check("default port is 8890, the V4's, not rtl_tcp's own 1234",

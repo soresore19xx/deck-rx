@@ -1803,6 +1803,9 @@ final class LocalRadio {
                               self.pcmRms, 20 * log10(max(self.pcmRms, 1e-9)),
                               self.rssiDbfs, self.volume)
             FileHandle.standardError.write(line.data(using: .utf8)!)
+            if let rtl = self.client as? RtlTcpClient {
+                FileHandle.standardError.write("[diag] \(rtl.diagLine())\n".data(using: .utf8)!)
+            }
         }
         diagTimer = t
         t.resume()

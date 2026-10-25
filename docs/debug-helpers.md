@@ -70,6 +70,21 @@ seconds:
 - `pcm` fine but nothing audible — everything after the demodulator: volume,
   mute, output device.
 
+On an RTL-SDR (rtl_tcp, or the iPad's own USB port) a second line follows:
+
+```
+[diag] rtl: in=1199300/s of 1200000  pacer underruns=0 trims=0 held=0.044s prefill=0.030s maxGap=16ms
+```
+
+- `in` well below the device rate — the dongle or the link is short of
+  samples; `pacer underruns` then climbs with it.
+- `trims` climbing — the device delivers faster than it is released.
+
+The iPad reads the same switch. Its stderr goes nowhere unless the app is
+started with `xcrun devicectl device process launch --console
+--environment-variables '{"DECKRX_AUDIO_DIAG":"1"}' ...`, and nothing is
+written to the iPad's storage either way.
+
 A real case: AM at −85 dBFS with `rssi` at −77 turned out to be RF gain 2 with
 the carrier AGC off, not the 912 kHz IQ rate it was blamed on. The same numbers
 at 456 kHz settled it in one run.

@@ -197,6 +197,25 @@ final class RtlTcpClient: IQSource {
     private let pace: Bool
     static let paceInterval: TimeInterval = 0.010
 
+    /// Bytes from the device since the last `diagLine`, against the rate they
+    /// claim to be: a device clock that differs from ours shows up here first.
+    private var rxBytes = 0
+    private var diagSince = ProcessInfo.processInfo.systemUptime
+
+    /// For LocalRadio's audio diagnostics (DECKRX_AUDIO_DIAG=1).
+    func diagLine() -> String {
+        let now = ProcessInfo.processInfo.systemUptime
+        let secs = max(1e-3, now - diagSince)
+        let line = String(format: "rtl: in=%.0f/s of %u  pacer underruns=%d trims=%d held=%.3fs prefill=%.3fs maxGap=%.0fms",
+                          Double(rxBytes / 2) / secs, deviceRate,
+                          pacer.underruns, pacer.trims,
+                          pacer.rate > 0 ? Double(pacer.held) / pacer.rate : 0,
+                          pacer.prefill, pacer.maxGap * 1000)
+        rxBytes = 0
+        diagSince = now
+        return line
+    }
+
     /// A byte link in place of the socket — the iPad's own USB driver
     /// (RtlUsbLink). Made fresh on every open, like a socket would be.
     private let makeLink: (() -> RtlByteLink)?
@@ -460,6 +479,7 @@ final class RtlTcpClient: IQSource {
             if chunk.isEmpty { return }
         }
         guard streaming else { return }
+        rxBytes += chunk.count
         emitIQ(chunk)
     }
 

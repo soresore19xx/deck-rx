@@ -199,6 +199,11 @@ final class RadioViewController: UIViewController {
         // Another device's preset edit, written in by sync.
         SyncClient.shared.onPresetsChanged = { [weak self] in self?.reloadPresets() }
         super.viewDidLoad()
+        // Audio-path instrumentation, off unless asked for (as on the Mac).
+        // Read with `devicectl device process launch --console`.
+        if ProcessInfo.processInfo.environment["DECKRX_AUDIO_DIAG"] == "1" {
+            radio.startAudioDiag()
+        }
         // Before anything is built: every constant and font size below is baked
         // in at construction, the way the Mac window bakes them (main.swift:1192).
         // The iPad mini (744 pt short side) does not fit at "max": the station

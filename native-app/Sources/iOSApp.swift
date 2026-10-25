@@ -1627,10 +1627,12 @@ final class RadioViewController: UIViewController {
                 gapAtDrop = radio.maxPacketGapMs
                 lastDrops = drops
             }
+            // Always shown, 0 included: hidden at 0, "no drops" and "the item
+            // is gone" looked the same (2026-10-25).
             let tail = drops > 0
                 ? String(format: "  drops %d (gap was %.0fms)  gap %.0fms",
                          drops, gapAtDrop, radio.maxPacketGapMs)
-                : String(format: "  gap %.0fms", radio.maxPacketGapMs)
+                : String(format: "  drops 0  gap %.0fms", radio.maxPacketGapMs)
             setText(statusLabel, String(format: "connected  %@  RSSI %.0f dBFS  SNR %.0f dB  %.0f kHz audio%@",
                                       modeName(radio.mode), radio.rssiDbfs, radio.snrDb,
                                       radio.audioRate / 1000, tail))

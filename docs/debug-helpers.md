@@ -83,7 +83,7 @@ On an RTL-SDR (rtl_tcp, or the iPad's own USB port) a second line follows:
   the interval. A retune is about 110 ms of tuner writes on a V4.
 
 The iPad's `drops` on the status line is the same `underruns`, a total since
-launch. It used to climb with retunes, not with time: each retune threw away
+launch, shown as `drops 0` when there are none (as the Mac window does). It used to climb with retunes, not with time: each retune threw away
 what the pacer held and, over USB, also stalled the pacer for as long as the
 tuner took, so a few quick `+1` taps or preset jumps emptied the 0.12 s audio
 buffer (a 223 ms gap on the device; 10 taps on the simulator gave 174 drops).

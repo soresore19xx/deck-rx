@@ -73,6 +73,12 @@
     <input type="text" id="hostInput" placeholder="192.168.1.100" />
     <input type="number" id="portInput" placeholder="8888" min="1" max="65535" />
   </div>
+  <!-- The receiver's own widths (spyService.getIqChoices). Changing it
+       restarts the stream; a width narrower than the mode needs is kept and
+       overridden for that mode (WFM needs 200 kHz). -->
+  <div class="row"><label>IQ rate</label>
+    <select id="iqSelect"><option value="">-- not connected --</option></select>
+  </div>
   <div class="row"><label>EIBI</label>
     <button type="button" id="eibiUpdateBtn">Update Now</button>
     <span class="status" id="eibiStatus"></span>
@@ -117,6 +123,7 @@
       sendToPlugin({ action: 'getPresets' });
       sendToPlugin({ action: 'getAudioDevices' });
       sendToPlugin({ action: 'getServerConfig' });
+      sendToPlugin({ action: 'getIqChoices' });
       sendToPlugin({ action: 'getEibiStatus' });
       sendToPlugin({ action: 'getJpStationsStatus' });
       sendToPlugin({ action: 'getJpRegion' });
@@ -145,6 +152,9 @@
         document.getElementById('icecastPassword').value = msg.payload.icecastPassword || '';
         document.getElementById('icecastBitrate').value = msg.payload.bitrate || '128k';
         updateOutputVisibility(mode);
+      }
+      if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'iqChoices') {
+        buildIqList(msg.payload.choices || [], msg.payload.currentHz || 0);
       }
       if (msg.event === 'sendToPropertyInspector' && msg.payload.action === 'serverConfig') {
         document.getElementById('hostInput').value = msg.payload.host || '';
@@ -205,6 +215,21 @@
         }
       }
     };
+  }
+  function buildIqList(choices, currentHz) {
+    var sel = document.getElementById('iqSelect');
+    sel.innerHTML = '';
+    if (!choices.length) {
+      var o = document.createElement('option'); o.value = ''; o.textContent = '-- not connected --';
+      sel.appendChild(o); return;
+    }
+    choices.forEach(function(c) {
+      var o = document.createElement('option');
+      o.value = String(c.offset);
+      o.textContent = (c.rateHz / 1000) + ' kHz';
+      if (c.rateHz === currentHz) o.selected = true;
+      sel.appendChild(o);
+    });
   }
   function sendToPlugin(payload) {
     websocket.send(JSON.stringify({ event: 'sendToPlugin', action: actionInfo.action, context: uuid, payload: payload }));
@@ -309,6 +334,10 @@
       if (payload.host || payload.port) sendToPlugin(payload);
     }, 800);
   }
+  document.getElementById('iqSelect').addEventListener('change', function() {
+    if (this.value === '') return;
+    sendToPlugin({ action: 'setIqDecimation', offset: parseInt(this.value, 10) });
+  });
   document.getElementById('hostInput').addEventListener('input', scheduleSaveServer);
   document.getElementById('portInput').addEventListener('input', scheduleSaveServer);
   // A source change is sent at once and on its own: the plugin brings that

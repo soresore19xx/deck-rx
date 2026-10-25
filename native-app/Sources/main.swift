@@ -346,9 +346,10 @@ final class MainView: NSView {
     // pushed to /spectrum; peak hold and the dB window are this app's own view
     // of the same data and stay local.
     /// The IQ width the receiver runs at, as SDR++ offers it: the device's
-    /// maximum, halved by each decimation stage. Only the standalone bundle
-    /// shows it — the plugin's endpoint has no such setting, so in the
-    /// front-end it would be a dropdown that changes nothing.
+    /// maximum, halved by each decimation stage. The standalone bundle sets
+    /// its own receiver's; the front-end sets the plugin's through `/iq`
+    /// (2026-10-25 — until then the plugin had no such setting and the
+    /// dropdown was left out of this bundle).
     private let iqPop = NSPopUpButton()
     /// The menu last built, so it is rebuilt when the device changes rather
     /// than on every status tick.
@@ -589,9 +590,8 @@ final class MainView: NSView {
             let i = self.iqPop.indexOfSelectedItem
             if i >= 0, i < self.iqLadder.count, let set = self.onIqChoice, set(self.iqLadder[i]) { return }
 #endif
-            Receiver.spectrum(decimation: item.tag) { size, rate, avg in
-                self.adoptSpectrum(size, rate, avg)
-            }
+            // The plugin's receiver: its `/iq`, by the offset the item carries.
+            Receiver.iq(offset: item.tag)
         }
         fpsPop.addItems(withTitles: ["5", "10", "16", "24", "30", "60"])
         fpsPop.font = mono(16)
@@ -658,10 +658,13 @@ final class MainView: NSView {
             }
         }
 
-        // Built as a list rather than a literal: the IQ dropdown is standalone
-        // only, and a compile-time branch cannot sit inside an array literal.
+        // Built as a list rather than a literal, so the standalone-only
+        // controls below can be appended under a compile-time branch.
+        // IQ right after STEP, in both bundles: both describe what the
+        // receiver is doing rather than how the picture is drawn.
         var barItems: [NSView] = [
             label("STEP", mono(14), P.faint), stepPop,
+            label("IQ", mono(14), P.faint), iqPop,
             label("FFT", mono(14), P.faint), fftPop,
             label("RATE", mono(14), P.faint), fpsPop, label("fps", mono(14), P.faint),
             
@@ -670,11 +673,6 @@ final class MainView: NSView {
             NSView(),
             dbLabel,
         ]
-#if STANDALONE
-        // Right after STEP: both describe what the receiver is doing rather
-        // than how the picture is drawn.
-        barItems.insert(contentsOf: [label("IQ", mono(14), P.faint), iqPop], at: 2)
-#endif
         let barRow = NSStackView(views: barItems)
 #if STANDALONE
         // The receiver controls exist only in the standalone build. Deck RX is

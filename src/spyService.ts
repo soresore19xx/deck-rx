@@ -12,7 +12,7 @@ import {
   type IQClient, type IQSource, type ServerAddress, type SourceAddrs,
 } from './iqClient.js';
 import {
-  resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig, deviceKey,
+  resolveDeviceSettings, adoptDeviceSettings, mergeProfileIntoConfig, deviceKey, iqChoices, iqRateFor,
   gainBand, withBandGain, RX_MODE, type DeviceProfile, type GainBand, type GainScope,
 } from './deviceSettings.js';
 import {
@@ -1411,6 +1411,54 @@ class SpyService {
       const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
       const cfg = JSON.parse(raw) as Record<string, unknown>;
       mergeProfileIntoConfig(cfg, key, profile, top);
+      await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    });
+    this.configWriteChain = next.catch(() => {});
+    return next;
+  }
+
+  /**
+   * The IQ widths the connected receiver offers (deviceSettings.iqChoices),
+   * the one the stream runs at, and the one filed for this receiver (null:
+   * none, the resolver picks). Empty before a receiver has reported in.
+   */
+  getIqChoices(): { choices: { offset: number; rateHz: number }[]; currentHz: number;
+                    chosen: number | null } {
+    const info = this.deviceInfo;
+    if (!info) return { choices: [], currentHz: 0, chosen: null };
+    const key = deviceKey(info.deviceType, info.deviceSerial);
+    const chosen = this.devices?.[key]?.iqDecimation;
+    return { choices: iqChoices(info), currentHz: this.currentIQRate,
+             chosen: typeof chosen === 'number' ? chosen : null };
+  }
+
+  /**
+   * Take a line of the IQ menu: filed in this receiver's profile (which the
+   * resolver reads before the top-level value), then the stream restarted if
+   * the rate it resolves to has moved. A width narrower than the mode needs is
+   * kept on file and overridden for that mode by the resolver, as before.
+   * The Swift app's LocalRadio.chooseIq does the same.
+   */
+  async setIqDecimation(offset: number): Promise<boolean> {
+    const info = this.deviceInfo;
+    if (!info || !iqChoices(info).some(c => c.offset === offset)) return false;
+    const key = deviceKey(info.deviceType, info.deviceSerial);
+    this.devices = { ...(this.devices ?? {}), [key]: { ...(this.devices?.[key] ?? {}), iqDecimation: offset } };
+    await this.persistIqDecimation(key, offset);
+    log.info(`[spyService] IQ width for ${key}: offset ${offset} (${iqRateFor(info, offset)} S/s)`);
+    await this.restartIfRateChanged();
+    return true;
+  }
+
+  /** The profile's `iqDecimation`, merged into the file's profile as
+   *  persistBandGain merges a gain: the rest of the profile is the file's. */
+  private persistIqDecimation(key: string, offset: number): Promise<void> {
+    const next = this.configWriteChain.then(async () => {
+      const raw = await readFile(CONFIG_PATH, 'utf8').catch(() => '{}');
+      const cfg = JSON.parse(raw) as Record<string, unknown>;
+      const devices = cfg.devices as Record<string, DeviceProfile> | undefined;
+      const prof: DeviceProfile = { ...(devices?.[key] ?? {}), iqDecimation: offset };
+      mergeProfileIntoConfig(cfg, key, prof, { iqDecimation: offset });
       await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
     });
     this.configWriteChain = next.catch(() => {});

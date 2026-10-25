@@ -154,8 +154,8 @@ enum Receiver {
         var device = ""
         var iqRateHz: Double = 0
         var decStage = 0
-        /// The IQ menu of a receiver this window owns (LocalRadio.iqChoices).
-        /// Empty for the plugin's, which is built from the rate and stage.
+        /// The IQ menu: LocalRadio.iqChoices for a receiver this window owns,
+        /// the status feed's `iqChoices` for the plugin's.
         var iqChoices: [IqChoice] = []
         var audioDrops = 0
         var audioDevice = ""
@@ -241,6 +241,14 @@ enum Receiver {
         s.device      = j["device"] as? String ?? ""
         s.iqRateHz    = j["iqRateHz"] as? Double ?? 0
         s.decStage    = j["decStage"] as? Int ?? 0
+        // The plugin's IQ menu (its `/iq`): offsets and the widths they give.
+        if let list = j["iqChoices"] as? [[String: Any]] {
+            s.iqChoices = list.compactMap { e in
+                guard let off = e["offset"] as? Int, let hz = e["rateHz"] as? Double, off >= 0, hz > 0
+                else { return nil }
+                return IqChoice(rateHz: UInt32(hz), stage: UInt32(off), rtlBase: nil)
+            }
+        }
         s.audioDrops  = j["audioDrops"] as? Int ?? 0
         s.audioDevice = j["audioDevice"] as? String ?? ""
         s.audioSink   = j["audioSink"] as? String ?? "local"
@@ -326,6 +334,10 @@ enum Receiver {
             }
         }.resume()
     }
+
+    /// The plugin's IQ width: one of the offsets its status feed lists. The
+    /// stream restarts when the rate moves; the next status tick shows it.
+    static func iq(offset: Int) { call("/iq?offset=\(offset)") }
 
     static func tune(ticks: Int)   {
         if let d = direct { d.tuneTicks(ticks); return }
@@ -477,7 +489,7 @@ enum Receiver {
         if let fft { parts.append("fft=\(fft)") }
         if let fps { parts.append("fps=\(fps)") }
         if let smooth { parts.append("smooth=\(smooth)") }
-        // Standalone only: the plugin's endpoint has no decimation to set.
+        // Standalone only: the plugin's IQ width is set through `iq(offset:)`.
         if let decimation { parts.append("decimation=\(decimation)") }
         let query = parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
         guard let url = URL(string: "http://127.0.0.1:\(controlPort)/spectrum\(query)") else { return }

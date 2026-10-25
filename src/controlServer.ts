@@ -271,6 +271,25 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       ok();
       return;
     }
+    case '/iq': {
+      // The IQ width. With no parameter, the menu: the widths the connected
+      // receiver offers, the one the stream runs at, and the one filed for it.
+      // `offset=N` picks a line (decimation stages past the device minimum,
+      // as `iqDecimation` counts them) and answers with the menu after it.
+      // 409 when there is no receiver yet, or N is not one of its lines.
+      if (q.has('offset')) {
+        const off = num(q.get('offset'));
+        if (off === null) { bad(); return; }
+        if (!(await spyService.setIqDecimation(off))) {
+          res.writeHead(409, { 'Content-Type': 'text/plain' });
+          res.end('no receiver, or not one of its widths');
+          return;
+        }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(spyService.getIqChoices()));
+      return;
+    }
     case '/spectrum': {
       // Display settings for the spectrum feed. With no parameters it reports
       // what is in force, so a front-end can render its controls from the

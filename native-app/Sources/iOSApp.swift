@@ -1186,6 +1186,36 @@ final class RadioViewController: UIViewController {
         run("FM 12 station jumps 0.3 s apart", 12, every: 0.3) { jumpFm($0) }
         run("FM 8 station jumps 2 s apart", 8, every: 2) { jumpFm($0) }
         run("FM 10 x +1 0.15 s apart", 10, every: 0.15) { _ in self.radio.tune(ticks: 1); self.refresh() }
+        // The STEREO / MONO badge, as a tap does, on the first FM preset: the
+        // audio graph is rebuilt for one channel or two each time. The
+        // station's own choice is put back afterwards.
+        var monoBefore = false
+        steps.append((0, {
+            jumpFm(0)
+            monoBefore = self.radio.monoStation
+        }))
+        steps.append((8, {
+            fputs(String(format: "[selftest] stereo state: wanted %@ locked %@ pilot %.3f\n",
+                          self.radio.stereoWanted ? "yes" : "no", self.radio.stereoLocked ? "yes" : "no",
+                          self.radio.pilotMetric), stderr)
+            say("FM on the first preset")
+        }))
+        for _ in 0..<6 {
+            steps.append((1.5, {
+                self.radio.toggleStereoHere()
+                self.refresh()
+            }))
+            steps.append((1.5, {
+                fputs(String(format: "[selftest] after toggle: wanted %@ locked %@ pilot %.3f\n",
+                              self.radio.stereoWanted ? "yes" : "no", self.radio.stereoLocked ? "yes" : "no",
+                              self.radio.pilotMetric), stderr)
+            }))
+        }
+        steps.append((3, {
+            self.radio.setStereoHere(!monoBefore)
+            self.refresh()
+            say("6 stereo/mono toggles 3 s apart")
+        }))
         // DECKRX_RETUNE_SELFTEST_HOLD=<s>: then sit still that long, reporting
         // every minute, for drops that come with time rather than with tuning.
         let hold = Int(ProcessInfo.processInfo.environment["DECKRX_RETUNE_SELFTEST_HOLD"] ?? "") ?? 0

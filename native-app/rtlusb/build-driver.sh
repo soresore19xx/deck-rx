@@ -61,6 +61,25 @@ git -C "$SRC/third_party/gnuradio4-blocks" reset --quiet --hard
 git -C "$SRC/third_party/gnuradio4-blocks" apply "$HERE/r828d-pll.patch" \
   || { echo "ERROR: r828d-pll.patch does not apply"; exit 1; }
 
+# Airspy HF+: the same dext matches it, selects its IQ alternate setting,
+# streams it into the same ring and passes control transfers through.
+# libairspyhf, built into the app (below), does the rest.
+git -C "$SRC" apply "$HERE/airspyhf-dext.patch" \
+  || { echo "ERROR: airspyhf-dext.patch does not apply"; exit 1; }
+
+# libairspyhf for the app, pinned. build-ios.sh compiles it against
+# airspyhf/libusb_dext.c, the libusb stand-in that talks to this driver.
+AIRSPYHF_REPO=https://github.com/airspy/airspyhf.git
+AIRSPYHF_COMMIT=24fe8ffcb00b14f827268bbad89ae1392de055e5
+AH="$B/airspyhf"
+if [ ! -d "$AH/.git" ]; then
+  echo "==> cloning airspyhf"
+  git clone --quiet "$AIRSPYHF_REPO" "$AH" || { echo "ERROR: airspyhf clone failed"; exit 1; }
+fi
+git -C "$AH" fetch --quiet origin 2>/dev/null
+git -C "$AH" checkout --quiet "$AIRSPYHF_COMMIT" \
+  || { echo "ERROR: commit $AIRSPYHF_COMMIT not in $AIRSPYHF_REPO"; exit 1; }
+
 # Rename into the app. The build number is the time: iPadOS only swaps a
 # running driver for a newer one when the number has gone up. Dotted, because
 # the kernel parses a dext's version like a kext's: at most 4 digits per field

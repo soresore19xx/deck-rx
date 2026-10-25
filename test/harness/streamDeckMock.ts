@@ -11,7 +11,7 @@
 //   `-registerEvent`, `-info` on the command line. Plugin connects to
 //   ws://127.0.0.1:<port>, then sends `{ event, uuid }` to register.
 import { spawn, type ChildProcess } from 'child_process';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import net from 'net';
 import { tmpdir } from 'os';
 import { resolve } from 'path';
@@ -257,6 +257,8 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
   if (spyServer) { cfgOverrides.host = '127.0.0.1'; cfgOverrides.port = spyPort; }
   writeFileSync(configPath, JSON.stringify({ ...DEFAULT_CONFIG, ...cfgOverrides }, null, 2));
 
+  copyFileSync(resolve(PLUGIN_ROOT, 'manifest.json'), resolve(sandboxDir, 'manifest.json'));
+
   // Plugin spawn
   const env: Record<string, string | undefined> = {
     ...process.env,
@@ -284,9 +286,13 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
   ], {
     stdio: 'pipe',
     env,
-    // The Stream Deck SDK reads manifest.json relative to cwd; running from
-    // the .sdPlugin root mirrors how Stream Deck app launches the plugin.
-    cwd: PLUGIN_ROOT,
+    // The Stream Deck SDK reads manifest.json relative to cwd, and writes its
+    // log files to <cwd>/logs. Run from the .sdPlugin root, every test run
+    // wrote into the live plugin's logs/ and rotated its real log away (the
+    // SDK keeps ten files), so the evidence for a bug report could be gone by
+    // the time anyone looked. The sandbox holds a copy of the manifest
+    // instead; the plugin finds everything else from its own path.
+    cwd: sandboxDir,
   });
 
   if (opts.verbose) {
@@ -388,6 +394,10 @@ export async function startPlugin(opts: StartPluginOptions = {}): Promise<MockHa
       if (spyServer) {
         await new Promise<void>(res => spyServer!.close(() => res()));
       }
+      // The sandbox goes with the run. Left behind, 2707 of them had piled up
+      // in the temp folder by 2026-10-25, and now each carries the plugin's
+      // logs too.
+      rmSync(sandboxDir, { recursive: true, force: true });
     },
 
     // Convenience helpers for tests. Encoder coordinates default to (0,0) —

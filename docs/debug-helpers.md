@@ -79,6 +79,12 @@ On an RTL-SDR (rtl_tcp, or the iPad's own USB port) a second line follows:
 - `in` well below the device rate — the dongle or the link is short of
   samples; `pacer underruns` then climbs with it.
 - `trims` climbing — the device delivers faster than it is released.
+- On the Airspy HF+ over the iPad's USB the second line is `hf:`: what arrived
+  per second against the rate, `libDropped` (libairspyhf's own losses),
+  `jumps edge/inside` (phase jumps over 2 rad in the IQ itself, at the first
+  sample of a transfer and elsewhere — a broadcast FM station cannot make
+  one), `zeroIF`/`lowIF`, and the driver ring's `ringDrop` and the libusb
+  stand-in's `lapped` byte counts.
 - `usbCmdMax` (the iPad's own USB port only) — the slowest driver command in
   the interval. A retune is about 110 ms of tuner writes on a V4.
 
@@ -152,6 +158,7 @@ the WAVs told apart:
 | flag | writes | what it is |
 | --- | --- | --- |
 | `/tmp/deck-rx-solo-audio-record` | `/tmp/deck-rx-solo-audio-<ts>.wav` | the standalone app's audio, after levelling and the mute window, **before the volume knob** and before the sink |
+| `/tmp/deck-rx-solo-iq-record` | `/tmp/deck-rx-solo-iq-<rate>-<ts>.bin` | the IQ as it arrived, packet by packet (a little-endian UInt32 byte count, then the int16 IQ), so a fault can be replayed offline through the same demodulator with the same packet boundaries. 3.6 MB a second at 912 kHz |
 | `/tmp/deck-rx-solo-postmix-record` | `/tmp/deck-rx-solo-postmix-<ts>.wav` | the standalone app again, at the engine's main mixer — after the volume ramp and after AVAudioEngine's own rate conversion |
 | `/tmp/deck-rx-audio-record` | `/tmp/deck-rx-audio-<ts>.wav` | the plugin, **after** its volume ramp, before resampling |
 | `/tmp/deck-rx-postasrc-record` | `/tmp/deck-rx-postasrc-<ts>.wav` | the plugin again, the exact bytes handed to the output device, after resampling |

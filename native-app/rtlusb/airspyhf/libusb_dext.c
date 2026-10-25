@@ -46,6 +46,17 @@ static struct libusb_device  g_hfplus = { RTLSDR_AIRSPYHF_VID, RTLSDR_AIRSPYHF_P
 /* The open handle the event loop serves. libairspyhf opens one device. */
 static libusb_device_handle *g_handle;
 
+/* Bytes skipped because the driver had lapped this reader, since start. */
+static uint64_t g_lapped;
+
+void deckrx_hf_stats(uint64_t *ringDrop, uint64_t *lapped)
+{
+    libusb_device_handle *h = g_handle;
+    if (ringDrop) *ringDrop = (h && h->ring) ? h->ring->dropCount : 0;
+    if (lapped) *lapped = g_lapped;
+}
+
+
 int libusb_init(libusb_context **ctx) { if (ctx) *ctx = &g_ctx; return 0; }
 void libusb_exit(libusb_context *ctx) { (void)ctx; }
 int libusb_set_option(libusb_context *ctx, enum libusb_option option, ...)
@@ -271,8 +282,10 @@ static int deliver(libusb_device_handle *h)
             RTLSDRRingBuffer *ring = h->ring;
             uint64_t w = ring->writeCount;
             uint64_t size = ring->dataSize ? ring->dataSize : RTLSDR_RING_DATA_SIZE;
-            if (w - h->cursor > size)           /* lapped: skip to what is left */
+            if (w - h->cursor > size) {         /* lapped: skip to what is left */
+                g_lapped += (w - size) - h->cursor;
                 h->cursor = w - size;
+            }
             if (w - h->cursor >= (uint64_t)head->length) {
                 uint64_t off = h->cursor % size;
                 uint64_t first = size - off;

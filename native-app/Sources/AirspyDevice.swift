@@ -76,6 +76,70 @@ final class AirspyDevice: IQSource {
     /// there looking connected. Streaming means samples every few milliseconds,
     /// so two seconds of silence is unambiguous.
     private var lastSampleAt = Date.distantPast
+    /// Samples handed up and samples the library reports lost before they
+    /// reached us (its consumer queue full), for `diagLine`.
+    private var statSamples: UInt64 = 0
+    private var statDropped: UInt64 = 0
+    /// DECKRX_AUDIO_DIAG: phase jumps in the IQ itself, at the first sample
+    /// of a transfer and inside one (see countJumps).
+    private static let jumpDiag = ProcessInfo.processInfo.environment["DECKRX_AUDIO_DIAG"] == "1"
+    private var jumpEdge: UInt64 = 0
+    private var jumpInside: UInt64 = 0
+    private var lastIQ: (Float, Float) = (0, 0)
+    private var ampAvg: Float = 0
+    private var statSince = Date()
+    private let statLock = NSLock()
+
+    /// DECKRX_AUDIO_DIAG's second line on this source: what arrived per second
+    /// against the rate, and every place samples can go missing on the way.
+    /// On the iPad also the driver's ring (bytes it dropped because the app
+    /// was behind) and the libusb stand-in (bytes it skipped when lapped).
+    /// Samples whose phase moved more than 2 rad from the one before while the
+    /// signal was strong (over half its running mean amplitude). A broadcast
+    /// FM station cannot do that at these rates (75 kHz at 912 kS/s is 0.5
+    /// rad), so each is a discontinuity in what the device or the transport
+    /// delivered. Counted at the first sample of a transfer (`edge`, where a
+    /// transport fault would land) and everywhere else (`inside`).
+    private func countJumps(_ f: [Float]) {
+        var (pi, pq) = lastIQ
+        var avg = ampAvg
+        var edge: UInt64 = 0, inside: UInt64 = 0
+        var k = 0
+        while k + 1 < f.count {
+            let i = f[k], q = f[k + 1]
+            let amp = (i * i + q * q).squareRoot()
+            let re = i * pi + q * pq, im = q * pi - i * pq
+            let d = abs(atan2(im, re))
+            if d > 2, amp > 0.5 * avg, avg > 0 {
+                if k == 0 { edge += 1 } else { inside += 1 }
+            }
+            avg += 0.001 * (amp - avg)
+            pi = i; pq = q
+            k += 2
+        }
+        lastIQ = (pi, pq); ampAvg = avg
+        statLock.lock(); jumpEdge += edge; jumpInside += inside; statLock.unlock()
+    }
+
+    func diagLine() -> String {
+        statLock.lock()
+        let secs = max(Date().timeIntervalSince(statSince), 0.001)
+        let got = Double(statSamples) / secs
+        let dropped = statDropped
+        let je = jumpEdge, ji = jumpInside
+        statSamples = 0; statDropped = 0; statSince = Date()
+        jumpEdge = 0; jumpInside = 0
+        statLock.unlock()
+        var s = String(format: "hf: in=%.0f/s of %u  libDropped=%llu  jumps edge=%llu inside=%llu",
+                       got, deviceRate, dropped, je, ji)
+        if let dev { s += airspyhf_is_low_if(dev) != 0 ? "  lowIF" : "  zeroIF" }
+#if os(iOS)
+        var ringDrop: UInt64 = 0, lapped: UInt64 = 0
+        deckrx_hf_stats(&ringDrop, &lapped)
+        s += "  ringDrop=\(ringDrop)B lapped=\(lapped)B"
+#endif
+        return s
+    }
     private var watchdog: DispatchSourceTimer?
     private var sync: DispatchSourceTimer?
     /// The same five seconds the network client allows. Two was picked because
@@ -105,7 +169,8 @@ final class AirspyDevice: IQSource {
             // IQ correction, IF shift and fine tuning, which is what SDR++ and
             // SpyServer both run the device with. Off, the image of a strong
             // medium-wave carrier lands on the other side of centre.
-            airspyhf_set_lib_dsp(dev, 1)
+            // DECKRX_HF_NODSP=1 turns it off, for diagnosis only.
+            airspyhf_set_lib_dsp(dev, ProcessInfo.processInfo.environment["DECKRX_HF_NODSP"] == "1" ? 0 : 1)
 
             self.rates = Self.readRates(dev)
             self.maxRate = self.rates.max() ?? 768_000
@@ -321,6 +386,10 @@ final class AirspyDevice: IQSource {
         let n = Int(t.sample_count)
         guard n > 0, let samples = t.samples else { return }
         lastSampleAt = Date()
+        statLock.lock()
+        statSamples += UInt64(n)
+        statDropped += t.dropped_samples
+        statLock.unlock()
 
         var floats = [Float](unsafeUninitializedCapacity: n * 2) { buf, count in
             samples.withMemoryRebound(to: Float.self, capacity: n * 2) { src in
@@ -328,6 +397,7 @@ final class AirspyDevice: IQSource {
             }
             count = n * 2
         }
+        if Self.jumpDiag { countJumps(floats) }
 
         var packets: [Data] = []
         bufLock.lock()

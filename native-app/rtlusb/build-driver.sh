@@ -77,8 +77,15 @@ if [ ! -d "$AH/.git" ]; then
   git clone --quiet "$AIRSPYHF_REPO" "$AH" || { echo "ERROR: airspyhf clone failed"; exit 1; }
 fi
 git -C "$AH" fetch --quiet origin 2>/dev/null
+git -C "$AH" reset --quiet --hard
 git -C "$AH" checkout --quiet "$AIRSPYHF_COMMIT" \
   || { echo "ERROR: commit $AIRSPYHF_COMMIT not in $AIRSPYHF_REPO"; exit 1; }
+# Two changes to it (airspyhf.patch): its zero-IF IQ correction ramped each
+# block from the new estimate back to the old one (the weights were the wrong
+# way round), and airspyhf_deckrx_skip_iq_balancer() turns that correction
+# off, which the app does for broadcast FM - see the comment in the patch.
+git -C "$AH" apply "$HERE/airspyhf.patch" \
+  || { echo "ERROR: airspyhf.patch does not apply"; exit 1; }
 
 # Rename into the app. The build number is the time: iPadOS only swaps a
 # running driver for a newer one when the number has gone up. Dotted, because

@@ -70,3 +70,9 @@ unmodified against `airspyhf/libusb.h` and `airspyhf/libusb_dext.c` — the
 part of libusb the library uses, implemented on the driver. Its transfers are
 filled from the ring a whole transfer at a time, oldest first, as the library's
 callback wants them. The Mac's `Sources/AirspyDevice.swift` drives it.
+
+`airspyhf.patch` changes the library in two places: the zero-IF IQ correction's
+per-block ramp had its weights reversed (each update stepped at a block
+boundary), and `airspyhf_deckrx_skip_iq_balancer()` turns that correction off,
+which the app does for broadcast FM — on wide FM the correction's wandering
+estimate is heard as crackle at 912 kHz, the zero-IF rate (docs/ipad.md).

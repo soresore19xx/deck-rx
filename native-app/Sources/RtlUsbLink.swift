@@ -50,6 +50,7 @@ final class RtlUsbLink: RtlByteLink {
     /// audio gap as long as the tuning (2026-10-25). The driver streams on a
     /// queue of its own meanwhile, so nothing is lost by not waiting.
     private let cmdQueue = DispatchQueue(label: "deck-rx.rtlusb.cmd", qos: .userInitiated)
+    private var clientQueue: DispatchQueue?
     /// The slowest command since the last `diagNote`, in seconds.
     private var slowestCmd: Double = 0
     private let slowLock = NSLock()
@@ -75,6 +76,7 @@ final class RtlUsbLink: RtlByteLink {
     }
 
     func start(queue: DispatchQueue, onBytes: @escaping (Data) -> Void) -> Error? {
+        clientQueue = queue
         conn = rtlsdrhost_open()
         guard conn != 0 else { return LinkError.noDriver }
         var size: UInt64 = 0
@@ -119,11 +121,15 @@ final class RtlUsbLink: RtlByteLink {
         return nil
     }
 
-    func command(_ d: Data) {
-        guard d.count == 5 else { return }
+    func command(_ d: Data, done: @escaping (UInt8) -> Void) {
+        guard d.count == 5, let q = clientQueue else { return }
         // In order, after any earlier command; `conn` is read on this queue,
-        // which is also where `close` clears it.
-        cmdQueue.async { [weak self] in self?.run(d) }
+        // which is also where `close` clears it. `done` fires even when the
+        // call fails or the link is closed: the client is waiting on it.
+        cmdQueue.async { [weak self] in
+            self?.run(d)
+            q.async { done(d[d.startIndex]) }
+        }
     }
 
     private func run(_ d: Data) {

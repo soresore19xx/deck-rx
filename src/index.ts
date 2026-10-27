@@ -41,7 +41,12 @@ const PID_FILE = process.env.DECK_RX_PID_FILE ?? '/tmp/deck-rx.pid';
     }
   } catch { /* no file */ }
   fs.writeFileSync(PID_FILE, String(process.pid));
-  process.on('exit', () => { try { fs.unlinkSync(PID_FILE); } catch {} });
+  // Touch/unlink only while the file still holds our PID, so a successor's PID is never clobbered.
+  const owns = () => { try { return fs.readFileSync(PID_FILE, 'utf8').trim() === String(process.pid); } catch { return false; } };
+  // macOS tmp_cleaner deletes /tmp files untouched for 3 days; without the file the next start
+  // cannot stop this instance and two run side by side. Refresh mtime hourly.
+  setInterval(() => { if (owns()) { const t = new Date(); try { fs.utimesSync(PID_FILE, t, t); } catch {} } }, 3_600_000).unref();
+  process.on('exit', () => { if (owns()) { try { fs.unlinkSync(PID_FILE); } catch {} } });
 })();
 
 // GC a stale LCD-dump flag from a previous run. dump-lcd.sh touches the

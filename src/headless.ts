@@ -35,7 +35,12 @@ const PID_FILE = process.env.DECK_RX_HEADLESS_PID_FILE ?? '/tmp/deck-rx-headless
     }
   } catch { /* no file */ }
   fs.writeFileSync(PID_FILE, String(process.pid));
-  process.on('exit', () => { try { fs.unlinkSync(PID_FILE); } catch { /* already gone */ } });
+  // Touch/unlink only while the file still holds our PID, so a successor's PID is never clobbered.
+  const owns = () => { try { return fs.readFileSync(PID_FILE, 'utf8').trim() === String(process.pid); } catch { return false; } };
+  // macOS tmp_cleaner deletes /tmp files untouched for 3 days; without the file the next start
+  // cannot stop this instance and two run side by side. Refresh mtime hourly.
+  setInterval(() => { if (owns()) { const t = new Date(); try { fs.utimesSync(PID_FILE, t, t); } catch { /* gone */ } } }, 3_600_000).unref();
+  process.on('exit', () => { if (owns()) { try { fs.unlinkSync(PID_FILE); } catch { /* already gone */ } } });
 })();
 
 process.stdout.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE') throw err; });

@@ -354,6 +354,16 @@ final class MainView: NSView {
     /// The menu last built, so it is rebuilt when the device changes rather
     /// than on every status tick.
     private var iqLadder: [IqChoice] = []
+    /// Whether the IQ menu is on screen, so the status tick does not reselect
+    /// under the pointer.
+    private let iqMenuWatch = MenuOpenWatch()
+    /// A pick the receiver has not reached yet. The stream restarts to apply
+    /// it, and until then the status still carries the old rate; without this
+    /// the menu would flick back to it for a tick. Dropped once the rate
+    /// arrives or the deadline passes, whichever comes first — so a pick the
+    /// receiver overrides (a width the mode cannot use) reads as what it runs
+    /// at within seconds, not forever.
+    private var iqPending: (rateHz: UInt32, until: Date)?
     private let fftPop = NSPopUpButton()
     private let fpsPop = NSPopUpButton()
     private let avgLabel = label("(0.3s)", mono(15), P.faint)
@@ -584,8 +594,13 @@ final class MainView: NSView {
         iqPop.font = mono(16)
         iqPop.target = ButtonBox.shared
         iqPop.action = #selector(ButtonBox.fire(_:))
+        iqPop.menu?.delegate = iqMenuWatch
         ButtonBox.shared.actions[ObjectIdentifier(iqPop)] = { [weak self] in
             guard let self, let item = self.iqPop.selectedItem else { return }
+            let picked = self.iqPop.indexOfSelectedItem
+            if picked >= 0, picked < self.iqLadder.count {
+                self.iqPending = (self.iqLadder[picked].rateHz, Date().addingTimeInterval(5))
+            }
 #if STANDALONE
             let i = self.iqPop.indexOfSelectedItem
             if i >= 0, i < self.iqLadder.count, let set = self.onIqChoice, set(self.iqLadder[i]) { return }
@@ -1054,8 +1069,15 @@ final class MainView: NSView {
             }
         }
         // Not while the menu is open: reselecting under the pointer is how a
-        // dropdown throws away the choice being made in it.
-        guard iqPop.menu?.highlightedItem == nil else { return }
+        // dropdown throws away the choice being made in it. Asked of the menu's
+        // delegate: `highlightedItem` stays set after the menu closes, so this
+        // guard used to hold for good once anything had been picked, and the
+        // menu went on showing the pick rather than the rate in force
+        // (2026-11-08: 2400k shown, 150k running).
+        guard !iqMenuWatch.isOpen else { return }
+        if let p = iqPending {
+            if UInt32(rateHz) == p.rateHz || Date() > p.until { iqPending = nil } else { return }
+        }
         // By the rate in force: on an RTL-SDR source several lines share stage 0.
         if let i = list.firstIndex(where: { Double($0.rateHz) == rateHz }), iqPop.indexOfSelectedItem != i {
             iqPop.selectItem(at: i)
@@ -1303,6 +1325,14 @@ final class ButtonBox: NSObject {
     static let shared = ButtonBox()
     var actions: [ObjectIdentifier: () -> Void] = [:]
     @objc func fire(_ sender: NSButton) { actions[ObjectIdentifier(sender)]?() }
+}
+
+/// Whether a menu is on screen. `NSMenu.highlightedItem` is not that: it keeps
+/// the last line the pointer was on after the menu has closed.
+final class MenuOpenWatch: NSObject, NSMenuDelegate {
+    private(set) var isOpen = false
+    func menuWillOpen(_ menu: NSMenu) { isOpen = true }
+    func menuDidClose(_ menu: NSMenu) { isOpen = false }
 }
 
 /// A button that shows its state in its colour.

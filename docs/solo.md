@@ -350,7 +350,15 @@ file is where they persist, per receiver under `devices`.
 A width above 1 MHz is only ever picked by hand. One inherited from another
 receiver is not trusted that far — on 2026-09-21 the HF+'s stage 0 arrived on
 the V4 as 2.4 MHz — and through a SpyServer the V4 stays at 1 MHz or under even
-when picked, since its 2.4 MHz never tuned that day.
+when picked, since its 2.4 MHz never tuned that day. The menu for a SpyServer
+therefore stops at 1 MHz, as the plugin's does: the V4 there offers 600 / 300 /
+150 kHz, the HF+ 912 / 456 / 228 / 114 kHz. (Until 2026-11-08 it also offered
+2400k and 1200k on the V4, both of which ran at 150k.)
+
+The menu shows the rate the receiver is running at, not the last pick. A pick
+narrower than the mode needs (114k on the HF+ in WFM, which needs 200 kHz)
+runs at the narrowest line that carries the mode (228k there), and the menu
+says so within a few seconds of the stream restarting.
 
 `audioDevice` is the one row in the options panel that opens rather than
 cycles: a Mac has as many outputs as it has ever had devices attached, and

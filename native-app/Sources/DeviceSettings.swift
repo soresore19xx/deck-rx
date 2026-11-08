@@ -66,7 +66,9 @@ enum DeviceSettingsResolver {
     /// carries the same shape of bug: issue #2521, "Decimation lower than 16/8
     /// causes reception issues on RTL-SDR Blog V4". A user who asks for the top
     /// rate still gets it; this only governs what is picked automatically.
-    static let maxAutoIQRate: Double = 1_000_000
+    /// Except through a SpyServer, where a pick is capped too — so the IQ menu
+    /// for those sources stops here, and the value lives with the menu.
+    static let maxAutoIQRate: Double = IqChoice.ladderCeiling
 
     /// Lowest audio rate that still carries the mode.
     ///

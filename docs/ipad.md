@@ -48,7 +48,9 @@ Landscape, and the width goes to the spectrum.
   **IQ rate** is the width the receiver streams at, which is the width of the
   spectrum — the Mac's IQ menu, with the same lines (see
   [Solo](solo.md)): 912 / 456 / 228 / 114 kHz on the HF+ through its
-  SpyServer, 3.2 MHz down to 150 kHz on an RTL-SDR over RTL-TCP or USB. It
+  SpyServer, 600 / 300 / 150 kHz on the V4 through its SpyServer (nothing over
+  1 MHz there, as in the plugin), 3.2 MHz down to 150 kHz on an RTL-SDR over
+  RTL-TCP or USB. It
   is offered while a receiver is connected, and picking one reconnects. The
   width costs the audio nothing: each mode is cut out of the IQ at a rate of
   its own before it is demodulated ([Solo: channel stage](solo.md#channel-stage)).

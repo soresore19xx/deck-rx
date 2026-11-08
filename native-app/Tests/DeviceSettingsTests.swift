@@ -395,6 +395,30 @@ func runIqChoiceTests() {
           hf.map(\.rateHz) == [912_000, 456_000, 228_000, 114_000] && hf.allSatisfy { $0.rtlBase == nil },
           "\(hf.map(\.rateHz))")
 
+    // 2026-11-08: the V4 through its SpyServer offered 2400k and 1200k, which
+    // the resolver capped to 150k while the menu kept saying 2400k.
+    func spyMenu(_ i: SpyClient.DeviceInfo) -> [IqChoice] {
+        IqChoice.list(topRate: i.maxSampleRate >> i.minIQDecimation,
+                      decimationStages: i.decimationStages, anyRate: false)
+    }
+    let v4spy = spyMenu(Rx.v4)
+    check("a SpyServer V4 offers 600 / 300 / 150 kHz, nothing over 1 MHz (the plugin's menu)",
+          v4spy.map(\.rateHz) == [600_000, 300_000, 150_000], "\(v4spy.map(\.rateHz))")
+    // The rule the menu exists to keep: whatever line is picked is what runs.
+    // AM, whose floor (96 k) is under every line, so no line is overridden for
+    // the mode; a width narrower than WFM needs is, by design.
+    for (name, dev) in [("HF+", Rx.hfp), ("V4", Rx.v4), ("floored V4", Rx.flooredV4),
+                        ("Airspy R2", Rx.airspyOne), ("unknown", Rx.unknown)] {
+        let key = RadioConfig.deviceKey(type: dev.deviceType, serial: dev.deviceSerial)
+        let wrong = spyMenu(dev).filter { c in
+            var p = cfg(iqDec: 0, devices: [key: .init(iqDecimation: c.stage)])
+            p.source = "spyserver"
+            return DeviceSettingsResolver.resolve(info: dev, config: p, mode: RxMode.am).iqRate != c.rateHz
+        }
+        check("every line of a SpyServer \(name)'s menu runs at its own rate",
+              !spyMenu(dev).isEmpty && wrong.isEmpty, "\(wrong.map(\.rateHz))")
+    }
+
     // V4 at stage 0, as a pick filed under its own profile.
     let picked = cfg(iqDec: 3, devices: ["3:00000001": .init(iqDecimation: 0)])
     var usb = picked; usb.source = "rtlusb"

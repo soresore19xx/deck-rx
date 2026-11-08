@@ -708,12 +708,24 @@ struct IqChoice: Equatable {
     /// (DeviceSettingsResolver.minIQRate); below 100 k nothing is gained.
     static let menuFloor: Double = 100_000
 
+    /// Widest a halving menu offers, and the resolver's ceiling for those
+    /// sources (`DeviceSettingsResolver.maxAutoIQRate` is this value). Kept
+    /// here because this file is built into the front-end too, which has no
+    /// resolver. The resolver replaces anything wider on connect with the
+    /// narrowest rate the mode allows, so a wider line was a choice that
+    /// silently did not happen: 2026-11-08, the V4 through its SpyServer
+    /// offered 2400k and 1200k, both of which ran at 150k while the menu
+    /// still said 2400k. The plugin's menu has had this ceiling since it was
+    /// written (`iqChoices` in src/deviceSettings.ts).
+    static let ladderCeiling: Double = 1_000_000
+
     /// What a receiver can be set to, widest first.
     ///
     /// A SpyServer (and the HF+ on USB, for now) halves one maximum: that is
-    /// its protocol. The RTL-SDR's own sources take any rate in the chip's
-    /// windows, so they offer SDR++'s list and then the 2.4 MHz halvings below
-    /// it — before this, they offered only 2.4 / 1.2 / 0.6 MHz.
+    /// its protocol, and the lines stop at `ladderCeiling`. The RTL-SDR's own
+    /// sources take any rate in the chip's windows, so they offer SDR++'s list
+    /// and then the 2.4 MHz halvings below it — before this, they offered only
+    /// 2.4 / 1.2 / 0.6 MHz.
     ///
     /// `topRate` is the rate at offset 0: the device maximum after its own
     /// `minIQDecimation`. Unused when `anyRate`.
@@ -738,7 +750,9 @@ struct IqChoice: Equatable {
         while st <= decimationStages {
             let r = topRate >> st
             if Double(r) < menuFloor { break }
-            out.append(IqChoice(rateHz: r, stage: st, rtlBase: nil))
+            if Double(r) <= ladderCeiling {
+                out.append(IqChoice(rateHz: r, stage: st, rtlBase: nil))
+            }
             st += 1
         }
         return out

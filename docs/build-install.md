@@ -73,8 +73,12 @@ reaches the device).
 `naudiodon` is a native module, so it needs a `.node` binary whose
 Node.js ABI version matches the Node runtime that loads it. Stream Deck
 ships its **own** bundled Node under
-`~/Library/Application Support/com.elgato.StreamDeck/NodeJS/<ver>/` (at
-the time of writing, `20.20.0`). The naudiodon binary you'd get from a
+`~/Library/Application Support/com.elgato.StreamDeck/NodeJS/<ver>/`. Which
+major it runs is set by `Nodejs.Version` in the plugin's `manifest.json` —
+`24` since 2026-11 (Node 20 reached end-of-life on 2026-04-30 and no longer
+gets security fixes); at the time of writing that resolves to `24.22.1`.
+Stream Deck downloads the runtime the first time a plugin asks for it
+(Stream Deck 7.1 or later). The naudiodon binary you'd get from a
 bare `npm install` is built against your *development* Node, which is
 usually a different ABI — load that into Stream Deck's runtime and you
 get a `NODE_MODULE_VERSION` mismatch or, more commonly, the
@@ -93,12 +97,15 @@ three steps:
    via `install_name_tool` so the binding resolves it without polluting
    `LC_RPATH`.
 
-2. **Rebuild `naudiodon.node` against Stream Deck's bundled Node.** Picks
-   the highest directory under `~/Library/Application Support/com.elgato.StreamDeck/NodeJS/`
-   (filtered to actual directories — there is a `manifest.json` sibling
+2. **Rebuild `naudiodon.node` against Stream Deck's bundled Node.** Reads
+   the major from `manifest.json` (`Nodejs.Version`) and picks the highest
+   directory of that major under `~/Library/Application Support/com.elgato.StreamDeck/NodeJS/`
+   (several majors can sit there side by side when other plugins ask for
+   other versions; directories only — there is a `manifest.json` sibling
    file in the same parent that an unfiltered `ls` would silently pick
    up), and invokes `npx node-gyp@10 rebuild --target=$VER --arch=arm64
-   --target_platform=darwin`.
+   --target_platform=darwin`. It stops with an error if that major has
+   not been downloaded yet — start the plugin once so Stream Deck fetches it.
 
 3. **Same for `segfault-handler`** (a debug dependency naudiodon imports
    at runtime).
@@ -125,7 +132,7 @@ stream), load `naudiodon` directly from Stream Deck's bundled Node and
 enumerate output devices:
 
 ```sh
-SD_NODE="$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS/20.20.0/node"
+SD_NODE="$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS/24.22.1/node"
 "$SD_NODE" -e '
   const pa = require("./node_modules/naudiodon");
   console.log("loaded OK");
@@ -146,6 +153,8 @@ startAudio / the SpyServer connection instead. If it errors out, run
 - After `npm install <something>` that touches `naudiodon` (rare)
 - After Stream Deck app upgrades its bundled Node version (the directory
   name under `NodeJS/` changes — current binding becomes ABI-stale)
+- After changing `Nodejs.Version` in `manifest.json` (a new major is a new
+  ABI — e.g. 20 → 24 moved `NODE_MODULE_VERSION` from 115 to 137)
 - After `sudo port upgrade portaudio` (the dylib swap is against the
   installed MacPorts version)
 - If `node_modules/naudiodon/build/` disappears for any reason

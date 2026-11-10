@@ -244,7 +244,8 @@ export class FfmpegOutput implements AudioOutput {
 // ──── naudiodon (lazy require — avoids ABI crash at startup) ─────────────────
 //
 // naudiodon is a PortAudio binding. Native bindings must be rebuilt for the
-// Stream Deck app's bundled Node (currently 20.20.0). See scripts/postinstall.sh
+// Stream Deck app's bundled Node (the major set by manifest.json's
+// Nodejs.Version — 24 since 2026-11). See scripts/rebuild-native.sh
 // for the rebuild + libportaudio.dylib (arm64) replacement.
 //
 // Why naudiodon over the ffmpeg → audiotoolbox sink: ffmpeg's audiotoolbox

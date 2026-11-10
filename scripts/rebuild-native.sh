@@ -4,8 +4,9 @@
 #   - segfault-handler  (naudiodon's debug dep)
 #   - deck-rx-asrc      (libsamplerate binding, in-tree at native/samplerate)
 #
-# Run by `npm run rebuild-native`. Stream Deck currently bundles Node
-# 20.20.0; this script auto-detects whichever version is installed.
+# Run by `npm run rebuild-native`. The Node major comes from manifest.json
+# (`Nodejs.Version`, "24" since 2026-11 — Node 20 is end-of-life); the
+# script builds for the highest installed Stream Deck Node of that major.
 #
 # Manual one-shot:
 #   $ npm run rebuild-native
@@ -35,13 +36,23 @@ if [ ! -f "$SRC_DYLIB" ]; then
   exit 1
 fi
 
-# Pick the highest Stream Deck Node version directory present.
+# Pick the Stream Deck Node the plugin will actually run on: the highest
+# installed version whose major matches manifest.json's `Nodejs.Version`.
+# Several majors sit side by side under NodeJS/ once plugins ask for
+# different ones (e.g. 20.x for one plugin, 24.x for this one), so "highest
+# overall" would build for a runtime this plugin never loads.
 # NOTE: filter to directories — `$SD_NODE_DIR` also contains a `manifest.json`
-# sibling file that a naive `sort -V | tail -1` would pick up instead of
-# "20.20.0", silently passing `--target=manifest.json` to node-gyp.
-SD_NODE_VER=$(find "$SD_NODE_DIR" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V | tail -1)
+# sibling file that a naive `sort -V | tail -1` would pick up instead of a
+# version, silently passing `--target=manifest.json` to node-gyp.
+PLUGIN_MANIFEST="$(cd "$(dirname "$0")/.." && pwd)/com.hogehoge.deck-rx.sdPlugin/manifest.json"
+WANT_MAJOR=$(/usr/bin/plutil -extract Nodejs.Version raw -o - "$PLUGIN_MANIFEST" 2>/dev/null || true)
+if [ -z "$WANT_MAJOR" ]; then
+  echo "[rebuild-native] cannot read Nodejs.Version from $PLUGIN_MANIFEST" >&2
+  exit 1
+fi
+SD_NODE_VER=$(find "$SD_NODE_DIR" -mindepth 1 -maxdepth 1 -type d -name "${WANT_MAJOR}.*" -exec basename {} \; | sort -V | tail -1)
 if [ -z "$SD_NODE_VER" ]; then
-  echo "[rebuild-native] no Node version directory under $SD_NODE_DIR" >&2
+  echo "[rebuild-native] no Node ${WANT_MAJOR}.x under $SD_NODE_DIR — start the plugin once so Stream Deck downloads it" >&2
   exit 1
 fi
 echo "[rebuild-native] target Stream Deck Node: $SD_NODE_VER"

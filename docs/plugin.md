@@ -18,7 +18,7 @@ Select, Options and the FFT display — are in [dial-layouts.md](dial-layouts.md
 | Runtime tooling (MacPorts) | `sudo port install portaudio` — `portaudio` (arm64) backs the `naudiodon` local-audio sink. naudiodon doubles as the PI's output-device dropdown source (its `getDevices()` / `getHostAPIs()` query CoreAudio's HAL directly, so no separate `switchaudio-osx` install is needed). Add `sudo port install ffmpeg` only if you plan to use the icecast publish path (ffmpeg hosts the MP3 encoder + icecast SOURCE client). The Stream Deck app ships its own bundled Node for running installed plugins; run `npm run rebuild-native` once after `npm install` to rebuild the naudiodon native binding against that bundled Node ABI. |
 | Remote SDR | Any SpyServer-compatible receiver. Tested with **Airspy HF+ Discovery** (HF 0.5–31 MHz + VHF 60–260 MHz, 31–60 MHz hardware gap) running SpyServer on a Linux ARM/aarch64 (NanoPi etc.); see [docs/server-setup.md](server-setup.md) for the server side. Airspy R2 / Mini and RTL-SDR also expected to work but are less exercised. |
 
-Developer / contributor tooling (Node 20+, MacPorts `librsvg` / `ImageMagick` / `sox` for the dump + analysis scripts) is documented in [docs/build-install.md](build-install.md). The native receiver app additionally needs `swiftc` (Xcode Command Line Tools); `rsvg-convert` renders its icon from the plugin's own `imgs/icon-source.svg` when present, and without it the app falls back to the generic bundle icon.
+Developer / contributor tooling (Node 22+, MacPorts `librsvg` / `ImageMagick` / `sox` for the dump + analysis scripts) is documented in [docs/build-install.md](build-install.md). The native receiver app additionally needs `swiftc` (Xcode Command Line Tools); `rsvg-convert` renders its icon from the plugin's own `imgs/icon-source.svg` when present, and without it the app falls back to the generic bundle icon.
 
 ## Features
 
@@ -165,7 +165,7 @@ The plugin is one front-end over the core, not the core itself. `bin/headless.js
 starts the same modules from a plain Node process:
 
 ```sh
-"$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS/20.20.0/node" \
+"$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS/24.22.1/node" \
   com.hogehoge.deck-rx.sdPlugin/bin/headless.js
 ```
 

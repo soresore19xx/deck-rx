@@ -1788,6 +1788,48 @@ do {
     check("SSB AGC keeps a strong station off the rail", level(true, 16_000).peak < 32767.0 / 32768)
 }
 
+section("the volume leaves the detectors alone")
+do {
+    // A rebuild resets every detector and filter, which is a click and a gap
+    // in the audio. The volume and the mute went through `config`'s didSet and
+    // caused one per change: a drag along the bar was a run of them.
+    let rate = 228_000.0
+    let iq = makeIQ(rate: rate, count: Int(rate * 0.2), deviationHz: 40_000) { t in
+        sin(2 * Double.pi * 1000 * t)
+    }
+    func run(touchLevel: Bool) -> (rebuilds: Int, second: [Float]) {
+        let lr = LocalRadio()
+        lr.mode = 1
+        _ = lr.demodulateForTesting(iq, iqRate: UInt32(rate))
+        let before = lr.demodRebuilds
+        if touchLevel {
+            for v in stride(from: 0.9, through: 0.1, by: -0.1) { lr.volume = v }
+            lr.muted = true
+            lr.muted = false
+        }
+        // The seam runs on the receiver's queue, behind anything the setters
+        // posted there, and rebuilds once itself.
+        let second = lr.demodulateForTesting(iq, iqRate: UInt32(rate))
+        return (lr.demodRebuilds - before, second)
+    }
+    let plain = run(touchLevel: false), touched = run(touchLevel: true)
+    check("a volume or mute change rebuilds nothing", touched.rebuilds == plain.rebuilds,
+          "\(touched.rebuilds) rebuilds against \(plain.rebuilds)")
+    check("and the demodulated audio is the same", touched.second == plain.second)
+
+    // A setting the detectors do read still gets through.
+    let lr = LocalRadio()
+    lr.mode = 1
+    _ = lr.demodulateForTesting(iq, iqRate: UInt32(rate))
+    let before = lr.demodRebuilds
+    var c = lr.config
+    c.fmLowPass.toggle()
+    lr.config = c
+    _ = lr.demodulateForTesting(iq, iqRate: UInt32(rate))
+    check("a filter setting still rebuilds", lr.demodRebuilds - before == 2,
+          "\(lr.demodRebuilds - before)")
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 {
     print("\(failures) FAILED")

@@ -572,6 +572,15 @@ final class MainView: NSView {
         // buttons do; a clipped button is not a button.
         volLabel.setContentCompressionResistancePriority(.init(2), for: .horizontal)
         volLabel.lineBreakMode = .byTruncatingTail
+        // As wide as "100%" whatever it reads. Sized to its text, the label
+        // changed width at 9 → 10 and 99 → 100, and everything to its left in
+        // this row — VOL −, the bar, VOL + — moved under the pointer that was
+        // clicking it. Below required, so it still gives before the buttons.
+        volLabel.alignment = .right
+        let volLabelWidth = volLabel.widthAnchor.constraint(equalToConstant: ceil(
+            ("100%" as NSString).size(withAttributes: [.font: volLabel.font as Any]).width) + 4)
+        volLabelWidth.priority = .init(251)
+        volLabelWidth.isActive = true
         embed(bottomRow, in: bottom, inset: S(12))
 
         // display toolbar, between the header and the spectrum

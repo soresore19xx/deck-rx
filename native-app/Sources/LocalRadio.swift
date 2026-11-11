@@ -387,11 +387,44 @@ final class LocalRadio {
     }
     var volume: Double {
         get { sink.volume }
-        set { sink.volume = newValue; config.volume = newValue; config.save() }
+        set { sink.volume = newValue; config.volume = newValue; saveLevelSoon() }
     }
     var muted: Bool {
         get { sink.muted }
-        set { sink.muted = newValue; config.muted = newValue; config.save() }
+        set { sink.muted = newValue; config.muted = newValue; saveLevelSoon() }
+    }
+    /// The level takes effect at once and reaches the disk 300 ms after the
+    /// last change, as in the plugin (docs/architecture.md, "Volume"). A drag
+    /// along the bar is a setter call per mouse event, and each one used to
+    /// encode the whole config and rewrite the file.
+    /// Counts the changes, so only the timer of the last one writes. The
+    /// setters are reached from the window and from the control server's
+    /// queue (the knob), hence the lock.
+    private var levelSaveSeq = 0
+    private var levelSavePending = false
+    private let levelSaveLock = NSLock()
+    private func saveLevelSoon() {
+        levelSaveLock.lock()
+        levelSaveSeq += 1
+        levelSavePending = true
+        let seq = levelSaveSeq
+        levelSaveLock.unlock()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            self.levelSaveLock.lock()
+            let due = self.levelSavePending && self.levelSaveSeq == seq
+            if due { self.levelSavePending = false }
+            self.levelSaveLock.unlock()
+            if due { self.config.save() }
+        }
+    }
+    /// Writes a level change still waiting out its 300 ms. For a quit.
+    private func flushLevelSave() {
+        levelSaveLock.lock()
+        let due = levelSavePending
+        levelSavePending = false
+        levelSaveLock.unlock()
+        if due { config.save() }
     }
     private(set) var audioRate: Double = 0
 
@@ -928,6 +961,7 @@ final class LocalRadio {
     /// something else notices, which is what "the plugin cannot take the device
     /// back after Solo quits" looks like from the other side.
     func shutdown() {
+        flushLevelSave()
         closeTap()
         audioEnabled = false
         wantConnection = false
@@ -1354,8 +1388,13 @@ final class LocalRadio {
         mode == 0 || mode == 3 ? config.nfmBandwidthHz : config.fmBandwidthHz
     }
 
+    /// How many times the detectors have been rebuilt. For the tests: a
+    /// rebuild is audible, so what triggers one is worth pinning down.
+    private(set) var demodRebuilds = 0
+
     private func configureDemods() {
         guard iqRate > 0 else { return }
+        demodRebuilds += 1
         // Derived here rather than at the call sites: it follows the mode as
         // well as the IQ rate, and a mode change that did not recompute it
         // left the FM detectors running at the rate AM had asked for.
@@ -1454,6 +1493,17 @@ final class LocalRadio {
     /// everything, for a caller who changed something outside `config`.
     func applyConfig(changedFrom previous: RadioConfig? = nil) {
         if let p = previous, p == config { return }
+        // The volume and the mute belong to the sink, which already has them
+        // by the time this runs. Nothing below reads either, and all of it
+        // costs audio: configureDemods resets every detector and rebuilds every
+        // filter, so each step of the volume was a click and a gap, and a drag
+        // along the bar was a run of them.
+        if let p = previous {
+            var q = p
+            q.volume = config.volume
+            q.muted = config.muted
+            if q == config { return }
+        }
         // Keep the connected receiver's profile in step with what is in force,
         // so a gain or decimation chosen here is what comes back next time this
         // receiver is selected — and is not carried onto a different one.

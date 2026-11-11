@@ -324,6 +324,14 @@ neighbour, FM wanting all of it — so an `fmGain` in the config file was read a
 discarded. There are two now, migrating a pre-split `gain` into the AM one, and
 the row shows whichever the live mode uses.
 
+And the volume. The setter wrote the level into the config, the config's
+`didSet` pushed the config into the running receiver, and that push resets every
+detector and rebuilds every filter — so each step of the volume was a click and
+a short gap, and a drag along the bar was a run of them. The plugin's volume
+touches the output stage and nothing else. So does this one now: a change to the
+volume or the mute alone rebuilds nothing, and the level is written to disk
+300 ms after the last change, as in the plugin, instead of once per mouse event.
+
 **When something sounds different between the two, the difference is a bug in
 this one.**
 

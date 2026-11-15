@@ -1977,7 +1977,7 @@ final class LocalRadio {
         snrDb = snrDb * 0.9 + max(0, peak - median) * 0.1
         let frame = SpectrumFeed.Frame(bins: bins, iqRate: iqRate,
                                        centerFreq: deviceCenterHz, seq: seq,
-                                       rawBins: fft.lastRaw)
+                                       rawBins: fft.lastRaw, smoothAlpha: smoothAlpha)
         DispatchQueue.main.async { self.onFrame?(frame) }
     }
 }

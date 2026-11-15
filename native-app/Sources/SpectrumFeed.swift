@@ -21,6 +21,10 @@ final class SpectrumFeed {
         /// trace (WaterFall::pushFFT). nil where only smoothed bins exist (the
         /// plugin's feed); the waterfall then uses `bins`.
         var rawBins: [Float]? = nil
+        /// The across-frames coefficient `bins` was smoothed with, so a view
+        /// that has the raw bins can smooth after reducing them to columns,
+        /// in SDR++'s order, instead of drawing from `bins`.
+        var smoothAlpha: Float? = nil
     }
 
     private static let magic: UInt32 = 0x53585244 // 'DRXS'

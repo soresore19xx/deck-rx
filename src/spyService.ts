@@ -115,6 +115,7 @@ export interface AMOptions {
   sync: boolean;       // PLL-based synchronous AM detection (DSB)
   autoNotch: boolean;  // cut steady tones: heterodyne whistles, mains hum (autoNotch.ts)
   nr: boolean;         // audio noise reduction, the hiss between words (ifnr.ts)
+  nrDepth: number;     // dB, the most the NR turns a bin down (6 / 9 / 12 / 15)
 }
 
 const DEFAULT_AM_OPTIONS: AMOptions = {
@@ -131,6 +132,10 @@ const DEFAULT_AM_OPTIONS: AMOptions = {
   autoNotch: false,
   // Off too: on a weak station it dulls the treble along with the hiss.
   nr: false,
+  // What it was before it could be chosen. Shallower leaves more hiss between
+  // words and more of the treble: the top of the voice band sits closest to
+  // the noise, so that is where a deep cut costs.
+  nrDepth: 15,
 };
 
 export interface SSBOptions {
@@ -144,8 +149,9 @@ export interface SSBOptions {
   bfoPitchHz: number;
   // USB / LSB only (CW's wanted signal IS a steady tone). autoNotch.ts.
   autoNotch: boolean;
-  // Audio noise reduction, USB / LSB / CW (ifnr.ts).
+  // Audio noise reduction, USB / LSB / CW (ifnr.ts), and its depth in dB.
   nr: boolean;
+  nrDepth: number;
   // USB / LSB AGC (demodulator.ts SSB_AGC_SET_POINT). CW has its own, always on.
   agc: boolean;
 }
@@ -155,6 +161,7 @@ const DEFAULT_SSB_OPTIONS: SSBOptions = {
   bfoPitchHz: 700,
   autoNotch: false,
   nr: false,
+  nrDepth: 15,
   // Off, as before it existed: turning it on changes how loud SSB is.
   agc: false,
 };
@@ -2129,6 +2136,7 @@ class SpyService {
       if (nrOn !== this.audioNrOn) { this.ifnrL.reset(); this.audioNrOn = nrOn; }
       if (nrOn && this.currentAudioRate > 0) {
         this.ifnrL.configure(this.currentAudioRate);
+        this.ifnrL.setMaxCutDb(mode === 2 ? this.amOptions.nrDepth : this.ssbOptions.nrDepth);
         const frames = pcm.length >> 1;
         const mono = new Float64Array(frames);
         for (let i = 0; i < frames; i++) mono[i] = pcm[2 * i];

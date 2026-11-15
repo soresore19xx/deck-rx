@@ -1720,6 +1720,7 @@ final class LocalRadio {
         if nr != audioNrOn { audioNr.reset(); audioNrOn = nr }
         if nr, audioRate > 0 {
             audioNr.configure(rate: audioRate)
+            audioNr.setMaxCutDb(mode == 2 ? config.amNrDepth : config.ssbNrDepth)
             audioNr.process(&pcm)
         }
     }

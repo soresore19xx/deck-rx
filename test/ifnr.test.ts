@@ -104,6 +104,21 @@ describe('Ifnr (audio noise reduction)', () => {
     expect(20 * Math.log10(rmsOf(y, fs * 3, n) / rmsOf(w, fs * 3, n))).toBeLessThan(-10);
   });
 
+  it('cuts noise alone by the depth it is set to', () => {
+    const n = FS * 5;
+    const w = noise(n, 400, 5);
+    for (const depth of [6, 9, 12, 15]) {
+      const nr = new Ifnr();
+      nr.setMaxCutDb(depth);
+      const y = new Float64Array(n);
+      for (let o = 0; o < n; o += 4096) y.set(nr.process(w.subarray(o, Math.min(n, o + 4096))), o);
+      const cut = 20 * Math.log10(rmsOf(y, FS * 3, n) / rmsOf(w, FS * 3, n));
+      // Not the full depth: now and then a bin of noise looks like signal.
+      expect(cut).toBeLessThan(-depth + 1.5);
+      expect(cut).toBeGreaterThan(-depth - 0.5);
+    }
+  });
+
   it('leaves a clean voice as it was', () => {
     const n = FS * 6;
     const v = voice(n, 4);

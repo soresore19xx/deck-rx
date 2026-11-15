@@ -259,6 +259,10 @@ struct RadioConfig: Codable, Equatable {
     /// as in the plugin: on a weak station it dulls the treble with the hiss.
     var amNr = false
     var ssbNr = false
+    /// The most the NR turns a bin down, dB. 15 is what it was before it could
+    /// be chosen; shallower keeps more of the treble and more of the hiss.
+    var amNrDepth: Double = 15
+    var ssbNrDepth: Double = 15
     /// USB / LSB AGC (Demods.swift setSsbAgc). Off, as in the plugin: turning
     /// it on changes how loud SSB is.
     var ssbAgc = false
@@ -482,6 +486,8 @@ struct RadioConfig: Codable, Equatable {
         ssbAutoNotch = (try? c.decodeIfPresent(Bool.self, forKey: .ssbAutoNotch)) .flatMap { $0 } ?? d.ssbAutoNotch
         amNr = (try? c.decodeIfPresent(Bool.self, forKey: .amNr)) .flatMap { $0 } ?? d.amNr
         ssbNr = (try? c.decodeIfPresent(Bool.self, forKey: .ssbNr)) .flatMap { $0 } ?? d.ssbNr
+        amNrDepth = (try? c.decodeIfPresent(Double.self, forKey: .amNrDepth)) .flatMap { $0 } ?? d.amNrDepth
+        ssbNrDepth = (try? c.decodeIfPresent(Double.self, forKey: .ssbNrDepth)) .flatMap { $0 } ?? d.ssbNrDepth
         ssbAgc = (try? c.decodeIfPresent(Bool.self, forKey: .ssbAgc)) .flatMap { $0 } ?? d.ssbAgc
         fmBandwidthHz = (try? c.decodeIfPresent(Double.self, forKey: .fmBandwidthHz)) .flatMap { $0 } ?? d.fmBandwidthHz
         nfmBandwidthHz = (try? c.decodeIfPresent(Double.self, forKey: .nfmBandwidthHz)) .flatMap { $0 } ?? d.nfmBandwidthHz
@@ -615,6 +621,7 @@ struct RadioConfig: Codable, Equatable {
             if let v = am["sync"] as? Bool { c.amSync = v }
             if let v = am["autoNotch"] as? Bool { c.amAutoNotch = v }
             if let v = am["nr"] as? Bool { c.amNr = v }
+            if let v = am["nrDepth"] as? Double { c.amNrDepth = v }
             if let v = am["agcAttack"] as? Double { c.amAgcAttack = v }
             if let v = am["agcDecay"] as? Double { c.amAgcDecay = v }
         }
@@ -623,6 +630,7 @@ struct RadioConfig: Codable, Equatable {
             if let v = ssb["bfoPitchHz"] as? Double { c.cwBfoHz = v }
             if let v = ssb["autoNotch"] as? Bool { c.ssbAutoNotch = v }
             if let v = ssb["nr"] as? Bool { c.ssbNr = v }
+            if let v = ssb["nrDepth"] as? Double { c.ssbNrDepth = v }
             if let v = ssb["agc"] as? Bool { c.ssbAgc = v }
         }
         if let fm = j["fm"] as? [String: Any] {

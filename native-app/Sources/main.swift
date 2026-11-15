@@ -394,6 +394,14 @@ final class MainView: NSView {
     /// window's own receiver kept running at its saved 30 fps / speed 30, and
     /// nothing was written to receiver.json (2026-10-06).
     var onFps: ((Int) -> Bool)?
+    /// STEP on the same terms. It was the one toolbar control still going to
+    /// the plugin's port alone: a pick in Solo changed the *plugin's* step,
+    /// the menu showed the plugin's ladder and value, and the receiver in this
+    /// window kept the step it had — "STEP 9 kHz" under the readout beside a
+    /// menu reading 1 kHz (user, 2026-11-15).
+    var onStep: ((Int) -> Bool)?
+    /// The steps worth offering in the mode this window's receiver is in.
+    var stepChoices: (() -> [Int])?
     var onSmooth: ((Int) -> Bool)?
     /// Display settings go through the window's own receiver's config when it
     /// has one, so a later save of that config cannot write back stale values
@@ -656,6 +664,9 @@ final class MainView: NSView {
             guard let self, self.stepPop.indexOfSelectedItem >= 0,
                   self.stepPop.indexOfSelectedItem < self.stepValues.count else { return }
             let hz = self.stepValues[self.stepPop.indexOfSelectedItem]
+#if STANDALONE
+            if let set = self.onStep, set(hz) { return }   // this window's own receiver
+#endif
             Receiver.step(hz: hz) { step, values in self.adoptStep(step, values) }
         }
 
@@ -1066,7 +1077,16 @@ final class MainView: NSView {
             stepPop.removeAllItems()
             stepPop.addItems(withTitles: values.map { formatStep(Double($0)) })
         }
-        if let i = stepValues.firstIndex(of: stepHz) { stepPop.selectItem(at: i) }
+        if let i = stepValues.firstIndex(of: stepHz) {
+            stepPop.selectItem(at: i)
+        } else if stepHz > 0 {
+            // A step the mode's ladder does not list (a band default, or one
+            // kept from another mode): shown as itself rather than leaving the
+            // last selection standing, which is a menu that lies.
+            stepValues.append(stepHz)
+            stepPop.addItem(withTitle: formatStep(Double(stepHz)))
+            stepPop.selectItem(at: stepValues.count - 1)
+        }
     }
 
     /// Render the controls from what the receiver reports, not from what we
@@ -1345,9 +1365,15 @@ final class MainView: NSView {
             ? (s.bandwidthHz >= 1000 ? String(format: "%.0f kHz", s.bandwidthHz / 1000)
                                      : String(format: "%.0f Hz", s.bandwidthHz))
             : "—"
-        if s.tuneStepHz > 0, Int(s.tuneStepHz) != currentStepHz {
+#if STANDALONE
+        // The ladder follows the mode, so it is asked for with the step.
+        let stepLadder = stepChoices?() ?? stepValues
+#else
+        let stepLadder = stepValues
+#endif
+        if s.tuneStepHz > 0, Int(s.tuneStepHz) != currentStepHz || stepLadder != stepValues {
             currentStepHz = Int(s.tuneStepHz)
-            adoptStep(currentStepHz, stepValues)
+            adoptStep(currentStepHz, stepLadder)
         }
         stepLabel.stringValue = s.tuneStepHz > 0
             ? (s.tuneStepHz >= 1000 ? String(format: "%.0f kHz", s.tuneStepHz / 1000)
@@ -1849,7 +1875,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 #endif
         // Seed the display controls from the receiver's live settings.
         seedSpectrumControls()
+#if !STANDALONE
         Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
+#endif
 
         view.refresh()
         var tick = 0
@@ -2180,6 +2208,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             v?.adoptSpectrum(self.radio.fftSize, self.radio.fps, Int(self.radio.smoothSpeed))
             return true
         }
+        v.onStep = { [weak self] hz in
+            guard let self, self.direct else { return false }
+            self.radio.setTuneStep(Double(hz))
+            self.view.refresh()
+            return true
+        }
+        v.stepChoices = { [weak self] in
+            guard let self else { return [] }
+            return RadioConfig.stepValues(for: self.radio.mode).map { Int($0) }
+        }
         v.onSmooth = { [weak self, weak v] speed in
             guard let self, self.direct else { return false }
             self.radio.smoothSpeed = Double(speed)
@@ -2406,7 +2444,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         seedSpectrumControls()
+#if !STANDALONE
         Receiver.step { [weak self] step, values in self?.view.adoptStep(step, values) }
+#endif
         Receiver.stations { [weak self] list in
             self?.view.spectrum.markers = list
             self?.view.spectrum.needsDisplay = true

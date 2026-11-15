@@ -262,8 +262,10 @@ final class AppServer {
 
         case "/step":
             if let hz = q["hz"].flatMap(Double.init), hz > 0 {
-                radio.config.tuneStepByMode[String(radio.mode)] = hz
-                radio.config.save()
+                // Through the receiver, which files it under the band's key
+                // ("2:mw" / "2:sw" for AM). Written here under the bare mode
+                // number it was never read back on AM once a band key existed.
+                radio.setTuneStep(hz)
             }
             return ok("\"tuneStepHz\":\(Int(radio.tuneStepHz))")
 

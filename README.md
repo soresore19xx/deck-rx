@@ -13,10 +13,10 @@ differ in what is holding the radio.
 
 | | What it is | Needs |
 | --- | --- | --- |
-| **[Deck RX Solo](docs/solo.md)** — Mac app | The whole receiver in one bundle. Start here if you just want to listen. | a SpyServer on the network |
+| **[Deck RX Solo](docs/solo.md)** — Mac app | The whole receiver in one bundle. Start here if you just want to listen. | a SpyServer or an `rtl_tcp` server on the network (an Airspy HF+ or an RTL-SDR such as the Blog V4 behind it), or an Airspy HF+ on an Apple-silicon Mac's own USB |
 | **[Deck RX](docs/plugin.md)** — Stream Deck + plugin | Fourteen actions and the encoder dials, driving the radio from the deck. The original. | Stream Deck +, Node, macOS |
 | **[Deck RX](docs/native-app.md)** — Mac front-end | A window onto the plugin's receiver. Draws what the plugin is doing; has no receiver of its own. | the plugin, on the same Mac |
-| **[Deck RX](docs/ipad.md)** — iPad app | A receiver on the tablet, demodulating there. | a SpyServer on the network, or an RTL-SDR plugged into an M-series iPad |
+| **[Deck RX](docs/ipad.md)** — iPad app | A receiver on the tablet, demodulating there. | a SpyServer or an `rtl_tcp` server on the network, or an RTL-SDR or an Airspy HF+ plugged into an M-series iPad |
 
 Both Mac apps are called "Deck RX" and "Deck RX Solo"; the plugin and the iPad
 app are "Deck RX" too. Which is meant is usually clear from the context, and

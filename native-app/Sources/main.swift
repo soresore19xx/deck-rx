@@ -1670,10 +1670,11 @@ final class VolumeBar: NSView {
         if w > 1 {
             let fill = CGRect(x: 0, y: y, width: w, height: h)
             ctx.addPath(CGPath(roundedRect: fill, cornerWidth: 5, cornerHeight: 5, transform: nil))
-            // Muted output still has a level — showing it in the warning colour
-            // says "this is where it will come back to", which a greyed-out bar
-            // does not.
-            ctx.setFillColor((muted ? P.warn : P.text).cgColor)
+            // Blue in both states (user, 2026-11-15: not the yellow). Muted
+            // output still has a level, so the bar keeps its length and only
+            // dims — "this is where it will come back to"; the MUTE key and
+            // the percentage carry the warning colour.
+            ctx.setFillColor((muted ? P.blue.withAlphaComponent(0.45) : P.blue).cgColor)
             ctx.fillPath()
         }
     }

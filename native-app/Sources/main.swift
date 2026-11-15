@@ -672,6 +672,13 @@ final class MainView: NSView {
         smoothField.action = #selector(ButtonBox.fire(_:))
         ButtonBox.shared.actions[ObjectIdentifier(smoothField)] = { [weak self] in
             guard let self, let v = Int(self.smoothField.stringValue) else { return }
+            // Only a value that differs from the one in force. A field sends
+            // its action when it loses the focus as well as on Return, and at
+            // launch AppKit focuses this one — the first text field — before
+            // the receiver's value has been seeded into it. Dropping that focus
+            // then "committed" the placeholder 30 over whatever had been saved,
+            // on every launch (user, 2026-11-15: the setting did not stick).
+            guard v != self.smoothSpeed else { return }
 #if STANDALONE
             if let set = self.onSmooth, set(v) { self.smoothStepper.integerValue = v; return }
 #endif

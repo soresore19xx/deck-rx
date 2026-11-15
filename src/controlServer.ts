@@ -135,6 +135,8 @@ async function applyOption(name: string, raw: string, asBool: boolean, asNum: nu
     case 'ssb.autoNotch': await spyService.setSSBOption('autoNotch', asBool); return true;
     case 'am.nr':         await spyService.setAMOption('nr', asBool); return true;
     case 'ssb.nr':        await spyService.setSSBOption('nr', asBool); return true;
+    case 'am.nrDepth':    if (num === null || num < 3 || num > 30) return false; await spyService.setAMOption('nrDepth', num); return true;
+    case 'ssb.nrDepth':   if (num === null || num < 3 || num > 30) return false; await spyService.setSSBOption('nrDepth', num); return true;
     case 'ssb.agc':       await spyService.setSSBOption('agc', asBool); return true;
     case 'ssb.bandwidth': if (num === null) return false; await spyService.setSSBOption('bandwidthHz', num); return true;
     case 'ssb.bfo':       if (num === null) return false; await spyService.setSSBOption('bfoPitchHz', num); return true;
@@ -469,9 +471,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
         },
         am: {
           bandwidth: am.bandwidth, carrierAgc: am.carrierAgc,
-          agcAttack: am.agcAttack, agcDecay: am.agcDecay, sync: am.sync, autoNotch: am.autoNotch, nr: am.nr,
+          agcAttack: am.agcAttack, agcDecay: am.agcDecay, sync: am.sync, autoNotch: am.autoNotch, nr: am.nr, nrDepth: am.nrDepth,
         },
-        ssb: { bandwidthHz: ssb.bandwidthHz, bfoPitchHz: ssb.bfoPitchHz, autoNotch: ssb.autoNotch, nr: ssb.nr, agc: ssb.agc },
+        ssb: { bandwidthHz: ssb.bandwidthHz, bfoPitchHz: ssb.bfoPitchHz, autoNotch: ssb.autoNotch, nr: ssb.nr, nrDepth: ssb.nrDepth, agc: ssb.agc },
         gain: { am: spyService.getAmGain(), fm: spyService.getFmGain(), max: spyService.getMaxGain() },
         autoGain: { auto: spyService.isAutoGain(), station: spyService.stationGainSource() },
       }));

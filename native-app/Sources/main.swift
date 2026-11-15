@@ -417,6 +417,11 @@ final class MainView: NSView {
     lazy var centerPad: CrosshairPad = CrosshairPad {
         [weak self] in self?.onCenterToggle?()
     }
+    /// Shows and hides the left pane alone (presets and BAND JUMP). H still
+    /// moves both sides.
+    lazy var leftPanePad: SidebarPad = SidebarPad {
+        [weak self] in self?.toggleLeftPane()
+    }
     lazy var nrPad: TogglePad = TogglePad("NR", font: mono(13), momentary: false) {
         [weak self] in self?.onNrToggle?()
     }
@@ -461,7 +466,7 @@ final class MainView: NSView {
         // where the audio goes — the questions you ask when something sounds
         // wrong, answered without opening a log.
         func sep() -> NSView { label("|", mono(15), P.line) }
-        let topRow = NSStackView(views: [
+        var topViews: [NSView] = [
             label("deck", .systemFont(ofSize: max(9, S(23)), weight: .bold), P.text),
             linkDot, linkLabel, deviceLabel,
             sep(), iqLabel, dropsLabel,
@@ -469,7 +474,15 @@ final class MainView: NSView {
             NSView(),
             label("JST", mono(17), P.faint), clockJST,
             label("UTC", mono(17), P.faint), clockUTC,
-        ])
+        ]
+#if STANDALONE
+        // First in the bar, above the pane it moves: the bar spans the window,
+        // so the switch is still there to bring the pane back.
+        leftPanePad.toolTip = "Show / hide the preset pane"
+        leftPanePad.isOn = true
+        topViews.insert(leftPanePad, at: 0)
+#endif
+        let topRow = NSStackView(views: topViews)
         topRow.orientation = .horizontal
         topRow.spacing = 8
         topRow.alignment = .centerY
@@ -1119,19 +1132,34 @@ final class MainView: NSView {
     private var presetLeadingC: NSLayoutConstraint!
     private var bandBarLeadingC: NSLayoutConstraint!
     private var optionsTrailingC: NSLayoutConstraint!
-    private(set) var sidePanesShown = true
+    private(set) var leftPaneShown = true
+    private(set) var rightPaneShown = true
 
+    /// H: both out, or both back. With one side already put away by its own
+    /// switch, H puts the other away too, and the next H brings back both.
     func toggleSidePanes() {
-        sidePanesShown.toggle()
-        let left = sidePanesShown ? 0 : -presetList.frame.width
-        let right = sidePanesShown ? 0 : options.frame.width
+        let show = !(leftPaneShown || rightPaneShown)
+        setSidePanes(left: show, right: show)
+    }
+    /// The left pane on its own — the switch at the left of the top bar.
+    func toggleLeftPane() {
+        setSidePanes(left: !leftPaneShown, right: rightPaneShown)
+    }
+    private func setSidePanes(left: Bool, right: Bool) {
+        leftPaneShown = left
+        rightPaneShown = right
+#if STANDALONE
+        leftPanePad.isOn = left
+#endif
+        let leftC = left ? 0 : -presetList.frame.width
+        let rightC = right ? 0 : options.frame.width
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.18
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             ctx.allowsImplicitAnimation = true
-            presetLeadingC.animator().constant = left
-            bandBarLeadingC.animator().constant = left
-            optionsTrailingC.animator().constant = right
+            presetLeadingC.animator().constant = leftC
+            bandBarLeadingC.animator().constant = leftC
+            optionsTrailingC.animator().constant = rightC
             layoutSubtreeIfNeeded()
         }
     }
@@ -1427,6 +1455,65 @@ final class CrosshairPad: NSView {
         ctx.strokePath()
         let d = r * 0.32
         ctx.fillEllipse(in: CGRect(x: c.x - d, y: c.y - d, width: d * 2, height: d * 2))
+    }
+}
+
+/// The left-pane switch: a window outline with its left column, filled while
+/// the pane is on screen.
+final class SidebarPad: NSView {
+    private let action: () -> Void
+    private var pressed = false
+    private var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
+    var isOn = false { didSet { if isOn != oldValue { needsDisplay = true } } }
+
+    init(action: @escaping () -> Void) {
+        self.action = action
+        super.init(frame: .zero)
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 38, height: 30) }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseExited(with event: NSEvent) { hovered = false }
+
+    override func mouseDown(with event: NSEvent) { pressed = true; needsDisplay = true }
+    override func mouseUp(with event: NSEvent) {
+        pressed = false; needsDisplay = true
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { action() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let plate = CGPath(roundedRect: bounds.insetBy(dx: 1, dy: 1),
+                           cornerWidth: 6, cornerHeight: 6, transform: nil)
+        ctx.addPath(plate)
+        ctx.setFillColor((pressed ? P.accent.withAlphaComponent(0.35) : hovered ? P.rule : P.band).cgColor)
+        ctx.fillPath()
+        ctx.addPath(plate)
+        ctx.setStrokeColor(P.rule.cgColor)
+        ctx.setLineWidth(1.5)
+        ctx.strokePath()
+
+        // The glyph: the window, and the column that is the pane.
+        let ink = isOn ? P.accent : P.dim
+        let g = bounds.insetBy(dx: 9, dy: 8)
+        let colW = (g.width * 0.36).rounded()
+        if isOn {
+            ctx.setFillColor(ink.withAlphaComponent(0.55).cgColor)
+            ctx.fill(NSRect(x: g.minX, y: g.minY, width: colW, height: g.height))
+        }
+        ctx.setStrokeColor(ink.cgColor)
+        ctx.setLineWidth(1.5)
+        ctx.addPath(CGPath(roundedRect: g, cornerWidth: 2, cornerHeight: 2, transform: nil))
+        ctx.strokePath()
+        ctx.move(to: CGPoint(x: g.minX + colW, y: g.minY))
+        ctx.addLine(to: CGPoint(x: g.minX + colW, y: g.maxY))
+        ctx.strokePath()
     }
 }
 

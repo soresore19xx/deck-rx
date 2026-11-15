@@ -36,6 +36,13 @@ const PSD_TAU_S = 0.13;          // periodogram smoothing before the minimum
 const MS_SUBWINDOWS = 8;
 const MS_SUBWINDOW_S = 0.3;      // 8 × 0.3 s: the minimum's memory
 const MS_BIAS = 2.5;
+// A posteriori SNR (1-2-1 across bins) over which a bin skips the DD wait.
+// Added 2026-11-15 for "muffled, like an old mp3": with speech 10 dB over the
+// hiss, the 2-4.5 kHz onsets went out 7.5 dB down and the band as a whole 3.9;
+// with this, 3.4 and 1.8, the hiss between words within 0.3 dB of before
+// (-14.1) and its warble +0.9 dB. At 4 the speech gains another 0.3 dB and the
+// leftover hiss starts to twinkle (+1.5 dB).
+const ONSET_SNR = 6;
 
 export class Ifnr {
   /** The most a bin is turned down, linear. 0.18 ≈ -15 dB: deeper and the
@@ -49,6 +56,8 @@ export class Ifnr {
   private psdSmooth = 0.85;
   private psd = new Float64Array(0);   // smoothed |Y|² per bin
   private gains = new Float64Array(0);
+  private lambda = new Float64Array(0); // noise PSD estimate per bin, this frame
+  private gamma = new Float64Array(0);  // a posteriori SNR per bin, this frame
   private fft: FFT | null = null;
   private window = new Float64Array(0);
   private inputBuf = new Float64Array(0);
@@ -95,6 +104,8 @@ export class Ifnr {
     this.prevSignalMag2 = new Float64Array(n);
     this.psd = new Float64Array(n / 2 + 1);
     this.gains = new Float64Array(n / 2 + 1);
+    this.lambda = new Float64Array(n / 2 + 1);
+    this.gamma = new Float64Array(n / 2 + 1);
     this.msMin = new Float64Array(MS_SUBWINDOWS * n);
     // Generous output ring (4 × hop); pre-seeded with hop zeros so the very
     // first call returns silence rather than running out.
@@ -162,11 +173,20 @@ export class Ifnr {
         if (v < mn) mn = v;
       }
       const lambda = mn === Number.POSITIVE_INFINITY ? mag2 : mn * MS_BIAS;
-      const lambdaSafe = lambda > 1e-12 ? lambda : 1e-12;
-      const gamma = mag2 / lambdaSafe;
-      const xiDD = ALPHA_DD * (this.prevSignalMag2[k] / lambdaSafe)
-                 + (1 - ALPHA_DD) * Math.max(0, gamma - 1);
-      const g = xiDD / (1 + xiDD);
+      this.lambda[k] = lambda > 1e-12 ? lambda : 1e-12;
+      this.gamma[k] = mag2 / this.lambda[k];
+    }
+    for (let k = 0; k <= H; k++) {
+      const gamma = this.gamma[k];
+      let xi = ALPHA_DD * (this.prevSignalMag2[k] / this.lambda[k])
+             + (1 - ALPHA_DD) * Math.max(0, gamma - 1);
+      // Onset: DD leans on the previous frame, so the first frame of a
+      // consonant is still judged by the silence before it and goes out cut.
+      // A bin that stands this far over the noise together with its
+      // neighbours is taken at its own SNR at once.
+      const around = 0.5 * gamma + (k > 0 ? 0.25 * this.gamma[k - 1] : 0) + (k < H ? 0.25 * this.gamma[k + 1] : 0);
+      if (around > ONSET_SNR && gamma - 1 > xi) xi = gamma - 1;
+      const g = xi / (1 + xi);
       this.gains[k] = g < this.gMin ? this.gMin : g;
     }
     // Smooth the gains across frequency (1-2-1): an isolated bin let through

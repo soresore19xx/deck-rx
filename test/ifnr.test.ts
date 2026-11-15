@@ -65,6 +65,36 @@ describe('Ifnr (audio noise reduction)', () => {
     expect(Math.abs(speechDb)).toBeLessThan(2.5);
   });
 
+  it('lets the start of a consonant through (not muffled)', () => {
+    // Hiss-like bursts in 2-4.5 kHz, 10 dB over the noise there, 100 ms every
+    // half second: what an "s" or a "t" is to the estimator. The first 43 ms
+    // of each is the frame DD used to judge by the silence before it.
+    const n = FS * 8;
+    const w = noise(n, 400);
+    const c = new Float64Array(n);
+    const amp = 408 * Math.sqrt(2 / 60);
+    const starts: number[] = [];
+    for (let s = FS; s + FS / 10 < n; s += FS / 2) {
+      starts.push(s);
+      for (let i = 0; i < FS / 10; i++) {
+        let v = 0;
+        for (let h = 0; h < 60; h++) v += Math.sin(2 * Math.PI * (2000 + h * 2500 / 60) * (s + i) / FS + h * h);
+        c[s + i] = amp * v;
+      }
+    }
+    const x = new Float64Array(n);
+    for (let i = 0; i < n; i++) x[i] = c[i] + w[i];
+    const y = run(x);
+    const head = Math.round(FS * 0.043);
+    let eo = 0, ec = 0;
+    for (const s of starts) if (s >= FS * 3) {
+      for (let i = s; i < s + head; i++) { eo += y[i + LAT - 1] ** 2; ec += c[i] ** 2; }
+    }
+    const onsetDb = 10 * Math.log10(eo / ec);
+    // -9.4 dB before ONSET_SNR, -5.1 with it.
+    expect(onsetDb).toBeGreaterThan(-6.5);
+  });
+
   it('sizes itself to the audio rate (noise alone at 114 kHz)', () => {
     const fs = 114_000, n = fs * 5;
     const w = noise(n, 400, 3);

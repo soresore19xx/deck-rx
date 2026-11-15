@@ -1754,6 +1754,36 @@ do {
     let speechDb = 20 * log10(rmsOf(yd, from, n, { $0 >= lat && !silent($0 - lat) }) / rmsOf(v, from, n, { !silent($0) }))
     check("audio NR takes the hiss between words down", floorDb < -10, "\(floorDb) dB")
     check("audio NR keeps the words", abs(speechDb) < 2.5, "\(speechDb) dB")
+
+    // Consonant onsets: hiss-like bursts in 2-4.5 kHz, 10 dB over the noise,
+    // 100 ms every half second; the first 43 ms of each against the clean burst.
+    var c = [Double](repeating: 0, count: n)
+    let amp = 408 * (2.0 / 60).squareRoot()
+    var starts = [Int]()
+    var s0 = Int(fs)
+    while s0 + Int(fs) / 10 < n {
+        starts.append(s0)
+        for i in 0..<Int(fs) / 10 {
+            var acc = 0.0
+            for h in 0..<60 { acc += sin(2 * Double.pi * (2000 + Double(h) * 2500 / 60) * Double(s0 + i) / fs + Double(h * h)) }
+            c[s0 + i] = amp * acc
+        }
+        s0 += Int(fs) / 2
+    }
+    let nr2 = AudioNr(); nr2.configure(rate: fs)
+    var y2 = [Float]()
+    o = 0
+    while o < n {
+        var part = (o..<min(n, o + 4096)).map { Float((c[$0] + w[$0]) / 32768) }
+        nr2.process(&part); y2 += part; o += 4096
+    }
+    let head = Int((fs * 0.043).rounded())
+    var eo = 0.0, ec = 0.0
+    for s in starts where s >= Int(fs * 3) {
+        for i in s..<(s + head) { let yv = Double(y2[i + lat - 1]) * 32768; eo += yv * yv; ec += c[i] * c[i] }
+    }
+    let onsetDb = 10 * log10(eo / ec)
+    check("audio NR lets the start of a consonant through", onsetDb > -6.5, "\(onsetDb) dB (plugin: -5.1)")
 }
 
 section("SSB AGC: the cases of test/ssbAgc.test.ts")

@@ -235,16 +235,18 @@ final class LocalRadio {
     /// DeviceInfo arrives — the ceiling both options panels are built around.
     var maxGainIndex: UInt32 { deviceInfo?.maxGainIndex ?? 8 }
 
-    /// What the header calls the thing on the other end. The server path keeps
-    /// the wording it has always had — it describes a server, and the device
-    /// behind it is only known by a type number. A device on our own USB is
-    /// known exactly, and says so.
+    /// What the header calls the thing on the other end: the kind of link and
+    /// the receiver behind it. A SpyServer reports the receiver's type; an
+    /// RTL-SDR is as far as it goes (it does not say which dongle).
     var deviceLabel: String {
         guard let info = deviceInfo else { return "" }
         if config.source == "usb" { return "Airspy HF+ (USB)" }
         if config.source == "rtltcp" { return "rtl_tcp (RTL-SDR)" }
         if config.source == "rtlusb" { return "RTL-SDR (USB)" }
-        return "SpyServer type \(info.deviceType)"
+        // By name. A SpyServer says what it is serving in its device info;
+        // shown as "type 3" it took knowing the protocol to tell the HF+'s
+        // server from the V4's (user, 2026-11-15).
+        return "SpyServer · \(Self.deviceName(type: info.deviceType))"
     }
     /// The receiver behind a link, by the type number the server reports.
     static func deviceName(type: UInt32) -> String {

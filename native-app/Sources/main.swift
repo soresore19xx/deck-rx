@@ -40,6 +40,43 @@ func label(_ text: String, _ font: NSFont, _ color: NSColor) -> NSTextField {
     f.font = font; f.textColor = color; f.backgroundColor = .clear; f.isBezeled = false
     return f
 }
+/// A value that is also its own menu: click it and pick. BW and STEP under
+/// the readout are these, so the two settings that describe the tuned channel
+/// are changed in the one place that shows them — STEP used to be in the
+/// toolbar and BW in the options pane on the far side (user, 2026-11-15).
+final class PickLabel: NSTextField {
+    /// The choices at the moment of the click: title, whether it is the one in
+    /// force, and what picking it does. Empty: nothing to pick, no menu.
+    var choices: (() -> [(title: String, on: Bool, pick: () -> Void)])?
+    private var live: [Pick] = []
+    private final class Pick: NSObject {
+        let run: () -> Void
+        init(_ run: @escaping () -> Void) { self.run = run }
+        @objc func fire() { run() }
+    }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func mouseDown(with event: NSEvent) {
+        guard let list = choices?(), !list.isEmpty else { return }
+        let menu = NSMenu()
+        live = []
+        for c in list {
+            let t = Pick(c.pick)
+            live.append(t)
+            let item = NSMenuItem(title: c.title, action: #selector(Pick.fire), keyEquivalent: "")
+            item.target = t
+            item.state = c.on ? .on : .off
+            menu.addItem(item)
+        }
+        menu.font = font
+        // Below the text in either coordinate system.
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: isFlipped ? bounds.height + 4 : -4), in: self)
+    }
+}
+func pickLabel(_ text: String, _ font: NSFont, _ color: NSColor) -> PickLabel {
+    let f = PickLabel(labelWithString: text)
+    f.font = font; f.textColor = color; f.backgroundColor = .clear; f.isBezeled = false
+    return f
+}
 func panelView(_ color: NSColor = P.panel) -> NSView {
     let v = NSView(); v.wantsLayer = true; v.layer?.backgroundColor = color.cgColor
     return v
@@ -331,8 +368,18 @@ final class MainView: NSView {
     /// In Solo it is also the STEREO / MONO switch while on WFM (`onClick`).
     lazy var stereoBadge = BadgeView(text: "STEREO", font: mono(17, .black), color: stereoRed)
     private let stereoRed = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
-    private let bwLabel = label("—", mono(14), P.dim)
-    private let stepLabel = label("—", mono(14), P.dim)
+    private let bwLabel = pickLabel("—", mono(14), P.dim)
+    private let stepLabel = pickLabel("—", mono(14), P.dim)
+    /// The bandwidths a mode offers and the option that sets them — the same
+    /// lists the options pane shows. nil: the mode has no bandwidth setting.
+    static func bandwidthChoices(mode: Int) -> (key: String, values: [Int])? {
+        switch mode {
+        case 1:       return ("fm.bandwidth", [90_000, 100_000, 110_000, 150_000, 200_000, 250_000])
+        case 2:       return ("am.bandwidth", [4_000, 6_000, 9_000, 12_000])
+        case 4, 5, 6: return ("ssb.bandwidth", [500, 1_000, 1_800, 2_400, 3_000])
+        default:      return nil
+        }
+    }
 
     private let sBar = SignalMeter(); private let sNum = label("—", mono(21), P.text)
     private let nBar = SignalMeter(); private let nNum = label("—", mono(21), P.text)
@@ -374,7 +421,7 @@ final class MainView: NSView {
     /// "-100 / -20 dB" that nothing ever replaced until a slider was touched,
     /// so the readout spent every session until then describing a window the
     /// spectrum was not using.
-    private let dbLabel = label("--- / --- dB", mono(17), P.dim)
+    private let dbLabel = label("MIN ----  MAX ---- dB", mono(17), P.dim)
     private var modePads: [TogglePad] = []
     private var mutePad: TogglePad!
     private var powerPad: TogglePad!
@@ -547,6 +594,29 @@ final class MainView: NSView {
             label("STEP", mono(14), P.faint), stepLabel,
         ])
         detail.orientation = .horizontal; detail.spacing = 6; detail.alignment = .firstBaseline
+        bwLabel.toolTip = "Click to change the bandwidth"
+        stepLabel.toolTip = "Click to change the tuning step"
+        bwLabel.choices = { [weak self] in
+            guard let self, let c = Self.bandwidthChoices(mode: self.currentMode) else { return [] }
+            let now = Int(self.currentBandwidthHz)
+            return c.values.map { hz in
+                (formatStep(Double(hz)), hz == now, {
+                    Receiver.options(set: c.key, value: String(hz)) { [weak self] _ in self?.refresh() }
+                })
+            }
+        }
+        stepLabel.choices = { [weak self] in
+            guard let self else { return [] }
+            return self.stepValues.map { hz in
+                (formatStep(Double(hz)), hz == self.currentStepHz, { [weak self] in
+                    guard let self else { return }
+#if STANDALONE
+                    if let set = self.onStep, set(hz) { return }
+#endif
+                    Receiver.step(hz: hz) { step, values in self.adoptStep(step, values) }
+                })
+            }
+        }
         let left = NSStackView(views: [stationLabel, freqRow, detail])
         left.orientation = .vertical; left.alignment = .leading; left.spacing = 4
         // A spacer between them again, now that the meter has a ceiling: what
@@ -1220,7 +1290,9 @@ final class MainView: NSView {
     }
 
     private func syncRange() {
-        dbLabel.stringValue = String(format: "%.0f / %.0f dB", spectrum.dbFloor, spectrum.dbCeil)
+        // Named: "-101 / -31 dB" on its own did not say it was the MIN and MAX
+        // sliders' window (user, 2026-11-15).
+        dbLabel.stringValue = String(format: "MIN %.0f  MAX %.0f dB", spectrum.dbFloor, spectrum.dbCeil)
         spectrum.needsDisplay = true
     }
 
@@ -1361,9 +1433,12 @@ final class MainView: NSView {
             spectrum.idleSpanHz = s.iqRateHz
             saveDisplaySoon()
         }
+        // "▾" where a click opens a menu; a mode with no bandwidth setting
+        // (NFM, DSB) shows the number alone.
+        let bwPick = Self.bandwidthChoices(mode: s.mode) != nil ? " ▾" : ""
         bwLabel.stringValue = s.bandwidthHz > 0
             ? (s.bandwidthHz >= 1000 ? String(format: "%.0f kHz", s.bandwidthHz / 1000)
-                                     : String(format: "%.0f Hz", s.bandwidthHz))
+                                     : String(format: "%.0f Hz", s.bandwidthHz)) + bwPick
             : "—"
 #if STANDALONE
         // The ladder follows the mode, so it is asked for with the step.
@@ -1377,7 +1452,7 @@ final class MainView: NSView {
         }
         stepLabel.stringValue = s.tuneStepHz > 0
             ? (s.tuneStepHz >= 1000 ? String(format: "%.0f kHz", s.tuneStepHz / 1000)
-                                    : String(format: "%.0f Hz", s.tuneStepHz))
+                                    : String(format: "%.0f Hz", s.tuneStepHz)) + " ▾"
             : "—"
 
         volBar.level = s.volume

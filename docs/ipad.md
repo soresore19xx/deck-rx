@@ -119,6 +119,17 @@ dismissed — a signal takes a while to lock.
 
 The weather fax decoder is compiled in but has no screen yet.
 
+## Presets on several devices
+
+Optional, and off until it is asked for. The iPad app keeps its presets and
+per-station gains in its own files and needs nothing else to run. If you use
+more than one deck-rx receiver — the plugin, Solo on another Mac, the iPad —
+a small **sync hub** on any always-on Mac keeps those lists the same on all of
+them: give its address in Options → RECEIVER → **Sync hub**. With the box empty, or the hub switched off or out of reach,
+the app works exactly as it does alone; an edit made meanwhile goes up the next
+time the hub answers. What the hub is, how to run one and what it carries:
+[Sync](sync.md).
+
 ## Relaunching it from a Mac
 
 A launch from another machine passes `DECKRX_LAUNCH_MUTED=1` and the app comes

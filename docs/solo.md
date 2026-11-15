@@ -34,8 +34,11 @@ That is all of it. The rest, briefly:
 | **WFM … CW** | the mode. Bandwidth and the options panel follow it |
 | **BAND JUMP** | MW, the shortwave metre bands, FM |
 | **IQ** | the width the receiver runs at, and so the width of the spectrum. Through a SpyServer, the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). On RTL-TCP and RTL-SDR (USB), the rates the chip itself takes — SDR++'s list, 3200k down to 1024k — and the 2.4 MHz halvings below them (600k / 300k / 150k). Changing it reconnects. The demodulators do not follow it: each mode is cut out of the IQ at a rate of its own first (see [Channel stage](#channel-stage)) |
-| **STEP** | the tuning step, from the ladder that suits the mode. What is picked is kept per mode, and on AM per band (medium wave and shortwave each keep their own); with nothing picked it is the band's raster — 9 kHz on medium wave, 5 kHz on shortwave, 100 kHz on FM. It is this window's own receiver's step and is shown under the readout as well; the plugin's step is a separate setting |
+| **BW ▾ / STEP ▾** (under the readout) | the bandwidth and the tuning step in force, and each is its own menu: click the value and pick. BW offers the mode's bandwidths (the same list as the options pane; NFM and DSB have no setting and show the number alone) |
+| **STEP** | the same step as under the readout, from the ladder that suits the mode. What is picked is kept per mode, and on AM per band (medium wave and shortwave each keep their own); with nothing picked it is the band's raster — 9 kHz on medium wave, 5 kHz on shortwave, 100 kHz on FM. It is this window's own receiver's step and is shown under the readout as well; the plugin's step is a separate setting |
 | **FFT / RATE / SMOOTH** | the spectrum: resolution, frame rate, how much it is averaged |
+| **MIN … MAX … dB** (right of HOLD) | the dB window the trace and the waterfall are drawn in — the MIN and MAX sliders on the right edge, as numbers |
+| **top bar** | the link and the receiver behind it by name — `SpyServer · Airspy HF+`, `SpyServer · RTL-SDR`, `rtl_tcp (RTL-SDR)`, `Airspy HF+ (USB)` — so two servers on one host are told apart at a glance; then the IQ width, the decimation stage, dropped audio buffers and the output |
 | **HOLD** | freezes the trace; the waterfall keeps running |
 | **NR / LVL** | noise reduction, and the output leveller |
 | **IMPORT** | pulls SDR++'s bookmarks into the preset list |
@@ -227,6 +230,17 @@ unaffected.
 
 No DRM transmission has been received off the air here yet; the decode is proven
 on recordings.
+
+## Presets on several devices
+
+Optional, and off until it is asked for. Solo keeps its presets and
+per-station gains in its own files and needs nothing else to run. If you use
+more than one deck-rx receiver — the plugin, Solo on another Mac, the iPad —
+a small **sync hub** on any always-on Mac keeps those lists the same on all of
+them: give its address in Options → SERVER → **Sync hub**. With the box empty, or the hub switched off or out of reach,
+the app works exactly as it does alone; an edit made meanwhile goes up the next
+time the hub answers. What the hub is, how to run one and what it carries:
+[Sync](sync.md).
 
 ## Copying it to another Mac
 

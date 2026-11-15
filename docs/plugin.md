@@ -119,6 +119,17 @@ ps -p $(cat /tmp/deck-rx.pid) -o etime,%cpu,rss   # process should still be < 20
 sox /tmp/deck-rx-AM-594000.wav -n stat 2>&1       # rough spectral sanity check
 ```
 
+## Presets on several devices
+
+Optional, and off until it is asked for. The plugin keeps its presets and
+per-station gains in its own files and needs nothing else to run. If you use
+more than one deck-rx receiver — the plugin, Solo on another Mac, the iPad —
+a small **sync hub** on any always-on Mac keeps those lists the same on all of
+them: set `"syncHubs": "host"` in `config.json` and restart the plugin. With the box empty, or the hub switched off or out of reach,
+the plugin works exactly as it does alone; an edit made meanwhile goes up the next
+time the hub answers. What the hub is, how to run one and what it carries:
+[Sync](sync.md).
+
 ## External knob control (HTTP)
 
 The plugin listens on `127.0.0.1:8771` so an external hardware knob can drive the

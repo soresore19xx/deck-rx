@@ -22,6 +22,10 @@ Both Mac apps are called "Deck RX" and "Deck RX Solo"; the plugin and the iPad
 app are "Deck RX" too. Which is meant is usually clear from the context, and
 where it is not, this page says which.
 
+Each of them runs on its own. Keeping presets and per-station gains the same
+across several of them is optional and needs a small [sync hub](docs/sync.md)
+on one always-on Mac; without one, nothing is missing.
+
 ## Download
 
 [**Deck RX Solo 1.8**](https://github.com/soresore19xx/deck-rx/releases/latest)

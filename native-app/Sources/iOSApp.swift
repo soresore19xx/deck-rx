@@ -120,6 +120,13 @@ final class RadioViewController: UIViewController {
     private let stereoRed = XColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
     private let modeChip = UILabel()
     private let bwLabel = UILabel()
+    // The left pane (PRESET bar and table) slides out and back on the switch
+    // at the top left, as the Mac's does. Moved by position, not hidden.
+    private let panePad = UIButton(type: .custom)
+    private var paneShown = true
+    private var presetBarLeadingC: NSLayoutConstraint?
+    private var presetTableLeadingC: NSLayoutConstraint?
+    private weak var tunedStack: UIStackView?
     /// Both clocks, as on the Mac. Shortwave schedules are published in UTC —
     /// EIBI's are, and this app carries EIBI — so the receiver that is used for
     /// shortwave is the one that needs the conversion in front of it.
@@ -378,7 +385,9 @@ final class RadioViewController: UIViewController {
         stationLabel.textColor = Pal.dim
         stationLabel.lineBreakMode = .byTruncatingTail
 
-        bwLabel.font = xMono(S(13))
+        // The caption's size (2026-11-15): 13 against 11 on one line read as
+        // type that could not make up its mind.
+        bwLabel.font = xMono(S(11), .medium)
         bwLabel.textColor = Pal.dim
         bwLabel.setContentHuggingPriority(.required, for: .horizontal)
 
@@ -534,6 +543,11 @@ final class RadioViewController: UIViewController {
         tuned.axis = .vertical
         tuned.alignment = .leading
         tuned.spacing = S(2)
+        // The margin is zero until the pane is put away, when it keeps the
+        // readout clear of the switch that then sits over this corner.
+        tuned.isLayoutMarginsRelativeArrangement = true
+        tuned.directionalLayoutMargins = .zero
+        tunedStack = tuned
         let meters = UIStackView(arrangedSubviews: [
             row([sLabel("S"), sMeter]),
             row([sLabel("N"), nMeter]),
@@ -698,14 +712,38 @@ final class RadioViewController: UIViewController {
         view.addSubview(presetTable)
         view.addSubview(right)
         view.addSubview(controls)
+        // The pane switch: first at the top left, and it stays there when the
+        // pane goes, so there is always something to bring it back with. Grey,
+        // as on the Mac — it is a layout switch, not a receiver state.
+        let paneW = S(40), paneGap = S(6)
+        panePad.setImage(UIImage(systemName: "sidebar.left",
+                                 withConfiguration: UIImage.SymbolConfiguration(pointSize: S(17), weight: .medium)),
+                         for: .normal)
+        panePad.backgroundColor = Pal.band
+        panePad.layer.cornerRadius = S(6)
+        panePad.tintColor = Pal.dim
+        panePad.accessibilityIdentifier = "panePad"
+        panePad.accessibilityLabel = "Show or hide the preset pane"
+        panePad.addTarget(self, action: #selector(panePadTapped), for: .touchUpInside)
+        panePad.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(panePad)
         let g = view.safeAreaLayoutGuide
+        let barLeading = presetBar.leadingAnchor.constraint(
+            equalTo: g.leadingAnchor, constant: S(8) + paneW + paneGap)
+        let tableLeading = presetTable.leadingAnchor.constraint(equalTo: g.leadingAnchor)
+        presetBarLeadingC = barLeading
+        presetTableLeadingC = tableLeading
         NSLayoutConstraint.activate([
+            panePad.topAnchor.constraint(equalTo: g.topAnchor, constant: S(8)),
+            panePad.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: S(8)),
+            panePad.widthAnchor.constraint(equalToConstant: paneW),
+            panePad.heightAnchor.constraint(equalTo: presetBar.heightAnchor),
             // And they start on the same line as well.
             presetBar.topAnchor.constraint(equalTo: g.topAnchor, constant: S(8)),
-            presetBar.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: S(8)),
-            presetBar.widthAnchor.constraint(equalToConstant: UI.L(284)),
+            barLeading,
+            presetBar.widthAnchor.constraint(equalToConstant: UI.L(284) - paneW - paneGap),
             presetTable.topAnchor.constraint(equalTo: presetBar.bottomAnchor, constant: S(4)),
-            presetTable.leadingAnchor.constraint(equalTo: g.leadingAnchor),
+            tableLeading,
             presetTable.bottomAnchor.constraint(equalTo: g.bottomAnchor),
             presetTable.widthAnchor.constraint(equalToConstant: UI.L(300)),
 
@@ -741,6 +779,24 @@ final class RadioViewController: UIViewController {
         keyboardBottom = controls.bottomAnchor.constraint(
             lessThanOrEqualTo: view.bottomAnchor, constant: -keyboardLift)
         keyboardBottom?.isActive = true
+    }
+
+    /// The left pane out, or back. The right column is hung off the table's
+    /// trailing edge, so moving the table is what hands it the width.
+    @objc private func panePadTapped() {
+        paneShown.toggle()
+        let paneW = S(40), paneGap = S(6)
+        let out = -(UI.L(300) + S(8) + paneW + paneGap)
+        presetBarLeadingC?.constant = (paneShown ? 0 : out) + S(8) + paneW + paneGap
+        presetTableLeadingC?.constant = paneShown ? 0 : -UI.L(300)
+        // Hidden, the column starts S(14) in and the switch ends at S(8) + its
+        // width; the readout starts a gap past that.
+        tunedStack?.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 0, leading: paneShown ? 0 : paneW + S(4), bottom: 0, trailing: 0)
+        panePad.tintColor = paneShown ? Pal.dim : Pal.faint
+        UIView.animate(withDuration: 0.18, delay: 0, options: .curveEaseOut) {
+            self.view.layoutIfNeeded()
+        }
     }
 
     /// The key's own ground. A clear step up from the panel behind it (#353840

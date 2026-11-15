@@ -36,6 +36,9 @@ Landscape, and the width goes to the spectrum.
   rename. The iPad keeps its own `presets.json`, not the plugin's.
   ◀ / ▶ beside the PRESET heading step to the previous / next preset by
   frequency, wrapping at the ends — Solo's ◀ PRESET / PRESET ▶ pads.
+  The grey switch at the top left slides the whole preset pane out and back,
+  as Solo's does; the spectrum and the controls take the width. Not kept
+  across a relaunch.
 - **an options sheet** carrying the live mode's settings only, so an AM receiver
   is never offered de-emphasis. Anything with more than two values is a
   pull-down showing the whole list.

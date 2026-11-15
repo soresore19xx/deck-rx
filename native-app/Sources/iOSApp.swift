@@ -1819,8 +1819,10 @@ final class RadioViewController: UIViewController {
                 ? String(format: "  drops %d (gap was %.0fms)  gap %.0fms",
                          drops, gapAtDrop, radio.maxPacketGapMs)
                 : String(format: "  drops 0  gap %.0fms", radio.maxPacketGapMs)
-            setText(statusLabel, String(format: "connected  %@  RSSI %.0f dBFS  SNR %.0f dB  %.0f kHz audio%@",
-                                      modeName(radio.mode), radio.rssiDbfs, radio.snrDb,
+            // Which receiver, first: with two SpyServers on one host the
+            // address alone does not say whether this is the HF+ or the V4.
+            setText(statusLabel, String(format: "connected  %@  %@  RSSI %.0f dBFS  SNR %.0f dB  %.0f kHz audio%@",
+                                      radio.deviceLabel, modeName(radio.mode), radio.rssiDbfs, radio.snrDb,
                                       radio.audioRate / 1000, tail))
         } else {
             statusLabel.textColor = Pal.faint

@@ -78,7 +78,7 @@ final class SpectrumView: XView {
     /// Peak hold, the way SDR++'s "FFT Hold" works: keep the highest value each
     /// bin has reached and decay it slowly, so a brief signal stays visible
     /// long enough to read.
-    var holdEnabled = false { didSet { hold = []; redraw() } }
+    var holdEnabled = false { didSet { hold = []; colHold = []; redraw() } }
     private var hold: [Float] = []
     private let holdDecayDbPerFrame: Float = 0.35
 
@@ -278,8 +278,81 @@ final class SpectrumView: XView {
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    // MARK: the trace, in SDR++'s order
+    //
+    // SDR++ reduces the raw FFT to one value per pixel column first (the peak
+    // of the bins under it), paints the waterfall row from that, and only then
+    // smooths — the trace is the running average of those column peaks
+    // (WaterFall::pushFFT: doZoom, then smoothingBuf). The trace and the
+    // waterfall therefore agree about where the noise is.
+    //
+    // This view used to draw the trace from bins already smoothed one by one
+    // in the transform and take the column peak afterwards. The peak of N
+    // averaged bins sits well under the average of the peak of N raw ones — 8 dB
+    // measured at 65536 bins across the window — so MIN set just under the
+    // trace left the waterfall's noise that far above black, a blue ground with
+    // every station pushed the same distance toward red (user, 2026-11-15).
+    //
+    // Used when the frame carries the raw bins and the coefficient; the
+    // plugin's feed has neither and keeps the old path.
+    private var colTrace: [Float] = []
+    private var colHold: [Float] = []
+    private var colKey = ColKey()
+    private var colRaw: [Float] = []
+    /// The plot's width in columns at the last draw; the smoothing is stepped
+    /// once per frame, in `accept`, which has no geometry of its own.
+    private var plotCols = 0
+    private struct ColKey: Equatable {
+        var start = 0, end = 0, count = 0
+        var centre: UInt32 = 0, rate: UInt32 = 0
+    }
+    private func key(_ n: Int, _ count: Int) -> ColKey {
+        let win = visible(n)
+        return ColKey(start: win.start, end: win.end, count: count, centre: centerFreq, rate: iqRate)
+    }
+    /// One frame into the column trace. A change of window (zoom, pan, width,
+    /// retune) starts it again from the frame in hand, as SDR++ does.
+    private func stepColumnTrace(raw: [Float], alpha: Float) {
+        colRaw = raw
+        guard plotCols > 0 else { colTrace = []; colHold = []; return }
+        let k = key(raw.count, plotCols)
+        let cols = columns(from: raw, k.start, k.end, plotCols)
+        let same = k == colKey && colTrace.count == cols.count
+        if same, alpha > 0, alpha < 1 {
+            let b = 1 - alpha
+            for i in 0..<cols.count { colTrace[i] = colTrace[i] * b + cols[i] * alpha }
+        } else {
+            colTrace = cols
+        }
+        if !same { colHold = [] }
+        colKey = k
+        if holdEnabled {
+            if colHold.count != colTrace.count { colHold = colTrace }
+            for i in 0..<colTrace.count {
+                colHold[i] = max(colTrace[i], colHold[i] - holdDecayDbPerFrame)
+            }
+        }
+    }
+    /// The column trace for this window, or nil when there is none to use.
+    private func columnTrace(_ n: Int, _ count: Int) -> [Float]? {
+        guard !colRaw.isEmpty, colRaw.count == n else { return nil }
+        if colTrace.count == count, key(n, count) == colKey { return colTrace }
+        // Between a window change and the next frame: the last raw frame as it
+        // is, rather than a frame of the old path's lower trace.
+        let win = visible(n)
+        return columns(from: colRaw, win.start, win.end, count)
+    }
+
     func accept(_ frame: SpectrumFeed.Frame) {
         bins = frame.bins
+        if let raw = frame.rawBins, raw.count == bins.count, let a = frame.smoothAlpha {
+            // After centerFreq / iqRate below would be tidier, but the key
+            // compares them, so a retune resets the trace one frame late at
+            // worst — and the row it draws is from the same frame either way.
+            stepColumnTrace(raw: raw, alpha: a)
+        } else {
+            colRaw = []; colTrace = []; colHold = []
+        }
         if holdEnabled {
             if hold.count != bins.count { hold = bins }
             for i in 0..<bins.count { hold[i] = max(bins[i], hold[i] - holdDecayDbPerFrame) }
@@ -1124,7 +1197,9 @@ final class SpectrumView: XView {
         ctx.clip(to: CGRect(x: plotX, y: 0, width: plotW, height: h))
         ctx.translateBy(x: panPixels, y: 0)
         let path = CGMutablePath()
-        let traceCols = columns(from: bins, win.start, win.end, max(1, Int(plotW)))
+        plotCols = max(1, Int(plotW))
+        let viaColumns = columnTrace(n, plotCols)
+        let traceCols = viaColumns ?? columns(from: bins, win.start, win.end, plotCols)
         for px in 0..<Int(plotW) {
             let b = traceCols[px]
             let p = CGPoint(x: plotX + CGFloat(px), y: specH - norm(b) * specH)
@@ -1147,9 +1222,13 @@ final class SpectrumView: XView {
         ctx.setLineWidth(1)
         ctx.strokePath()
 
-        if holdEnabled, hold.count == n {
+        // The hold in the same domain as the trace it holds, or it would sit
+        // under it in the noise.
+        let columnHold = viaColumns != nil && colHold.count == plotCols
+        if holdEnabled, columnHold || (viaColumns == nil && hold.count == n) {
             let hp = CGMutablePath()
-            let holdCols = columns(from: hold, win.start, win.end, max(1, Int(plotW)))
+            let holdCols = columnHold ? colHold
+                                      : columns(from: hold, win.start, win.end, plotCols)
             for px in 0..<Int(plotW) {
                 let v = holdCols[px]
                 let p = CGPoint(x: plotX + CGFloat(px), y: specH - norm(v) * specH)

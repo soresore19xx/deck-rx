@@ -28,7 +28,7 @@ on one always-on Mac; without one, nothing is missing.
 
 ## Download
 
-[**Deck RX Solo 1.11**](https://github.com/soresore19xx/deck-rx/releases/latest)
+[**Deck RX Solo 1.12**](https://github.com/soresore19xx/deck-rx/releases/latest)
 — signed and notarised, universal, macOS 12 or later. Drag it to Applications;
 the image has an uninstaller in it. Everything else is built from source, and
 so is Solo if you would rather: `native-app/build-app.sh solo`.

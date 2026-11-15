@@ -32,6 +32,7 @@ That is all of it. The rest, briefly:
 | **PRESET ◀ ▶** | step through the list on the left |
 | **TUNE − +** | one step, and the step follows the mode: 9 kHz on AM, 100 kHz on FM |
 | **WFM … CW** | the mode. Bandwidth and the options panel follow it |
+| **options pane** (right) | the live mode's settings, the RF gain and the receiver's own. Click a row: ON / OFF rows flip, every other row opens its list with the value in force ticked — nothing steps through its values one click at a time |
 | **BAND JUMP** | MW, the shortwave metre bands, FM |
 | **IQ** | the width the receiver runs at, and so the width of the spectrum. Through a SpyServer, the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). On RTL-TCP and RTL-SDR (USB), the rates the chip itself takes — SDR++'s list, 3200k down to 1024k — and the 2.4 MHz halvings below them (600k / 300k / 150k). Changing it reconnects. The demodulators do not follow it: each mode is cut out of the IQ at a rate of its own first (see [Channel stage](#channel-stage)) |
 | **BW ▾ / STEP ▾** (under the readout) | the bandwidth and the tuning step in force, and each is its own menu: click the value and pick. BW offers the mode's bandwidths (the same list as the options pane; NFM and DSB have no setting and show the number alone) |

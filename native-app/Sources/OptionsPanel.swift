@@ -660,8 +660,7 @@ final class OptionsPanel: NSView {
         }
     }
 
-    /// Clicking a row advances it: booleans flip, everything else steps to the
-    /// next value in its list and wraps. One gesture for the whole panel.
+    /// Clicking a row: booleans flip, everything else opens its list.
     private func cycle(_ name: String, _ kind: Kind, from anchor: ClickRow? = nil) {
         // Receiver-wide settings live behind a different endpoint than the
         // demod's; the row does not need to care which.
@@ -691,31 +690,48 @@ final class OptionsPanel: NSView {
         case .bool:
             let on = (value(for: name) as? Bool) ?? false
             send(on ? "0" : "1")
-        case .list(let values, _):
-            let cur = (value(for: name) as? Double) ?? Double((value(for: name) as? Int) ?? 0)
-            let idx = values.firstIndex(where: { $0 > cur + 0.001 }) ?? 0
-            send(String(format: "%g", values[idx]))
-        case .text(let options):
-            let cur = (value(for: name) as? String) ?? options[0]
-            let i = ((options.firstIndex(of: cur) ?? 0) + 1) % options.count
-            send(options[i])
-        case .menu(let choices):
-            let options = choices()
-            guard !options.isEmpty, let anchor else { return }
-            let live = value(for: name)
-            let cur = (live as? String) ?? (live as? Int).map(String.init)
-                ?? (live as? Double).map { String(format: "%g", $0) } ?? ""
+        case .list, .text, .menu:
+            // Everything with more than two values opens as a list with the
+            // live choice ticked, the way the iPad's rows do. Lists and texts
+            // used to step to the next value on each click and wrap: getting
+            // from 9 kHz to 6 kHz meant going round through 12 and 4, hearing
+            // each on the way, and nothing showed what the choices were
+            // (user, 2026-11-15).
+            guard let anchor else { return }
+            var options: [(title: String, value: String)] = []
+            var cur = ""
+            switch kind {
+            case .list(let values, let unit):
+                let d = (value(for: name) as? Double) ?? Double((value(for: name) as? Int) ?? 0)
+                cur = String(format: "%g", d)
+                options = values.map { v in
+                    let t = unit == "kHz" ? String(format: "%g kHz", v / 1000)
+                          : unit.isEmpty ? String(format: "%g", v)
+                          : String(format: "%g %@", v, unit)
+                    return (t, String(format: "%g", v))
+                }
+            case .text(let texts):
+                cur = (value(for: name) as? String) ?? ""
+                options = texts.map { ($0, $0) }
+            case .menu(let choices):
+                let live = value(for: name)
+                cur = (live as? String) ?? (live as? Int).map(String.init)
+                    ?? (live as? Double).map { String(format: "%g", $0) } ?? ""
+                options = choices().map { ($0.isEmpty ? "system default" : $0, $0) }
+            default: break
+            }
+            guard !options.isEmpty else { return }
             let picker = MenuPick { v in send(v) }
             let m = NSMenu()
             m.font = mono(13)
             var current: NSMenuItem?
             for o in options {
-                let item = NSMenuItem(title: o.isEmpty ? "system default" : o,
+                let item = NSMenuItem(title: o.title,
                                       action: #selector(MenuPick.fire(_:)), keyEquivalent: "")
                 item.target = picker
-                item.representedObject = o
-                item.state = o == cur ? .on : .off
-                if o == cur { current = item }
+                item.representedObject = o.value
+                item.state = o.value == cur ? .on : .off
+                if o.value == cur { current = item }
                 m.addItem(item)
             }
             // The live choice under the pointer, the way a pop-up button opens:
@@ -752,7 +768,7 @@ final class OptionsPanel: NSView {
 }
 
 /// A row that reports clicks. NSStackView swallows them otherwise.
-/// A row of the options panel: click it and the value steps on.
+/// A row of the options panel: click it and the value flips or its list opens.
 ///
 /// It used to be a plain view with a mouseDown. Every row in the panel is a
 /// control, and nothing on screen said so — the panel read as a table of

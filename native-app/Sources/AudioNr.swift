@@ -12,6 +12,7 @@ final class AudioNr {
     private static let msSubwindows = 8
     private static let msSubwindowS = 0.3
     private static let msBias = 2.5
+    private static let onsetSnr = 6.0
 
     private var gMin = 0.18
     func setMaxCutDb(_ db: Double) { gMin = pow(10, -max(3, min(30, db)) / 20) }
@@ -24,6 +25,7 @@ final class AudioNr {
     private var window = [Double](), inputBuf = [Double](), overlap = [Double]()
     private var inputPos = 0
     private var psd = [Double](), gains = [Double](), prevSignalMag2 = [Double]()
+    private var lam = [Double](), gam = [Double]()
     private var msMin = [Double]()
     private var msSubIdx = 0, msFrameInSub = 0
     private var outBuf = [Double]()
@@ -48,7 +50,7 @@ final class AudioNr {
         inputBuf = [Double](repeating: 0, count: size)
         overlap = inputBuf
         psd = [Double](repeating: 0, count: size / 2 + 1)
-        gains = psd; prevSignalMag2 = psd
+        gains = psd; prevSignalMag2 = psd; lam = psd; gam = psd
         msMin = [Double](repeating: .infinity, count: AudioNr.msSubwindows * (size / 2 + 1))
         outBuf = [Double](repeating: 0, count: hop * 4)
         re = [Double](repeating: 0, count: size / 2); im = re
@@ -114,9 +116,16 @@ final class AudioNr {
             var mn = Double.infinity
             for u in 0..<AudioNr.msSubwindows { mn = min(mn, msMin[u * (H + 1) + k]) }
             let lambda = mn == .infinity ? mag2 : mn * AudioNr.msBias
-            let ls = lambda > 1e-12 ? lambda : 1e-12
-            let gamma = mag2 / ls
-            let xi = AudioNr.alphaDD * (prevSignalMag2[k] / ls) + (1 - AudioNr.alphaDD) * max(0, gamma - 1)
+            lam[k] = lambda > 1e-12 ? lambda : 1e-12
+            gam[k] = mag2 / lam[k]
+        }
+        for k in 0...H {
+            let gamma = gam[k]
+            var xi = AudioNr.alphaDD * (prevSignalMag2[k] / lam[k]) + (1 - AudioNr.alphaDD) * max(0, gamma - 1)
+            // Onset: a bin far over the noise with its neighbours is taken at
+            // its own SNR at once (see ONSET_SNR in src/ifnr.ts).
+            let around = 0.5 * gamma + (k > 0 ? 0.25 * gam[k - 1] : 0) + (k < H ? 0.25 * gam[k + 1] : 0)
+            if around > AudioNr.onsetSnr, gamma - 1 > xi { xi = gamma - 1 }
             let g = xi / (1 + xi)
             gains[k] = g < gMin ? gMin : g
         }

@@ -331,8 +331,8 @@ final class MainView: NSView {
     /// In Solo it is also the STEREO / MONO switch while on WFM (`onClick`).
     lazy var stereoBadge = BadgeView(text: "STEREO", font: mono(17, .black), color: stereoRed)
     private let stereoRed = NSColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
-    private let bwLabel = label("—", mono(19), P.dim)
-    private let stepLabel = label("—", mono(19), P.dim)
+    private let bwLabel = label("—", mono(14), P.dim)
+    private let stepLabel = label("—", mono(14), P.dim)
 
     private let sBar = SignalMeter(); private let sNum = label("—", mono(21), P.text)
     private let nBar = SignalMeter(); private let nNum = label("—", mono(21), P.text)

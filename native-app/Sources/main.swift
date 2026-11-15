@@ -1500,7 +1500,9 @@ final class SidebarPad: NSView {
         ctx.strokePath()
 
         // The glyph: the window, and the column that is the pane.
-        let ink = isOn ? P.accent : P.dim
+        // Grey, not the accent (user, 2026-11-15): it is a layout switch, not
+        // a receiver state, and a lit green key in the corner read as one.
+        let ink = isOn ? P.dim : P.faint
         let g = bounds.insetBy(dx: 9, dy: 8)
         let colW = (g.width * 0.36).rounded()
         if isOn {

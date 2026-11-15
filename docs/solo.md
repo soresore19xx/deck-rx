@@ -34,7 +34,8 @@ That is all of it. The rest, briefly:
 | **WFM … CW** | the mode. Bandwidth and the options panel follow it |
 | **BAND JUMP** | MW, the shortwave metre bands, FM |
 | **IQ** | the width the receiver runs at, and so the width of the spectrum. Through a SpyServer, the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). On RTL-TCP and RTL-SDR (USB), the rates the chip itself takes — SDR++'s list, 3200k down to 1024k — and the 2.4 MHz halvings below them (600k / 300k / 150k). Changing it reconnects. The demodulators do not follow it: each mode is cut out of the IQ at a rate of its own first (see [Channel stage](#channel-stage)) |
-| **STEP / FFT / RATE / SMOOTH** | the spectrum: resolution, frame rate, how much it is averaged |
+| **STEP** | the tuning step, from the ladder that suits the mode. What is picked is kept per mode, and on AM per band (medium wave and shortwave each keep their own); with nothing picked it is the band's raster — 9 kHz on medium wave, 5 kHz on shortwave, 100 kHz on FM. It is this window's own receiver's step and is shown under the readout as well; the plugin's step is a separate setting |
+| **FFT / RATE / SMOOTH** | the spectrum: resolution, frame rate, how much it is averaged |
 | **HOLD** | freezes the trace; the waterfall keeps running |
 | **NR / LVL** | noise reduction, and the output leveller |
 | **IMPORT** | pulls SDR++'s bookmarks into the preset list |

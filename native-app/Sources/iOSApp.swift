@@ -324,10 +324,18 @@ final class RadioViewController: UIViewController {
         // landscape iPad is most of it.
         showAddress()
         for f in [hostField, portField] {
-            f.borderStyle = .roundedRect
+            // Square and sunk, the height of the keys beside it: a rounded
+            // system box in a row of square keys was the one thing in the
+            // block from a different panel.
+            f.borderStyle = .none
             f.backgroundColor = Pal.sunken
+            f.layer.borderWidth = 1
+            f.layer.borderColor = Pal.rule.cgColor
+            f.leftView = UIView(frame: CGRect(x: 0, y: 0, width: S(8), height: 1))
+            f.leftViewMode = .always
+            f.heightAnchor.constraint(equalToConstant: keyH).isActive = true
             f.textColor = Pal.text
-            f.font = xMono(S(17))
+            f.font = xMono(S(15))
             f.autocapitalizationType = .none
             f.autocorrectionType = .no
             f.returnKeyType = .go
@@ -335,48 +343,40 @@ final class RadioViewController: UIViewController {
             f.addTarget(self, action: #selector(hostEntered), for: .editingDidEndOnExit)
             f.addTarget(self, action: #selector(serverEditing(_:)), for: .editingDidBegin)
             f.addTarget(self, action: #selector(serverEditing(_:)), for: .editingDidEnd)
-            f.setContentHuggingPriority(.required, for: .horizontal)
         }
+        // Widths come from the grid (see `gridConstraints`): the port is one
+        // column, the address takes the two that are left in its frame.
         hostField.keyboardType = .URL
-        hostField.widthAnchor.constraint(equalToConstant: S(190)).isActive = true
+        hostField.setContentHuggingPriority(.init(1), for: .horizontal)
+        hostField.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         // No return key on a number pad, so this one is committed by Connect.
         portField.keyboardType = .numberPad
-        // Five digits plus the clear button that appears while editing. At 74
-        // the button pushed the first digit of "5555" out of the box, so the
-        // number being typed was the one thing the box did not show.
-        portField.widthAnchor.constraint(equalToConstant: S(92)).isActive = true
-        styleAsKey(sourceButton, font: xMono(S(15), .medium), height: S(30))
-        sourceButton.widthAnchor.constraint(equalToConstant: S(130)).isActive = true
-        sourceButton.setContentHuggingPriority(.required, for: .horizontal)
+        styleAsKey(sourceButton)
         sourceButton.showsMenuAsPrimaryAction = true
         refreshSourceMenu()
         // Return connects and puts the keyboard away, which is the whole
         // reason the field is being typed into.
         optionsButton.setTitle("Options", for: .normal)
-        styleAsKey(optionsButton, font: xMono(S(15), .medium), height: S(30))
-        optionsButton.widthAnchor.constraint(equalToConstant: S(110)).isActive = true
-        optionsButton.setContentHuggingPriority(.required, for: .horizontal)
+        styleAsKey(optionsButton)
         optionsButton.addTarget(self, action: #selector(showOptions), for: .touchUpInside)
 
 #if DRM_ENABLED
         // Beside Options because it is the same kind of thing: a panel that
         // opens over the receiver and leaves it running underneath.
         drmButton.setTitle("DRM", for: .normal)
-        styleAsKey(drmButton, font: xMono(S(15), .medium), height: S(30))
-        drmButton.widthAnchor.constraint(equalToConstant: S(72)).isActive = true
-        drmButton.setContentHuggingPriority(.required, for: .horizontal)
+        styleAsKey(drmButton)
         drmButton.addTarget(self, action: #selector(showDrm), for: .touchUpInside)
 #endif
 
         connectButton.setTitle("Connect", for: .normal)
         // A key like the others, lit while the link is wanted: the toggle the
         // locked address boxes beside it wait on, first in the group.
-        styleAsKey(connectButton, font: xMono(S(15), .medium), height: S(30))
-        connectButton.widthAnchor.constraint(equalToConstant: S(124)).isActive = true
-        connectButton.setContentHuggingPriority(.required, for: .horizontal)
+        styleAsKey(connectButton, led: .off)
         connectButton.addTarget(self, action: #selector(toggleConnection), for: .touchUpInside)
 
-        statusLabel.font = xMono(S(13))
+        // The keys' size (2026-11-16): at 13 it was the smallest type in the
+        // block and the one line in it that changes.
+        statusLabel.font = xMono(S(15))
         statusLabel.textColor = Pal.faint
         statusLabel.numberOfLines = 2
 
@@ -395,31 +395,19 @@ final class RadioViewController: UIViewController {
         // are multiples of, and picking a different one is the only way to
         // change what they do. The Mac has had a step control since it had a
         // toolbar; this column had the number and no way to move it.
-        var stepCfg = UIButton.Configuration.plain()
-        stepCfg.contentInsets = NSDirectionalEdgeInsets(top: S(6), leading: S(8),
-                                                        bottom: S(6), trailing: 0)
-        stepCfg.image = UIImage(systemName: "chevron.up.chevron.down")
-        stepCfg.imagePlacement = .trailing
-        stepCfg.imagePadding = S(5)
-        stepCfg.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: S(9))
-        stepButton.configuration = stepCfg
-        stepButton.tintColor = Pal.faint
+        // A key in the row's seventh column, with the menu mark the source key
+        // carries: it opens a list rather than moving the receiver.
+        styleAsKey(stepButton)
         stepButton.showsMenuAsPrimaryAction = true
-        stepButton.setContentHuggingPriority(.required, for: .horizontal)
-        stepButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-        stepMenuKey = ""     // the configuration above is fresh; fill it on the next refresh
+        stepMenuKey = ""     // the button is fresh; fill it on the next refresh
 
         // A speaker with or without a slash through it, rather than a word
         // that changes: the state is the icon, and the key no longer has to be
         // wide enough for the longer of two words it might be showing.
-        styleAsKey(muteButton, font: xMono(S(15), .medium), height: S(30))
-        muteButton.tintColor = Pal.bg
+        styleAsKey(muteButton, led: .on(Pal.accent))
         muteButton.setPreferredSymbolConfiguration(
-            UIImage.SymbolConfiguration(pointSize: S(17), weight: .medium), forImageIn: .normal)
+            UIImage.SymbolConfiguration(pointSize: S(15), weight: .medium), forImageIn: .normal)
         muteButton.setImage(Self.speaker(muted: false), for: .normal)
-        face(muteButton, Pal.accent)
-        muteButton.widthAnchor.constraint(equalToConstant: S(72)).isActive = true
-        muteButton.setContentHuggingPriority(.required, for: .horizontal)
         muteButton.addTarget(self, action: #selector(toggleMute), for: .touchUpInside)
 
         freqView.onTune = { [weak self] hz in
@@ -617,17 +605,22 @@ final class RadioViewController: UIViewController {
         // medium wave is 900 kHz and on FM it is 10 MHz. The step goes in the
         // box with them, where it is the unit of what is beside it, rather than
         // under the readout where it was a number on its own.
-        let tuneBox = boxed("TUNE", row([tuneRow(), stepButton]))
+        let tunes = tuneRow()
+        tunes.addArrangedSubview(stepButton)
+        let tuneBox = boxed("TUNE", tunes)
+        // Seven columns down the whole block (2026-11-16). BAND fills them;
+        // TUNE is six keys and the step; MODE is six keys and the audio key in
+        // a frame of its own in the seventh — mute is not a seventh mode, so
+        // it does not go in the MODE box; SERVER is five (the address takes
+        // two) with Options and DRM in the last two.
         let modeBox = boxed("MODE", modeKeys())
+        let modeRow = framePair(modeBox, bare(muteButton))
         let displayBox = boxed("DISPLAY", displayRow())
-        foldedWhileTyping = [displayBox, bandBox, tuneBox, modeBox]
+        foldedWhileTyping = [displayBox, bandBox, tuneBox, modeRow]
         let controls = UIStackView(arrangedSubviews: [
             bandBox,
             tuneBox,
-            modeBox,
-            // AUDIO at the far right of the last row of controls, where the
-            // width the server group does not use was going to waste. Mute is
-            // not a seventh mode, so it does not go in the MODE box either.
+            modeRow,
             serverRow(),
             // Named and framed like everything above it: it is the one thing in
             // the column that says whether any of the rest is doing anything.
@@ -636,7 +629,7 @@ final class RadioViewController: UIViewController {
         controls.axis = .vertical
         // 2026-10-13: keys 40 -> 30 (TUNE 56 -> 40) and the gaps 10 -> 6, so
         // the trace gets the height (the iPad mini had 264 pt of it at middle).
-        controls.spacing = S(6)
+        controls.spacing = boxGap
         controls.translatesAutoresizingMaskIntoConstraints = false
         controlsBlock = controls
 
@@ -687,7 +680,7 @@ final class RadioViewController: UIViewController {
         // they walk through rather than in the TUNE box, which has no width to
         // spare at the larger text scales.
         let presetKeys = [-1, 1].map { dir -> UIButton in
-            let b = padButton(dir < 0 ? "◀" : "▶", font: xMono(S(15), .medium), height: S(34))
+            let b = padButton(dir < 0 ? "◀" : "▶", height: S(34))
             b.tag = dir
             b.addTarget(self, action: #selector(presetStepTapped(_:)), for: .touchUpInside)
             return b
@@ -779,6 +772,25 @@ final class RadioViewController: UIViewController {
         keyboardBottom = controls.bottomAnchor.constraint(
             lessThanOrEqualTo: view.bottomAnchor, constant: -keyboardLift)
         keyboardBottom?.isActive = true
+
+        // The grid, now that every key has an ancestor in common. One BAND key
+        // is the column; each key that stands outside a full row of seven is
+        // tied to it, and what is left in its frame (the address, the six MODE
+        // keys) takes up the remainder — which is the same width by
+        // construction, see `gridGap`.
+        if let column = bandButtons.first {
+            var cells: [UIView] = [connectButton, sourceButton, portField, muteButton]
+#if DRM_ENABLED
+            cells += [optionsButton, drmButton]
+#else
+            // On its own it takes both columns.
+            optionsButton.widthAnchor.constraint(equalTo: column.widthAnchor, multiplier: 2,
+                                                 constant: gridGap).isActive = true
+#endif
+            for c in cells {
+                c.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+            }
+        }
     }
 
     /// The left pane out, or back. The right column is hung off the table's
@@ -799,24 +811,114 @@ final class RadioViewController: UIViewController {
         }
     }
 
-    /// The key's own ground. A clear step up from the panel behind it (#353840
-    /// against #17181C on a #121316 page): at the panel's own colour a key is a
-    /// shape you have to go looking for rather than one you reach for.
-    private static let keyGround = Pal.band
+    /// One height, one typeface, one pitch for every key in the block below
+    /// the trace (2026-11-16). They had grown up a row at a time — 30 and 40
+    /// points tall, 15 and 18 point type, seven different widths — and the
+    /// column read as five unrelated strips.
+    private var keyH: CGFloat { S(32) }
+    private var keyFont: XFont { xMono(S(15), .medium) }
+    /// The frame's inset and the gap between two frames in a row.
+    private var boxPad: CGFloat { S(5) }
+    private var boxGap: CGFloat { S(6) }
+    /// Between two keys. Not a number of its own: a key in a frame beside
+    /// another frame is on the same seven-column grid as a row in one frame
+    /// only when the pitch is the gap plus both insets.
+    private var gridGap: CGFloat { boxGap + 2 * boxPad }
 
-    /// A colour a shade up or down. Additive rather than multiplicative, so a
-    /// dark ground moves as far as a light one — the bevel has to read at
-    /// #353840, where a percentage of very little is very little.
-    private static func shade(_ c: XColor, _ d: CGFloat) -> XColor {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
-        c.getRed(&r, green: &g, blue: &b, alpha: &a)
-        func k(_ v: CGFloat) -> CGFloat { min(1, max(0, v + d)) }
-        return XColor(red: k(r), green: k(g), blue: k(b), alpha: a)
+    /// The lamp in a key that has a state to show. BAND, MODE, Connect and the
+    /// audio key carry one; a key that only does something when pressed has no
+    /// slot at all, so an unlit slot always means "not this one".
+    enum Led: Equatable {
+        case none, off, on(XColor)
+        var hasSlot: Bool { self != .none }
     }
 
-    /// `t` of `a` over `b`. A lit key takes a fraction of the accent rather
-    /// than the whole of it: a 40-point key filled with #59D973 is a traffic
-    /// light, not a state.
+    private static var faceCache: [String: UIImage] = [:]
+
+    /// The face of a key, drawn rather than tinted: a domed grey cap with a
+    /// lit top edge and a dark front wall, sitting in a black well cut into
+    /// the panel. The state is a lamp let into the cap, not the colour of the
+    /// cap — a row of grey keys with one bar of light in it, where a row with
+    /// one key washed green was hard to tell from a row with none.
+    ///
+    /// Drawn once at 44 by 32 and stretched from the middle, so the edges, the
+    /// well and the ends of the lamp keep their size at any key width. Pressed,
+    /// the cap goes down into the well: the front wall all but disappears and
+    /// the face darkens.
+    private func keyFace(_ led: Led, pressed: Bool = false) -> UIImage {
+        var key = pressed ? "p" : "u"
+        switch led {
+        case .none: key += "n"
+        case .off: key += "o"
+        case .on(let c):
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+            c.getRed(&r, green: &g, blue: &b, alpha: &a)
+            key += String(format: "%.3f,%.3f,%.3f", r, g, b)
+        }
+        if let hit = Self.faceCache[key] { return hit }
+        func hex(_ v: UInt32, _ a: CGFloat = 1) -> CGColor {
+            XColor(red: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255,
+                   blue: CGFloat(v & 0xFF) / 255, alpha: a).cgColor
+        }
+        let W: CGFloat = 44, H: CGFloat = 32
+        let space = CGColorSpaceCreateDeviceRGB()
+        let img = UIGraphicsImageRenderer(size: CGSize(width: W, height: H)).image { ctx in
+            let c = ctx.cgContext
+            // The well: black all round, and the panel's edge catching the
+            // light along the bottom of it.
+            c.setFillColor(hex(0x050506)); c.fill(CGRect(x: 0, y: 0, width: W, height: H))
+            c.setFillColor(hex(0x3A3D45)); c.fill(CGRect(x: 0, y: H - 1, width: W, height: 1))
+            let wall: CGFloat = pressed ? 1 : 3
+            let top: CGFloat = pressed ? 4 : 2
+            let faceR = CGRect(x: 2, y: top, width: W - 4, height: H - 2 - wall - top)
+            c.saveGState()
+            c.clip(to: faceR)
+            let stops: [UInt32] = pressed ? [0x565B67, 0x4A4E59, 0x3C404A, 0x30333B]
+                                          : [0x8A909D, 0x666B78, 0x4D515D, 0x2C2F37]
+            if let g = CGGradient(colorsSpace: space, colors: stops.map { hex($0) } as CFArray,
+                                  locations: [0, 0.22, 0.6, 1]) {
+                c.drawLinearGradient(g, start: CGPoint(x: 0, y: faceR.minY),
+                                     end: CGPoint(x: 0, y: faceR.maxY), options: [])
+            }
+            // The ends fall away, which is what makes the middle read as raised.
+            for (x0, x1) in [(faceR.minX, faceR.minX + 8), (faceR.maxX, faceR.maxX - 8)] {
+                if let g = CGGradient(colorsSpace: space,
+                                      colors: [hex(0x000000, 0.32), hex(0x000000, 0)] as CFArray,
+                                      locations: [0, 1]) {
+                    c.drawLinearGradient(g, start: CGPoint(x: x0, y: 0),
+                                         end: CGPoint(x: x1, y: 0), options: [])
+                }
+            }
+            c.restoreGState()
+            c.setFillColor(hex(pressed ? 0x6A6F7B : 0xC0C5CF))
+            c.fill(CGRect(x: faceR.minX, y: faceR.minY, width: faceR.width, height: 1))
+            c.setFillColor(hex(0x17181C))
+            c.fill(CGRect(x: faceR.minX, y: faceR.maxY, width: faceR.width, height: wall))
+            guard led.hasSlot else { return }
+            let slot = CGRect(x: faceR.minX + 7, y: faceR.minY + 4, width: faceR.width - 14, height: 3)
+            if case .on(let col) = led {
+                c.saveGState()
+                c.setShadow(offset: .zero, blur: 6, color: col.cgColor)
+                c.setFillColor(col.cgColor); c.fill(slot)
+                c.restoreGState()
+                // A thin hot line, not half the bar: with more white in it the
+                // lamp went pale and amber read as cream.
+                c.setFillColor(Self.mix(.white, col, 0.25).cgColor)
+                c.fill(CGRect(x: slot.minX, y: slot.minY, width: slot.width, height: 1))
+            } else {
+                c.setFillColor(hex(0x0D0E10)); c.fill(slot)
+                c.setFillColor(hex(0xFFFFFF, 0.14))
+                c.fill(CGRect(x: slot.minX, y: slot.maxY, width: slot.width, height: 1))
+            }
+        }
+        let out = img.resizableImage(withCapInsets: UIEdgeInsets(top: 13, left: 16, bottom: 8, right: 16),
+                                     resizingMode: .stretch)
+            .withRenderingMode(.alwaysOriginal)
+        Self.faceCache[key] = out
+        return out
+    }
+
+    /// `t` of `a` over `b`.
     private static func mix(_ a: XColor, _ b: XColor, _ t: CGFloat) -> XColor {
         var ra: CGFloat = 0, ga: CGFloat = 0, ba: CGFloat = 0, aa: CGFloat = 1
         var rb: CGFloat = 0, gb: CGFloat = 0, bb: CGFloat = 0, ab: CGFloat = 1
@@ -826,69 +928,61 @@ final class RadioViewController: UIViewController {
                       blue: ba * t + bb * (1 - t), alpha: 1)
     }
 
-    /// The face of a key: a vertical gradient, lighter at the top, as a panel
-    /// lit from above. Stretched from three points by twelve, so the button
-    /// resizes it and nothing has to lay a gradient layer out by hand. Pressed,
-    /// the gradient runs the other way — the key goes in.
-    private func keyFace(_ ground: XColor, pressed: Bool = false) -> UIImage {
-        let size = CGSize(width: 3, height: 12)
-        let top = Self.shade(ground, pressed ? -0.05 : 0.06)
-        let bottom = Self.shade(ground, pressed ? 0.04 : -0.05)
-        let img = UIGraphicsImageRenderer(size: size).image { ctx in
-            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                        colors: [top.cgColor, bottom.cgColor] as CFArray,
-                                        locations: [0, 1]) else { return }
-            ctx.cgContext.drawLinearGradient(grad, start: .zero,
-                                             end: CGPoint(x: 0, y: size.height), options: [])
-        }
-        return img.resizableImage(withCapInsets: .zero, resizingMode: .stretch)
-            .withRenderingMode(.alwaysOriginal)
-    }
-
-    /// A key, not a pill: square corners, a bevel, and a shadow that puts it
-    /// above the panel rather than on it.
-    private func styleAsKey(_ b: UIButton, font: XFont, height: CGFloat) {
-        b.titleLabel?.font = font
+    /// A key, not a pill: square corners, a cap in a well, and a shadow under
+    /// it. Every key in the block takes the one height and the one typeface
+    /// unless it says otherwise.
+    private func styleAsKey(_ b: UIButton, led: Led = .none, height: CGFloat? = nil) {
+        b.titleLabel?.font = keyFont
+        // A key is as wide as its column, not as its word: on the iPad mini
+        // the longest titles give up a little size rather than their ends.
+        b.titleLabel?.adjustsFontSizeToFitWidth = true
+        b.titleLabel?.minimumScaleFactor = 0.5
+        b.titleLabel?.lineBreakMode = .byClipping
         b.setTitleColor(Pal.text, for: .normal)
+        b.tintColor = Pal.text
         b.backgroundColor = .clear
         b.layer.cornerRadius = 0
         b.layer.shadowColor = XColor.black.cgColor
-        b.layer.shadowOpacity = 0.5
-        b.layer.shadowRadius = S(2)
-        b.layer.shadowOffset = CGSize(width: 0, height: S(2))
-        b.heightAnchor.constraint(equalToConstant: height).isActive = true
-        face(b, Self.keyGround)
+        b.layer.shadowOpacity = 0.7
+        b.layer.shadowRadius = S(3)
+        b.layer.shadowOffset = CGSize(width: 0, height: S(3))
+        b.heightAnchor.constraint(equalToConstant: height ?? keyH).isActive = true
+        face(b, led)
     }
 
     /// `.custom`, not `.system`: a system button draws its own tinted plate
     /// behind a selected key, and once the keys were made 30 pt tall that
     /// plate showed as blue above and below every lit key on the iPad Pro.
     /// The connect and mute keys are `.custom` for the same reason.
-    private func padButton(_ title: String, font: XFont, height: CGFloat) -> UIButton {
+    private func padButton(_ title: String, led: Led = .none, height: CGFloat? = nil) -> UIButton {
         let b = UIButton(type: .custom)
         b.setTitle(title, for: .normal)
-        styleAsKey(b, font: font, height: height)
+        styleAsKey(b, led: led, height: height)
         return b
     }
 
     /// Every state at once, so a key that is both lit and held still looks like
-    /// a key that is held.
-    private func face(_ b: UIButton, _ ground: XColor) {
-        let up = keyFace(ground), down = keyFace(ground, pressed: true)
+    /// a key that is held. The legend sits in what is left of the cap: clear of
+    /// the front wall, and below the lamp where there is one.
+    private func face(_ b: UIButton, _ led: Led) {
+        let up = keyFace(led), down = keyFace(led, pressed: true)
         b.setBackgroundImage(up, for: .normal)
         b.setBackgroundImage(up, for: .selected)
         b.setBackgroundImage(down, for: .highlighted)
         b.setBackgroundImage(down, for: [.highlighted, .selected])
+        let inset = UIEdgeInsets(top: led.hasSlot ? S(4) : 0, left: S(3),
+                                 bottom: led.hasSlot ? S(4) : S(3), right: S(3))
+        b.titleEdgeInsets = inset
+        b.imageEdgeInsets = inset
     }
 
-    /// Lit or not. The receiver's current band, mode and mute state each light
-    /// their own key — a fraction of the accent worked into the key's ground,
-    /// not the accent itself. `isSelected` carries the state so the work is
+    /// Lit or not. The receiver's current band, mode and link each light the
+    /// lamp in their own key. `isSelected` carries the state so the work is
     /// done on a change rather than four times a second; nothing else reads it.
     private func light(_ b: UIButton, _ on: Bool, _ tint: XColor = Pal.accent) {
         guard b.isSelected != on else { return }
         b.isSelected = on
-        face(b, on ? Self.mix(tint, Self.keyGround, 0.38) : Self.keyGround)
+        face(b, on ? .on(tint) : .off)
     }
 
     /// A fader cap instead of a bead.
@@ -945,13 +1039,43 @@ final class RadioViewController: UIViewController {
         let stack = row([cap, content])
         stack.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(stack)
+        return frame(box, around: stack)
+    }
+
+    /// The same frame with no name in it, for a key that is its own legend —
+    /// the speaker, Options, DRM. There is one column to put it in and a
+    /// caption would take most of that.
+    private func bare(_ content: UIView) -> UIView {
+        let box = UIView()
+        box.backgroundColor = Pal.panel
+        box.layer.borderWidth = 1
+        box.layer.borderColor = Pal.rule.cgColor
+        return frame(box, around: content)
+    }
+
+    private func frame(_ box: UIView, around content: UIView) -> UIView {
+        content.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(content)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: S(8)),
-            stack.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -S(8)),
-            stack.topAnchor.constraint(equalTo: box.topAnchor, constant: S(5)),
-            stack.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -S(5)),
+            content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: boxPad),
+            content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -boxPad),
+            content.topAnchor.constraint(equalTo: box.topAnchor, constant: boxPad),
+            content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -boxPad),
         ])
         return box
+    }
+
+    /// Two frames in one row: the first takes what the second, sized by the
+    /// grid, leaves.
+    private func framePair(_ wide: UIView, _ fixed: UIView) -> UIStackView {
+        let r = UIStackView(arrangedSubviews: [wide, fixed])
+        r.axis = .horizontal
+        r.spacing = boxGap
+        r.alignment = .fill
+        wide.setContentHuggingPriority(.init(1), for: .horizontal)
+        wide.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        fixed.setContentHuggingPriority(.required, for: .horizontal)
+        return r
     }
 
     /// The step, and every step this mode has a use for. The ladder is the
@@ -962,10 +1086,7 @@ final class RadioViewController: UIViewController {
         let key = "\(radio.mode):\(step)"
         guard key != stepMenuKey else { return }
         stepMenuKey = key
-        var title = AttributedString("\u{00D7} " + formatStep(step))
-        title.font = xMono(S(13))
-        title.foregroundColor = Pal.dim
-        stepButton.configuration?.attributedTitle = title
+        stepButton.setTitle("\u{00D7} " + formatStep(step) + " ▾", for: .normal)
         stepButton.menu = UIMenu(children: RadioConfig.stepValues(for: radio.mode).map { v in
             UIAction(title: formatStep(v),
                      state: abs(v - step) < 0.001 ? .on : .off) { [weak self] _ in
@@ -975,27 +1096,23 @@ final class RadioViewController: UIViewController {
         })
     }
 
-    /// The audio key is coloured in both of its states — green while the sound
-    /// is on, amber while it is not — where every other key is the panel's own
-    /// grey until it is the one selected.
+    /// The audio key's lamp is lit in both of its states — green while the
+    /// sound is on, amber while it is not — where every other lamp is dark
+    /// until its key is the one selected.
     ///
     /// It is not a selection among others: BAND and MODE keys answer "which of
     /// these", and the unlit ones are the answers not chosen. This one answers
-    /// "is there sound", and both of its answers are worth a colour. A grey key
-    /// with a speaker on it says nothing about which.
-    ///
-    /// The colour itself, not a fraction of it worked into the key's grey. A
-    /// lit band key takes 0.38 because it sits in a row of six and only has to
-    /// stand out from its neighbours; mixed at all, this one came out a
-    /// desaturated khaki that reads as another grey key. It is an indicator
-    /// lamp in a box of its own, and a lamp is the colour it is.
+    /// "is there sound", and both of its answers are worth a colour.
     private func lightAudio(_ muted: Bool) {
         guard muteButton.isSelected != muted else { return }
         muteButton.isSelected = muted
         muteButton.setImage(Self.speaker(muted: muted), for: .normal)
-        muteButton.tintColor = Pal.bg
-        face(muteButton, muted ? Pal.warn : Pal.accent)
+        face(muteButton, .on(muted ? Self.ledOrange : Pal.accent))
     }
+
+    /// The muted lamp. Orange rather than the palette's amber (#F2BF59), which
+    /// as a three-point bar of light came out a pale yellow.
+    private static let ledOrange = XColor(red: 1.0, green: 0.52, blue: 0.08, alpha: 1)
 
     private static func speaker(muted: Bool) -> UIImage? {
         UIImage(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -1174,8 +1291,9 @@ final class RadioViewController: UIViewController {
     private func bandRow() -> UIStackView {
         let s = row([])
         s.distribution = .fillEqually
+        s.spacing = gridGap
         bandButtons = Receiver.bands.enumerated().map { i, b in
-            let btn = padButton(b.name, font: xMono(S(15), .medium), height: S(30))
+            let btn = padButton(b.name, led: .off)
             btn.tag = i
             btn.addTarget(self, action: #selector(bandTapped(_:)), for: .touchUpInside)
             s.addArrangedSubview(btn)
@@ -1407,28 +1525,27 @@ final class RadioViewController: UIViewController {
         floorRail.setReadout(String(format: "%.0f", spectrum.dbFloor))
     }
 
-    /// The server group, Connect first, and the mute key. Options and DRM
-    /// moved down beside the status: with them here the row was wider than a
-    /// portrait iPad and the Connect key at its end was squeezed to nothing.
+    /// The server group, Connect first, across five columns, and the two
+    /// panels that open over the receiver — Options, and DRM when the decoder
+    /// is built in — in the last two. A function rather than an inline literal
+    /// because Swift will not accept #if between the elements of one.
     private func serverRow() -> UIStackView {
-        let server = boxed("SERVER", row([connectButton, sourceButton, hostField, portField]))
-        return row([server, UIView(), boxed("AUDIO", muteButton)])
+        let link = row([connectButton, sourceButton, hostField, portField])
+        link.spacing = gridGap
+        var keys: [UIView] = [optionsButton]
+#if DRM_ENABLED
+        keys.append(drmButton)
+#endif
+        let panels = row(keys)
+        panels.spacing = gridGap
+        return framePair(boxed("SERVER", link), bare(panels))
     }
 
-    /// The status, taking what width is left, then Options — and DRM when the
-    /// decoder is built in. A function rather than an inline literal because
-    /// Swift will not accept #if between the elements of one.
-    private func statusRow() -> UIStackView {
-        let status = boxed("STATUS", statusLabel)
-        status.setContentHuggingPriority(.init(1), for: .horizontal)
-        status.setContentCompressionResistancePriority(.init(1), for: .horizontal)
-        var items: [UIView] = [status, optionsButton]
-#if DRM_ENABLED
-        items.append(drmButton)
-#endif
-        let r = row(items)
-        r.alignment = .fill
-        return r
+    /// The status, the full width of the block and never shorter than a row of
+    /// keys, so the block ends on a strip the size of the ones above it.
+    private func statusRow() -> UIView {
+        statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: keyH).isActive = true
+        return boxed("STATUS", statusLabel)
     }
 
     private func row(_ views: [UIView]) -> UIStackView {
@@ -1445,11 +1562,10 @@ final class RadioViewController: UIViewController {
     private func tuneRow() -> UIStackView {
         let s = row([])
         s.distribution = .fillEqually
+        s.spacing = gridGap
         for ticks in [-100, -10, -1, 1, 10, 100] {
-            // Momentary, so never lit: there is no state for a step to be in.
-            let b = padButton(ticks > 0 ? "+\(ticks)" : "\(ticks)",
-                              font: .monospacedDigitSystemFont(ofSize: S(18), weight: .medium),
-                              height: S(40))
+            // Momentary, so no lamp: there is no state for a step to be in.
+            let b = padButton(ticks > 0 ? "+\(ticks)" : "\(ticks)")
             b.tag = ticks
             b.addTarget(self, action: #selector(tuneTapped(_:)), for: .touchUpInside)
             s.addArrangedSubview(b)
@@ -1654,8 +1770,9 @@ final class RadioViewController: UIViewController {
     private func modeKeys() -> UIStackView {
         let keys = row([])
         keys.distribution = .fillEqually
+        keys.spacing = gridGap
         modeButtons = Self.shownModes.map { m in
-            let b = padButton(MODE_NAMES[m], font: xMono(S(15), .medium), height: S(30))
+            let b = padButton(MODE_NAMES[m], led: .off)
             b.tag = m
             b.addTarget(self, action: #selector(modeTapped(_:)), for: .touchUpInside)
             keys.addArrangedSubview(b)

@@ -378,7 +378,13 @@ final class RadioViewController: UIViewController {
         // block and the one line in it that changes.
         statusLabel.font = xMono(S(15))
         statusLabel.textColor = Pal.faint
-        statusLabel.numberOfLines = 2
+        // One line that gives up size before it gives up its end: the audio
+        // key shares the row now, and a second line made the row taller than
+        // the key beside it.
+        statusLabel.numberOfLines = 1
+        statusLabel.adjustsFontSizeToFitWidth = true
+        statusLabel.minimumScaleFactor = 0.6
+        statusLabel.lineBreakMode = .byTruncatingTail
 
         // Monospaced digits, or every tune shifts the whole readout sideways.
         stationLabel.font = .systemFont(ofSize: S(20))
@@ -404,7 +410,7 @@ final class RadioViewController: UIViewController {
         // A speaker with or without a slash through it, rather than a word
         // that changes: the state is the icon, and the key no longer has to be
         // wide enough for the longer of two words it might be showing.
-        styleAsKey(muteButton, led: .on(Self.ledOrange))
+        styleAsKey(muteButton, led: .on(Self.ledGreen))
         muteButton.setPreferredSymbolConfiguration(
             UIImage.SymbolConfiguration(pointSize: S(15), weight: .medium), forImageIn: .normal)
         muteButton.setImage(Self.speaker(muted: false), for: .normal)
@@ -614,7 +620,10 @@ final class RadioViewController: UIViewController {
         // it does not go in the MODE box; SERVER is five (the address takes
         // two) with Options and DRM in the last two.
         let modeBox = boxed("MODE", modeKeys())
-        let modeRow = framePair(modeBox, bare(muteButton))
+        // (2026-11-17: the audio key went to the block's bottom right corner,
+        // beside the status; Options took the column it left here, and DRM the
+        // one below it, so the seventh column is the block's own keys.)
+        let modeRow = framePair(modeBox, bare(optionsButton))
         let displayBox = boxed("DISPLAY", displayRow())
         foldedWhileTyping = [displayBox, bandBox, tuneBox, modeRow]
         let controls = UIStackView(arrangedSubviews: [
@@ -779,13 +788,9 @@ final class RadioViewController: UIViewController {
         // keys) takes up the remainder — which is the same width by
         // construction, see `gridGap`.
         if let column = bandButtons.first {
-            var cells: [UIView] = [connectButton, sourceButton, portField, muteButton]
+            var cells: [UIView] = [connectButton, sourceButton, portField, muteButton, optionsButton]
 #if DRM_ENABLED
-            cells += [optionsButton, drmButton]
-#else
-            // On its own it takes both columns.
-            optionsButton.widthAnchor.constraint(equalTo: column.widthAnchor, multiplier: 2,
-                                                 constant: gridGap).isActive = true
+            cells.append(drmButton)
 #endif
             for c in cells {
                 c.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
@@ -1107,8 +1112,14 @@ final class RadioViewController: UIViewController {
         guard muteButton.isSelected != muted else { return }
         muteButton.isSelected = muted
         muteButton.setImage(Self.speaker(muted: muted), for: .normal)
-        face(muteButton, muted ? .off : .on(Self.ledOrange))
+        face(muteButton, muted ? .off : .on(Self.ledGreen))
     }
+
+    /// The audio key's lamp alone is green: it is the one lamp that is not a
+    /// choice among the receiver's settings, and it sits in the corner by
+    /// itself. A fuller green than the palette's accent, for the reason the
+    /// orange is fuller than its amber.
+    private static let ledGreen = XColor(red: 0.10, green: 0.90, blue: 0.28, alpha: 1)
 
     /// Every lamp. Orange rather than the palette's green or its amber
     /// (#F2BF59): as a three-point bar of light both came out pale against the
@@ -1526,27 +1537,26 @@ final class RadioViewController: UIViewController {
         floorRail.setReadout(String(format: "%.0f", spectrum.dbFloor))
     }
 
-    /// The server group, Connect first, across five columns, and the two
-    /// panels that open over the receiver — Options, and DRM when the decoder
-    /// is built in — in the last two. A function rather than an inline literal
-    /// because Swift will not accept #if between the elements of one.
-    private func serverRow() -> UIStackView {
+    /// The server group, Connect first, across six columns (the address takes
+    /// what the other three leave), and DRM in the seventh when the decoder is
+    /// built in; without it the group has the whole row.
+    private func serverRow() -> UIView {
         let link = row([connectButton, sourceButton, hostField, portField])
         link.spacing = gridGap
-        var keys: [UIView] = [optionsButton]
+        let server = boxed("SERVER", link)
 #if DRM_ENABLED
-        keys.append(drmButton)
+        return framePair(server, bare(drmButton))
+#else
+        return server
 #endif
-        let panels = row(keys)
-        panels.spacing = gridGap
-        return framePair(boxed("SERVER", link), bare(panels))
     }
 
-    /// The status, the full width of the block and never shorter than a row of
-    /// keys, so the block ends on a strip the size of the ones above it.
+    /// The status across six columns, the height of a row of keys, and the
+    /// audio key in the block's bottom right corner — the one key reached for
+    /// without looking, in the one place that can be found that way.
     private func statusRow() -> UIView {
-        statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: keyH).isActive = true
-        return boxed("STATUS", statusLabel)
+        statusLabel.heightAnchor.constraint(equalToConstant: keyH).isActive = true
+        return framePair(boxed("STATUS", statusLabel), bare(muteButton))
     }
 
     private func row(_ views: [UIView]) -> UIStackView {

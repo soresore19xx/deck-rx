@@ -63,13 +63,14 @@ Landscape, and the width goes to the spectrum.
 
 Controls sit in named, framed groups — DISPLAY, BAND, TUNE, MODE, SERVER,
 STATUS — the way a panel is silkscreened, on one grid of seven columns: BAND
-fills it, TUNE is six keys and the step menu, MODE is six keys with the audio
-key framed on its own in the seventh, SERVER takes five (the address two of
-them) with Options and DRM in the last two. Every key is the same height and
+fills it, TUNE is six keys and the step menu, MODE is six keys with Options
+framed on its own in the seventh, SERVER takes six (the address three of
+them) with DRM in the seventh, and STATUS takes six with the audio key in the
+bottom right corner. Every key is the same height and
 typeface. A key is a grey cap set in a well; the ones that hold a state — the
-band, the mode, Connect, audio — carry an orange lamp along the top edge, lit when
-that key is the one in force (on the audio key: while there is sound; muted, it
-goes dark and the speaker gains a slash). Keys
+band, the mode, Connect, audio — carry a lamp along the top edge, lit when
+that key is the one in force: orange, except the audio key's, which is green
+while there is sound (muted, it goes dark and the speaker gains a slash). Keys
 that only act when pressed (TUNE, the menus, Options, DRM) have no lamp.
 
 It connects to the server in the SERVER group the moment it opens — there is
@@ -156,8 +157,8 @@ port are two boxes because they are two things, and `host:port` pasted into the
 address box is still split correctly. Both are saved before the connect is
 attempted, so a refused address survives to the next launch. **Connect** /
 **Disconnect** is the first key of the SERVER group, lit while the link is on;
-Options and DRM sit in a frame of their own at the end of the same row, and
-the status line runs the full width below. The two boxes and
+DRM sits in a frame of its own at the end of the same row, Options at the end
+of the MODE row above, and the status line runs below. The two boxes and
 the source menu are greyed out while **Disconnect** is showing — connected or
 still retrying — so an address is changed with the link off: Disconnect,
 change, Connect.

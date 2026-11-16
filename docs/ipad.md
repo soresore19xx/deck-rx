@@ -61,8 +61,15 @@ Landscape, and the width goes to the spectrum.
   floor as rails beside the trace. The ceiling and floor also set the
   waterfall's colour range (as in SDR++), and moving them recolours its history.
 
-Controls sit in named, framed groups — DISPLAY, BAND, TUNE, MODE, AUDIO, SERVER
-— the way a panel is silkscreened.
+Controls sit in named, framed groups — DISPLAY, BAND, TUNE, MODE, SERVER,
+STATUS — the way a panel is silkscreened, on one grid of seven columns: BAND
+fills it, TUNE is six keys and the step menu, MODE is six keys with the audio
+key framed on its own in the seventh, SERVER takes five (the address two of
+them) with Options and DRM in the last two. Every key is the same height and
+typeface. A key is a grey cap set in a well; the ones that hold a state — the
+band, the mode, Connect, audio — carry a lamp along the top edge, green when
+that key is the one in force, orange on the audio key while it is muted. Keys
+that only act when pressed (TUNE, the menus, Options, DRM) have no lamp.
 
 It connects to the server in the SERVER group the moment it opens — there is
 no plugin on an iPad to borrow a receiver from, so there was never anything to
@@ -148,7 +155,8 @@ port are two boxes because they are two things, and `host:port` pasted into the
 address box is still split correctly. Both are saved before the connect is
 attempted, so a refused address survives to the next launch. **Connect** /
 **Disconnect** is the first key of the SERVER group, lit while the link is on;
-Options and DRM sit beside the status line below it. The two boxes and
+Options and DRM sit in a frame of their own at the end of the same row, and
+the status line runs the full width below. The two boxes and
 the source menu are greyed out while **Disconnect** is showing — connected or
 still retrying — so an address is changed with the link off: Disconnect,
 change, Connect.

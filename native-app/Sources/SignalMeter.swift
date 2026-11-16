@@ -36,6 +36,15 @@ final class SignalMeter: XView {
     override init(frame frameRect: CGRect) {
         super.init(frame: frameRect)
         configureCustomDrawing()
+        #if canImport(UIKit)
+        // It draws on nothing — the header shows through between the segments
+        // — so it must not claim to cover its bounds. Marked opaque (a UIView's
+        // default) its backing store kept what had been drawn at the previous
+        // width, and once the header let the meters give way to the clocks the
+        // old scale stayed under the new one, cut off at the new right edge.
+        isOpaque = false
+        backgroundColor = .clear
+        #endif
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
@@ -54,6 +63,9 @@ final class SignalMeter: XView {
 
     override func draw(_ dirtyRect: CGRect) {
         guard let ctx = currentContext else { return }
+        #if canImport(UIKit)
+        ctx.clear(bounds)
+        #endif
         let w = bounds.width
         // Top-left origin on both platforms: the bar sits at the top and the
         // scale hangs under it, inside the view either way.

@@ -469,7 +469,12 @@ final class RadioViewController: UIViewController {
             // whatever the station name does not, the meters were re-measured
             // on every refresh and their scale moved under the reading.
             let wide = m.widthAnchor.constraint(equalToConstant: S(360))
-            wide.priority = .defaultHigh
+            // Below a label's own resistance to being squeezed (750): on the
+            // iPad mini with the preset pane out the header is short of room,
+            // and at the same priority it was the clocks that lost — their
+            // seconds cut to an ellipsis — rather than the meters giving up
+            // some of a scale that reads the same at any length.
+            wide.priority = UILayoutPriority(700)
             wide.isActive = true
             m.widthAnchor.constraint(greaterThanOrEqualToConstant: S(160)).isActive = true
         }
@@ -555,6 +560,7 @@ final class RadioViewController: UIViewController {
         for c in [clockJST, clockUTC] {
             c.font = xMono(S(15))
             c.setContentHuggingPriority(.required, for: .horizontal)
+            c.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
         clockJST.textColor = Pal.text
         clockUTC.textColor = Pal.dim

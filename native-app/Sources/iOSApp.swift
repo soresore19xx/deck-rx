@@ -873,8 +873,11 @@ final class RadioViewController: UIViewController {
             let faceR = CGRect(x: 2, y: top, width: W - 4, height: H - 2 - wall - top)
             c.saveGState()
             c.clip(to: faceR)
-            let stops: [UInt32] = pressed ? [0x565B67, 0x4A4E59, 0x3C404A, 0x30333B]
-                                          : [0x8A909D, 0x666B78, 0x4D515D, 0x2C2F37]
+            // Dark enough that the lamp is the brightest thing on the key: at
+            // #8A909D down to #2C2F37 the cap was lighter than the legend
+            // needed and the orange had nothing to stand against.
+            let stops: [UInt32] = pressed ? [0x3A3D46, 0x32353D, 0x2A2C33, 0x222429]
+                                          : [0x5E636E, 0x474B55, 0x363940, 0x212329]
             if let g = CGGradient(colorsSpace: space, colors: stops.map { hex($0) } as CFArray,
                                   locations: [0, 0.22, 0.6, 1]) {
                 c.drawLinearGradient(g, start: CGPoint(x: 0, y: faceR.minY),
@@ -890,21 +893,22 @@ final class RadioViewController: UIViewController {
                 }
             }
             c.restoreGState()
-            c.setFillColor(hex(pressed ? 0x6A6F7B : 0xC0C5CF))
+            c.setFillColor(hex(pressed ? 0x4A4E58 : 0x8E939E))
             c.fill(CGRect(x: faceR.minX, y: faceR.minY, width: faceR.width, height: 1))
             c.setFillColor(hex(0x17181C))
             c.fill(CGRect(x: faceR.minX, y: faceR.maxY, width: faceR.width, height: wall))
             guard led.hasSlot else { return }
-            let slot = CGRect(x: faceR.minX + 7, y: faceR.minY + 4, width: faceR.width - 14, height: 3)
+            // Right under the cap's top edge, which leaves the legend a clear
+            // gap below it: two points lower and the glow sat on the capitals.
+            let slot = CGRect(x: faceR.minX + 7, y: faceR.minY + 2, width: faceR.width - 14, height: 3)
             if case .on(let col) = led {
+                // The colour itself and nothing over it. Any white worked in
+                // as a highlight is what made the lamp pale; the glow is drawn
+                // twice so it is the colour that spreads, not a haze of it.
                 c.saveGState()
-                c.setShadow(offset: .zero, blur: 6, color: col.cgColor)
-                c.setFillColor(col.cgColor); c.fill(slot)
+                c.setShadow(offset: .zero, blur: 5, color: col.cgColor)
+                c.setFillColor(col.cgColor); c.fill(slot); c.fill(slot)
                 c.restoreGState()
-                // A thin hot line, not half the bar: with more white in it the
-                // lamp went pale and amber read as cream.
-                c.setFillColor(Self.mix(.white, col, 0.25).cgColor)
-                c.fill(CGRect(x: slot.minX, y: slot.minY, width: slot.width, height: 1))
             } else {
                 c.setFillColor(hex(0x0D0E10)); c.fill(slot)
                 c.setFillColor(hex(0xFFFFFF, 0.14))
@@ -970,8 +974,7 @@ final class RadioViewController: UIViewController {
         b.setBackgroundImage(up, for: .selected)
         b.setBackgroundImage(down, for: .highlighted)
         b.setBackgroundImage(down, for: [.highlighted, .selected])
-        let inset = UIEdgeInsets(top: led.hasSlot ? S(4) : 0, left: S(3),
-                                 bottom: led.hasSlot ? S(4) : S(3), right: S(3))
+        let inset = UIEdgeInsets(top: led.hasSlot ? S(6) : 0, left: S(3), bottom: 0, right: S(3))
         b.titleEdgeInsets = inset
         b.imageEdgeInsets = inset
     }
@@ -1110,7 +1113,7 @@ final class RadioViewController: UIViewController {
     /// Every lamp. Orange rather than the palette's green or its amber
     /// (#F2BF59): as a three-point bar of light both came out pale against the
     /// grey of the cap.
-    private static let ledOrange = XColor(red: 1.0, green: 0.52, blue: 0.08, alpha: 1)
+    private static let ledOrange = XColor(red: 1.0, green: 0.42, blue: 0.0, alpha: 1)
 
     private static func speaker(muted: Bool) -> UIImage? {
         UIImage(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")

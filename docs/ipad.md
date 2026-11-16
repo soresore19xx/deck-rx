@@ -69,8 +69,8 @@ them) with DRM in the seventh, and STATUS takes six with the audio key in the
 bottom right corner. Every key is the same height and
 typeface. A key is a grey cap set in a well; the ones that hold a state — the
 band, the mode, Connect, audio — carry a lamp along the top edge, lit when
-that key is the one in force: orange, except the audio key's, which is green
-while there is sound (muted, it goes dark and the speaker gains a slash). Keys
+that key is the one in force: green, and on the audio key green while there
+is sound and orange while it is muted (the speaker gains a slash too). Keys
 that only act when pressed (TUNE, the menus, Options, DRM) have no lamp.
 
 It connects to the server in the SERVER group the moment it opens — there is

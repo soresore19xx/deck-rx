@@ -1444,7 +1444,7 @@ final class RadioViewController: UIViewController {
     private func displayRow() -> UIStackView {
         func slide(_ caption: String, _ lo: Float, _ hi: Float, _ v: Float,
                    _ tag: Int, _ readout: UILabel) -> UIStackView {
-            let s = UISlider()
+            let s = ThinSlider()
             s.minimumValue = lo; s.maximumValue = hi; s.value = v
             s.tag = tag
             s.isContinuous = true
@@ -2195,6 +2195,19 @@ final class BadgeLabel: UILabel {
         }
         return CGSize(width: s.width + pad.left + pad.right,
                       height: s.height + pad.top + pad.bottom)
+    }
+}
+
+/// A slider whose track is a line rather than a bar. The system track is
+/// thick enough to read as a control of its own under the fader cap; the
+/// DISPLAY row's two are settings, and the cap is the thing to take hold of.
+final class ThinSlider: UISlider {
+    override func trackRect(forBounds bounds: CGRect) -> CGRect {
+        var r = super.trackRect(forBounds: bounds)
+        let h: CGFloat = 3
+        r.origin.y = r.midY - h / 2
+        r.size.height = h
+        return r
     }
 }
 

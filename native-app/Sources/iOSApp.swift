@@ -987,7 +987,7 @@ final class RadioViewController: UIViewController {
     /// Lit or not. The receiver's current band, mode and link each light the
     /// lamp in their own key. `isSelected` carries the state so the work is
     /// done on a change rather than four times a second; nothing else reads it.
-    private func light(_ b: UIButton, _ on: Bool, _ tint: XColor = ledOrange) {
+    private func light(_ b: UIButton, _ on: Bool, _ tint: XColor = ledGreen) {
         guard b.isSelected != on else { return }
         b.isSelected = on
         face(b, on ? .on(tint) : .off)
@@ -1104,26 +1104,27 @@ final class RadioViewController: UIViewController {
         })
     }
 
-    /// The audio key's lamp is on while there is sound and dark while it is
-    /// muted, the way Connect's is on while there is a link: every lamp in the
-    /// block means "this is in force", in the one colour. The speaker on the
-    /// key gains a slash as well, so the muted state is not only an absence.
+    /// The audio key's lamp is lit in both of its states — green while the
+    /// sound is on, orange while it is not — where every other lamp is dark
+    /// until its key is the one selected.
+    ///
+    /// It is not a selection among others: BAND and MODE keys answer "which of
+    /// these", and the unlit ones are the answers not chosen. This one answers
+    /// "is there sound", and both of its answers are worth a colour.
     private func lightAudio(_ muted: Bool) {
         guard muteButton.isSelected != muted else { return }
         muteButton.isSelected = muted
         muteButton.setImage(Self.speaker(muted: muted), for: .normal)
-        face(muteButton, muted ? .off : .on(Self.ledGreen))
+        face(muteButton, .on(muted ? Self.ledOrange : Self.ledGreen))
     }
 
-    /// The audio key's lamp alone is green: it is the one lamp that is not a
-    /// choice among the receiver's settings, and it sits in the corner by
-    /// itself. A fuller green than the palette's accent, for the reason the
-    /// orange is fuller than its amber.
+    /// The lamp of a key that is in force. A fuller green than the palette's
+    /// accent (#59D973), which as a three-point bar of light came out pale
+    /// against the grey of the cap.
     private static let ledGreen = XColor(red: 0.10, green: 0.90, blue: 0.28, alpha: 1)
 
-    /// Every lamp. Orange rather than the palette's green or its amber
-    /// (#F2BF59): as a three-point bar of light both came out pale against the
-    /// grey of the cap.
+    /// The muted lamp, and nothing else. Fuller than the palette's amber
+    /// (#F2BF59) for the same reason.
     private static let ledOrange = XColor(red: 1.0, green: 0.42, blue: 0.0, alpha: 1)
 
     private static func speaker(muted: Bool) -> UIImage? {

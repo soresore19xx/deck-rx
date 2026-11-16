@@ -67,8 +67,9 @@ fills it, TUNE is six keys and the step menu, MODE is six keys with the audio
 key framed on its own in the seventh, SERVER takes five (the address two of
 them) with Options and DRM in the last two. Every key is the same height and
 typeface. A key is a grey cap set in a well; the ones that hold a state — the
-band, the mode, Connect, audio — carry a lamp along the top edge, green when
-that key is the one in force, orange on the audio key while it is muted. Keys
+band, the mode, Connect, audio — carry an orange lamp along the top edge, lit when
+that key is the one in force (on the audio key: while there is sound; muted, it
+goes dark and the speaker gains a slash). Keys
 that only act when pressed (TUNE, the menus, Options, DRM) have no lamp.
 
 It connects to the server in the SERVER group the moment it opens — there is

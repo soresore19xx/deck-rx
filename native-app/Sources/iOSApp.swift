@@ -404,7 +404,7 @@ final class RadioViewController: UIViewController {
         // A speaker with or without a slash through it, rather than a word
         // that changes: the state is the icon, and the key no longer has to be
         // wide enough for the longer of two words it might be showing.
-        styleAsKey(muteButton, led: .on(Pal.accent))
+        styleAsKey(muteButton, led: .on(Self.ledOrange))
         muteButton.setPreferredSymbolConfiguration(
             UIImage.SymbolConfiguration(pointSize: S(15), weight: .medium), forImageIn: .normal)
         muteButton.setImage(Self.speaker(muted: false), for: .normal)
@@ -979,7 +979,7 @@ final class RadioViewController: UIViewController {
     /// Lit or not. The receiver's current band, mode and link each light the
     /// lamp in their own key. `isSelected` carries the state so the work is
     /// done on a change rather than four times a second; nothing else reads it.
-    private func light(_ b: UIButton, _ on: Bool, _ tint: XColor = Pal.accent) {
+    private func light(_ b: UIButton, _ on: Bool, _ tint: XColor = ledOrange) {
         guard b.isSelected != on else { return }
         b.isSelected = on
         face(b, on ? .on(tint) : .off)
@@ -1096,22 +1096,20 @@ final class RadioViewController: UIViewController {
         })
     }
 
-    /// The audio key's lamp is lit in both of its states — green while the
-    /// sound is on, amber while it is not — where every other lamp is dark
-    /// until its key is the one selected.
-    ///
-    /// It is not a selection among others: BAND and MODE keys answer "which of
-    /// these", and the unlit ones are the answers not chosen. This one answers
-    /// "is there sound", and both of its answers are worth a colour.
+    /// The audio key's lamp is on while there is sound and dark while it is
+    /// muted, the way Connect's is on while there is a link: every lamp in the
+    /// block means "this is in force", in the one colour. The speaker on the
+    /// key gains a slash as well, so the muted state is not only an absence.
     private func lightAudio(_ muted: Bool) {
         guard muteButton.isSelected != muted else { return }
         muteButton.isSelected = muted
         muteButton.setImage(Self.speaker(muted: muted), for: .normal)
-        face(muteButton, .on(muted ? Self.ledOrange : Pal.accent))
+        face(muteButton, muted ? .off : .on(Self.ledOrange))
     }
 
-    /// The muted lamp. Orange rather than the palette's amber (#F2BF59), which
-    /// as a three-point bar of light came out a pale yellow.
+    /// Every lamp. Orange rather than the palette's green or its amber
+    /// (#F2BF59): as a three-point bar of light both came out pale against the
+    /// grey of the cap.
     private static let ledOrange = XColor(red: 1.0, green: 0.52, blue: 0.08, alpha: 1)
 
     private static func speaker(muted: Bool) -> UIImage? {

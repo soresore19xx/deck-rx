@@ -6,7 +6,7 @@ Each registered Stream Deck action — encoder dials, the existing keypad button
 
 ## Offline / disconnected state
 
-When the SpyServer connection drops (cable pull, server reboot), every dial dims and signals `OFFLINE`: the Tune dial swaps its 7-seg digits for dashes and prefixes the header with `LINK` (last station name kept so the user can see what they were on). Master OFF (2 s long-press) renders the same `OFFLINE` panels but prefixes the Tune header with `OFF` and keeps the last freq on the 7-seg. In both cases the Status panel drops the red `ONLINE` tally to plain `OFFLINE` and the meters fall to zero / `-`. State cache (Host, Dev, AOut, last freq + mode) is preserved so the reconnect is seamless — the plugin auto-reconnects (or master ON), all values snap back.
+When the SpyServer connection drops (cable pull, server reboot), every dial dims and signals `OFFLINE`: the Tune dial swaps its 7-seg digits for dashes and prefixes the header with `LINK` (last station name kept so the user can see what they were on). Master OFF (2 s long-press) renders the same `OFFLINE` panels but prefixes the Tune header with `OFF`; the 7-seg shows dashes there too, since the plugin lets go of the device. In both cases the Status panel drops the red `ONLINE` tally to plain `OFFLINE` and the meters fall to zero / `-`. State cache (Host, Dev, AOut, last freq + mode) is preserved so the reconnect is seamless — the plugin auto-reconnects (or master ON), all values snap back.
 
 ![Deck RX — offline composite (master OFF)](lcd-combined-offline.png)
 
@@ -98,7 +98,7 @@ Pixel → bin map switches automatically between max-hold (when ≥ 1 bin/pixel,
 
 ![FFT Display dial](lcd-fft.png)
 
-Live capture above: TBS Radio (954 kHz) with H mode at 2.5× zoom (±91.2 kHz span) and V at 0.8× of the PI-configured dB range. The strong carrier peak sits exactly on the red VFO crosshair; weaker adjacent-station sidelobes spread to either side. Same dial in V mode would show the orange `[V]` badge instead.
+Live capture above: 9.750 MHz on shortwave, just after NHK Radio Japan had closed for the hour, so nothing sits on the red VFO crosshair; the carriers to either side are other shortwave broadcasters. The dial is in V mode (orange `[V]` badge) with H at 2× zoom (±75.0 kHz span) and V at 1.7× of the PI-configured dB range. In H mode the badge is the cyan `[H]`.
 
 ## Deck RX FFT Display (LCDX2)
 
@@ -132,7 +132,7 @@ VFO crosshair is the red 1-px line; in `single` it sits at the panel centre, in 
 ![FFT Display LCDX2 — left half of pair](lcd-fft-lcdx2-left.png)
 ![FFT Display LCDX2 — right half of pair](lcd-fft-lcdx2-right.png)
 
-Captures above: LCDX2 Wide pair tuned to 810.0 kHz (AM band), zoom 2.5×. The left panel carries the centre freq + `W` mode tag; the right panel carries the `[H]` axis badge + total span `±182.4 kHz` + `2.5x` zoom multiplier + the `N2048` FFT-size indicator. The VFO crosshair (faint red) at each panel's seam edge joins into one continuous mark across the boundary; the outer rounded frame is suppressed on the seam side so the two LCDs read as one wide panel.
+Captures above: LCDX2 Wide pair tuned to 9.750 MHz (shortwave), zoom 1×. The left panel carries the centre freq + `W` mode tag; the right panel carries the `[H]` axis badge + total span `±150.0 kHz`; both carry the dB tick labels and the `N16384` FFT-size indicator. The VFO crosshair (faint red) at each panel's seam edge joins into one continuous mark across the boundary; the outer rounded frame is suppressed on the seam side so the two LCDs read as one wide panel.
 
 ## Deck RX FFT (LCDX2) Control Button
 

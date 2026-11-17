@@ -44,17 +44,17 @@ path (Stream Deck SDK + Core Text on macOS) draw the same SVG with
 **different glyph metrics**. Pango's monospace fallback (Liberation
 Mono on most fontconfig setups) tracks wider than Core Text's Menlo,
 so a `<text>` element that fits cleanly on-device may overlap an
-adjacent shape in the dump. `dumpTuneLcd` accepts this asymmetry as
-a fact of life and applies a **dump-only fixup** to the Tune dial's
-clock — when inlining freqDisplay's body for the dump SVG, it regex-
-swaps the clock `<text>`'s attributes (single-family `Menlo` to bypass
-Liberation Mono and avoid Illustrator "missing font" warnings,
-`letter-spacing="-2"` to compensate Pango's wider tracking,
-`x="189"` for visual centring against the digits). The on-device
-output (via `setFeedback`) keeps `seg7svg`'s unmodified `<text>` and
-is unaffected. If you ever add another tight-layout text element,
-extend the same regex pattern in `dumpTuneLcd` rather than touching
-`seg7svg` (which would shift the on-device render too).
+adjacent shape in the dump. The Stream Deck app also ignores
+`font-family` in an SVG and substitutes a proportional font, so text
+that changes every second (the Volume dial's clock) is laid out one
+glyph per fixed-width cell (`fixedPitchLine` in `src/icons.ts`) rather
+than as one `<text>` run — otherwise it shifts on every tick. A quick
+local preview (Quick Look, a browser) resolves Menlo and therefore does
+not show what the device shows; judge tight layouts on the deck.
+
+(`dumpTuneLcd` still carries a dump-only fixup for a clock on the Tune
+dial's frequency display. No caller draws that clock any more — it moved
+to the Volume dial — so the fixup never fires.)
 
 ## Audio path: which fault is it (Solo)
 
@@ -95,30 +95,20 @@ On an RTL-SDR (rtl_tcp, or the iPad's own USB port) a second line follows:
   the interval. A retune is about 110 ms of tuner writes on a V4.
 
 The iPad's `drops` on the status line is the same `underruns`, a total since
-launch, shown as `drops 0` when there are none (as the Mac window does). It used to climb with retunes, not with time: each retune threw away
-what the pacer held and, over USB, also stalled the pacer for as long as the
-tuner took, so a few quick `+1` taps or preset jumps emptied the 0.12 s audio
-buffer (a 223 ms gap on the device; 10 taps on the simulator gave 174 drops).
-Both are fixed — held IQ is blanked instead of dropped, and driver commands run
-on their own queue. Over USB the client is also told when a command is done:
-until a retune is done, and for one more driver transfer (64 KB), the IQ is
-zeroed but keeps its length; the packet where the new station starts is marked
-`landed`, and LocalRadio starts its retune mute and detector reset there rather
-than at the request. A rate change waits for its command the same way instead
-of the fixed 0.4 s it still uses over a socket. A run with no retunes, however long, was never the case to
-test.
+launch, shown as `drops 0` when there are none (as the Mac window does).
+Retunes are where drops come from, not time, so test with retunes:
 
-SpyServer loses samples on retunes too, and leaves no trace of it: every
-frequency or gain setting costs the HF+ about 6.5 ms of IQ with no gap in the
-sequence numbers and no late packet (`gapMs` stays at 14-20). A preset jump
-with auto gain sends four to six settings, so a run of jumps emptied the ring
-the same way (37 drops for 12 jumps 0.6 s apart). The audio is muted around
-every one of those settings anyway, so while the mute is open the sink is
-topped back up to its 0.12 s depth with silence (`AudioSink.padToTarget`) —
-measured from the ring itself, not from a guess at what the source lost, so
-it covers rtl_tcp over a socket as well. Afterwards: 0 drops for jumps 80 ms,
-250 ms and 600 ms apart, on the Mac, on the iOS build in the simulator, and on
-the iPad Pro itself over Wi-Fi.
+- held IQ is blanked rather than dropped on a retune, and over USB driver
+  commands run on their own queue; until a retune is done (and for one more
+  64 KB driver transfer) the IQ is zeroed but keeps its length, and the packet
+  where the new station starts is marked `landed` — LocalRadio starts its
+  retune mute and detector reset there rather than at the request. A rate
+  change waits for its command the same way (over a socket, a fixed 0.4 s).
+- SpyServer loses about 6.5 ms of IQ per frequency or gain setting with no gap
+  in the sequence numbers, and a preset jump with auto gain sends several
+  settings. While the retune mute is open the sink is topped back up to its
+  0.12 s depth with silence (`AudioSink.padToTarget`), measured from the ring
+  itself, so this covers every source.
 
 The iPad cannot be tuned from outside (no control server on iOS), and its UI
 tests need the passcode typed on the device for every run. For the retune
@@ -134,27 +124,18 @@ prints `[selftest] <run> drops=<n> gapMs=<n>` after each run to the
 jump. `DECKRX_RETUNE_SELFTEST_HOLD=<s>` adds that many seconds of sitting
 still, reported each minute. It puts the starting frequency and mode back at
 the end. Nothing is stored, so a launch without the variable is an ordinary
-launch.
-
-Run on 2026-10-25 on the iPad Pro against both SpyServers (HF+ on 8888, V4
-on 8889): 0 drops in every run, including 10 minutes held. With the audio tap
-on, the audio after each mute window rises and stays level, with no spike.
-Over SpyServer the V4's IQ still describes the old frequency for 44-59 ms
-after a retune is asked for, well inside the mute window (100 ms at the
-least, 226 ms and more as measured), so the old station is never heard.
-The badge run, on the HF+ over the iPad's USB and on the V4 over SpyServer:
-0 drops, the pilot held throughout. The quality bench (run-quality.sh) gives
-the same table as before any of this, CPU aside: stereo separation 63-64 dB at
-every rate wide enough for it.
+launch. Expected: 0 drops in every run. (Over SpyServer an RTL-SDR's IQ still
+describes the old frequency for about 50 ms after a retune is asked for, inside
+the 100 ms-or-more mute window, so the old station is not heard.)
 
 The iPad reads the same switch. Its stderr goes nowhere unless the app is
 started with `xcrun devicectl device process launch --console
 --environment-variables '{"DECKRX_AUDIO_DIAG":"1"}' ...`, and nothing is
 written to the iPad's storage either way.
 
-A real case: AM at −85 dBFS with `rssi` at −77 turned out to be RF gain 2 with
-the carrier AGC off, not the 912 kHz IQ rate it was blamed on. The same numbers
-at 456 kHz settled it in one run.
+Example: AM at −85 dBFS with `rssi` at −77 is the demodulator's level (a low
+RF gain with the carrier AGC off), not the audio path; the same reading at
+another IQ rate tells the two apart.
 
 ## Recording what the receiver is actually putting out
 
@@ -174,46 +155,36 @@ pair localises a fault to the resampler or the device clock: `solo-audio` vs
 `solo-postmix` on one side, `audio` vs `postasrc` on the other.
 
 **Match the taps before comparing levels across receivers.** The two `audio`
-flags are not the same point: the standalone one sits *before* the volume knob
-and the plugin's *after* it. Comparing them directly is how 6.8 dB of plain
-volume was mistaken for 7.6 dB of demodulator gain, and how a soft limiter's
-32767 ceiling — which is upstream of the knob, so it does not budge when the
-volume is lowered — was read as clipping that lowering the volume would fix.
-Use `solo-postmix` against `audio`, or divide the knob back out.
+flags are not the same point: the standalone one sits *before* the volume
+control and the plugin's *after* it, so comparing them directly mixes the
+volume setting into the result. Use `solo-postmix` against `audio`, or divide
+the volume back out.
 
-The standalone tap is also what settled "why is Solo noisier than SDR++ on
-594 kHz": record the same station from both, normalise each to its own
-0.3-3 kHz program band, and compare by octave. Level differences cancel;
-filter skirts do not.
+To compare against another receiver (SDR++, say), record the same station from
+both, normalise each to its own 0.3-3 kHz program band, and compare by octave:
+level differences cancel, filter skirts do not.
 
-A caution learned the hard way there: a recording of pure silence is not
-evidence of a broken audio path. Check `muted` in `/health` first — the
-plugin's mute is persisted in `config.json` and hydrated on connect, so a
-restart can come back muted with everything else looking healthy.
+A recording of pure silence is not evidence of a broken audio path. Check
+`muted` in `/health` first — the plugin's mute is persisted in `config.json`
+and restored on connect.
 
 ## Running the app's own suites without losing your settings
 
-`native-app/run-tests.sh` and `run-bench.sh` build the receiver sources into a
-plain binary, and several of the tests construct a `LocalRadio`. That object
-loads `RadioConfig` and its `didSet` reaches a `save()`, so until 2026-09-10
-**a test run wrote `~/Library/Application Support/deck-rx/receiver.json`** —
-twice in one evening it replaced a working `host` with the loopback default
-while the app was in use, and the app then sat reconnecting against a machine
-with no SpyServer on it. `POWER` looked dead and the cause was a test run.
-
-Both scripts now `export DECK_RX_RECEIVER_CONFIG="$(mktemp -d)/receiver.json"`,
-which `RadioConfig.ownPath` honours. Anything else that links these sources
-outside an app bundle should set it too. To check a runner is behaving, read
-`host` out of the real file before and after — it must not move.
+`native-app/run-tests.sh`, `run-bench.sh` and `run-quality.sh` build the
+receiver sources into a plain binary, and several of the tests construct a
+`LocalRadio`, whose config saves itself on every change. So the scripts point
+it elsewhere — `export DECK_RX_RECEIVER_CONFIG="$(mktemp -d)/receiver.json"`,
+which `RadioConfig.ownPath` honours, with the gain memory, the station-mono
+file and the sync state beside it. Anything else that links these sources
+outside an app bundle should set them too; otherwise a test run rewrites the
+real `~/Library/Application Support/deck-rx/receiver.json`. To check a runner,
+read `host` out of the real file before and after — it must not move.
 
 The plugin's suite (`npm test`) has the same rule. Its harness
 (`test/harness/streamDeckMock.ts`) starts the real plugin entry in a temporary
-sandbox: config, PID file, gain memory, sync state, and — since 2026-10-25 —
-the working directory too. The Stream Deck SDK writes its log files to
-`<cwd>/logs` and keeps ten; started from the `.sdPlugin` folder, every test run
-wrote into the live plugin's `logs/` and rotated its real log away (on
-2026-10-25 all nine older files were the 03:51 test run's). The sandbox gets a
-copy of `manifest.json` and is removed at shutdown. To check, list
+sandbox: config, PID file, gain memory, sync state and the working directory
+(the Stream Deck SDK writes its logs to `<cwd>/logs`), with a copy of
+`manifest.json`, removed at shutdown. To check, list
 `com.hogehoge.deck-rx.sdPlugin/logs/` before and after `npm test` — nothing in
 it may change.
 

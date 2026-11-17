@@ -141,7 +141,7 @@ On the sserv VM (`/usr/local/bin/spyserver`, Ubuntu 24.04 aarch64):
 
 ## The layout
 
-![Second receiver — target layout](second-receiver.png)
+![Second receiver — how it is wired](second-receiver.png)
 
 ## Two ways, and why the first one won in the end
 

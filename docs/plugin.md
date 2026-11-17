@@ -13,12 +13,12 @@ Select, Options and the FFT display — are in [dial-layouts.md](dial-layouts.md
 
 | | |
 |---|---|
-| OS | **macOS** (Apple Silicon or Intel) — CoreAudio output via `naudiodon` (PortAudio binding) |
+| OS | **macOS 11 or later**, tested on Apple silicon (Intel untested) — CoreAudio output via `naudiodon` (PortAudio binding), whose native module is rebuilt for the machine by `npm run rebuild-native` |
 | Host app | **Elgato Stream Deck** app 7.1 or later (the manifest's minimum), with a Stream Deck **+** (the encoder + LCD model). Other Stream Deck models load the plugin but the dial / LCD actions only render usefully on the `+` |
 | Runtime tooling (MacPorts) | `sudo port install portaudio` — `portaudio` (arm64) backs the `naudiodon` local-audio sink. naudiodon doubles as the PI's output-device dropdown source (its `getDevices()` / `getHostAPIs()` query CoreAudio's HAL directly, so no separate `switchaudio-osx` install is needed). Add `sudo port install ffmpeg` only if you plan to use the icecast publish path (ffmpeg hosts the MP3 encoder + icecast SOURCE client). The Stream Deck app ships its own bundled Node for running installed plugins; run `npm run rebuild-native` once after `npm install` to rebuild the naudiodon native binding against that bundled Node ABI. |
-| Remote SDR | Any SpyServer-compatible receiver. Tested with **Airspy HF+ Discovery** (HF 0.5–31 MHz + VHF 60–260 MHz, 31–60 MHz hardware gap) running SpyServer on a Linux ARM/aarch64 (NanoPi etc.); see [docs/server-setup.md](server-setup.md) for the server side. Airspy R2 / Mini and RTL-SDR also expected to work but are less exercised. |
+| Remote SDR | Any SpyServer-compatible receiver, or an `rtl_tcp` server. Tested with an **Airspy HF+ Discovery** (HF 0.5–31 MHz + VHF 60–260 MHz, 31–60 MHz hardware gap) and an **RTL-SDR Blog V4**, each behind SpyServer on Linux (aarch64); see [docs/server-setup.md](server-setup.md) for the server side. Airspy R2 / Mini are expected to work but untested. |
 
-Developer / contributor tooling (Node 22+, MacPorts `librsvg` / `ImageMagick` / `sox` for the dump + analysis scripts) is documented in [docs/build-install.md](build-install.md). The native receiver app additionally needs `swiftc` (Xcode Command Line Tools); `rsvg-convert` renders its icon from the plugin's own `imgs/icon-source.svg` when present, and without it the app falls back to the generic bundle icon.
+Developer / contributor tooling (Node, MacPorts `librsvg` / `ImageMagick` / `sox` for the dump + analysis scripts) is documented in [docs/build-install.md](build-install.md). The native receiver app additionally needs `swiftc` (Xcode Command Line Tools); `rsvg-convert` renders its icon from the plugin's own `imgs/icon-source.svg` when present, and without it the app falls back to the generic bundle icon.
 
 ## Features
 
@@ -53,7 +53,7 @@ Developer / contributor tooling (Node 22+, MacPorts `librsvg` / `ImageMagick` / 
 | Volume Button | ✅ companion key action for the Volume dial — Vol Up / Vol Down / Mute toggle as buttons, useful on dial-less devices (Stream Deck XL) or when dial space is taken by FFT / LCDX2. **Hold-to-repeat**: recursive `setTimeout` loop guarded by an `isPressed` flag fires the first step immediately, then continues at ~12 steps/sec until released; auto-stops on min / max. **C-curve step** (low volume = big step, high = fine, GAMMA=1.5) ports the feel of a hardware volume knob — same pattern used in the standalone `stream-deck-volume` plugin. Mute toggles once per press (no repeat). Title shows live volume `%` and an `(M)` tag while muted. |
 | Audio sink | ✅ Local output via `naudiodon` (PortAudio → CoreAudio HAL); optional icecast publish path (ffmpeg + MP3 + icecast SOURCE) auto-selected from `cfg.ffmpeg.mode`. Native bindings (`naudiodon`, `deck-rx-asrc`, `segfault-handler`) need an ABI-matched rebuild against the Stream Deck app's bundled Node — run `npm run rebuild-native` once after `npm install`. See [Audio path (long-running stability)](#audio-path-long-running-stability) for the libsamplerate ASRC + drift-compensation details. |
 | Output loudness leveling | ✅ Single output stage (`src/audioLeveling.ts`) applied to the final PCM before the sink, so it covers **both** the naudiodon and icecast paths. **(1)** Static per-band makeup gains (`MODE_MAKEUP`, overridable per host via `cfg.audioMakeup`, e.g. `{"1": 8}` to bring WFM down) lift each demod mode to a common loudness — WFM/NFM/SSB are raw fixed-gain, AM/CW are demod-AGC'd to different setpoints, so without this the bands jump in level and deck-rx is much quieter than other apps. This is the **default** leveller: fixed per-band gain, **no dynamic motion / no pumping**. **(2)** An adaptive output AGC is **opt-in** (`cfg.audioLeveling: true`, default off) for also tracking within-band signal-strength changes — off by default because its dynamic level-riding is audible. **(3)** A soft-knee tanh limiter is an instantaneous peak ceiling so the static gain can run hot near full-scale without hard-clip distortion (peak-only, no breathing). `cfg.audioGain` (default `1.0`, clamped `0.1..4`) is a master trim on top of the makeup; the Volume dial (0–100%) attenuates further. Independent of RF / demod gain. The FM detectors' gains (`WFM_GAIN` / `WFM_STEREO_GAIN` / `NFM_GAIN`) are scaled by `iqRate / 456 kHz` (`fmOutputScale`), because the discriminator's output is the phase step per IQ sample: without it FM got louder at lower IQ rates (6-8 dB over AM at 228 kHz) and the makeup, set at 456 kHz, only held there. Unit-tested in `test/audioLeveling.test.ts` and `test/audioLevels.test.ts`. |
-| External knob control | ✅ loopback HTTP endpoint on `127.0.0.1:8771` (`src/controlServer.ts`) so a hardware knob can tune, ride volume, mute, power and step presets on the receiver alongside the Stream Deck+ dials. Frequency stepping goes through the same `nextFreqForTicks()` the Tune dial uses and preset stepping through the same `nextPresetSlot()`, so the knob honours the active tune step, the device's receivable bands and the dial's preset-skipping rules. Driven today by `knobctl` (BRIMFORD two-tier knob). See [External knob control](#external-knob-control-http). |
+| External knob control | ✅ loopback HTTP endpoint on `127.0.0.1:8771` (`src/controlServer.ts`) so a hardware knob can tune, ride volume, mute, power and step presets on the receiver alongside the Stream Deck+ dials. Frequency stepping goes through the same `nextFreqForTicks()` the Tune dial uses and preset stepping through the same `nextPresetSlot()`, so the knob honours the active tune step, the device's receivable bands and the dial's preset-skipping rules. See [External knob control](#external-knob-control-http). |
 | Native receiver app | ✅ `native-app/` builds two bundles from one source tree. `Deck RX.app` is a front-end over the plugin's receiver — preset table, live spectrum + waterfall, station / frequency / mode readout, S/N meters and a transport row — and the focus target a Stream Deck profile binds to, so the deck switches profile when the app comes to the front. `Deck RX Solo.app` is the same window with a receiver of its own. |
 | iPadOS receiver | ✅ `native-app/build-ios.sh` builds the same sources for iPad, and the tablet receives on its own: SpyServer client, demodulators and audio all run there. The display is not a UIKit rewrite: `SpectrumView`, `FreqView` and `SignalMeter` are one file each, with the platform seams — view and font types, how a redraw is asked for, the drawing context, pointer versus touch — in `Platform.swift`. Spectrum and waterfall with station labels and a draggable split, seven-segment readout tuned by tapping a digit, preset list grouped by band, band jump, tune steps, mode, mute, S/N meters, a display rail (zoom, waterfall depth, dB ceiling and floor) and an options sheet holding the live demod's own settings. Installing on a device needs a development certificate and a provisioning profile; the script says what is missing and how. See [iPadOS receiver](ipad.md). |
 | Standalone receiver | ✅ `Deck RX Solo.app` connects to SpyServer itself and needs no plugin, no Node and no native modules: SpyServer client, all six demods with FM stereo, audio, station names, presets, SDR++ import and the control endpoint are all in the app. Universal binary, macOS 12+ — verified on a 2015 Intel MacBook Air. Copy the `.app` and clear its quarantine attribute. See [Standalone receiver](solo.md). |
@@ -67,7 +67,7 @@ The local-output side of deck-rx took several iterations to make rock-solid over
 ### The drift problem
 
 - **Writer**: SpyServer streams INT16 IQ paced by the receiver's crystal (Airspy HF+ Discovery ⇒ 768 ksps), demodulated to PCM at e.g. 114 kHz (FM) / 24 kHz (AM) by the deck-rx demod chain.
-- **Reader**: macOS pulls PCM from the PortAudio buffer paced by the output device's own crystal (e.g. RME DX7s at 96 kHz native).
+- **Reader**: macOS pulls PCM from the PortAudio buffer paced by the output device's own crystal (e.g. a USB DAC at 96 kHz native).
 - Over hours these crystals walk apart. Even 10 ppm = 1 sample per 100 000 frames = ~1 s of accumulated queue drift every ~3 h at 96 kHz. Audible delay creep was already noticeable inside a single soak.
 
 ### v3 architecture (current)
@@ -104,7 +104,7 @@ SpyServer IQ ─ demod ─ pre-ASRC LPF ─ libsamplerate ASRC ─ naudiodon (96
 
 These weren't audio-path bugs per se, but they masqueraded as one for several sessions:
 
-- **Phantom SpyServer client from a second host's Stream Deck App**: any machine with the deck-rx plugin symlink will auto-connect to the configured SpyServer the moment the Stream Deck App is foreground-launched (or stays running headlessly). That second client contends for device control. Symptom: preset rotation arrives at the dial's 7-seg display but the audio stays on the previous frequency. Fix: `ssh other-host pkill -KILL "Stream Deck"`. Any laptop / Mac mini in the household that ever had deck-rx installed is suspect.
+- **Phantom SpyServer client from a second host's Stream Deck App**: any machine with the deck-rx plugin symlink will auto-connect to the configured SpyServer the moment the Stream Deck App is foreground-launched (or stays running headlessly). That second client contends for device control. Symptom: preset rotation arrives at the dial's 7-seg display but the audio stays on the previous frequency. Fix: quit the Stream Deck app on the other Mac. Any other Mac that ever had deck-rx installed is suspect.
 - **Airspy HF+ has two SMA inputs**: HF 0.5–31 MHz and VHF 60–260 MHz. A misplaced antenna will make AM (or FM) completely silent with all the right diagnostics still passing on the other band. Quickest disambiguation: `airspyhf_rx -f 0.594 -m off -r /tmp/x.iq` from the SpyServer host bypasses the entire deck-rx stack in 30 s.
 - **`writableLength` is bytes, not frames**: easy to misread when porting from PortAudio C examples that talk in frames. 16384 bytes at 16-bit stereo = 4096 frames = ~43 ms at 96 kHz. The thresholds in `updateAsrcRatio`, the `RESYNC_HIGH` / `RESYNC_LOW` reader-stall constants, and the icecast path's `OVERFLOW_DROP` are byte-counts on purpose, matching what `naudiodon` exposes.
 
@@ -125,7 +125,7 @@ Optional, and off until it is asked for. The plugin keeps its presets and
 per-station gains in its own files and needs nothing else to run. If you use
 more than one deck-rx receiver — the plugin, Solo on another Mac, the iPad —
 a small **sync hub** on any always-on Mac keeps those lists the same on all of
-them: set `"syncHubs": "host"` in `config.json` and restart the plugin. With the box empty, or the hub switched off or out of reach,
+them: set `"syncHubs": "host"` in `config.json` and restart the plugin. With it empty, or the hub switched off or out of reach,
 the plugin works exactly as it does alone; an edit made meanwhile goes up the next
 time the hub answers. What the hub is, how to run one and what it carries:
 [Sync](sync.md).
@@ -141,7 +141,7 @@ never answer the knob in the running receiver's place.
 
 | Endpoint | Effect |
 |---|---|
-| `GET /health` | `{"ok":true,"freq":<hz>,"volume":<0-1>,"muted":<bool>,"enabled":<bool>}` |
+| `GET /health` | `{"ok":true,"freq":<hz>,"volume":<0-1>,"muted":<bool>,"enabled":<bool>,"host":"<server>","port":<n>,"source":"spyserver"\|"rtltcp"}` — which receiver, not just whether one is on |
 | `GET /tune?ticks=<±n>` | Relative tune, `n` × the receiver's current tune step, snapped to a receivable band |
 | `GET /tune?hz=<n>` | Absolute tune (also band-snapped) |
 | `GET /volume?d=<±n>` | Relative volume, 2 % per tick, clamped to 0–100 % |
@@ -155,7 +155,7 @@ never answer the knob in the running receiver's place.
 | `GET /stations[?from=&to=]` | Broadcaster names for the frequencies a front-end labels on its spectrum, resolved through the same JP DB lookup that names the station in the header |
 | `GET /volume?v=<0-1>` | Absolute volume — what a click on a volume bar means; `d=` stays for stepping |
 | `GET /step[?hz=&d=±1]` | Read, set or cycle the VFO step. Answers with the step in force plus the ladder it cycles, so a front-end builds its menu from the receiver rather than hard-coding one |
-| `GET /iq[?offset=<n>]` | The IQ width. Without a parameter, the menu: `{choices:[{offset,rateHz}], currentHz, chosen}` — the connected receiver's maximum halved, no wider than 1 MHz and no narrower than 100 kHz (the V4 over SpyServer: 600 / 300 / 150 kHz; the HF+: 912 / 456 / 228 / 114 kHz). `offset=` picks a line: filed in that receiver's profile, and the stream restarted when the rate moves. A width narrower than the mode needs stays on file and is overridden for that mode (WFM needs 200 kHz). `409` with no receiver, or for an offset not on the menu. The Tune dial's PI has the same menu as its **IQ rate** row, and Deck RX.app's IQ menu uses this endpoint; the status feed carries the menu as `iqChoices`. Before 2026-10-25 the plugin had no way to set it and took the narrowest width the mode allowed (300 kHz on the V4) |
+| `GET /iq[?offset=<n>]` | The IQ width. Without a parameter, the menu: `{choices:[{offset,rateHz}], currentHz, chosen}` — the connected receiver's maximum halved, no wider than 1 MHz and no narrower than 100 kHz (the V4 over SpyServer: 600 / 300 / 150 kHz; the HF+: 912 / 456 / 228 / 114 kHz). `offset=` picks a line: filed in that receiver's profile, and the stream restarted when the rate moves. A width narrower than the mode needs stays on file and is overridden for that mode (WFM needs 200 kHz). `409` with no receiver, or for an offset not on the menu. The Tune dial's PI has the same menu as its **IQ rate** row, and Deck RX.app's IQ menu uses this endpoint; the status feed carries the menu as `iqChoices` |
 | `GET /spectrum[?fft=&fps=&avg=]` | Read or change the spectrum feed's FFT size, framerate and averaging. Always answers with the values in force, clamped, so a caller never has to guess how its request was adjusted |
 
 `/preset` and `/step` cover the knob's press-and-turn slots; `/step` is also what
@@ -165,10 +165,9 @@ frequency — in preset mode too, where the dial switches to drawing the live
 frequency once the knob walks the receiver off the selected preset, and adopts
 another preset's slot when a retune lands exactly on it.
 
-The current client is `knobctl`, the daemon for the BRIMFORD two-tier knob
-(upper ring = frequency, lower ring = volume, short press = mute, long press =
-switch which application the knob drives). The daemon lives outside this repo;
-deck-rx only publishes the endpoint.
+Any program that can make an HTTP request can be the client — a USB knob's
+daemon, a script, a shortcut. deck-rx only publishes the endpoint; no client is
+part of this repository.
 
 ## Headless receiver
 
@@ -176,7 +175,7 @@ The plugin is one front-end over the core, not the core itself. `bin/headless.js
 starts the same modules from a plain Node process:
 
 ```sh
-"$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS/24.22.1/node" \
+"$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS/<version>/node" \
   com.hogehoge.deck-rx.sdPlugin/bin/headless.js
 ```
 

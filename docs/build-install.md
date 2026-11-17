@@ -26,11 +26,12 @@ xcode-select --install   # if not already installed
 npm install -g @elgato/cli
 ```
 
-(Earlier versions of deck-rx also required `switchaudio-osx` for the PI
-output-device dropdown. That dependency was dropped in favour of
-`naudiodon.getDevices()` / `getHostAPIs()`, which return the same
-CoreAudio device list and current system default — in-process, no
-external CLI.)
+The PI's output-device dropdown comes from `naudiodon.getDevices()` /
+`getHostAPIs()` in-process; no other audio tool is needed.
+
+The Mac apps (Solo and the front-end) and the iPad app are built separately,
+with `swiftc` from the Command Line Tools — see
+[native-app.md](native-app.md) and [ipad.md](ipad.md).
 
 ## First install
 
@@ -132,7 +133,7 @@ stream), load `naudiodon` directly from Stream Deck's bundled Node and
 enumerate output devices:
 
 ```sh
-SD_NODE="$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS/24.22.1/node"
+SD_NODE="$(ls -d "$HOME/Library/Application Support/com.elgato.StreamDeck/NodeJS"/24.*/ | tail -1)node"
 "$SD_NODE" -e '
   const pa = require("./node_modules/naudiodon");
   console.log("loaded OK");
@@ -165,7 +166,9 @@ startAudio / the SpyServer connection instead. If it errors out, run
 Copy `com.hogehoge.deck-rx.sdPlugin/config.example.json` to `config.json`
 and adjust:
 
-- `host` / `port` — your SpyServer address.
+- `host` / `port` — your SpyServer address (the example's `192.168.1.100` is a
+  placeholder).
+- `syncHubs` — the address of a [sync hub](sync.md), or empty for none.
 - `naudiodon.deviceName` — CoreAudio output device name (one of the
   entries naudiodon enumerates via `getDevices()`; the PI dropdown
   shows the same names), or `"default"` to follow the system default

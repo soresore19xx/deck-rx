@@ -131,11 +131,10 @@ Two bugs surfaced that Qt had been hiding:
 
 ## Status
 
-The decode is proven on recordings, end to end, including audio. **No DRM
-transmission has yet been received off the air here** — fifteen or more sweeps
-across fourteen frequencies since 2026-09-01 have all come back empty. The
-scheduled sweeps continue; the Saturday 12105 kHz TWR slot is the nearest
-transmitter. xHE-AAC is unproven: the one sample available does not sync, and
-the cause has not been separated from the quality of that recording.
+The decode is proven on recordings, end to end, including audio. Off the air
+it has locked onto a transmission (CNR-1 on 13810 kHz) and decoded the FAC and
+SDC — station name, mode, QAM — but not yet produced audio from one. xHE-AAC
+is unproven: the one sample available does not sync, and the cause has not
+been separated from the quality of that recording.
 
 [up]: https://github.com/JvanKatwijk/drm-receiver

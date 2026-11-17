@@ -19,7 +19,7 @@ The selection is persisted to `config.json` as `jpRegion` (default `kanto` for b
 |---|---|---|
 | 関東 | 関東総通局 ラジオ放送事業者一覧 | AM 親+中継 + FM 親+中継 + CFM (1都7県) |
 | 沖縄 | 沖縄総合通信事務所 ラジオ放送局チャンネル一覧 | AM (中波) + FM補完 (※ MHz inline) + FM + CFM |
-| 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 | 総務省 全国民放FM局・ワイドFM局一覧 (`fm-list.html`) | **民放 FM only** — NHK FM や AM や CFM は含まれない (region-tagged manualStations で補完) |
+| 北海道 / 東北 / 東海 / 近畿 / 中国 / 九州 | 総務省 全国民放FM局・ワイドFM局一覧 (`fm-list.html`) | **commercial FM only** — no NHK FM, AM or community FM (add those as region-tagged manualStations) |
 
 関東 and 沖縄 are scraped from their regional bureau's own pages, which list AM, FM and community FM together, so their coverage is the widest. The other six regions take commercial FM from the nationwide FM list (`fm-list.html`). The DOM selectors and the parser are documented in the comments of `src/japanStationsScraper.ts`.
 

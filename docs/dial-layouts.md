@@ -90,9 +90,9 @@ Controls:
 - **Short PUSH** — reset the active axis to its default (1× for H, 1.0× for V).
 - **Long PUSH (≥ 600 ms)** — toggle between H ↔ V axis modes.
 
-PI parameters: FFT frame rate (1–120 fps, default 16), smoothing factor (1–64, SDR++ convention α = 1/value, default 16), FFT size (256 – 65536 in powers of two, default 512), dB floor (default -110), dB ceiling (default -20).
+PI parameters: FFT frame rate (1–120 fps, default 16), smoothing factor (1–64, SDR++ convention α = 1/value, default 16), FFT size (256 – 65536 in powers of two, default 512), dB floor (default -160, range -160 to -20), dB ceiling (default -1, range -60 to 0) — SDR++'s defaults.
 
-IQ is kept across SpyServer packets (a packet is IQ rate / 100 samples — 2944 for the V4 at 300 kS/s), so sizes larger than one packet still produce frames; before 2026-10-08 anything above one packet froze the display. The transform runs at the frame rate, not on every packet, and backs off to ten times its own cost — at 65536 a JS transform takes about 3 ms. The smoothing factor keeps its per-packet time constant across that pacing (`pacedSmoothing` in `src/fft.ts`).
+IQ is kept across SpyServer packets (a packet is IQ rate / 100 samples — 2944 for the V4 at 300 kS/s), so sizes larger than one packet still produce frames. The transform runs at the frame rate, not on every packet, and backs off to ten times its own cost — at 65536 a JS transform takes about 3 ms. The smoothing factor keeps its per-packet time constant across that pacing (`pacedSmoothing` in `src/fft.ts`).
 
 Pixel → bin map switches automatically between max-hold (when ≥ 1 bin/pixel, preserves peaks) and linear interpolation (when < 1 bin/pixel at high zoom, smooths the comb pattern that naive nearest-neighbour mapping would otherwise produce).
 
@@ -166,9 +166,9 @@ Companion **key action** for the existing Volume dial. Useful on dial-less devic
 | Volume down | `Vol −` / `75%` (or `75% (M)`) | Decrease volume; auto-repeats while held. |
 | Mute toggle | `Mute` / `OFF` ↔ `ON` | Toggle mute once per press. No repeat. |
 
-**Hold-to-repeat** is a recursive `setTimeout` loop guarded by an `isPressed` flag — first step on key-down fires immediately, repeats at ~80 ms intervals while held, stops on the next iteration when key-up arrives. Auto-terminates when volume reaches 0 % or 150 % so it does not keep firing no-ops at the rail.
+**Hold-to-repeat** is a recursive `setTimeout` loop guarded by an `isPressed` flag — first step on key-down fires immediately, repeats at ~80 ms intervals while held, stops on the next iteration when key-up arrives. Auto-terminates when volume reaches 0 % or 100 % so it does not keep firing no-ops at the rail.
 
-**Step size follows a C-curve** (low volume → large jumps, high volume → fine adjustments). At 0–10 % each press bumps ~8 percentage points so you can ramp out of silence in a couple of taps; at 90 %+ the step shrinks toward 1 % for fine control. Constants: `MIN_STEP=1%`, `MAX_STEP=8%`, `GAMMA=1.5`, ratio = `(1 − v)^γ`. Pattern + constants ported from the standalone `stream-deck-volume` plugin.
+**Step size follows a C-curve** (low volume → large jumps, high volume → fine adjustments). At 0–10 % each press bumps ~8 percentage points so you can ramp out of silence in a couple of taps; at 90 %+ the step shrinks toward 1 % for fine control. Constants: `MIN_STEP=1%`, `MAX_STEP=8%`, `GAMMA=1.5`, ratio = `(1 − v)^γ`.
 
 The title reflects live state via `spyService.subscribeVolume`, so external volume changes (dial, other clients, OS) update the button title within one event tick. A `(M)` suffix on Vol +/− titles indicates muted state without needing a separate Mute button on the same page.
 

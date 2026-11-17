@@ -5,7 +5,11 @@ A shortwave and broadcast-band receiver for a remote
 as an iPad app. They share the demodulators and the station databases; they
 differ in what is holding the radio.
 
+**[Deck RX Solo](docs/solo.md) — Mac app**
+
 ![Deck RX Solo](docs/solo-window.png)
+
+**[Deck RX](docs/ipad.md) — iPad app**
 
 ![Deck RX for iPadOS](docs/ipad-window.png)
 

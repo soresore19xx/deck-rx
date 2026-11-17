@@ -1,8 +1,9 @@
-# RTL-SDR on the iPad's own USB
+# Receivers on the iPad's own USB (RTL-SDR, Airspy HF+)
 
-The iPad build can carry a DriverKit driver for RTL2832U dongles, so an RTL-SDR
-(the RTL-SDR Blog V4 is the one tested) plugged into the iPad is a source of its
-own — **RTL-SDR (USB)** in the source menu — with no server and no second app.
+The iPad build can carry a DriverKit driver for RTL2832U dongles and the Airspy
+HF+, so a receiver plugged into the iPad is a source of its own — **RTL-SDR
+(USB)** or **Airspy HF+ (USB)** in the source menu — with no server and no
+second app. Tested with an RTL-SDR Blog V4 and an Airspy HF+ Discovery.
 
 Only iPads with an M-series chip run DriverKit drivers. On any other iPad the
 source is offered and fails to open.
@@ -65,8 +66,9 @@ service by vendor, so a V4 and an HF+ plugged in together each reach their own.
 
 Everything the HF+ needs beyond that is libairspyhf's
 ([airspy/airspyhf](https://github.com/airspy/airspyhf), BSD), which
-`build-driver.sh` fetches at a pinned commit and `build-ios.sh` compiles
-unmodified against `airspyhf/libusb.h` and `airspyhf/libusb_dext.c` — the
+`build-driver.sh` fetches at a pinned commit and `build-ios.sh` compiles,
+with `airspyhf.patch` applied (below), against `airspyhf/libusb.h` and
+`airspyhf/libusb_dext.c` — the
 part of libusb the library uses, implemented on the driver. Its transfers are
 filled from the ring a whole transfer at a time, oldest first, as the library's
 callback wants them. The Mac's `Sources/AirspyDevice.swift` drives it.

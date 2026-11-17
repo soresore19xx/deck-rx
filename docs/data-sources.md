@@ -12,15 +12,19 @@ station list and callsign DB under the attributions below.
 | 総務省 全国民放FM局・ワイドFM局一覧 | 北海道・東北・東海・近畿・中国・九州 民放 FM | 公共データ利用規約 第1.0版 |
 | **総務省 無線局等情報検索** (https://www.tele.soumu.go.jp/musen/) | **callsign (識別信号) DB across all licensed broadcast transmitters** | **公共データ利用規約 第1.0版** |
 
-公共データ利用規約 第1.0版 (https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html)
-は商用利用も含む再配布を認める一方で、 出典明記と編集・加工した場合
-その旨の記載を求めています。 本リポジトリ内の `com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json`
-および `callsigns.json` は当該規約に準拠して以下の編集を施しています:
+The 公共データ利用規約 第1.0版 (Public Data License 1.0,
+https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html) allows
+redistribution, commercial use included, provided the source is credited and
+any editing is stated. `com.hogehoge.deck-rx.sdPlugin/data/jp-stations.json`
+and `callsigns.json` in this repository are edited as follows, under that
+licence:
 
-- 法人名の brand 化 (法令上の "株式会社..." → 一般に流通する短縮形 / カナ表記)
-- 周波数を Hz 整数に正規化
-- 送信地・市町村名 cell を `siteName` フィールドに分離
-- 識別信号値の前後にあるマスク (`*****`) や `<BR>` を除去し callsign 単独に切り出し
+- corporate names shortened to the brand in common use (the legal "株式会社…"
+  form → the short form or kana spelling)
+- frequencies normalised to integer Hz
+- the transmitter-site / municipality cell split out into a `siteName` field
+- masks (`*****`) and `<BR>` around the callsign removed, leaving the callsign
+  alone
 
 ## Refresh / re-fetch scripts
 
@@ -57,8 +61,8 @@ const FM_KEYWORDS = [
 miss (FM大阪 / FM群馬 / FM京都, etc.). Normally not needed; reserve for the
 "absolutely don't miss anything" case.
 
-差分を取得する場合は `scripts/diff-callsigns.ts` で前回 fetch との差分を表示
-できます (新規 license / 廃止 / 設置場所・法人名変更を分類):
+`scripts/diff-callsigns.ts` shows what changed since the previous fetch (new
+licences, closures, changes of site or operator name):
 
 ```sh
 cp com.hogehoge.deck-rx.sdPlugin/data/callsigns.json{,.old}
@@ -66,5 +70,5 @@ npx tsx scripts/fetch-callsigns.ts
 npx tsx scripts/diff-callsigns.ts \
     com.hogehoge.deck-rx.sdPlugin/data/callsigns.json.old \
     com.hogehoge.deck-rx.sdPlugin/data/callsigns.json
-# 確認 OK なら .old を削除して commit、 一部だけ rollback したい場合は手動編集
+# if the changes look right, delete .old and commit; to roll back part of it, edit by hand
 ```

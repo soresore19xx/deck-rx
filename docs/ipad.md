@@ -4,7 +4,9 @@ A receiver on the tablet, not a remote view of the Mac one: it opens its own
 connection to the SpyServer, demodulates on the iPad and plays through
 `AVAudioSession`.
 
-Part of [deck-rx](../README.md).
+Part of [deck-rx](../README.md). Requirements: iPadOS 17 or later; a receiver
+on the iPad's own USB needs an M-series iPad. Built from source and signed with
+your own Apple developer account — see [Signing](#signing).
 
 ![Deck RX for iPadOS](ipad-window.png)
 
@@ -20,11 +22,9 @@ Landscape, and the width goes to the spectrum.
 - **spectrum and waterfall** with station labels. **Tap tunes, drag pans** — the
   same division SDR++ makes. Touching down marks where a tap would land and the
   readout follows it, so the frequency is legible before it is taken. The
-  landing point snaps to the band's raster; without that, 954 kHz was not
-  reachable by touch at all, a pixel of an unzoomed 456 kHz window being half a
-  kilohertz.
-- **the readout**, tuned by tapping a digit, with the station name above and the
-  S and N meters beside it. Under it: the mode, the STEREO / MONO badge, and
+  landing point snaps to the band's raster, so 954 kHz is reachable by touch.
+- **the readout**, tuned by tapping a digit, with the station name above, the
+  S and N meters beside it and the JST / UTC clock at the right. Under it: the mode, the STEREO / MONO badge, and
   the bandwidth. On WFM the badge is a switch for the tuned station: tap it to
   keep a weak station in mono, tap MONO to bring stereo back (see
   [Solo](solo.md#stereo-and-mono) — it works the same way).
@@ -74,10 +74,9 @@ is sound and orange while it is muted (the speaker gains a slash too). Keys
 that only act when pressed (TUNE, the menus, Options, DRM) have no lamp.
 
 It connects to the server in the SERVER group the moment it opens — there is
-no plugin on an iPad to borrow a receiver from, so there was never anything to
-wait for. CONNECT drops the link and brings it back. (The **Connect at start**
-row in the options sheet no longer decides anything; the setting it writes is
-kept for the file's sake.)
+no plugin on an iPad to borrow a receiver from. CONNECT drops the link and
+brings it back. (The **Connect at start** row in the options sheet does not
+decide anything; the setting is kept in the file for the Mac's sake.)
 
 The demodulators are the same files the Mac builds from, so the AM brick-wall
 channel filter and the FM stereo reference both arrive here on a rebuild rather
@@ -93,30 +92,17 @@ once, with two exceptions that go their own way. The preset list has a floor:
 at the smallest setting it stops at 0.88 of full size rather than following
 the controls down to 0.72, because the list is what gets read and a 9-point
 station name was not a setting anyone chose. The station labels on the trace
-follow the scale like everything else — they used to be 16 points regardless.
+follow the scale like everything else.
 
 When the keyboard is up, the block from BAND down rises above it and the trace
-gives up the height; at the two larger scales that is more than the trace's
-usual floor, and it is allowed to. Before, the floor held and UIKit dropped a
-constraint of its own choosing — the port box being typed into was the thing
-that vanished, which is why the smallest scale was the only one that seemed
-to work. On the iPad mini (744-point short side) the window does not fit at "max" —
-the station line went off the top, the clocks off the right and STATUS off the
-bottom. The first launch on such a screen steps a config still on "max" down to
-"middle", once; choosing "max" again in Options afterwards stays.
+gives up the height. A keyboard docked on the bottom edge lifts the block by its
+height; a floating one does not. On a screen under 900 points tall (the iPad
+mini, 744 in landscape) the readout and the trace fold as well while an
+address is typed, so the SERVER row stays above the keyboard.
 
-On a screen under 900 points tall (the iPad mini, 744 in landscape)
-the readout and the trace fold as well while an address is typed: with only
-the rows above SERVER folded, what was left still did not fit above the
-keyboard and the SERVER row went under it. `DECK_RX_FOCUS=host|port`
-(`SIMCTL_CHILD_` in the simulator) disconnects and puts the cursor in that box
-a moment after launch, for checking this without a tap. The layout logs its numbers (`[ui] window … fixed … trace … keyboard guide top …`) on
-every change, readable with `devicectl device process launch --console`.
-
-The block is lifted by the keyboard's own frame notices, not only by
-`keyboardLayoutGuide`: on iPadOS 27 the guide stayed on the bottom edge while
-the notice put the keyboard half way up the screen. A keyboard docked on the
-bottom edge lifts the block by its height; a floating one does not.
+On the iPad mini the window does not fit at "max": the first launch on such a
+screen steps a config still on "max" down to "middle", once; choosing "max"
+again in Options afterwards stays.
 
 ## DRM
 
@@ -125,8 +111,6 @@ Behind the key beside Options, and only in a build where
 the station name, the coding and the running text, with the audio going to the
 tablet's own output. The panel is a sheet and the decode carries on when it is
 dismissed — a signal takes a while to lock.
-
-The weather fax decoder is compiled in but has no screen yet.
 
 ## Presets on several devices
 
@@ -243,37 +227,25 @@ valid certificate is installed, the WWDR intermediate is the usual reason — th
 G1 that shipped with older keychains expired in 2023, and the current G3 has to
 be added alongside it.
 
-## What is still Mac-only
+## What is Mac-only
 
-The JST/UTC clock, SDR++ import and sync, output device selection, and the RAW
-and DSB modes — six mode keys are what fits.
-
-Three of those are settled as deliberate omissions rather than gaps (decided
-2026-09-22):
-
-- **SDR++ import and sync** — it reads a file on the Mac, so there is nothing
-  for it to read here.
-- **Output device selection** — iPadOS has no equivalent to offer. An app
-  cannot enumerate output devices; plugging in a USB DAC moves the system's
-  route, and that is the only mechanism there is. On the Mac the picker exists
-  because CoreAudio lets it.
+- **SDR++ import and sync** — it reads SDR++'s file on the Mac, so there is
+  nothing for it to read here.
+- **Output device selection** — iPadOS lets an app neither list nor pick output
+  devices; plugging in a USB DAC moves the system's route, and that is the only
+  mechanism there is.
 - **RAW and DSB** — the six mode keys are the ones worth having at this size.
+- **The weather fax** — the decoder is compiled in but has no screen yet.
 
-The JST/UTC clock is the one still open: EIBI's schedules are in UTC, so it
-earns its place on shortwave.
-
-Icecast used to be on that list and does not belong there: publishing lives in
-the plugin, and neither Mac app has it. What the Mac window shows is the
-plugin's own icecast rows, and only while it is looking at the plugin — see
-`OptionsPanel.swift`, which says in as many words that the standalone app "has
-neither an icecast publisher nor the plugin's station databases behind it".
+Publishing to Icecast is the plugin's alone; neither Mac app has it either.
 
 ## Under it
 
-Same `Sources/` tree as the Mac app; only `main.swift` (the AppKit window) and
-`AppServer.swift` (the plugin's control endpoint, which an iPad has nothing to
-answer on) are left out. The drawing views are shared rather than
-reimplemented, so a fix to the spectrum lands on both platforms.
+The same `Sources/` tree as the Mac app, minus the Mac's own windows
+(`main.swift`, `OptionsPanel.swift`, the fax and DRM windows) and `AppServer.swift`
+(the control endpoint, which an iPad has nothing to answer on); `build-ios.sh`
+lists what goes in. The spectrum, the readout and the meters are shared views,
+so a fix to the spectrum lands on both platforms.
 
 The audio path and the porting mistakes that had to be found parameter by
 parameter — the drift tracking, the buffer depth, and the six settings the

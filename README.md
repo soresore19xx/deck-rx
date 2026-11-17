@@ -36,7 +36,7 @@ on one always-on Mac; without one, nothing is missing.
 | --- | --- | --- | --- |
 | **Deck RX Solo** | macOS 12 or later | Apple silicon or Intel (one universal app) | a SpyServer or `rtl_tcp` server on the network — or, on Apple silicon only, an Airspy HF+ on the Mac's own USB |
 | **Deck RX** (Mac front-end) | macOS 12 or later | Apple silicon or Intel | the Stream Deck plugin, running on the same Mac |
-| **Deck RX** (Stream Deck plugin) | macOS 11 or later | Apple silicon (its native audio modules are built for arm64) | the Stream Deck app 7.1 or later, a Stream Deck +, MacPorts `portaudio` |
+| **Deck RX** (Stream Deck plugin) | macOS 11 or later | Apple silicon (Intel untested) | the Stream Deck app 7.1 or later, a Stream Deck +, MacPorts `portaudio` |
 | **Deck RX** (iPad app) | iPadOS 17 or later | any iPad that runs it; a receiver on the iPad's own USB needs an M-series iPad | building from source and signing with your own Apple developer account — it is not on the App Store |
 
 The server side is a Linux machine with the receivers on USB, running

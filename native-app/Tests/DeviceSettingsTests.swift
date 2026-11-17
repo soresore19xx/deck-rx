@@ -16,9 +16,9 @@ import Foundation
 
 // MARK: - fixtures
 
-/// The two receivers actually in use here, plus the shapes the resolver has to
-/// survive. Values are what the servers really report (measured 2026-09-21 with
-/// DRM_LOG_DEVINFO=1 against sserv).
+/// The two receivers this is tested with, plus the shapes the resolver has to
+/// survive. Values are what the servers really report (measured with
+/// DRM_LOG_DEVINFO=1 against a SpyServer serving each).
 enum Rx {
     static func info(type: UInt32, serial: UInt32 = 1, maxRate: UInt32,
                      stages: UInt32 = 8, maxGain: UInt32 = 8,

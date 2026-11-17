@@ -59,14 +59,14 @@ func S(_ v: CGFloat) -> CGFloat { (v * UI.scale).rounded() }
 ///
 /// Reads come from the plugin's status feed (a small JSON file refreshed 4×/s)
 /// and writes go to its control endpoint on 127.0.0.1:8771 — the same two
-/// channels the Stream Deck plugin and the BRIMFORD knob already use. This app
+/// channels the Stream Deck plugin and any external knob already use. This app
 /// owns no receiver state of its own: every control call is fire-and-forget and
 /// the next status read is the truth.
 enum Receiver {
 
     /// What one unit of `/volume?d=` moves, and what the VOL pads step by.
     /// The plugin's `VOLUME_STEP` in `src/controlServer.ts`, because the same
-    /// clients — knobctl, this window's pads — talk to whichever receiver is
+    /// clients — an external knob, this window's pads — talk to whichever receiver is
     /// answering, and a press that moves 2 % on one and 5 % on the other is a
     /// difference the listener hears as the two apps disagreeing about volume.
     static let volumeStep = 0.02

@@ -12,23 +12,23 @@ import { readFileSync } from 'fs';
 import { switchSource, fileAddress, type ServerAddress } from '../src/iqClient.js';
 import { startPlugin, type MockHarness } from './harness/streamDeckMock.js';
 
-const HF: ServerAddress = { host: '192.168.0.143', port: 8888, source: 'spyserver', sourceAddrs: {} };
+const HF: ServerAddress = { host: '192.0.2.43', port: 8888, source: 'spyserver', sourceAddrs: {} };
 
 describe('switchSource / fileAddress', () => {
   it('a source never used keeps the host and takes rtl_tcp\'s port', () => {
     const a = switchSource(HF, 'rtltcp');
-    expect(a).toMatchObject({ host: '192.168.0.143', port: 8890, source: 'rtltcp' });
-    expect(a.sourceAddrs.spyserver).toEqual({ host: '192.168.0.143', port: 8888 });
+    expect(a).toMatchObject({ host: '192.0.2.43', port: 8890, source: 'rtltcp' });
+    expect(a.sourceAddrs.spyserver).toEqual({ host: '192.0.2.43', port: 8888 });
   });
   it('going back brings SpyServer\'s own address back', () => {
     const b = switchSource(switchSource(HF, 'rtltcp'), 'spyserver');
-    expect(b).toMatchObject({ host: '192.168.0.143', port: 8888, source: 'spyserver' });
+    expect(b).toMatchObject({ host: '192.0.2.43', port: 8888, source: 'spyserver' });
   });
   it('an address typed while on a source is that source\'s', () => {
     let a = fileAddress(HF, undefined, 5555);
     a = switchSource(switchSource(a, 'rtltcp'), 'spyserver');
     expect(a.port).toBe(5555);
-    expect(a.sourceAddrs.rtltcp).toEqual({ host: '192.168.0.143', port: 8890 });
+    expect(a.sourceAddrs.rtltcp).toEqual({ host: '192.0.2.43', port: 8890 });
   });
   it('choosing the source in force changes nothing', () => {
     expect(switchSource(HF, 'spyserver')).toMatchObject({ host: HF.host, port: 8888 });
@@ -49,7 +49,7 @@ describe('the Property Inspector Source list, through the running plugin', () =>
     const UUID = 'com.hogehoge.deck-rx.dial-tune';
     const CTX = 'ctx-source-select';
     harness = await startPlugin({
-      config: { enabled: false, audioEnabled: false, host: '192.168.0.143', port: 8888, source: 'spyserver' },
+      config: { enabled: false, audioEnabled: false, host: '192.0.2.43', port: 8888, source: 'spyserver' },
     });
     await harness.willAppearDial(UUID, CTX, { mode: 'vfo', stepHz: 9000, borderSide: 'none' });
     harness.showPropertyInspector(UUID, CTX);
@@ -59,15 +59,15 @@ describe('the Property Inspector Source list, through the running plugin', () =>
       (m) => (m as { payload?: { action?: string } }).payload?.action === 'serverConfig', 5000);
     harness.sendToPlugin(UUID, CTX, { action: 'setServerConfig', source: 'rtltcp' });
     const r = await reply;
-    expect(r.payload).toMatchObject({ host: '192.168.0.143', port: 8890, source: 'rtltcp' });
+    expect(r.payload).toMatchObject({ host: '192.0.2.43', port: 8890, source: 'rtltcp' });
     await harness.settle(300);
-    expect(disk()).toMatchObject({ host: '192.168.0.143', port: 8890, source: 'rtltcp' });
-    expect(disk().sourceAddrs.spyserver).toEqual({ host: '192.168.0.143', port: 8888 });
+    expect(disk()).toMatchObject({ host: '192.0.2.43', port: 8890, source: 'rtltcp' });
+    expect(disk().sourceAddrs.spyserver).toEqual({ host: '192.0.2.43', port: 8888 });
 
     // A typed port lands on the source in force.
     harness.sendToPlugin(UUID, CTX, { action: 'setServerConfig', port: 8891 });
     await harness.settle(300);
-    expect(disk().sourceAddrs.rtltcp).toEqual({ host: '192.168.0.143', port: 8891 });
+    expect(disk().sourceAddrs.rtltcp).toEqual({ host: '192.0.2.43', port: 8891 });
 
     harness.sendToPlugin(UUID, CTX, { action: 'setServerConfig', source: 'spyserver' });
     await harness.settle(300);

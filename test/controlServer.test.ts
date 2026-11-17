@@ -1,5 +1,5 @@
 // Integration tests for src/controlServer.ts — the loopback endpoint the
-// BRIMFORD knob daemon (knobctl) drives the receiver through.
+// external knob drives the receiver through.
 //
 // The plugin runs sandboxed under the harness, so the control endpoint is off
 // by default; `controlPort` opts this instance in on a port of its own and
@@ -148,8 +148,8 @@ describe('controlServer — knob endpoints', () => {
 
   it('a mute set just before power-on holds, and a disabled start already has the saved volume', async () => {
     // 2026-10-10: /mute then /power?toggle=1 within the 300 ms persist
-    // debounce — connect() re-read muted:false from disk and the studio
-    // speakers played 1440 kHz at 41 %.
+    // debounce — connect() re-read muted:false from disk and the
+    // receiver came up playing at 41 %.
     const port = await freePort();
     harness = await boot(port, { enabled: false, volume: 0.41 });
     await harness.settle(1500);
@@ -300,7 +300,7 @@ describe('controlServer — preset stepping (press-and-turn)', () => {
   it('answers 409 (not a silent 200) when there is no preset to land on', async () => {
     const port = await freePort();
     // An empty preset store: the request is well-formed but the receiver has
-    // nowhere to step. knobctl logs any non-2xx, so this must not be a 200.
+    // nowhere to step. A client logs any non-2xx, so this must not be a 200.
     harness = await startPlugin({
       presetsPath: resolve(__dirname, 'fixtures', 'deck-rx-presets-empty.json'),
       spyServer: true,

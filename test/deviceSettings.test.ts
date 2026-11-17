@@ -349,10 +349,10 @@ describe('filing a profile into the config on disk', () => {
   });
   it('leaves every other setting in the file untouched', () => {
     const onDisk: Record<string, unknown> = {
-      host: '192.168.0.143', port: 8888, volume: 0.41, presets: [1, 2, 3],
+      host: '192.0.2.43', port: 8888, volume: 0.41, presets: [1, 2, 3],
     };
     mergeProfileIntoConfig(onDisk, '2:31313038', hf);
-    expect(onDisk.host).toBe('192.168.0.143');
+    expect(onDisk.host).toBe('192.0.2.43');
     expect(onDisk.port).toBe(8888);
     expect(onDisk.volume).toBe(0.41);
     expect(onDisk.presets).toEqual([1, 2, 3]);

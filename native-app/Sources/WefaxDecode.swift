@@ -10,12 +10,11 @@ struct WefaxImage {
 
 /// Turns a stretch of int16 IQ into a weather fax picture.
 ///
-/// A transcription of `~/.claude-work/scripts/wefax_decode.js`, which is the
-/// implementation that actually produced a readable JMH chart from 7795 kHz on
-/// 2026-09-01. Constants, stage order and the level-detection method are copied
-/// rather than re-derived: the JS got the levels wrong twice before landing on
-/// the histogram method below, and re-deciding that here would be re-running the
-/// same two mistakes.
+/// A transcription of an earlier JavaScript decoder (not in this repository)
+/// that produced a readable JMH chart from 7795 kHz off the air. Constants,
+/// stage order and the level-detection method are copied rather than
+/// re-derived: that decoder got the levels wrong twice before landing on the
+/// histogram method below, and re-deciding it here would repeat those mistakes.
 ///
 /// Nothing in here is specific to the receiver — it takes the IQ the rest of the
 /// app already has, at whatever rate that arrives, so it works equally on a live

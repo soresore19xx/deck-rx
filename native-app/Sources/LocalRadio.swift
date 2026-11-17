@@ -1242,13 +1242,12 @@ final class LocalRadio {
             // recording; without the input there is no way to tell the capture
             // apart from the decode, and guessing between them is how a whole
             // day gets spent. Same flag idiom as the LCD dumps.
-            if FileManager.default.fileExists(atPath: "/tmp/deck-rx-fax-dump") {
-                let dir = ("~/.claude-work/out/solo-fax" as NSString).expandingTildeInPath
-                try? FileManager.default.createDirectory(atPath: dir,
-                                                         withIntermediateDirectories: true)
-                let name = "fax_\(Int(rate))Hz_\(Int(Date().timeIntervalSince1970)).s16"
-                try? iq.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
-                print("[fax] dumped \(iq.count / 4) samples @ \(Int(rate)) Hz -> \(name)")
+            // Written where the other taps go (`tapDir`), not to a folder of
+            // the developer's: a released build runs on other people's Macs.
+            if FileManager.default.fileExists(atPath: Self.tapDir + "deck-rx-fax-dump") {
+                let name = "deck-rx-fax-\(Int(rate))Hz-\(Int(Date().timeIntervalSince1970)).s16"
+                try? iq.write(to: URL(fileURLWithPath: Self.tapDir + name))
+                print("[fax] dumped \(iq.count / 4) samples @ \(Int(rate)) Hz -> \(Self.tapDir)\(name)")
             }
             let img = WefaxDecoder().decode(int16IQ: iq, iqRate: rate)
             DispatchQueue.main.async { done?(img) }

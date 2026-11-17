@@ -18,7 +18,7 @@ differ in what is holding the radio.
 | | What it is | Needs |
 | --- | --- | --- |
 | **[Deck RX Solo](docs/solo.md)** — Mac app | The whole receiver in one bundle. Start here if you just want to listen. | a SpyServer or an `rtl_tcp` server on the network (an Airspy HF+ or an RTL-SDR such as the Blog V4 behind it), or an Airspy HF+ on an Apple-silicon Mac's own USB |
-| **[Deck RX](docs/plugin.md)** — Stream Deck + plugin | Fourteen actions and the encoder dials, driving the radio from the deck. The original. | Stream Deck +, Node, macOS |
+| **[Deck RX](docs/plugin.md)** — Stream Deck + plugin | Fourteen actions and the encoder dials, driving the radio from the deck. The original. | a Stream Deck +, macOS on Apple silicon (the Stream Deck app brings its own Node) |
 | **[Deck RX](docs/native-app.md)** — Mac front-end | A window onto the plugin's receiver. Draws what the plugin is doing; has no receiver of its own. | the plugin, on the same Mac |
 | **[Deck RX](docs/ipad.md)** — iPad app | A receiver on the tablet, demodulating there. | a SpyServer or an `rtl_tcp` server on the network, or an RTL-SDR or an Airspy HF+ plugged into an M-series iPad |
 
@@ -69,27 +69,29 @@ narrow and wide FM (the wide one in stereo, with a real pilot PLL), USB, LSB and
 CW. The spectrum and the waterfall are drawn where the ear is rather than where
 the samples are, so what is seen lines up with what is heard.
 
-Two decoders sit beside the receiver on the Mac and one of them on the iPad:
-**HF weather fax** (JMH charts) and **DRM**, the shortwave digital mode. DRM is
+Two decoders sit beside the receiver in Solo: **HF weather fax** (JMH charts)
+and **DRM**, the shortwave digital mode. The iPad app has DRM too. DRM is
 optional and fetched separately — see [docs/solo.md](docs/solo.md).
 
 The audio path is the part that took the longest. Two free-running crystals
 drift apart by tens of parts per million, and a naive path either creeps into
 seconds of delay or starves into clicks over a long session; the answer is an
 adaptive resampler in a control loop. That story is in
-[docs/plugin.md](docs/plugin.md), and it applies to all four.
+[docs/plugin.md](docs/plugin.md); Solo and the iPad app play through the same
+kind of loop. (The Mac front-end plays nothing itself.)
+
 ## Documentation
 
 The four products, each in full:
 
 - [Deck RX Solo](docs/solo.md) — the standalone Mac receiver
 - [Deck RX plugin](docs/plugin.md) — the Stream Deck + plugin
-- [Sync](docs/sync.md) — presets and per-station gains kept in step across the plugin, Solo and the iPad through an optional sync hub on any always-on Mac, each device's own files as its cache
 - [Deck RX front-end](docs/native-app.md) — the Mac window onto the plugin
 - [Deck RX for iPadOS](docs/ipad.md)
 
 And the rest:
 
+- [Sync](docs/sync.md) — presets and per-station gains kept in step across the plugin, Solo and the iPad through an optional sync hub on any always-on Mac, each device's own files as its cache
 - [Repository layout](docs/repository-layout.md)
 - [Build & install](docs/build-install.md)
 - [Server-side setup (SpyServer on Linux ARM/aarch64)](docs/server-setup.md)

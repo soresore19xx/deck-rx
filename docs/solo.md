@@ -289,8 +289,7 @@ window sinc, 100 dB down, 300 Hz of transition, run as a FIR through vDSP
 nothing above half the channel width belongs to the station being heard.
 Above the transition the result is 15-20 dB quieter than SDR++'s on the same
 signal, with the same passband. It costs about 5 % of a core and adds 11 ms of
-constant delay. The measurements are in
-[standalone-app-port.md](standalone-app-port.md#solo-measurements-and-history-moved-from-solomd-2026-11-17).
+constant delay.
 
 ## Sharing the receiver
 
@@ -332,10 +331,3 @@ in the channel, since it assumes a single signal.
 HF+'s and the V4's IQ rates — alone, with a neighbour, an echo, a weak signal
 and a station off the centre — and lists every rule that fails (about 20
 minutes).
-
-## Under it
-
-Why this exists at all, how the display is kept in step with the ear, what
-tuning inside the window has to get right, and the measurements behind the
-figures above are in
-[standalone-app-port.md](standalone-app-port.md#deck-rx-solo-design-notes).

@@ -140,9 +140,3 @@ volume 0 still feeds it, but one with `audioEnabled: false` does not. And macOS
 caps a Unix socket path at 104 bytes, reporting a longer one as `EADDRINUSE`;
 the feed checks the length and says so rather than letting you hunt for a
 process that does not exist.
-
-## Under it
-
-The reasoning behind the readout, the meters, the options panel and the
-preset grouping is in
-[standalone-app-port.md](standalone-app-port.md#the-front-end-window-design-notes).

@@ -24,7 +24,8 @@ One receiver is enough; the second instance is only for a second device.
 - optionally an RTL-SDR, such as the RTL-SDR Blog V4 (USB ID `0bda:2838`)
 - a Linux machine the Mac can reach
 - an antenna for the bands you care about; two receivers on one antenna need a
-  proper 2-way splitter, not a T (see [A second receiver](second-receiver.md))
+  proper 2-way splitter, not a T: a T gives no isolation between the two
+  receivers and presents 25 Ω to the antenna
 
 ## Libraries
 

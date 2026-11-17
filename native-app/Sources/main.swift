@@ -351,12 +351,18 @@ final class MainView: NSView {
 
     private let clockJST = label("—", mono(22), P.text)
     private let clockUTC = label("—", mono(22), P.dim)
-    private let linkDot = panelView(P.faint)
+    // The top bar reads as tag / value pairs, as JST and UTC always have: a
+    // faint tag names what the brighter value after it is. It used to open
+    // with a "deck" wordmark and a 6 pt dot with no word to say the dot was the
+    // link lamp, and the address beside them read ":0" in Solo.
+    private let sourceTag = label("SOURCE", mono(17), P.faint)
     private let linkLabel = label("—", mono(19), P.dim)
-    private let deviceLabel = label("—", mono(17), P.faint)
-    private let iqLabel = label("—", mono(17), P.faint)
+    private let deviceLabel = label("—", mono(17), P.dim)
+    private let iqTag = label("IQ", mono(17), P.faint)
+    private let iqLabel = label("—", mono(17), P.dim)
+    private let audioTag = label("AUDIO", mono(17), P.faint)
+    private let outLabel = label("—", mono(17), P.dim)
     private let dropsLabel = label("—", mono(17), P.faint)
-    private let outLabel = label("—", mono(17), P.faint)
 
     private let stationLabel = label("—", .systemFont(ofSize: max(11, UI.H(26))), P.text)
     private let freqView = FreqView(frame: .zero)
@@ -522,10 +528,9 @@ final class MainView: NSView {
         // wrong, answered without opening a log.
         func sep() -> NSView { label("|", mono(15), P.line) }
         var topViews: [NSView] = [
-            label("deck", .systemFont(ofSize: max(9, S(23)), weight: .bold), P.text),
-            linkDot, linkLabel, deviceLabel,
-            sep(), iqLabel, dropsLabel,
-            sep(), outLabel,
+            sourceTag, linkLabel, deviceLabel,
+            sep(), iqTag, iqLabel,
+            sep(), audioTag, outLabel, dropsLabel,
             NSView(),
             label("JST", mono(17), P.faint), clockJST,
             label("UTC", mono(17), P.faint), clockUTC,
@@ -551,12 +556,16 @@ final class MainView: NSView {
             v.lineBreakMode = .byTruncatingTail
             v.cell?.usesSingleLineMode = true
         }
-        linkDot.layer?.cornerRadius = 3
-        linkDot.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            linkDot.widthAnchor.constraint(equalToConstant: 6),
-            linkDot.heightAnchor.constraint(equalToConstant: 6),
-        ])
+        for (views, tip) in [
+            ([sourceTag, linkLabel, deviceLabel],
+             "Where the IQ comes from: the server's address and what it serves, or USB. Shown in the warning colour while the link is down."),
+            ([iqTag, iqLabel],
+             "The IQ rate the receiver works at, and the device's rate it is decimated from."),
+            ([audioTag, outLabel, dropsLabel],
+             "Where the sound goes, and how many times the output has run dry since launch."),
+        ] as [([NSView], String)] {
+            for v in views { v.toolTip = tip }
+        }
         embed(topRow, in: top, inset: S(12))
 
         // frequency header
@@ -1366,25 +1375,33 @@ final class MainView: NSView {
 
         let s = Receiver.status()
         let live = s.fresh && s.connected && s.enabled
-        linkDot.layer?.backgroundColor = (live ? P.accent : P.faint).cgColor
         linkLabel.stringValue = s.fresh
-            ? (s.connected ? "\(s.host):\(s.port)" : "link down")
+            ? (s.connected ? (s.host.isEmpty ? "USB" : "\(s.host):\(s.port)") : "link down")
             : "receiver not running"
         linkLabel.textColor = s.fresh && s.connected ? P.dim : P.warn
-        deviceLabel.stringValue = s.device
+        deviceLabel.stringValue = s.connected ? s.device : ""
+        // "600k of 2400k" rather than "600k DEC 2": the stage is the power of
+        // two the device rate is divided by, which nobody reads at a glance.
         iqLabel.stringValue = s.iqRateHz > 0
-            ? String(format: "IQ %.0fk  DEC %d", s.iqRateHz / 1000, s.decStage) : ""
+            ? String(format: "%.0fk of %.0fk", s.iqRateHz / 1000,
+                     s.iqRateHz * pow(2, Double(s.decStage)) / 1000)
+            : "—"
         adoptIqLadder(rateHz: s.iqRateHz, stage: s.decStage, choices: s.iqChoices)
         dropsLabel.stringValue = s.iqRateHz > 0 ? "drops \(s.audioDrops)" : ""
         // A non-zero drop count is the audible-glitch signature, so it stops
         // being a grey footnote the moment it moves off zero.
         dropsLabel.textColor = s.audioDrops > 0 ? P.warn : P.faint
-        if s.audioSink == "icecast" {
-            outLabel.stringValue = "OUT ICECAST"
+        switch s.audioSink {
+        case "icecast":
+            outLabel.stringValue = "Icecast"
             outLabel.textColor = P.accent
-        } else {
-            outLabel.stringValue = s.audioDevice.isEmpty ? "" : "OUT \(s.audioDevice)"
-            outLabel.textColor = P.faint
+        case "off":
+            outLabel.stringValue = "off"
+            outLabel.textColor = P.dim
+        default:
+            // Empty is the system's default output, as the options panel says.
+            outLabel.stringValue = s.audioDevice.isEmpty ? "system default" : s.audioDevice
+            outLabel.textColor = P.dim
         }
 
         freqView.set(freqHz: s.freqHz)
@@ -2088,6 +2105,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 s.volume = self.radio.volume
                 s.muted = self.radio.muted
                 s.device = self.radio.deviceInfo != nil ? self.radio.deviceLabel : ""
+                // The address the top bar names. It came with the plugin's feed
+                // until this status was built from the receiver alone (020b3c4),
+                // and from then on the bar read ":0". A USB source has no
+                // address; the bar says so instead.
+                if RadioConfig.hasAddress(self.radio.config.source) {
+                    s.host = self.radio.config.host
+                    s.port = self.radio.config.port
+                }
+                // The output this receiver plays to, for the bar's AUDIO.
+                s.audioDevice = self.radio.config.audioDevice
                 s.audioSink = self.radio.audioEnabled ? "local" : "off"
                 // The meters and the drop count are this receiver's own while
                 // it is running. They were left at whatever the plugin's feed
@@ -2168,9 +2195,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 ? (server.portBusy ? " serving :\(server.servingPort)" : " serving")
                 : (server.portBusy ? " (no control port)" : "")
             let r = radio.deviceInfo.map { "IQ \(Int(Double($0.maxSampleRate) / 1000)) k max" } ?? ""
-            view.srcLabel.stringValue = "direct \(r)\(a)\(srv)\(ctl)"
+            // What fits at the end of the strip: the warning when tuning is not
+            // ours, otherwise the control port. It used to be all of the
+            // tooltip's line, led by "direct", cut off after "direct IQ 2…";
+            // the device's top rate is in the top bar now.
+            // About a dozen characters fit there, so the words are short and the
+            // tooltip says the rest.
+            view.srcLabel.stringValue = radio.canControl
+                ? (server.isServing ? "API :\(server.servingPort)"
+                                    : (server.portBusy ? "no API port" : ""))
+                : "LISTEN ONLY"
+            view.srcLabel.toolTip = (radio.canControl
+                ? "The HTTP control port a knob or a script drives this window on. "
+                : "Another client has the device: this window hears it but cannot tune it. ")
+                + "\(r)\(a)\(srv)".trimmingCharacters(in: .whitespaces)
+            // Was set to the warning colour and then straight back to dim on
+            // the next line, so LISTEN ONLY never showed as a warning.
             view.srcLabel.textColor = radio.canControl ? P.dim : P.warn
-            view.srcLabel.textColor = P.dim
         } else {
             view.srcLabel.stringValue = "connecting..."
             view.srcLabel.textColor = P.faint

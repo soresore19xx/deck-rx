@@ -119,7 +119,7 @@ is exactly the weak-signal task it is worst at.
 ## The finding that decides the design
 
 **The plugin already supports RTL-SDR over SpyServer, and the SpyServer build on
-the sserv VM already implements RTL-SDR.** Neither side needs new protocol code.
+the SpyServer VM already implements RTL-SDR.** Neither side needs new protocol code.
 
 On this side:
 
@@ -129,7 +129,8 @@ On this side:
 - `src/SpyClient.ts` — `computeDigitalGain()` has an `DEVICE_RTLSDR` branch
 - `src/statusFeed.ts` — names the front-end from `deviceType`
 
-On the sserv VM (`/usr/local/bin/spyserver`, Ubuntu 24.04 aarch64):
+On the SpyServer VM (`/usr/local/bin/spyserver`, Ubuntu 24.04 aarch64, on an
+M4 Mac mini):
 
 - `RTL-SDR` is one of the `device_type` values it accepts, alongside `AirspyOne`
   and `AirspyHF+`
@@ -209,14 +210,14 @@ around it is not:
 
 ### Chosen at the time: a second spyserver instance, with the V4 on the Linux VM
 
-Put the V4 where the HF+ already is — passed through to the sserv VM — and run a
-second `spyserver` process for it on its own port.
+Put the V4 where the HF+ already is — passed through to the SpyServer VM — and
+run a second `spyserver` process for it on its own port.
 
-See the diagram above: one antenna, the splitter, both receivers on USB into
-mini4, and two `spyserver` processes inside the VirtualBuddy VM on separate
-ports. (The diagram shows an SMA T. That was replaced by a proper 2-way
-distributor on 2026-09-22 — a T has no isolation between the two receivers and
-presents 25 Ω to the source.)
+See the diagram above: the antenna feed split to both receivers, both on USB
+into the Mac mini that hosts the VM, and two `spyserver` processes inside the VM
+on separate ports. (At first an SMA T did the splitting. It was replaced by a
+proper 2-way distributor on 2026-09-22 — a T has no isolation between the two
+receivers and presents 25 Ω to the source.)
 
 Every client already knows how to talk to this. Changing receiver becomes
 changing a host and port, and `deviceType` in the protocol handshake tells the
@@ -270,21 +271,17 @@ the plugin uses the table and will refuse to tune to mediumwave.
 
 ## What the work actually is
 
-The VM's full configuration and the traps already hit while building it are in
-`~/MEMO/sserv_vm_config.html`. **Read that before touching the VM** — the steps
-below follow it.
+The steps as they were taken, for a SpyServer VM under VirtualBuddy on a Mac.
 
-1. Move the V4's USB from studio to mini4. The coax does not change — the SMA T
-   that splits the antenna is already in place and feeds both receivers.
+1. Move the V4's USB from the desktop Mac (a Mac Studio) to the Mac mini that hosts the VM. The coax does not
+   change — the antenna was already split to feed both receivers.
 2. **Register the V4 in VirtualBuddy — not UTM.** UTM only passes USB through on
    its QEMU backend, and this is an Apple-backend VM under VirtualBuddy 2.2-b5.
-   **UTM is not retired on mini4** — it runs three other VMs there (`Linux Radio`
-   = the Roon Server, `Linux`, `OpenVPN-TCP`), and OrbStack runs Grafana besides.
-   None of them is involved here, and none of them is stopped by this work; only
-   the VirtualBuddy VM goes down and comes back.
+   Other VMs on the same Mac are not involved; only the VirtualBuddy VM goes
+   down and comes back.
    The sequence matters, because **editing `Config.plist` while the VM runs gets
    overwritten on the next boot** (that is how an added NIC was once lost):
-   - stop the guest (`ssh sserv.local sudo poweroff`), then quit VirtualBuddy
+   - stop the guest (`ssh <vm-host> sudo poweroff`), then quit VirtualBuddy
    - the key is `hardware.usbDevices`, a binary plist array, and **the IDs are
      stored as decimal** — the HF+ entry reads `vendorID 1003` / `productID
      32780`, not hex. Appending the V4 (0x0BDA / 0x2838 = 3034 / 10296):
@@ -369,10 +366,10 @@ down before touching the cable. This now applies to two receivers instead of one
   through a T with no isolation between them, so a strong local oscillator leak
   from one appears at the other's input. Worth measuring once both are live.
 
-## If the V4 stays on studio instead
+## If the V4 stays on the desktop Mac instead
 
 There is no macOS spyserver, so this design does not apply. The fallback is the
-rejected rtl_tcp path, or simply using SDR++ on studio — which works today, with
+rejected rtl_tcp path, or simply using SDR++ on that Mac — which works today, with
 two settings: `directSampling` 0 and the gain at the bottom of the list.
 
 ## How it is wired today
@@ -411,8 +408,8 @@ the head of the iPad's SERVER row:
 
 | Source | Server | Port | Receiver |
 |---|---|---|---|
-| SpyServer | `192.168.0.143` | `8888` | Airspy HF+ |
-| RTL-TCP | `192.168.0.143` | `8890` | RTL-SDR Blog V4 |
+| SpyServer | the VM's address | `8888` | Airspy HF+ |
+| RTL-TCP | the VM's address | `8890` | RTL-SDR Blog V4 |
 
 Each source keeps its own address (`sourceAddrs` in the config — the same key
 and shape on both sides; `switchSource` / `fileAddress` in `src/iqClient.ts`,
@@ -435,7 +432,7 @@ is a rule-for-rule port of `src/RtlTcpClient.ts`, plugged in behind the same
 carries the cases and numbers of `test/rtlTcp.test.ts`. Deck RX Solo offers it as
 `rtltcp` in the Source row of its options panel (the same spelling the plugin
 writes into `source`). Verified on the hardware through a scratch config: Solo on
-`192.168.0.143:8890` came up at 300 kS/s on 594 kHz with index 3 sent, the audio
+the VM's port 8890 came up at 300 kS/s on 594 kHz with index 3 sent, the audio
 had the voice band 90 dB above 6-15 kHz, and a retune to 6030 kHz and back sent
 17 and then 3 — the per-band gains above, through rtl_tcp.
 

@@ -99,9 +99,7 @@ And the rest:
 - [Architecture notes](docs/architecture.md) — dial details, signal-path implementation, internal mechanisms
 - [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules, NHK channel inference + transmitter-site + callsign annotation
 - [Data sources & attribution](docs/data-sources.md) — Japan-only sources (総務省 MIC / 関東総通局 / 沖縄総通局) plus the international EIBI shortwave DB; license terms + refresh scripts
-- [Standalone app port](docs/standalone-app-port.md) — what moved to Swift, what the system frameworks replaced, and why the plugin keeps its own signal path
 - [Debug helpers](docs/debug-helpers.md) — LCD dump / lint / compare-baseline scripts
-- [A second receiver](docs/second-receiver.md) — running an RTL-SDR Blog V4 beside the Airspy HF+: what measures the same and what does not, the settings that cannot be shared between front ends, the RF gain kept per receiver and per band (mediumwave / shortwave / VHF), and the V4's detour to `rtl_tcp` and back to SpyServer (the "gain does nothing on SpyServer" finding that caused it was a wiring fault)
 
 ## Credits / References
 

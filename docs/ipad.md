@@ -246,8 +246,3 @@ The same `Sources/` tree as the Mac app, minus the Mac's own windows
 (the control endpoint, which an iPad has nothing to answer on); `build-ios.sh`
 lists what goes in. The spectrum, the readout and the meters are shared views,
 so a fix to the spectrum lands on both platforms.
-
-The audio path and the porting mistakes that had to be found parameter by
-parameter — the drift tracking, the buffer depth, and the six settings the
-Swift port had quietly invented for itself — are in
-[standalone-app-port.md](standalone-app-port.md#ipad-the-audio-path).

@@ -9,8 +9,11 @@ Part of [deck-rx](../README.md).
 native-app/build-app.sh          # both bundles
 native-app/build-app.sh front    # /Applications/Deck RX.app only
 native-app/build-app.sh solo     # /Applications/Deck RX Solo.app only
-native-app/run-tests.sh          # 80 assertions over the receiver
+native-app/run-tests.sh          # the receiver's tests
 ```
+
+Requirements: macOS 12 or later, Apple silicon or Intel, and the Stream Deck
+plugin running on the same Mac.
 
 ## Two bundles, one source tree
 
@@ -40,7 +43,10 @@ window.
 ## What it reads and writes
 
 The status feed, the spectrum socket, and the control endpoint — the same three
-any front-end would use. Nothing about the receiver lives here.
+any front-end would use. Nothing about the receiver lives here. The top bar
+reads as in Solo — `SOURCE` (the plugin's server and receiver), `IQ`, `AUDIO`
+(the plugin's output, or Icecast while it publishes) — and describes the
+plugin's receiver.
 
 `src/statusFeed.ts` publishes **only while the app is open**, to
 `/Volumes/RAMDisk` when that is mounted and `/tmp` otherwise: 320 B a write,
@@ -112,17 +118,12 @@ FFT and drops the smoothing history, which belonged to the old bin count.
 Sizes above one SpyServer packet (IQ rate / 100 samples) are built from
 consecutive packets; the transform runs at most every 1/60 s and backs off
 to ten times its own cost, so 65536 (about 3 ms in JS) arrives at about
-18 fps on the V4 at 300 kS/s rather than taking a third of a core
-(measured 2026-10-08).
+18 fps on an RTL-SDR at 300 kS/s rather than taking a third of a core.
 
 **Smoothing is a speed, not an amount** — SDR++'s wording and SDR++'s formula:
 `alpha = min(1, speed / (fps * 10))`, so a **larger** number follows the trace
 faster and averages less, and the normalisation by framerate keeps the
-averaging window fixed in seconds. The native app had this inverted, taking the
-FFT pipeline's own divisor (`alpha = 1 / factor`, larger = smoother) where the
-plugin bypasses that smoother and applies SDR++'s form itself. Both now speak
-the same language, and a config written under the old meaning is converted at
-the framerate it was stored with.
+averaging window fixed in seconds. The plugin and the apps use the same form.
 
 Two rates matter here and conflating them is what makes a spectrum look wrong
 when the framerate is turned down. The FFT runs continuously (up to 60 Hz),

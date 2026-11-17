@@ -653,3 +653,198 @@ Not there yet, and visible as `—` rather than invented: bandwidth, tune step,
 per-mode options, RF gain, IQ rate and the demod-mode selector. Those need
 fields the status feed does not publish yet, plus a `/mode` endpoint on the
 control server.
+
+## Solo: measurements and history (moved from solo.md, 2026-11-17)
+
+The measured figures and the bug histories behind the behaviour solo.md describes.
+
+### The AM channel filter
+
+AM is filtered twice: a 16th-order Butterworth on the IQ at half the channel
+width, and then a linear-phase brick wall on the detected audio — a Kaiser
+window sinc, 100 dB down, 300 Hz of transition, run as a FIR through vDSP
+(`Sources/BrickWall.swift`).
+
+The brick wall is there because an IIR skirt cannot turn fast enough. Japanese
+medium wave sits on a 9 kHz raster, so nothing above half the channel width
+belongs to the station being listened to: it is the neighbours' splatter and
+the band noise. Measured against SDR++ on 594 kHz, same SpyServer, same twenty
+seconds, in dB relative to the 0.3-3 kHz program band:
+
+| band | before | after | SDR++ |
+| --- | --- | --- | --- |
+| 4.0-4.5k | −9.5 | −9.1 | −9.0 |
+| 4.5-4.8k | −19.0 | −21.0 | −35.3 |
+| 4.8-5.2k | −23.9 | −104.1 | −88.3 |
+| 5.2-6.0k | −29.5 | −101.1 | −85.7 |
+| 6-8k | −40.1 | −97.1 | −81.7 |
+
+Everything above the transition is now 15-20 dB quieter than SDR++, and the
+passband matches it. The one band SDR++ still wins is its own transition,
+300 Hz wide, where its FFT filter turns faster than 2433 taps can.
+
+Two things were wrong before. The audio filter's cutoff was the full channel
+width where the IF filter used half it, so the 4.5-9 kHz octave rode on the IF
+skirt alone; and that skirt was an 8th-order Butterworth. The first is a
+one-line fix worth 15 dB on its own, and the plugin had the same line: it now
+halves the cutoff too (`demodulator.ts setAmBandwidth`, covered by
+`test/demodulator.test.ts`), which is what `docs/architecture.md` had claimed
+all along. The brick wall stays here only — 2433 taps at the 114 kHz audio rate
+is 2.8e8 multiply-accumulates a second, which is not Node's work.
+
+The filter costs about 5% of a core at the 114 kHz audio rate and adds 11 ms of
+constant delay. It designs itself from the bandwidth in force, and falls back
+to the Butterworth cascade for a rate it cannot be built for.
+
+
+### Loudness, next to the plugin
+
+The two chains leave the audio at the same level: same per-mode makeup, same
+master trim, same AM AGC constants, same soft limiter in the same place. 41 %
+here is 41 % there, sample for sample, and a step of `/volume?d=` moves 2 % on
+either, so the same knob or pad feels the same whichever receiver is answering.
+
+That is a recent statement. It was not true until 2026-09-10 — the limiter was
+on the wrong side of the volume here, which is the next section — and the
+sentence that used to sit in this paragraph, "anything you hear as one of them
+being louder is the volume control", was how it went unfixed. If the two sound
+different at the same settings, the arithmetic is comparable and should be
+compared before the knobs are.
+
+The same chain did not mean the same loudness across settings, though. The FM
+detectors return the phase step per IQ sample, so with fixed gains FM came out
+louder the lower the IQ rate ran: this app at iqDecimation 2 on the HF+
+(228 kHz) played FM 6-8 dB above AM at the same modulation depth, where the
+plugin at 456 kHz sits 0-3 dB apart (2026-09-30). The FM gains are now scaled
+by `iqRate / 456 kHz` in both chains (`fmOutputScale` / `OutputScale.fm`), so
+the decimation and the receiver no longer move FM's level; SSB and CW detect
+an amplitude and are not scaled. `test/audioLevels.test.ts` and the section of
+the same name in `native-app/Tests/main.swift` pin it at 228, 456, 600 and
+912 kHz.
+
+One trap when measuring it: `/tmp/deck-rx-solo-audio-record` is written before
+the volume control *and* before the limiter, while the plugin's
+`/tmp/deck-rx-audio-record` is after both. Two WAVs taken that way differ by the
+plugin's volume setting before either receiver has done anything differently,
+and a peak past full scale in this app's file is the makeup's headroom rather
+than clipping. `/tmp/deck-rx-solo-postmix-record` is the one to compare against
+the plugin's tap: it sits downstream of both.
+
+#### Where the volume sits — the bug that made this app the quieter one
+
+Both chains are makeup, then the optional AGC, then the tanh limiter — and both
+are code in this repository, so they can be compared by arithmetic rather than
+by ear. Doing that, on 2026-09-10, turned up an order that had been wrong since
+the audio was ported:
+
+| | until 2026-09-10 | now |
+| --- | --- | --- |
+| plugin | `softLimit(x · volume · makeup)` | unchanged |
+| this app | `softLimit(x · makeup)`, then volume | `softLimit(x · volume · makeup)` |
+
+Limiting before the volume fixes the knee at an input level rather than one that
+moves with the knob. At the 0.41 both receivers were set to, that meant this app
+compressed peaks the plugin passed through linearly, from identical settings on
+both sides:
+
+| input (int16, pre-makeup) | plugin | this app, before | after |
+| --- | --- | --- | --- |
+| ≤ 18568 | — | same | same |
+| 20000 | 12300 | 12248 | 12300 |
+| 24000 | 14760 | 13293 (**−0.91 dB**) | 14760 |
+| 32767 | 20152 | 13434 (−3.52 dB) | 20152 |
+
+24000 is not an arbitrary row: it is `AM_AGC_MAX_OUTPUT`, where the carrier
+AGC's look-ahead puts peaks, so AM programme peaks landed there routinely. On a
+deeply modulated tone the whole-buffer RMS was 0.8 dB down.
+
+Two things about how it stayed hidden are worth keeping. It only became audible
+when this app started carrying the sound itself — before it was an independent
+receiver, the plugin was doing the listening and this stage was only on the path
+after DIRECT was pressed. And when the loudness difference was finally noticed,
+it was diagnosed as a volume-knob difference and "fixed" by turning this app
+*down*, from 0.9 to 0.41, which matched the wrong one of the two and left the
+original complaint in place.
+
+The limiter now lives in `AudioSink.write`, after the volume ramp, so
+`level()` hands on samples that may exceed ±1 — that headroom is what the makeup
+is for. `test/fixtures/audioOutputGolden.json` pins the whole vector: the
+plugin's numbers are checked by `test/audioLeveling.test.ts` and this app's by
+`native-app/Tests/main.swift`, both against the same file, so neither side can
+change its order again without a test going red.
+
+### Channel stage: the measurements
+
+Before this the detectors ran at the full IQ rate and only dropped samples at
+the end. Measured on 2026-10-24, one second of IQ on an M4 Max core: WFM 0.49 s
+at 1.024 MHz, 1.67 s at 2.4 MHz, 2.64 s at 3.2 MHz — the audio could not keep
+up on a wide IQ — and NFM, SSB and CW, with no filter in front of that drop,
+folded the whole width's noise into the audio (SSB 10 dB worse at a 150 kHz
+audio rate). With the channel stage, at 2.4 MHz: WFM 0.14 s, NFM 0.03, AM,
+SSB and CW under 0.01, and every mode within 0.5 dB SINAD of the same detector
+fed the full IQ rate (`native-app/Tests/ChannelTests.swift`).
+
+Running WFM at a third of a megahertz exposed one more thing: the
+discriminator's phase step is the frequency averaged over a sample, a sinc
+response that left the 38 kHz subcarrier 2% short of L+R at 343 kHz, which caps
+separation at 40 dB. `Demods` undoes it (`lmrDroop`); separation is 60.8 dB at
+the channel rate against 60.9 at 2.4 MHz, the remainder being the 250 kHz IF
+bandwidth.
+
+The multipath equaliser sits on the channel, ahead of the IF filter, as OnAir
+puts it (`fm_rx.cpp`: channel filter, then the equaliser, then the
+discriminator). Behind the IF filter it was handed a signal already trimmed,
+no longer constant in modulus, and "corrected" the trim into L-R: 10.6 dB of
+separation lost on a clean signal, averaged over 400 Hz to 7 kHz. For WFM the
+channel therefore passes the whole FM signal, ±181 kHz (75 kHz deviation plus
+twice the 53 kHz multiplex), which puts the channel at 400 kHz from 2.4 MHz.
+Where there is nothing to decimate (the HF+'s 456 kHz) the channel filter stays
+all the same. The filter's history starts as the first sample, not zeros: the
+ramp out of zeros looked like an echo to the equaliser, which kept what it
+learnt from it on a narrow-band signal (mono SINAD 51 dB instead of 93).
+
+The equaliser assumes one constant-modulus signal, and a second station breaks
+that: a neighbour 200 kHz off, even 20 dB down, took a lone tone from 93 to
+about 50 dB SINAD, wherever the equaliser sat, and an equal one to -7 dB. An
+echo is the station itself and stays in its band; a neighbour brings power
+the IF filter then removes. So the equaliser stops while the IF filter takes
+more than -26 dB of what it is handed and resumes below -28 dB (a lone station
+measured at most -30.2 dB: full-deviation stereo at 15 kHz, an echo, or noise
+down to 28 dB SNR; a -20 dB neighbour -22 dB). With that, the equaliser costs
+no separation on a clean signal, cleans an 8.8 µs echo at -10 dB by 15-33 dB,
+and a neighbour at the same level leaves the wanted station at 65.7 dB SINAD.
+
+`native-app/run-quality.sh` measures all of this the way the receiver is used:
+every mode through LocalRadio, packet by packet, at the HF+'s and the V4's IQ
+rates, alone, with a neighbour, an echo, a weak signal and a station off the
+centre, and lists every rule that fails (about 20 minutes, -O). Its test
+signals are made at 2.4 MHz or more and decimated, as a receiver does it:
+sampling an FM signal straight at a low rate folds its tails into the band and
+reads as 26 dB of lost separation at 300 kHz that the receiver is not losing.
+
+Every detector also keeps its decimation grid across packets. It used to keep
+sample i when i % divisor == 0 counting from each packet's start and drop the
+remainder, which broke the time base whenever a packet was not a multiple of
+the divisor — always, with the channel stage's divisors or rtl_tcp's reads: a
+1 kHz WFM tone at 13 dB SINAD instead of 93. The plugin had the same code and
+has the same fix (`test/demodPackets.test.ts`).
+
+### CPU
+
+The figures below predate the channel stage (2026-10-25), when demodulation
+ran per IQ sample.
+
+Measured on a 2015 MacBook Air 11 (two Broadwell cores):
+
+| setting | CPU |
+| --- | --- |
+| FFT 4096, 30 fps, IQ 456 kHz | 79% |
+| FFT 1024, 10 fps, IQ 456 kHz | 84% |
+| FFT 1024, 10 fps, IQ 228 kHz | 44% |
+
+FFT size and frame rate do essentially nothing: demodulation runs per IQ sample
+and a transform thirty times a second is noise beside it. Only the IQ rate
+matters, and halving it costs FM quality — the plugin raised its own default
+from 228 to 456 kHz because far-adjacent stations aliased into the audible
+baseband. AM does not care, so `iqDecimation: 2` is a real option on a slow
+machine used for medium wave and not on one used for FM.

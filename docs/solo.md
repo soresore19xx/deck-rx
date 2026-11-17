@@ -2,7 +2,8 @@
 
 The whole receiver in one bundle. No Stream Deck, no plugin, no Node.
 
-Part of [deck-rx](../README.md).
+Part of [deck-rx](../README.md). Requirements: macOS 12 or later, Apple silicon
+or Intel (one universal app) — see [the README](../README.md#requirements).
 
 ![Deck RX Solo](solo-window.png)
 
@@ -17,182 +18,114 @@ Part of [deck-rx](../README.md).
 It connects and starts playing on its own, at the volume and mute state it was
 left on. **AUDIO** stops the sound without dropping the link.
 
-It is its own receiver and only its own. It does not read the plugin's status
-file or its spectrum socket, and none of its controls reach over the loopback:
-POWER, the preset pads and the volume all act on the receiver in this window.
-The pad marked **DIRECT** is that receiver's link, up or down — it used to be a
-source switch, where "off" turned the window into a front-end onto the plugin,
-which is what made closing the window not stop the sound. The sound was never
-this app's to stop. `Deck RX.app` is the bundle for looking at the plugin.
-
-That is all of it. The rest, briefly:
+It is its own receiver and only its own: POWER, the preset pads and the volume
+all act on the receiver in this window, never on the Stream Deck plugin's. The
+pad marked **DIRECT** is that receiver's link, up or down. To look at the
+plugin's receiver instead, use the other bundle, `Deck RX.app`.
 
 | | |
 | --- | --- |
+| **top bar** | `SOURCE` — the server's address and the receiver behind it by name (`SpyServer · Airspy HF+`, `SpyServer · RTL-SDR`, `rtl_tcp (RTL-SDR)`, `Airspy HF+ (USB)`), or `link down` in the warning colour; `IQ` — the rate the receiver works at against the device's rate (`600k of 2400k`); `AUDIO` — the output and the number of times it has run dry since launch. Hover over any of them for the same in words |
+| **pane switch** (left end of the top bar) | slides the left pane alone — the preset list and BAND JUMP — out and back; the options pane stays. Not kept across a relaunch |
 | **PRESET ◀ ▶** | step through the list on the left |
 | **TUNE − +** | one step, and the step follows the mode: 9 kHz on AM, 100 kHz on FM |
 | **WFM … CW** | the mode. Bandwidth and the options panel follow it |
-| **options pane** (right) | the live mode's settings, the RF gain and the receiver's own. Click a row: ON / OFF rows flip, every other row opens its list with the value in force ticked — nothing steps through its values one click at a time |
-| **BAND JUMP** | MW, the shortwave metre bands, FM |
-| **IQ** | the width the receiver runs at, and so the width of the spectrum. Through a SpyServer, the device's maximum halved by each decimation stage (912k / 456k / 228k / 114k on an Airspy HF+). On RTL-TCP and RTL-SDR (USB), the rates the chip itself takes — SDR++'s list, 3200k down to 1024k — and the 2.4 MHz halvings below them (600k / 300k / 150k). Changing it reconnects. The demodulators do not follow it: each mode is cut out of the IQ at a rate of its own first (see [Channel stage](#channel-stage)) |
-| **BW ▾ / STEP ▾** (under the readout) | the bandwidth and the tuning step in force, and each is its own menu: click the value and pick. BW offers the mode's bandwidths (the same list as the options pane; NFM and DSB have no setting and show the number alone) |
-| **STEP** | the same step as under the readout, from the ladder that suits the mode. What is picked is kept per mode, and on AM per band (medium wave and shortwave each keep their own); with nothing picked it is the band's raster — 9 kHz on medium wave, 5 kHz on shortwave, 100 kHz on FM. It is this window's own receiver's step and is shown under the readout as well; the plugin's step is a separate setting |
+| **BW ▾ / STEP ▾** (under the readout) | the bandwidth and the tuning step in force; click either to pick another. BW offers the mode's bandwidths (NFM and DSB have no setting and show the number alone) |
+| **STEP** | the same step from the ladder that suits the mode. What is picked is kept per mode, and on AM per band (medium wave and shortwave each keep their own); with nothing picked it is the band's raster — 9 kHz on medium wave, 5 kHz on shortwave, 100 kHz on FM. It is this window's step; the plugin has its own |
+| **IQ** | the width the receiver runs at, and so the width of the spectrum. Through a SpyServer, the device's maximum halved per stage, up to 1 MHz (912k / 456k / 228k / 114k on an Airspy HF+, 600k / 300k / 150k on an RTL-SDR V4). On RTL-TCP and RTL-SDR (USB), the rates the chip itself takes — 3200k down to 1024k — and the 2.4 MHz halvings below them. Changing it reconnects. The menu shows the rate actually running: a pick narrower than the mode needs runs at the narrowest that carries it |
 | **FFT / RATE / SMOOTH** | the spectrum: resolution, frame rate, how much it is averaged |
-| **MIN … MAX … dB** (right of HOLD) | the dB window the trace and the waterfall are drawn in — the MIN and MAX sliders on the right edge, as numbers |
-| **top bar** | the link and the receiver behind it by name — `SpyServer · Airspy HF+`, `SpyServer · RTL-SDR`, `rtl_tcp (RTL-SDR)`, `Airspy HF+ (USB)` — so two servers on one host are told apart at a glance; then the IQ width, the decimation stage, dropped audio buffers and the output |
 | **HOLD** | freezes the trace; the waterfall keeps running |
+| **MIN … MAX … dB** | the dB window the trace and the waterfall are drawn in — the MIN and MAX sliders on the right edge, as numbers |
+| **DIRECT / AUDIO** | the link, and the sound |
 | **NR / LVL** | noise reduction, and the output leveller |
 | **IMPORT** | pulls SDR++'s bookmarks into the preset list |
-| **+ Add / Edit** (above the list) | Add puts what is tuned on the list, named from the station database when it knows the frequency. Edit turns a click on a row into a sheet — name, kHz, mode, and a Delete button — until Done. The same two buttons the iPad has, writing the same file |
-| **ZOOM / MAX / MIN / TIME** (right edge) | span, the dB window top and bottom, and how much history the waterfall holds. MAX / MIN set the waterfall's colour range too, as in SDR++: moving them recolours the whole history, not only the rows that follow. The colours are SDR++'s "Classic Green" map, shifted a little toward the dark end: MAX lands at 1 / 1.1 of the map, so a narrow window does not saturate every station red (SDR++ maps MAX to the top). The dB scale on the left picks its step from the MAX − MIN window as SDR++ does (1, 2, 2.5, 5, 10, 20 … dB), so narrowing the window refines it. MAX and MIN each travel the whole 0 … −160 dB and are kept at least 10 dB apart, as in SDR++. The waterfall is drawn from the unsmoothed FFT; SMOOTH acts on the trace only, as in SDR++. The trace is smoothed in SDR++'s order too: the bins under each pixel column are reduced to their peak first and the columns are averaged over time afterwards, so the trace's noise floor and the waterfall's are the same level and MIN set just under the trace gives a dark ground (averaging each bin first put the trace about 8 dB under the waterfall) |
+| **API :port** (end of the strip) | the port the control endpoint answers on, for a knob or a script — 8771, or the next free one when the plugin already holds it; **LISTEN ONLY** in the warning colour when another client holds the receiver (see [Sharing the receiver](#sharing-the-receiver)) |
+| **options pane** (right) | the live mode's settings, the RF gain and the receiver's own. ON / OFF rows flip on a click; every other row opens its list with the value in force ticked |
+| **+ Add / Edit** (above the list) | Add puts what is tuned on the list, named from the station database when it knows the frequency. Edit turns a click on a row into a sheet — name, kHz, mode, Delete — until Done. The same two buttons the iPad has, writing the same file |
+| **BAND JUMP** | MW, the shortwave metre bands, FM |
+| **ZOOM / MAX / MIN / TIME** (right edge) | span, the dB window top and bottom, and how much history the waterfall holds. MAX / MIN set the waterfall's colour range too, as in SDR++, and recolour the whole history. MAX and MIN travel 0 … −160 dB and stay at least 10 dB apart. The waterfall is drawn from the unsmoothed FFT; SMOOTH acts on the trace only |
 | **POWER** | disconnects and stops the audio |
-| **pane switch** (left end of the top bar) | slides the left pane alone — the preset list and BAND JUMP — out and back; the options pane stays. Grey, with its left column filled while the pane is on screen. Not kept across a relaunch: the window always opens with both panes |
-| **H** (key) | slides the preset list out to the left and the options pane out to the right, and back again; the spectrum and waterfall take the room. With one side already put away by the pane switch, H puts the other away too and the next H brings both back. Not while typing in a field; ⌘H is still Hide |
+| **H** (key) | slides both side panes away, and back; the spectrum and waterfall take the room. Not while typing in a field; ⌘H is still Hide |
 
-Click anywhere on the spectrum or the waterfall to tune there, SDR++'s
-mapping; hold the button down and the receiver follows the pointer. What is
-clicked is snapped to the step in force, so a click next to 954 kHz lands on
-954 and not on 953.7. A press that never travels more than five points is a
-click, not a drag — without that, the tremor in a click slid the frequency out
-from under it. The station name of whatever the marker is over appears above
-it, and the picture is drawn where the ear is rather than where the samples
-are, so what is seen and what is heard line up.
+### Tuning on the spectrum
 
-Under **Gain** in the options, **Auto gain** and **Station gain** carry the
-plugin's automatic per-station RF gain (`native-app/Sources/GainSearch.swift`,
-a port of `src/gainSearch.ts` with the same numbers in both test suites): on
-landing on a station the receiver tries a handful of gains, climbs from the
-lowest that leaves 6 dB of IQ headroom until the floor starts rising with the
-signal (half its rise or more), keeps that gain, and
-remembers it per receiver, channel and mode in `gain-memory.json` beside
-`receiver.json` for an hour (an older one, or one with no measurement time,
-is searched again on the next landing, as in the plugin).
-
-**WFM is judged differently** (Solo and the iPad; the plugin still uses the
-spectrum rule): by how quiet the demodulated audio is, not by the spectrum.
-Each step measures the FM discriminator's noise in 66-84 kHz, above anything a
-broadcast carries, and the search keeps the lowest gain within 1 dB of the
-quietest that leaves the headroom. Past the FM threshold the audio quiets all
-at once, which the spectrum's C/N does not show: on a weak station (78.9 MHz
-on the V4) the spectrum rule stopped at gain 18, where the audio was still
-noise; it quiets from 24, and that is what the search now picks. The search
-measures until a higher gain no longer beats the quietest, so a strong station
-takes three steps and a weak one up to eight (about 1.6 s).
-
-**Gain is each station's own.** Turning Gain keeps the value for the tuned
-station at once (`saved`, never searched over), auto gain on or off; no other
-station changes. Station gain reads SAVED, AUTO (the search chose it) or BAND
-(neither: the band's gain); clicking it on SAVED drops the station's value and
-hands it back to the search or the band. `/autogain` on the control endpoint
-takes the plugin's parameters, and its answer also carries the gain in force
-and the last search's table (`lastSearch`, C/N, quiet and IQ peak per step).
-As in the plugin, the spectrum and waterfall hold their last frame while a
-search steps the gain (and 250 ms after, plus the display's audio delay).
-
-### Stereo and mono
-
-On WFM the STEREO badge beside the frequency is also a switch, and stereo is
-each station's own: there is no setting for every station at once. Red means
-the pilot is locked and the station plays in stereo; grey means stereo with no
-pilot locked. Click it to keep the tuned station in **MONO** — a weak
-station's stereo is mostly hiss, and mono drops it — and click MONO to bring
-stereo back. Every other station keeps its own; a station never set is
-stereo. The choice belongs to the channel (to 100 Hz), not to a receiver, and
-is filed in `station-mono.json` beside `receiver.json`. The iPad has the same
-badge and the same file. On the control endpoint, `/stereo` reads the switch
-and `/stereo?toggle=1` flips it; `/options?set=fm.stereo` sets the tuned
-station too.
-
-The meters, the drop count and every row in the options panel describe **this**
-receiver. They used to be read off the loopback control
-endpoint, which belongs to the Stream Deck plugin whenever the plugin is
-running: the window then showed the plugin's gain, AGC and signal while driving
-its own receiver, and the two disagreed silently.
+Click anywhere on the spectrum or the waterfall to tune there; hold the button
+down and the receiver follows the pointer. A click is snapped to the step in
+force, so a click next to 954 kHz lands on 954. The station name of whatever
+the marker is over appears above it, and the picture is drawn where the ear is
+rather than where the samples are, so what is seen and what is heard line up.
 
 A preset or a **BAND JUMP** brings the window with it: the spectrum re-centres
-on where you asked to go. Everything that aims — the digits, a click on the
-trace, **TUNE −/+** — leaves the window where it is, because a window that
-moves under the pointer cannot be aimed with. Both presets either side of the
-current centre used to be answered inside the IQ window, so the display
-followed some presets and not others.
+on where you asked to go. The digits, a click on the trace and **TUNE −/+**
+leave the window where it is.
 
 **The wheel scrolls the band sideways**, and the crosshair button beside the
-readout decides what that means. It is SDR++'s centre-tuning switch, in SDR++'s
-place and wearing its mark:
+readout decides what that means — SDR++'s centre-tuning switch:
 
 | | the wheel | a click on the trace |
 | --- | --- | --- |
 | crosshair **off** (default) | slides the window over a receiver that stays put | tunes without moving the window |
 | crosshair **on** | tunes, and the marker stays in the middle | tunes and re-centres |
 
-Off, the scroll is free until it runs out of window: every frame already carries
-all the bins, so sliding across them costs no retune, no mute and no blank band
-— the same reason zooming is done here rather than at the receiver. Past the
-edge the receiver's own centre moves, so the band carries on to the ends of what
-the hardware can tune, and those steps do mute for a moment because each is a
-retune. Switching the crosshair on re-centres immediately rather than waiting
-for the next tune: tuned into a corner of the window, it brings the marker to
-the middle and the spectrum with it.
+With the crosshair off, scrolling inside the window costs no retune; past its
+edge the receiver's own centre moves, which mutes for a moment per step.
+Coasting (inertial scrolling) only ever slides the picture; it never retunes.
+A frequency the hardware cannot reach is clamped rather than obeyed.
 
-The two cannot both be true at once, which is why the switch changes what the
-wheel does rather than sitting alongside it. Panning the window while the marker
-is supposed to be pinned to the middle walks the centre away and leaves the
-tuning behind — 1134 kHz lost at 18x zoom, which is how this was found.
+### Gain
 
-Momentum is dropped to a fifth rather than obeyed: with inertial scrolling
-turned on in the mouse settings, a coasting wheel carried the window further
-than anyone aimed it. Dropping momentum outright was worse — some drivers mark
-every event they send that way, and the pan then did nothing at all. And
-coasting only ever slides the picture; it never moves the receiver. A flick on
-a Magic Mouse sends momentum events for a second or more, and with each of
-them allowed to retune, a small turn on medium wave kept going after the hand
-had stopped and came to rest at 0 kHz — the only floor the device reports.
+Under **Gain** in the options, **Auto gain** and **Station gain** carry the
+plugin's automatic per-station RF gain: on landing on a station the receiver
+tries a handful of gains, climbs from the lowest that leaves 6 dB of IQ
+headroom until the floor starts rising with the signal, keeps that gain, and
+remembers it per receiver, channel and mode in `gain-memory.json` beside
+`receiver.json` for an hour. **WFM is judged by the audio** instead: each step
+measures the discriminator's noise above the broadcast band, and the search
+keeps the lowest gain within 1 dB of the quietest.
 
-A frequency the hardware cannot reach is clamped rather than obeyed. The
-spectrum legitimately shows more band than the receiver can tune to: the IQ
-window is 456 kHz wide, so near the bottom of the band its left edge falls below
-the device's minimum and a pointer can aim there. Taking that aim at face value
-walked the receiver down a window's width per click until the readout said
-0 kHz and the frequency axis ran negative.
+**Gain is each station's own.** Turning Gain keeps the value for the tuned
+station (`saved`, never searched over), auto gain on or off. Station gain reads
+SAVED, AUTO (the search chose it) or BAND (the band's gain); clicking it on
+SAVED hands the station back to the search or the band. The spectrum and
+waterfall hold their last frame while a search steps the gain.
+
+### Stereo and mono
+
+On WFM the STEREO badge beside the frequency is also a switch, and stereo is
+each station's own. Red means the pilot is locked and the station plays in
+stereo; grey means stereo with no pilot locked. Click it to keep the tuned
+station in **MONO** — a weak station's stereo is mostly hiss — and click MONO to
+bring stereo back. A station never set is stereo. The choice belongs to the
+channel (to 100 Hz) and is filed in `station-mono.json` beside `receiver.json`;
+the iPad has the same badge and the same file. On the control endpoint,
+`/stereo` reads the switch and `/stereo?toggle=1` flips it.
+
+### Closing
 
 Closing the window quits, and quitting hands back what the process was holding:
-the audio device, the SpyServer's single control slot, and on `usb` the Airspy
-itself. Closing it takes the tool windows with it, so 気象ファクス or DRM being
-open no longer leaves the app running with its window gone — which it used to,
-because a tool window is a window of its own and the main one was then not the
-last to close.
-
-Settings live in `~/Library/Application Support/deck-rx/receiver.json` and are
-written as they change — there is no Save.
+the audio device, the SpyServer's control slot, and on `usb` the Airspy itself.
+The tool windows (気象ファクス, DRM) close with it.
 
 ## Straight off USB
 
-`Source` in the options panel is `spyserver` (the address below it) or `usb`,
-an Airspy HF+ on this machine's own bus. The device path is a translation
-rather than a second receiver: it fills in the same `DeviceInfo` the SpyServer
-client does, takes the same setting ids in the same order, and hands up the
-same interleaved int16 IQ at the same scaling, so the levels a station reads at
-are comparable between the two.
+`Source` in the options panel is `spyserver`, `rtltcp` (an address each), or
+`usb`, an Airspy HF+ on this machine's own bus. The USB path fills in the same
+device information and hands up the same IQ at the same scaling as the
+SpyServer client, so a station reads at comparable levels either way.
 
-Two things follow from a device being a device. **One process owns it**: with
-`usb` selected the plugin, SDR++ and anything else are locked out until Solo
-lets go — a server shares a stream, a USB device does not. And the rate ladder
-is the hardware's: 912 / 456 / 228 kHz come straight off the device, and
-anything below that is decimated here, filtered before the drop rather than
-after it.
+**One process owns a USB device**: with `usb` selected the plugin, SDR++ and
+anything else are locked out until Solo lets go. The rate ladder is the
+hardware's: 912 / 456 / 228 kHz come straight off the device, and anything
+below that is decimated here.
 
 It is built only where the library is. `build-app.sh` looks for libairspyhf and
-libusb under `/opt/local` (`AIRSPYHF_PREFIX` moves that), links them statically
-into the arm64 slice — MacPorts ships them arm64-only, so the Intel slice stays
-what it was — and says which it did. Without them the app is exactly what it
-was and the Source row offers the server alone.
-
-When `native-app/rtlusb/build-driver.sh` has fetched libairspyhf for the iPad,
-`build-app.sh` compiles that copy instead of linking MacPorts' library (still
-against MacPorts' libusb), because it carries `rtlusb/airspyhf.patch`: at
-912 kHz, the HF+'s zero-IF rate, the library's own IQ correction is heard as
-crackle on broadcast FM, and the patch lets the app skip it in WFM, as the
-iPad does (see [the iPad page](ipad.md)). The build says which library it used.
+libusb under `/opt/local` (`AIRSPYHF_PREFIX` moves that) and links them into
+the arm64 slice — so `usb` is offered on Apple silicon only. Without the
+libraries the Source row offers the servers alone. When
+`native-app/rtlusb/build-driver.sh` has fetched libairspyhf for the iPad,
+`build-app.sh` compiles that patched copy instead: at 912 kHz the library's own
+IQ correction is heard as crackle on broadcast FM, and the patch lets the app
+skip it in WFM, as the iPad does.
 
 ## Weather fax and DRM
 
@@ -200,37 +133,30 @@ Both are in the **ツール** menu and take a copy of the same IQ the receiver i
 already pulling, so neither interrupts listening.
 
 **気象ファクス** (Cmd-F) records the current frequency for two, five or twelve
-minutes and draws the chart — twelve is one JMH chart at 120 LPM. Recording
-first and drawing after, because the line period is found by measuring the whole
-page: the nominal 3000 samples is never exactly right, and an error of one part
-in three thousand shears the chart across a third of its width.
+minutes and draws the chart — twelve is one JMH chart at 120 LPM. It records
+first and draws after, because the line period is found by measuring the whole
+page.
 
 **DRM** (Cmd-D) decodes Digital Radio Mondiale on shortwave: sync lamps, station
 name, coding, bit rate and the running text, with the audio going to the same
 output the receiver uses. Costs 8-9 % of one core.
 
-Closing either window stops what it was doing. Both controllers are kept alive
-across opens — the fax window holds the completion handler for a capture that
-takes twelve minutes — and that used to mean a closed window went on recording
-or decoding with nothing on screen to say so.
-
 ![DRM](solo-drm.png)
 
 The four lamps are the diagnosis, in order: TIME means the OFDM timing was found
-— that happens on noise too — FAC means a frame was decoded, which cannot happen
-by accident, SDC brings the station name with it, and AUDIO is the AAC decoder
-accepting frames.
+— that happens on noise too — FAC means a frame was decoded, SDC brings the
+station name with it, and AUDIO is the AAC decoder accepting frames.
 
 The decoder is not in this repository. **Run
 [`native-app/drm/fetch.sh`](../native-app/drm/) once** to enable it; a checkout
-that never does still builds, without the menu item. That directory's README
-covers the licence, which is short: the decoder is GPL and so is this, so there
-is nothing to reconcile, but fdk-aac's licence means **a binary built with DRM
-must not be passed on**. Publishing source and running it yourself are
-unaffected.
+that never does still builds, without the menu item. The decoder is GPL and so
+is this, but fdk-aac's licence means **a binary built with DRM must not be
+passed on**. Publishing source and running it yourself are unaffected.
 
-No DRM transmission has been received off the air here yet; the decode is proven
-on recordings.
+Off the air it has locked onto a transmission and shown the station name; the
+audio decode is proven on recordings.
+
+Closing either window stops what it was doing.
 
 ## Presets on several devices
 
@@ -238,54 +164,36 @@ Optional, and off until it is asked for. Solo keeps its presets and
 per-station gains in its own files and needs nothing else to run. If you use
 more than one deck-rx receiver — the plugin, Solo on another Mac, the iPad —
 a small **sync hub** on any always-on Mac keeps those lists the same on all of
-them: give its address in Options → SERVER → **Sync hub**. With the box empty, or the hub switched off or out of reach,
-the app works exactly as it does alone; an edit made meanwhile goes up the next
-time the hub answers. What the hub is, how to run one and what it carries:
-[Sync](sync.md).
+them: give its address in Options → SERVER → **Sync hub**. With the box empty,
+or the hub out of reach, the app works exactly as it does alone; an edit made
+meanwhile goes up the next time the hub answers. See [Sync](sync.md).
 
 ## Copying it to another Mac
 
 Nothing has to be installed with it — no plugin, no Node, no native modules.
+A [release](https://github.com/soresore19xx/deck-rx/releases/latest) is signed
+and notarised and opens anywhere. A build of your own copies the same way:
 
 ```sh
 cp -R "/Applications/Deck RX Solo.app" /Volumes/somewhere/
-# on the other machine, after copying:
+# on the other machine, after copying a build signed for development:
 xattr -dr com.apple.quarantine "/Applications/Deck RX Solo.app"
 ```
 
-That last line is needed for a build signed here rather than one from a
-[release](https://github.com/soresore19xx/deck-rx/releases/latest); see
-[Handing it to someone else](#handing-it-to-someone-else) below.
+With the plugin also running against the same SpyServer, the two compete for
+the radio — see [Sharing the receiver](#sharing-the-receiver). Run one at a
+time, or stop the plugin's receiver from the deck first.
 
-Neither `autoDirect` nor `autoAudio` is read any more: connecting and playing
-both happen at launch. A radio that opens silent with nothing saying why is the
-same friction as the DIRECT press this bundle stopped needing.
-
-One consequence worth knowing: with the plugin also running, the two compete
-for the radio. SpyServer gives control to whichever client connected first and
-silently drops the other's retunes, so opening Solo while the plugin has the
-device takes it away — the plugin keeps its own idea of the frequency and
-demodulates whatever the window it can no longer move is centred on — until
-whichever of them is left takes control back, which each now notices and acts
-on (see [Sharing the receiver](#sharing-the-receiver)). The app says which side
-of that it is on (**LISTEN ONLY** in the label, `canControl` in
-`/health`, 409 from `/tune`). Run one at a time, or stop the plugin's receiver
-from the deck first.
-
-The menu bar is built by hand — there is no nib — so About and Quit exist at
-all. About reports which of the two builds is running and what it is pointed
-at, which is a real question with both installed.
+About (in the app menu) reports which of the two builds is running and what it
+is pointed at.
 
 ### Handing it to someone else
 
-The `xattr` line above is not a formality: `build-app.sh` signs with whatever
-identity is in the keychain, and on a development machine that is an **Apple
-Development** certificate. Gatekeeper rejects those on any Mac that did not
-build them (`spctl -a -vv` says `rejected`), so a recipient meets "the developer
-cannot be verified" and has to strip the quarantine flag by hand. That is fine
-between one's own machines and poor manners towards anyone else.
-
-`notarize.sh` is the other half, for a build that is actually going somewhere:
+`build-app.sh` signs with whatever identity is in the keychain, and on a
+development machine that is an **Apple Development** certificate. Gatekeeper
+rejects those on any Mac that did not build them, so a recipient meets "the
+developer cannot be verified". `notarize.sh` is the other half, for a build
+that is actually going somewhere:
 
 ```sh
 ./notarize.sh                       # defaults to /Applications/Deck RX Solo.app
@@ -294,134 +202,75 @@ between one's own machines and poor manners towards anyone else.
 
 It works on a copy — `/Applications` is never touched — re-signs with
 **Developer ID** plus the hardened runtime and a secure timestamp, submits to
-Apple, staples the ticket, and shows what Gatekeeper makes of the result. It
-submits a zip and never a .dmg: notarytool mounts a disk image to look inside
-it, and a mount that sticks leaves the tool waiting forever with nothing in
-Apple's history to show for it.
+Apple, staples the ticket, and shows what Gatekeeper makes of the result.
 
 Two things have to exist first, and it says so plainly if they do not:
 
 - a **Developer ID Application** certificate (Account Holder, paid membership).
-  Apple Development cannot be notarised. Look on the other machines before
-  making one: a team may hold five and **a Developer ID certificate cannot be
-  revoked**, so a wasted slot stays wasted. Make it through developer.apple.com
-  rather than Xcode's Manage Certificates, which issues off the old G1
-  intermediate and produces a leaf that expires when G1 does (2027-02-01)
-  however new the certificate is — upload a CSR and pick the "G2 Sub-CA
-  (Xcode 11.4.1 or later)" sub-CA explicitly.
+  A Developer ID certificate cannot be revoked and a team holds only a few, so
+  look on your other machines before making one. Make it through
+  developer.apple.com and pick the "G2 Sub-CA (Xcode 11.4.1 or later)"
+  explicitly — one issued off the old G1 intermediate expires with it
+  (2027-02-01).
 - notarytool credentials, either stored in the keychain
   (`xcrun notarytool store-credentials <profile> --key AuthKey_X.p8 --key-id X --issuer <uuid>`)
-  or passed in as `NOTARY_KEY` / `NOTARY_KEY_ID` / `NOTARY_ISSUER`, which is
-  what works over ssh where a keychain profile cannot be read. An App Store
-  Connect team API key rather than an app-specific password: it does not expire
-  and no password lands in a script or a shell history.
+  or passed in as `NOTARY_KEY` / `NOTARY_KEY_ID` / `NOTARY_ISSUER`. An App Store
+  Connect team API key rather than an app-specific password.
 
 **Signing has to happen in the desktop session.** Over ssh `codesign` cannot
-reach the login keychain and fails with `errSecInternalComponent`, whichever
-machine holds the certificate; the script says so when it happens. An ssh caller
-can still start it there without a password — `open -a Terminal <wrapper>.command`
-runs in the logged-in session.
+reach the login keychain and fails with `errSecInternalComponent`.
 
-It also does two things on its own initiative, both deliberate:
+It also does two things on its own initiative:
 
-- **It refuses a bundle with the DRM decoder in it.** fdk-aac's licence does not
-  combine with the GPL in a binary that is passed on, and this is the one place
-  that rule can be enforced rather than remembered. Keep the DRM build for
-  yourself — that was always allowed. Build the distributable copy somewhere
-  else rather than over the one you listen with:
+- **It refuses a bundle with the DRM decoder in it.** Build the distributable
+  copy somewhere else rather than over the one you listen with:
 
   ```sh
-  DECKRX_APP_DIR=~/.claude-work/out/release DECKRX_VERSION=1.1 \
+  DECKRX_APP_DIR="$HOME/deckrx-release" DECKRX_VERSION=1.13 \
     DRM_CORE_DIR=/nonexistent ./build-app.sh solo
-  ./notarize.sh --dmg "~/.claude-work/out/release/Deck RX Solo.app"
+  ./notarize.sh --dmg "$HOME/deckrx-release/Deck RX Solo.app"
   ```
 
-  `DECKRX_APP_DIR` defaults to `/Applications`, which is where a development
-  build belongs; a release build wants it elsewhere, because the DRM-free copy
-  would otherwise displace the DRM build and the machine would quietly lose the
-  decoder it had.
-- **It drops the bundled `presets.json`.** Shipping one machine's station list
-  is right for a second Mac of the same owner and wrong for a stranger, who
-  should start empty rather than with someone else's listening.
+  `DECKRX_APP_DIR` defaults to `/Applications`, where a development build
+  belongs.
+- **It drops the bundled `presets.json`**, so a stranger starts with an empty
+  list rather than someone else's listening.
 
-One thing it cannot soften: a Developer ID signature carries the certificate
-holder's name, which for an individual membership is a real one. `codesign -dvv`
-on the result shows it, and so does the recipient's Gatekeeper dialogue. That is
-how the mechanism works — worth deciding on before publishing a build rather
-than after.
+A Developer ID signature carries the certificate holder's name, which for an
+individual membership is a real one; `codesign -dvv` shows it, and so does the
+recipient's Gatekeeper dialogue.
 
 ## Settings
 
 `~/Library/Application Support/deck-rx/receiver.json`, seeded from the plugin's
 `config.json` on a first run when there is one and never written back to it.
-Host and port are editable from the options panel, so a copied app needs no
-hand-edited file. The station databases ship inside the bundle and seed
-`~/Library/Application Support/deck-rx/data` on first launch.
+Everything is written as it changes — there is no Save. The station databases
+ship inside the bundle and seed `~/Library/Application Support/deck-rx/data`
+on first launch.
 
 `source` is `spyserver`, `rtltcp`, `usb` or `rtlusb`, and `iqDecimation` is
-the offset from the device's minimum — 0 is the device's full rate, 1 halves
-it. On the two RTL-SDR sources the full rate is `rtlSampleRate`, the chip rate
-picked in the IQ menu. Both are on the toolbar and in the options panel; the
-file is where they persist, per receiver under `devices`.
+the offset from the device's full rate — 0 is the full rate, 1 halves it. On
+the two RTL-SDR sources the full rate is `rtlSampleRate`, the chip rate picked
+in the IQ menu. Both persist per receiver under `devices`.
 
-A width above 1 MHz is only ever picked by hand. One inherited from another
-receiver is not trusted that far — on 2026-09-21 the HF+'s stage 0 arrived on
-the V4 as 2.4 MHz — and through a SpyServer the V4 stays at 1 MHz or under even
-when picked, since its 2.4 MHz never tuned that day. The menu for a SpyServer
-therefore stops at 1 MHz, as the plugin's does: the V4 there offers 600 / 300 /
-150 kHz, the HF+ 912 / 456 / 228 / 114 kHz. (Until 2026-11-08 it also offered
-2400k and 1200k on the V4, both of which ran at 150k.)
+**Host**, **Port** and **Source** are changed with the link off: press
+**DIRECT** — or **CONNECT / DISCONNECT** at the head of the options panel's
+SERVER group — change them, and press it again. While the link is up (or still
+retrying) the three rows are greyed out, and the control endpoint answers 409
+to `/receiver?set=host|port|source`.
 
-The menu shows the rate the receiver is running at, not the last pick. A pick
-narrower than the mode needs (114k on the HF+ in WFM, which needs 200 kHz)
-runs at the narrowest line that carries the mode (228k there), and the menu
-says so within a few seconds of the stream restarting.
-
-`audioDevice` is the one row in the options panel that opens rather than
-cycles: a Mac has as many outputs as it has ever had devices attached, and
-walking them one click at a time moves the audio to each in turn on the way
-past. The list is read when the menu opens, so a device plugged in after the
-window was built is in it.
-
-It is bound when the audio engine starts, so choosing a different one rebuilds
-the graph rather than waiting for the next connect. **Host**, **Port** and
-**Source** are changed with the link off: press **DIRECT** — or **CONNECT / DISCONNECT**,
-the key at the head of the options panel's framed SERVER group — to disconnect, change them,
-press it again to connect. While it is lit — connected, or still retrying
-an address that does not answer — the three rows are greyed out and the control
-endpoint answers 409 to a `/receiver?set=host|port|source`. Entering a value
-never dials on its own, and an unchanged value is not sent at all: a field that
-only gained and lost the focus used to drop the link. Names are matched exactly,
-trailing spaces and all — CoreAudio reports "DX7s " and "SMSL USB AUDIO " that
-way, and trimming would fail to find the very devices the picker offered. A
-name that no longer resolves falls back to the system default rather than
-refusing to play.
+`audioDevice` opens a list of the outputs the Mac has now. It is bound when the
+audio engine starts, so choosing another rebuilds the graph at once. Names are
+matched exactly, trailing spaces included (some devices report their names that
+way); a name that no longer resolves falls back to the system default.
 
 `spectrumSplit` is the fraction of the spectrum panel given to the trace,
-dragged on the rail rather than typed.
-
-`spectrumFftSize`, `spectrumFps` and `spectrumSmooth` are the transform itself
-— how big, how often, and how much frame-to-frame averaging (a divisor: 1 is
-off, larger is slower). The Mac's toolbar has written all three since it had
-one; they simply had nowhere to live, so every launch started at the defaults
-again. The framerate now also restarts the frame timer when it changes: the
-period is read when the timer is scheduled, so the RATE dropdown did nothing
-until the next connection. The iPad's options sheet carries the two that get
-ridden, framerate and smoothing.
+dragged on the rail. `spectrumFftSize`, `spectrumFps` and `spectrumSmooth` are
+the FFT, RATE and SMOOTH menus.
 
 `uiScale` picks `min`, `middle` or `max` — fonts and every fixed dimension
-scale together, since scaling only the text leaves the panels their full width.
-The frequency readout and the station line above it take a further reduction on
-top of that: they are the largest things on screen by a wide margin. Applied
-immediately; the window is rebuilt in place and the receiver keeps running,
-though the waterfall's history restarts because its bitmap is sized to the old
-panel.
-
-Both bundles read and write it, and neither sends it over the control endpoint:
-the scale is the window's own size, and the endpoint on `:8771` may well belong
-to the plugin, which has no opinion about it. It used to be asked for over that
-link, so the row read `—` and its click came back 400 — in the front-end always,
-and in the standalone app whenever the plugin held the port.
+scale together. Applied immediately; the waterfall's history restarts. It is
+the window's own and is not sent over the control endpoint.
 
 | scale | minimum window |
 | --- | --- |
@@ -429,234 +278,64 @@ and in the standalone app whenever the plugin held the port.
 | middle | 1278 × 681 |
 | min | 1139 × 620 |
 
-An 11-inch MacBook Air is 1366 × 768, so `compact` is what fits it.
+An 11-inch MacBook Air (1366 × 768) takes `middle` or `min`.
 
 ## The AM channel filter
 
 AM is filtered twice: a 16th-order Butterworth on the IQ at half the channel
 width, and then a linear-phase brick wall on the detected audio — a Kaiser
 window sinc, 100 dB down, 300 Hz of transition, run as a FIR through vDSP
-(`Sources/BrickWall.swift`).
-
-The brick wall is there because an IIR skirt cannot turn fast enough. Japanese
-medium wave sits on a 9 kHz raster, so nothing above half the channel width
-belongs to the station being listened to: it is the neighbours' splatter and
-the band noise. Measured against SDR++ on 594 kHz, same SpyServer, same twenty
-seconds, in dB relative to the 0.3-3 kHz program band:
-
-| band | before | after | SDR++ |
-| --- | --- | --- | --- |
-| 4.0-4.5k | −9.5 | −9.1 | −9.0 |
-| 4.5-4.8k | −19.0 | −21.0 | −35.3 |
-| 4.8-5.2k | −23.9 | −104.1 | −88.3 |
-| 5.2-6.0k | −29.5 | −101.1 | −85.7 |
-| 6-8k | −40.1 | −97.1 | −81.7 |
-
-Everything above the transition is now 15-20 dB quieter than SDR++, and the
-passband matches it. The one band SDR++ still wins is its own transition,
-300 Hz wide, where its FFT filter turns faster than 2433 taps can.
-
-Two things were wrong before. The audio filter's cutoff was the full channel
-width where the IF filter used half it, so the 4.5-9 kHz octave rode on the IF
-skirt alone; and that skirt was an 8th-order Butterworth. The first is a
-one-line fix worth 15 dB on its own, and the plugin had the same line: it now
-halves the cutoff too (`demodulator.ts setAmBandwidth`, covered by
-`test/demodulator.test.ts`), which is what `docs/architecture.md` had claimed
-all along. The brick wall stays here only — 2433 taps at the 114 kHz audio rate
-is 2.8e8 multiply-accumulates a second, which is not Node's work.
-
-The filter costs about 5% of a core at the 114 kHz audio rate and adds 11 ms of
-constant delay. It designs itself from the bandwidth in force, and falls back
-to the Butterworth cascade for a rate it cannot be built for.
+(`Sources/BrickWall.swift`). Japanese medium wave sits on a 9 kHz raster, so
+nothing above half the channel width belongs to the station being heard.
+Above the transition the result is 15-20 dB quieter than SDR++'s on the same
+signal, with the same passband. It costs about 5 % of a core and adds 11 ms of
+constant delay. The measurements are in
+[standalone-app-port.md](standalone-app-port.md#solo-measurements-and-history-moved-from-solomd-2026-11-17).
 
 ## Sharing the receiver
 
 SpyServer takes several clients at once and gives control to the first only. A
-later client's retune is discarded silently, so the app reports it: `canControl`
-in `/health`, **LISTEN ONLY** in the window, 409 from `/tune`, and the readout
-follows the device rather than claiming a frequency nothing is receiving. There
-is no arbitration — which client owns the radio is the user's call.
+later client's retune is discarded silently, so the app reports it:
+`canControl` in `/health`, **LISTEN ONLY** in the window, 409 from `/tune`, and
+the readout follows the device rather than claiming a frequency nothing is
+receiving. Which client owns the radio is the user's call.
 
-What is not the user's call is what happens when control comes back. The server
-promotes whoever is left when the controlling client goes, and that arrives as
-a sync with `canControl` newly true — no reconnect, no notice. Both this app
-and the plugin now act on that edge: each keeps the frequency it was *told* to
-be on, through every refusal, and re-issues it the moment it may. Without it a
-client sat demodulating the piece of band the departed one had left the device
-on, which looks and sounds exactly like a receiver that has stopped working —
-and did, for twenty minutes, with nothing anywhere saying why.
+When the controlling client leaves, the server promotes whoever is left. Both
+this app and the plugin act on that: each keeps the frequency it was told to be
+on and re-issues it the moment it may, rather than demodulating whatever the
+departed client left the device on.
 
-### Loudness, next to the plugin
-
-The two chains leave the audio at the same level: same per-mode makeup, same
-master trim, same AM AGC constants, same soft limiter in the same place. 41 %
-here is 41 % there, sample for sample, and a step of `/volume?d=` moves 2 % on
-either, so the same knob or pad feels the same whichever receiver is answering.
-
-That is a recent statement. It was not true until 2026-09-10 — the limiter was
-on the wrong side of the volume here, which is the next section — and the
-sentence that used to sit in this paragraph, "anything you hear as one of them
-being louder is the volume control", was how it went unfixed. If the two sound
-different at the same settings, the arithmetic is comparable and should be
-compared before the knobs are.
-
-The same chain did not mean the same loudness across settings, though. The FM
-detectors return the phase step per IQ sample, so with fixed gains FM came out
-louder the lower the IQ rate ran: this app at iqDecimation 2 on the HF+
-(228 kHz) played FM 6-8 dB above AM at the same modulation depth, where the
-plugin at 456 kHz sits 0-3 dB apart (2026-09-30). The FM gains are now scaled
-by `iqRate / 456 kHz` in both chains (`fmOutputScale` / `OutputScale.fm`), so
-the decimation and the receiver no longer move FM's level; SSB and CW detect
-an amplitude and are not scaled. `test/audioLevels.test.ts` and the section of
-the same name in `native-app/Tests/main.swift` pin it at 228, 456, 600 and
-912 kHz.
-
-One trap when measuring it: `/tmp/deck-rx-solo-audio-record` is written before
-the volume control *and* before the limiter, while the plugin's
-`/tmp/deck-rx-audio-record` is after both. Two WAVs taken that way differ by the
-plugin's volume setting before either receiver has done anything differently,
-and a peak past full scale in this app's file is the makeup's headroom rather
-than clipping. `/tmp/deck-rx-solo-postmix-record` is the one to compare against
-the plugin's tap: it sits downstream of both.
-
-#### Where the volume sits — the bug that made this app the quieter one
-
-Both chains are makeup, then the optional AGC, then the tanh limiter — and both
-are code in this repository, so they can be compared by arithmetic rather than
-by ear. Doing that, on 2026-09-10, turned up an order that had been wrong since
-the audio was ported:
-
-| | until 2026-09-10 | now |
-| --- | --- | --- |
-| plugin | `softLimit(x · volume · makeup)` | unchanged |
-| this app | `softLimit(x · makeup)`, then volume | `softLimit(x · volume · makeup)` |
-
-Limiting before the volume fixes the knee at an input level rather than one that
-moves with the knob. At the 0.41 both receivers were set to, that meant this app
-compressed peaks the plugin passed through linearly, from identical settings on
-both sides:
-
-| input (int16, pre-makeup) | plugin | this app, before | after |
-| --- | --- | --- | --- |
-| ≤ 18568 | — | same | same |
-| 20000 | 12300 | 12248 | 12300 |
-| 24000 | 14760 | 13293 (**−0.91 dB**) | 14760 |
-| 32767 | 20152 | 13434 (−3.52 dB) | 20152 |
-
-24000 is not an arbitrary row: it is `AM_AGC_MAX_OUTPUT`, where the carrier
-AGC's look-ahead puts peaks, so AM programme peaks landed there routinely. On a
-deeply modulated tone the whole-buffer RMS was 0.8 dB down.
-
-Two things about how it stayed hidden are worth keeping. It only became audible
-when this app started carrying the sound itself — before it was an independent
-receiver, the plugin was doing the listening and this stage was only on the path
-after DIRECT was pressed. And when the loudness difference was finally noticed,
-it was diagnosed as a volume-knob difference and "fixed" by turning this app
-*down*, from 0.9 to 0.41, which matched the wrong one of the two and left the
-original complaint in place.
-
-The limiter now lives in `AudioSink.write`, after the volume ramp, so
-`level()` hands on samples that may exceed ±1 — that headroom is what the makeup
-is for. `test/fixtures/audioOutputGolden.json` pins the whole vector: the
-plugin's numbers are checked by `test/audioLeveling.test.ts` and this app's by
-`native-app/Tests/main.swift`, both against the same file, so neither side can
-change its order again without a test going red.
+The plugin and this app leave the audio at the same level — same per-mode
+makeup, master trim, AM AGC constants and soft limiter in the same place — so
+41 % here is 41 % there, and FM's level does not depend on the IQ rate.
+`test/fixtures/audioOutputGolden.json` holds both to the same numbers.
 
 ## Channel stage
 
 Before anything is demodulated, the mode's channel is filtered out of the IQ
 and decimated (`ChannelPlan` and `Channelizer` in `Demods.swift`), so the IQ
-width is a display setting that costs the audio nothing. The rate comes from
-the filters that follow, not from a setting:
+width is a display setting that costs the audio nothing:
 
-| mode | channel rate | from |
-| --- | --- | --- |
-| WFM | the whole FM signal (±181 kHz) passed, no alias on the IF skirt, and room: 352.5 kHz at the 250 kHz bandwidth | the multipath equaliser ahead of the IF filter, and the IF FIR's cutoff and skirt |
-| NFM, DSB | at least 24 kHz (12.5 kHz IF) | the IF FIR's cutoff and its skirt, passed whole, with no alias landing on the skirt. NFM and DSB have a width of their own, `nfmBandwidthHz` (12.5 kHz, SDR++'s default): they used to take the broadcast 250 kHz, and a station 25 kHz off came straight through |
-| AM | at least 24 kHz | the IF filter's cutoff, plus the 2.75 x its eighth-order skirt needs for 70 dB |
-| USB, LSB, CW | at least 24 kHz | the same rule on the SSB bandwidth |
+| mode | channel |
+| --- | --- |
+| WFM | the whole FM signal (±181 kHz) passed, 352.5 kHz at the 250 kHz bandwidth; the multipath equaliser runs on it ahead of the IF filter |
+| NFM, DSB | at least 24 kHz, with a width of their own (`nfmBandwidthHz`, 12.5 kHz) |
+| AM | at least 24 kHz |
+| USB, LSB, CW | at least 24 kHz |
 
 The rate is the IQ rate over the largest whole divisor that stays above that.
-WFM then drops to about 48 kHz for the output (its 15 kHz audio band is
-filtered before that drop); the others are at their audio rate already.
+WFM then drops to about 48 kHz for the output; the others are at their audio
+rate already. The multipath equaliser pauses while a neighbouring station is
+in the channel, since it assumes a single signal.
 
-Before this the detectors ran at the full IQ rate and only dropped samples at
-the end. Measured on 2026-10-24, one second of IQ on an M4 Max core: WFM 0.49 s
-at 1.024 MHz, 1.67 s at 2.4 MHz, 2.64 s at 3.2 MHz — the audio could not keep
-up on a wide IQ — and NFM, SSB and CW, with no filter in front of that drop,
-folded the whole width's noise into the audio (SSB 10 dB worse at a 150 kHz
-audio rate). With the channel stage, at 2.4 MHz: WFM 0.14 s, NFM 0.03, AM,
-SSB and CW under 0.01, and every mode within 0.5 dB SINAD of the same detector
-fed the full IQ rate (`native-app/Tests/ChannelTests.swift`).
-
-Running WFM at a third of a megahertz exposed one more thing: the
-discriminator's phase step is the frequency averaged over a sample, a sinc
-response that left the 38 kHz subcarrier 2% short of L+R at 343 kHz, which caps
-separation at 40 dB. `Demods` undoes it (`lmrDroop`); separation is 60.8 dB at
-the channel rate against 60.9 at 2.4 MHz, the remainder being the 250 kHz IF
-bandwidth.
-
-The multipath equaliser sits on the channel, ahead of the IF filter, as OnAir
-puts it (`fm_rx.cpp`: channel filter, then the equaliser, then the
-discriminator). Behind the IF filter it was handed a signal already trimmed,
-no longer constant in modulus, and "corrected" the trim into L-R: 10.6 dB of
-separation lost on a clean signal, averaged over 400 Hz to 7 kHz. For WFM the
-channel therefore passes the whole FM signal, ±181 kHz (75 kHz deviation plus
-twice the 53 kHz multiplex), which puts the channel at 400 kHz from 2.4 MHz.
-Where there is nothing to decimate (the HF+'s 456 kHz) the channel filter stays
-all the same. The filter's history starts as the first sample, not zeros: the
-ramp out of zeros looked like an echo to the equaliser, which kept what it
-learnt from it on a narrow-band signal (mono SINAD 51 dB instead of 93).
-
-The equaliser assumes one constant-modulus signal, and a second station breaks
-that: a neighbour 200 kHz off, even 20 dB down, took a lone tone from 93 to
-about 50 dB SINAD, wherever the equaliser sat, and an equal one to -7 dB. An
-echo is the station itself and stays in its band; a neighbour brings power
-the IF filter then removes. So the equaliser stops while the IF filter takes
-more than -26 dB of what it is handed and resumes below -28 dB (a lone station
-measured at most -30.2 dB: full-deviation stereo at 15 kHz, an echo, or noise
-down to 28 dB SNR; a -20 dB neighbour -22 dB). With that, the equaliser costs
-no separation on a clean signal, cleans an 8.8 µs echo at -10 dB by 15-33 dB,
-and a neighbour at the same level leaves the wanted station at 65.7 dB SINAD.
-
-`native-app/run-quality.sh` measures all of this the way the receiver is used:
-every mode through LocalRadio, packet by packet, at the HF+'s and the V4's IQ
-rates, alone, with a neighbour, an echo, a weak signal and a station off the
-centre, and lists every rule that fails (about 20 minutes, -O). Its test
-signals are made at 2.4 MHz or more and decimated, as a receiver does it:
-sampling an FM signal straight at a low rate folds its tails into the band and
-reads as 26 dB of lost separation at 300 kHz that the receiver is not losing.
-
-Every detector also keeps its decimation grid across packets. It used to keep
-sample i when i % divisor == 0 counting from each packet's start and drop the
-remainder, which broke the time base whenever a packet was not a multiple of
-the divisor — always, with the channel stage's divisors or rtl_tcp's reads: a
-1 kHz WFM tone at 13 dB SINAD instead of 93. The plugin had the same code and
-has the same fix (`test/demodPackets.test.ts`).
-
-## CPU
-
-The figures below predate the channel stage (2026-10-25), when demodulation
-ran per IQ sample.
-
-Measured on a 2015 MacBook Air 11 (two Broadwell cores):
-
-| setting | CPU |
-| --- | --- |
-| FFT 4096, 30 fps, IQ 456 kHz | 79% |
-| FFT 1024, 10 fps, IQ 456 kHz | 84% |
-| FFT 1024, 10 fps, IQ 228 kHz | 44% |
-
-FFT size and frame rate do essentially nothing: demodulation runs per IQ sample
-and a transform thirty times a second is noise beside it. Only the IQ rate
-matters, and halving it costs FM quality — the plugin raised its own default
-from 228 to 456 kHz because far-adjacent stations aliased into the audible
-baseband. AM does not care, so `iqDecimation: 2` is a real option on a slow
-machine used for medium wave and not on one used for FM.
-
+`native-app/run-quality.sh` measures every mode through the receiver at the
+HF+'s and the V4's IQ rates — alone, with a neighbour, an echo, a weak signal
+and a station off the centre — and lists every rule that fails (about 20
+minutes).
 
 ## Under it
 
-Why this exists at all, how the display is kept in step with the ear, and
-what tuning inside the window has to get right are in
+Why this exists at all, how the display is kept in step with the ear, what
+tuning inside the window has to get right, and the measurements behind the
+figures above are in
 [standalone-app-port.md](standalone-app-port.md#deck-rx-solo-design-notes).

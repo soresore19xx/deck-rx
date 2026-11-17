@@ -30,6 +30,30 @@ Each of them runs on its own. Keeping presets and per-station gains the same
 across several of them is optional and needs a small [sync hub](docs/sync.md)
 on one always-on Mac; without one, nothing is missing.
 
+## Requirements
+
+| | Runs on | Processor | Also needs |
+| --- | --- | --- | --- |
+| **Deck RX Solo** | macOS 12 or later | Apple silicon or Intel (one universal app) | a SpyServer or `rtl_tcp` server on the network — or, on Apple silicon only, an Airspy HF+ on the Mac's own USB |
+| **Deck RX** (Mac front-end) | macOS 12 or later | Apple silicon or Intel | the Stream Deck plugin, running on the same Mac |
+| **Deck RX** (Stream Deck plugin) | macOS 11 or later | Apple silicon (its native audio modules are built for arm64) | the Stream Deck app 7.1 or later, a Stream Deck +, MacPorts `portaudio` |
+| **Deck RX** (iPad app) | iPadOS 17 or later | any iPad that runs it; a receiver on the iPad's own USB needs an M-series iPad | building from source and signing with your own Apple developer account — it is not on the App Store |
+
+The server side is a Linux machine with the receivers on USB, running
+SpyServer — here Ubuntu 24.04 (aarch64) in a VM; see
+[server setup](docs/server-setup.md).
+
+Tested on (November 2026):
+
+| Machine | OS | Runs |
+| --- | --- | --- |
+| Mac Studio (2025, M4 Max) | macOS 27.2.1 | plugin, Deck RX, Solo |
+| Mac mini (2024, M4) | macOS 27.2.1 | plugin, Deck RX, Solo; also hosts the SpyServer VM |
+| MacBook with an A18 Pro (Mac17,5) | macOS 27.2.1 | Solo |
+| MacBook Air (11-inch, Early 2015, Intel Core i7) | macOS 12.7.6 | Solo |
+| iPad Pro 12.9-inch (5th generation, M1) | iPadOS 27 | iPad app, with an RTL-SDR or Airspy HF+ on its USB too |
+| iPad mini (6th generation, A15) | iPadOS 27 | iPad app |
+
 ## Download
 
 [**Deck RX Solo 1.13**](https://github.com/soresore19xx/deck-rx/releases/latest)

@@ -7,7 +7,7 @@
 | | Version / source |
 |--|--|
 | macOS | 11+ (Apple Silicon recommended; native binding ships as arm64) |
-| Stream Deck software | 6.6 or later |
+| Stream Deck software | 7.1 or later (the manifest's minimum) |
 | Stream Deck **+** hardware (encoder + LCD) | for the dial actions |
 | Node.js (via nodebrew / nvm / fnm etc.) | 20 or later, for development |
 | Stream Deck CLI (`streamdeck` command) | `npm install -g @elgato/cli` |

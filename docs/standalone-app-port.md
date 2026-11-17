@@ -10,7 +10,7 @@
 
 **Decision (2026-08-23):** the native app becomes a complete receiver in
 Swift. Not a front-end that needs the plugin running, and not a remote
-front-end talking to studio over the network — a `.app` that can be copied to
+front-end talking to the Mac that runs the plugin over the network — a `.app` that can be copied to
 any Mac and used.
 
 **Why:** the current split buys nothing. The app already owns no receiver
@@ -18,7 +18,7 @@ state, so it is useless without the plugin on the same machine, and in
 exchange the whole thing inherits Node plus two ABI-locked native modules
 (`naudiodon`, `deck-rx-asrc`) that must be rebuilt against whatever Node the
 Stream Deck app ships. Portability is the point; a receiver that only runs on
-studio is what the user does not want.
+the one Mac with the Stream Deck attached is what the user does not want.
 
 ## What actually has to move
 

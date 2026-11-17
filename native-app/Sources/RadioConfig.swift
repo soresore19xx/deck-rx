@@ -89,7 +89,7 @@ struct RadioConfig: Codable, Equatable {
     /// Links that actually came up — source, address and the device found
     /// there — newest first, so a receiver used once is a pick from a list
     /// rather than three fields typed again (asked 2026-10-23, when the V4
-    /// moved between SpyServer on mini4 and rtl_tcp on the iPad itself).
+    /// moved between SpyServer on the server VM and rtl_tcp on the iPad itself).
     /// Kept in UserDefaults, not in this file: it is written on every connect,
     /// and a config change rebuilds the demodulators right as the stream starts.
     struct RecentLink: Codable, Equatable {

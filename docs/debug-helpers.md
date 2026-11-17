@@ -6,22 +6,28 @@
 
 Touching `/tmp/deck-rx-lcd-dump` arms a render-time hook that writes the raw
 source SVG of each encoder LCD to `/tmp/deck-rx-lcd-<tag>.svg`
-(`tag` ∈ `tune` / `volume` / `options` / `am-options`). Without the flag the
-hook is a single `existsSync` check per render and adds no overhead, so it
-can be left in production builds.
+(`tag` is the action: `tune`, `volume`, `options`, `am-options`,
+`ssb-options`, `options-combo`, `band-select`, `options-auto`, `options-2col`,
+`fft`, `fft-lcdx2-left` / `-right` / `-single`). Without the flag the hook is a
+single `existsSync` check per render and adds no overhead, so it can be left in
+production builds.
 
-`scripts/dump-lcd.sh` runs the full capture loop: wipe stale dumps, set the
-flag, bounce the plugin (kills the PID in `/tmp/deck-rx.pid` rather than
-`pkill -f "<pattern>"` — see the script comment for why), wait up to 120 s
-while you cycle through each panel on the device (Stream Deck only
-re-renders the *visible* action), then `rsvg-convert -z 2` into
-`~/ICON/deck-rx-lcd-<tag>.png` and clear the flag. Use this for README /
-store screenshots without having to crop a Stream Deck app window capture.
+`scripts/dump-lcd.sh` captures the panels on the Stream Deck's current page
+without restarting anything: it wipes stale dumps, sets the flag, touches
+`/tmp/deck-rx-lcd-force` (the plugin re-renders every visible dial once and
+removes it), waits 2.5 s, then `rsvg-convert -z 2` into
+`~/ICON/deck-rx-lcd-<tag>.png` and clears the flag. Only visible actions
+render, so a dial on another page is skipped. `--all` keeps polling for up to
+180 s while you page through the deck; `--docs` also writes
+`docs/lcd-<label>.png`.
 
-Forgotten flags from a previous session (`mtime > 10 min`) are GC'd at
-plugin startup, so the dump path can't stay armed across restarts. The
-script's touch-then-bounce flow keeps the flag fresh, so legitimate
-capture sessions are unaffected.
+`scripts/render-all-dials.mjs` (`npx tsx scripts/render-all-dials.mjs`) draws
+the settings and Volume dials, and the six-mode Combo composite, from the test
+harness with a mock SpyServer — no device, no running plugin touched — into
+`docs/lcd-*.png`. The Tune and FFT dials need the real deck (`dump-lcd.sh`).
+
+A flag forgotten from a previous session is removed at plugin startup, so the
+dump path can't stay armed across restarts.
 
 `scripts/lint-lcd.py` parses the dump SVGs and reports overlapping
 `<text>` / `<polygon>` boxes (e.g. clock vs 7-seg digits in dial-tune).

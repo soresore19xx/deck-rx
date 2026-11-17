@@ -522,7 +522,7 @@ check("no pilot, no lock", !mono.stereoLocked)
 
 section("config round-trips and falls back")
 var c = RadioConfig()
-c.host = "192.168.0.142"; c.port = 8888; c.mode = WFM
+c.host = "192.0.2.42"; c.port = 8888; c.mode = WFM
 c.tuneStepByMode = ["1": 100_000, "2": 9_000]
 let enc = JSONEncoder()
 let dec = JSONDecoder()
@@ -547,10 +547,10 @@ check("defaults are safe with no file", RadioConfig().host == "127.0.0.1")
 // setting reverts at once — which is how a machine with autoDirect true on
 // disk came up not connecting, and said nothing.
 let partial = """
-{"host":"192.168.0.142","port":8888,"autoDirect":true,"mode":1}
+{"host":"192.0.2.42","port":8888,"autoDirect":true,"mode":1}
 """
 if let old = try? dec.decode(RadioConfig.self, from: Data(partial.utf8)) {
-    check("known keys survive a file missing newer ones", old.host == "192.168.0.142" && old.port == 8888,
+    check("known keys survive a file missing newer ones", old.host == "192.0.2.42" && old.port == 8888,
           "host \(old.host) port \(old.port)")
     check("autoDirect survives", old.autoDirect)
     check("absent keys take their default", old.jpRegion == "kanto" && old.audioDecimate == 4,

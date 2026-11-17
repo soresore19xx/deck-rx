@@ -672,8 +672,8 @@ class SpyService {
       for (const fn of this.enabledListeners) fn(this.enabled);
       // Volume and mute: from disk once, before the disabled bail, and never
       // again. Re-reading them on every connect let a mute set less than the
-      // 300 ms persist debounce before /power?toggle=1 come undone (the
-      // studio speakers played 1440 kHz at 41 %, 2026-10-10), and a plugin
+      // 300 ms persist debounce before /power?toggle=1 come undone (a
+      // remote power-on once played a station at 41 % into a room), and a plugin
       // started disabled sat at the default volume 1.0 until its first
       // connect — a mute in that window would have persisted 1.0.
       if (!this.volumeHydrated) {

@@ -467,14 +467,14 @@ func runRtlTcpTests() {
 
     // Each source keeps its own address, the way SDR++ keeps one per source.
     var c = RadioConfig()
-    c.setAddress(host: "192.168.0.143", port: 8888)
+    c.setAddress(host: "192.0.2.43", port: 8888)
     c.selectSource("rtltcp")
     check("a source never used keeps the host and takes rtl_tcp's port",
-          c.source == "rtltcp" && c.host == "192.168.0.143" && c.port == 8890,
+          c.source == "rtltcp" && c.host == "192.0.2.43" && c.port == 8890,
           "\(c.host):\(c.port)")
     c.selectSource("spyserver")
     check("going back brings SpyServer's own address back",
-          c.host == "192.168.0.143" && c.port == 8888, "\(c.host):\(c.port)")
+          c.host == "192.0.2.43" && c.port == 8888, "\(c.host):\(c.port)")
     c.setAddress(port: 5555)
     c.selectSource("rtltcp")
     c.selectSource("spyserver")

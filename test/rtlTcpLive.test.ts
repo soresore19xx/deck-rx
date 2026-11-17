@@ -11,7 +11,7 @@ import {
  * Opt-in live check against a real rtl_tcp server. Skipped unless
  * DECK_RX_RTLTCP_HOST is set, so the normal `npm test` run stays offline:
  *
- *   DECK_RX_RTLTCP_HOST=192.168.0.143 DECK_RX_RTLTCP_PORT=1234 \
+ *   DECK_RX_RTLTCP_HOST=192.0.2.43 DECK_RX_RTLTCP_PORT=1234 \
  *     npx vitest run test/rtlTcpLive.test.ts
  *
  * It only receives — no gain or frequency is left changed that the next client

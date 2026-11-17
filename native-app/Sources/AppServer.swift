@@ -6,8 +6,9 @@ import Network
 /// endpoint, the status feed file, and the spectrum socket.
 ///
 /// This is what inverts the dependency. The app already consumes these when the
-/// plugin is running; producing them is what lets the deck — and `knobctl`,
-/// which has spoken this protocol since it was written — drive the app instead.
+/// plugin is running; producing them is what lets the deck — and any external
+/// client of the control endpoint, such as a knob's daemon — drive the app
+/// instead.
 ///
 /// **Only one process can own these at a time.** Every binding is attempted and
 /// allowed to fail: with the plugin running it owns them, and this stays quiet

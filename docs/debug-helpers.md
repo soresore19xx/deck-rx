@@ -146,6 +146,7 @@ the WAVs told apart:
 | --- | --- | --- |
 | `/tmp/deck-rx-solo-audio-record` | `/tmp/deck-rx-solo-audio-<ts>.wav` | the standalone app's audio, after levelling and the mute window, **before the volume knob** and before the sink |
 | `/tmp/deck-rx-solo-iq-record` | `/tmp/deck-rx-solo-iq-<rate>-<ts>.bin` | the IQ as it arrived, packet by packet (a little-endian UInt32 byte count, then the int16 IQ), so a fault can be replayed offline through the same demodulator with the same packet boundaries. 3.6 MB a second at 912 kHz |
+| `/tmp/deck-rx-fax-dump` | `/tmp/deck-rx-fax-<rate>Hz-<ts>.s16` | the IQ a weather-fax capture decoded, int16 interleaved, so a bad chart can be told apart from a bad capture offline |
 | `/tmp/deck-rx-solo-postmix-record` | `/tmp/deck-rx-solo-postmix-<ts>.wav` | the standalone app again, at the engine's main mixer — after the volume ramp and after AVAudioEngine's own rate conversion |
 | `/tmp/deck-rx-audio-record` | `/tmp/deck-rx-audio-<ts>.wav` | the plugin, **after** its volume ramp, before resampling |
 | `/tmp/deck-rx-postasrc-record` | `/tmp/deck-rx-postasrc-<ts>.wav` | the plugin again, the exact bytes handed to the output device, after resampling |

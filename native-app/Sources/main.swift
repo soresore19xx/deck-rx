@@ -1956,8 +1956,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         radio.onFrame = { [weak self] frame in
             guard let self, self.direct else { return }
             self.view.spectrum.accept(frame)
-            // Republish for anything reading the socket — the deck, knobctl,
-            // whatever else speaks it. Free when nobody is connected.
+            // Republish for anything reading the socket — the deck, an external
+            // knob, whatever else speaks it. Free when nobody is connected.
             self.server.publish(frame)
         }
         server.onStateChange = { [weak self] in self?.syncSource() }

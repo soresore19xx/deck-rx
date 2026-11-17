@@ -14,13 +14,13 @@ import { spectrumSettings, setSpectrumSettings } from './spectrumFeed.js';
  * Local control endpoint, so an external knob can drive the receiver the way
  * the Stream Deck+ dials do.
  *
- * The current client is `knobctl` (the BRIMFORD two-tier knob daemon in
- * ~/dev/Vol): upper knob = frequency, lower knob = volume, short press =
- * mute. It fires one HTTP GET per event and never reads the response body.
+ * A typical client is a USB knob's daemon (frequency on one ring, volume on
+ * another, a press for mute) that fires one HTTP GET per event and never reads
+ * the response body.
  *
  * Why HTTP inside the plugin, rather than the plugin reading the knob itself:
  * node-hid here would need Input Monitoring granted to the Stream Deck app and
- * would fight knobctl over the same HID device. A command file on the RAMDisk
+ * would fight the knob's own daemon over the same HID device. A command file on the RAMDisk
  * was rejected too — polling adds latency to every tick.
  *
  * Security posture: bound to 127.0.0.1, no auth. Same trust level as the
@@ -254,7 +254,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       return;
     }
     case '/preset': {
-      // Press-and-turn on the knob. Discrete slots, so knobctl sends ±1 with
+      // Press-and-turn on the knob. Discrete slots, so a knob sends ±1 with
       // no acceleration; anything else is a caller bug worth surfacing.
       const d = num(q.get('d'));
       if (d !== 1 && d !== -1) { bad(); return; }

@@ -122,7 +122,7 @@ And the rest:
 - [Sync](docs/sync.md) — presets and per-station gains kept in step across the plugin, Solo and the iPad through an optional sync hub on any always-on Mac, each device's own files as its cache
 - [Repository layout](docs/repository-layout.md)
 - [Build & install](docs/build-install.md)
-- [Server-side setup (SpyServer on Linux ARM/aarch64)](docs/server-setup.md)
+- [Server-side setup (SpyServer on Linux ARM/aarch64)](docs/server-setup.md) — including the Linux VM on a Mac: VirtualBuddy, USB passthrough of the receivers, bridged networking
 - [Dial layouts](docs/dial-layouts.md) — per-plugin LCD screenshots + per-row UI explanations
 - [Architecture notes](docs/architecture.md) — dial details, signal-path implementation, internal mechanisms
 - [Station-name auto-lookup](docs/station-db.md) — JP DB scraper + EIBI integration, alias rules, NHK channel inference + transmitter-site + callsign annotation

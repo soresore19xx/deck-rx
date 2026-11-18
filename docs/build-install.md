@@ -2,36 +2,57 @@
 
 [← Back to README](../README.md)
 
-## Developer prerequisites
+## What to install
 
-| | Version / source |
-|--|--|
-| macOS | 11+ (Apple Silicon recommended; native binding ships as arm64) |
-| Stream Deck software | 7.1 or later (the manifest's minimum) |
-| Stream Deck **+** hardware (encoder + LCD) | for the dial actions |
-| Node.js (via nodebrew / nvm / fnm etc.) | 20 or later, for development |
-| Stream Deck CLI (`streamdeck` command) | `npm install -g @elgato/cli` |
-| MacPorts: `portaudio` | runtime audio bridge (always needed — naudiodon talks PortAudio directly) |
-| MacPorts: `ffmpeg` | optional — only if you want the icecast publish path |
-| Xcode Command Line Tools | needed by node-gyp for the native rebuild |
-| MacPorts: `librsvg`, `ImageMagick`, `sox` | optional — LCD dump / audio analysis scripts |
+### To use it
+
+Nothing from MacPorts:
+
+- **Deck RX Solo** from the release dmg links what it needs statically
+  (libairspyhf and libusb included).
+- **The iPad app** likewise.
+- **The plugin**, once built, carries its own copies of PortAudio and
+  libsamplerate next to its native modules. The one program it runs outside
+  itself is `ffmpeg`, and only for the icecast publish path. It looks for it
+  in `/opt/local/bin`, `/usr/local/bin` and `/opt/homebrew/bin`.
+
+### To build it
+
+The build scripts look for libraries under MacPorts' `/opt/local`, so
+[install MacPorts](https://www.macports.org/install.php) first. Everything else
+comes from Apple.
+
+| To build | From Apple, or anywhere | From MacPorts |
+| --- | --- | --- |
+| the Stream Deck plugin | Xcode Command Line Tools (for node-gyp); Node.js 20 or later, from any source; the Stream Deck app 7.1 or later, whose own Node the native modules are built for | `portaudio`, `libsamplerate` — required. `npm run rebuild-native` copies both into the plugin |
+| Deck RX Solo and the Mac front-end | Xcode Command Line Tools (`swiftc`) | `airspyhf` and `libusb` — optional: the Airspy HF+ USB source, in the arm64 slice only. `librsvg` — optional: the app icons; without `rsvg-convert` the apps get the generic icon |
+| the iPad app | Xcode (the iOS SDK; the USB driver is built with `xcodebuild`) | `librsvg` — optional, as above |
+| DRM, in Solo and the iPad app (`native-app/drm/fetch.sh`) | `git`, `curl` | `autoconf`, `automake`, `libtool` — they generate fdk-aac's `configure` |
+| a [sync hub](sync.md) | Node.js 20 or later | — |
 
 ```sh
-sudo port install portaudio
-# Optional, only if you'll use the icecast publish path:
-sudo port install ffmpeg
-# node-gyp toolchain:
-xcode-select --install   # if not already installed
-# Stream Deck CLI (provides the `streamdeck` command):
-npm install -g @elgato/cli
+xcode-select --install
+sudo port install portaudio libsamplerate          # the plugin
+sudo port install airspyhf libusb librsvg          # Solo's USB source; the app icons
+sudo port install autoconf automake libtool        # DRM
+sudo port install ffmpeg                           # icecast publish, if you use it
 ```
 
 The PI's output-device dropdown comes from `naudiodon.getDevices()` /
 `getHostAPIs()` in-process; no other audio tool is needed.
 
-The Mac apps (Solo and the front-end) and the iPad app are built separately,
-with `swiftc` from the Command Line Tools — see
-[native-app.md](native-app.md) and [ipad.md](ipad.md).
+How the Mac apps and the iPad app are built: [native-app.md](native-app.md),
+[ipad.md](ipad.md).
+
+### Developer tools (optional)
+
+| Tool | MacPorts | Used by |
+| --- | --- | --- |
+| `rsvg-convert` | `librsvg` | `scripts/dump-lcd.sh`, `scripts/lint-lcd.py`, `scripts/render-all-dials.mjs` |
+| `magick`, `compare` | `ImageMagick7`, with `/opt/local/lib/ImageMagick7/bin` on `PATH` (the older `ImageMagick` port has `compare` but no `magick`) | `scripts/render-all-dials.mjs` (the montage), `scripts/compare-lcd.sh` |
+| `sox` | `sox` | `native-app/tools/run-drm-selftest.sh` |
+| `socat` | `socat` | `native-app/tools/spyserver-relay.sh` |
+| libsndfile, libsamplerate | `libsndfile`, `libsamplerate` | `native-app/drm/build-cli.sh` (the DRM command-line harness) |
 
 ## First install
 
@@ -88,7 +109,7 @@ get a `NODE_MODULE_VERSION` mismatch or, more commonly, the
 ### `npm run rebuild-native` — what it does
 
 [`scripts/rebuild-native.sh`](../scripts/rebuild-native.sh) automates
-three steps:
+four steps:
 
 1. **Swap libportaudio.dylib for the MacPorts arm64 build.** The naudiodon
    package ships a pre-built `node_modules/naudiodon/portaudio/bin/libportaudio.dylib`
@@ -111,11 +132,19 @@ three steps:
 3. **Same for `segfault-handler`** (a debug dependency naudiodon imports
    at runtime).
 
+4. **Build `deck-rx-asrc`**, the in-tree libsamplerate binding in
+   `native/samplerate`, the same way, then copy
+   `/opt/local/lib/libsamplerate.0.dylib` next to `asrc.node` and point the
+   binding at the copy (`@loader_path`), so the plugin does not need MacPorts
+   at runtime.
+
 After the script completes you should have:
 
 ```
 node_modules/naudiodon/build/Release/naudiodon.node
 node_modules/segfault-handler/build/Release/segfault-handler.node
+native/samplerate/build/Release/asrc.node
+native/samplerate/build/Release/libsamplerate.0.dylib
 ```
 
 Verify with `file`:
@@ -156,8 +185,8 @@ startAudio / the SpyServer connection instead. If it errors out, run
   name under `NodeJS/` changes — current binding becomes ABI-stale)
 - After changing `Nodejs.Version` in `manifest.json` (a new major is a new
   ABI — e.g. 20 → 24 moved `NODE_MODULE_VERSION` from 115 to 137)
-- After `sudo port upgrade portaudio` (the dylib swap is against the
-  installed MacPorts version)
+- After `sudo port upgrade portaudio` or `libsamplerate` (the plugin carries
+  copies of the installed MacPorts versions)
 - If `node_modules/naudiodon/build/` disappears for any reason
   (`npm install` after deleting `package-lock.json` can wipe it)
 

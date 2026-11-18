@@ -77,7 +77,7 @@ Tested on (November 2026):
 | --- | --- | --- |
 | Mac Studio (2025, M4 Max) | macOS 27.2.1 | plugin, Deck RX, Solo |
 | Mac mini (2024, M4) | macOS 27.2.1 | plugin, Deck RX, Solo; also hosts the SpyServer VM |
-| MacBook with an A18 Pro (Mac17,5) | macOS 27.2.1 | Solo |
+| MacBook Neo (2026, A18 Pro) | macOS 27.2.1 | Solo |
 | MacBook Air (11-inch, Early 2015, Intel Core i7) | macOS 12.7.6 | Solo |
 | iPad Pro 12.9-inch (5th generation, M1) | iPadOS 27 | iPad app, with an RTL-SDR or Airspy HF+ on its USB too |
 | iPad mini (6th generation, A15) | iPadOS 27 | iPad app |

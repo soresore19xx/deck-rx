@@ -43,6 +43,30 @@ The server side is a Linux machine with the receivers on USB, running
 SpyServer — here Ubuntu 24.04 (aarch64) in a VM; see
 [server setup](docs/server-setup.md).
 
+### Which receiver, which way
+
+How each app reaches a receiver: through a SpyServer, through `rtl_tcp`, or
+directly on its own USB. ○ works, × does not.
+
+| | Airspy HF+ via SpyServer | RTL-SDR via SpyServer | RTL-SDR via `rtl_tcp` | Airspy HF+ on USB | RTL-SDR on USB |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| **Deck RX** (Stream Deck plugin) | ○ | ○ | ○ | × | × |
+| **Deck RX Solo** on Apple silicon | ○ | ○ | ○ | ○ | × |
+| **Deck RX Solo** on Intel | ○ | ○ | ○ | × | × |
+| **Deck RX** (iPad app) on an M-series iPad | ○ | ○ | ○ | ○ | ○ |
+| **Deck RX** (iPad app) on any other iPad | ○ | ○ | ○ | × | × |
+
+- `rtl_tcp` serves RTL-SDR dongles only, which is why it has no Airspy HF+ column.
+- On USB, one app owns the receiver. Through a SpyServer several can share it:
+  the first to connect tunes, the others listen (and say LISTEN ONLY).
+- Solo's USB source needs libairspyhf, which is linked into the Apple-silicon
+  half of the universal app only.
+- The iPad's USB sources come from a DriverKit driver the build carries
+  ([native-app/rtlusb](native-app/rtlusb/README.md)). Only M-series iPads run
+  DriverKit drivers; on any other iPad the sources are listed but do not open.
+- The Mac front-end has no receiver of its own; it shows the plugin's.
+- Tested with an Airspy HF+ Discovery and an RTL-SDR Blog V4.
+
 Tested on (November 2026):
 
 | Machine | OS | Runs |

@@ -171,9 +171,9 @@ interface Config {
   port: number;
   /// Which protocol `host:port` speaks. SpyServer unless said otherwise, so
   /// every config written before rtl_tcp existed keeps working untouched.
-  /// The RTL-SDR Blog V4 is served over rtl_tcp: SpyServer's RTL support
-  /// never leaves the tuner's AGC, which is how a gain index set from the
-  /// dial ended up having no effect at all. See src/RtlTcpClient.ts.
+  /// An RTL-SDR such as the Blog V4 can be served by either: SpyServer, like
+  /// the HF+, or rtl_tcp, which exposes more of the dongle's own controls.
+  /// See src/RtlTcpClient.ts.
   source?: IQSource;
   enabled?: boolean;      // master ON/OFF (user-toggled via 2-second long press on the Tune dial)
   audioEnabled?: boolean;
